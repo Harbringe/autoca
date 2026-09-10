@@ -1,0 +1,95 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Tenant isolation gate
+    runs-on: ubuntu-latest
+
+    # An ephemeral Postgres, not the shared Supabase dev project. The isolation
+    # gate must never be skippable because a free-tier project was asleep, and
+    # it must be able to create the restricted roles the suite depends on.
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: autoca
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DJANGO_SETTINGS_MODULE: config.settings.test
+      DJANGO_SECRET_KEY: ci-only-not-a-real-secret
+      DATABASE_SSL_REQUIRE: "0"
+      DATABASE_IS_POOLED: "0"
+      # The suite runs as autoca_ci: NOSUPERUSER, NOBYPASSRLS, with CREATEDB
+      # only so the test runner can build its scratch database. If this were a
+      # superuser, every isolation assertion would pass vacuously --
+      # test_connection_role_cannot_bypass_rls exists to catch exactly that.
+      DATABASE_URL: postgresql://autoca_ci:ci@localhost:5432/autoca
+      DATABASE_OWNER_URL: postgresql://autoca_ci:ci@localhost:5432/autoca
+      KMS_LOCAL_MASTER_KEY: dGVzdC1vbmx5LW1hc3Rlci1rZXktMzItYnl0ZXMtISE=
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements/*.txt
+
+      - name: Install dependencies
+        run: pip install -r requirements/dev.txt
+
+      - name: Create the restricted test role
+        env:
+          PGPASSWORD: postgres
+        run: |
+          psql -h localhost -U postgres -d autoca -v ON_ERROR_STOP=1 <<'SQL'
+          CREATE ROLE autoca_ci LOGIN PASSWORD 'ci'
+              NOSUPERUSER NOBYPASSRLS CREATEDB;
+          GRANT ALL ON SCHEMA public TO autoca_ci;
+          GRANT CREATE ON DATABASE autoca TO autoca_ci;
+
+          -- autoca_ci must be a MEMBER of autoca_app, because every policy is
+          -- scoped `TO autoca_app`. A role outside that group has no policy
+          -- applied to it and Postgres then denies everything by default --
+          -- including a firm's writes to its own rows. The suite catches this,
+          -- but as a wall of confusing errors rather than a clear message.
+          -- The migration creates autoca_app too (IF NOT EXISTS); creating it
+          -- here first is what lets us grant membership before the run.
+          CREATE ROLE autoca_app NOLOGIN NOSUPERUSER NOBYPASSRLS;
+          GRANT autoca_app TO autoca_ci WITH INHERIT TRUE;
+          SQL
+
+      - name: Lint
+        run: ruff check .
+
+      - name: Django system checks
+        run: python manage.py check --fail-level WARNING
+
+      - name: Migrations are complete and applied cleanly
+        run: python manage.py makemigrations --check --dry-run
+
+      - name: Tenant isolation suite
+        run: pytest core/tests/test_rls_isolation.py -v
+
+      - name: Adapter boundary suite
+        run: pytest integrations/tests/test_adapter_swap.py -v
+
+      - name: Full suite with coverage
+        run: pytest --cov=core --cov=integrations --cov-report=term-missing

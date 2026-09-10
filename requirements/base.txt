@@ -1,0 +1,27 @@
+# --- Core framework ---
+Django==5.2.6
+psycopg[binary]==3.2.9
+
+# --- Config ---
+dj-database-url==3.0.1
+python-dotenv==1.1.1
+
+# --- Auth / crypto ---
+argon2-cffi==25.1.0
+django-otp==1.6.1
+qrcode==8.2
+cryptography==45.0.6
+
+# --- Async / queue ---
+celery==5.5.3
+redis==6.4.0
+
+# --- Integrations (dev-tier adapters) ---
+# boto3 is the S3-compatible client used by BOTH the Cloudflare R2 dev adapter
+# and the AWS S3 beta adapter. It must only ever be imported inside
+# integrations/storage/. See docs/ARCHITECTURE.md.
+boto3==1.40.14
+
+# --- Serving ---
+gunicorn==23.0.0
+whitenoise==6.9.0

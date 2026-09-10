@@ -1,0 +1,16 @@
+[tool.ruff]
+line-length = 100
+target-version = "py313"
+exclude = [".venv", "*/migrations/0001_initial.py", "staticfiles"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "C4", "DJ", "S"]
+ignore = [
+    "E501",    # line length is handled by the formatter
+    "S101",    # assert: the test suite is built on it
+    "B008",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"*/tests/*" = ["S105", "S106"]
+"config/settings/*" = ["F403", "F405"]

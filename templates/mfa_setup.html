@@ -1,0 +1,18 @@
+{% extends "_mfa_base.html" %}
+{% block title %}Set up two-factor authentication{% endblock %}
+{% block submit %}Verify &amp; finish{% endblock %}
+{% block body %}
+  <h1>Set up two-factor authentication</h1>
+  <p class="sub">{{ email }}</p>
+  <ol>
+    <li>Open your authenticator app (Google Authenticator, Aegis, 1Password&hellip;).</li>
+    <li>Scan this QR code, or type the setup key by hand.</li>
+    <li>Enter the 6-digit code it shows to confirm.</li>
+  </ol>
+  <div class="qr">{{ qr_svg|safe }}</div>
+  <label>Setup key</label>
+  <code class="secret">{{ secret }}</code>
+  <label for="token">6-digit code</label>
+  <input id="token" name="token" inputmode="numeric" autocomplete="one-time-code"
+         pattern="[0-9]*" maxlength="6" required autofocus>
+{% endblock %}

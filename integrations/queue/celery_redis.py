@@ -2,8 +2,8 @@
 
 Broker is Upstash Redis on the free tier: 500K commands/month, 256MB. Ample for
 solo development; worth watching once real document processing starts, because
-Celery's own bookkeeping consumes commands even when idle. Set
-CELERY_BROKER_USE_SSL=1 -- Upstash requires TLS (rediss://).
+Celery's own bookkeeping consumes commands even when idle. The broker URL must be rediss:// with ?ssl_cert_reqs=required so kombu
+verifies Upstash's certificate; plain rediss:// is TLS but unauthenticated.
 """
 
 from .base import EnqueuedJob, QueueAdapter

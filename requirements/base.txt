@@ -17,6 +17,10 @@ celery==5.5.3
 redis==6.4.0
 
 # --- Integrations (dev-tier adapters) ---
+# pdfplumber reads the text layer and table ruling of born-digital statements.
+# It runs in-process, but it lives behind integrations/pdf/ like everything else
+# so that a swap to PyMuPDF or a hosted extractor stays one file.
+pdfplumber==0.11.10
 # boto3 is the S3-compatible client used by BOTH the Cloudflare R2 dev adapter
 # and the AWS S3 beta adapter. It must only ever be imported inside
 # integrations/storage/. See docs/ARCHITECTURE.md.

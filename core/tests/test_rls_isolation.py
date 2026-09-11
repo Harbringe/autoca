@@ -351,6 +351,8 @@ def _touch(model) -> dict:
         ("path", "/tampered/"),
         ("role", "OWNER"),
         ("is_active", False),
+        ("source_filename", "tampered.pdf"),
+        ("narration", "tampered"),
     ):
         if candidate in names:
             return {candidate: value}

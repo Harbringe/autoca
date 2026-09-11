@@ -21,12 +21,14 @@ from django.utils.module_loading import import_string
 from integrations.kms.base import KMSAdapter
 from integrations.llm.base import LLMAdapter
 from integrations.ocr.base import OCRAdapter
+from integrations.pdf.base import PdfTextAdapter
 from integrations.queue.base import QueueAdapter
 from integrations.storage.base import StorageAdapter
 
 INTERFACES = {
     "storage": StorageAdapter,
     "ocr": OCRAdapter,
+    "pdf": PdfTextAdapter,
     "queue": QueueAdapter,
     "kms": KMSAdapter,
     "llm": LLMAdapter,
@@ -89,6 +91,10 @@ def get_storage() -> StorageAdapter:
 
 def get_ocr() -> OCRAdapter:
     return get_adapter("ocr")
+
+
+def get_pdf() -> PdfTextAdapter:
+    return get_adapter("pdf")
 
 
 def get_queue() -> QueueAdapter:

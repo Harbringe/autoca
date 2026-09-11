@@ -1,0 +1,549 @@
+{
+ "engine": "pdfplumber",
+ "page_count": 3,
+ "pages": [
+  {
+   "page_number": 1,
+   "text": "RAMESH GOPAL DESHMUKH\nJoint Holder:- -\nNEAR STATIONWADI NAKA SHIVAJINAGAR YASHWANT\nNAGAR CROSS ROAD, P.NO.00-A, H.NO.0-0-0000,\nSANKALP\nSOLAPUR Customer ID: 100000111\nMAHARASHTRA-INDIA IFSC Code: UTIB0000318\n413001 MICR Code: 413211101\nNominee Registered: Y\nRegistered Mobile No: XXXXXX0000\nRegistered Email ID: reXXXXkh@example.com PAN: ABCDE1234F\nScheme: SB-PRIORITY BANKING CKYC No: XXXXXXXXXX0000\nCurrency: INR\nStatement of Axis Account No: 911010000004321 for the period (From: 01-04-2025 To: 03-06-2026)\nTran Date Chq No Particulars Debit Credit Balance Init.\nBr\nOPENING BALANCE 124189.43\n13-04-2025 Sweep/VO000000087559330/19000014841287 250.00 123939.43 318\n14-04-2025 Sweep/VO000000087773750/19000014841287 250.00 123689.43 318\nRTGS/HDFCR52025050266560113/DR\nRAMESH GOPAL DESHMUK/HDFC\n02-05-2025 BANK///Self//OP 350000.00 473689.43 248\nBRN-CLG-CHQ PAID TO Wipro Ge\n02-05-2025 331809 Health/HONGKONG and S 400000.00 73689.43 2568\nSB:911010000004321:Int.Pd:01-04-2025 to 30-\n01-07-2025 06-2025 633.00 74322.43 318\nMOB/TPFT/SUNITA RAMESH\n23-07-2025 P/911010000004322 2000000.00 2074322.43 318\nNEFT/MB/AXOMB20402110637/Ramesh\n23-07-2025 Gopalrao Deshmukh/HDFC BANK/OTHERS 1500000.00 574322.43 318\nMOB/TPFT/SUNITA RAMESH\n24-07-2025 P/911010000004322 2000000.00 2574322.43 318\nMOB/TPFT/SUNITA RAMESH\n25-07-2025 P/911010000004322 1000000.00 3574322.43 318\nNEFT/MB/AXOMB20702009852/Ramesh\n26-07-2025 Gopalrao Deshmukh/HDFC BANK/OTHERS 1500000.00 2074322.43 318\nBRN-CLG-CHQ PAID TO Johnson Lifts\n07-08-2025 331811 P/KOTAK MAHINDRA 21694.00 2052628.43 2568\nCreditCard Payment XX 0000\n12-08-2025 Ref#GFYPDNWLV474ZO 3194.00 2049434.43 318\nCreditCard Payment XX 0000\n29-08-2025 Ref#AZAKI7SOC1EYIT 20587.00 2028847.43 318\nNEFT/U000000988763903/Sovereign Gold Bonds\n20-09-2025 Interes/RESERVE BANK OF INDI/ 7403.75 2036251.18 248\nSB:911010000004321:Int.Pd:01-07-2025 to 30-\n01-10-2025 09-2025 9958.00 2046209.18 318\n08-10-2025 IPPF/0318PPF0000000000092/911010000004321 550.00 2045659.18 318\nCreditCard Payment XX 0000\n12-10-2025 Ref#HV98N5BNSI1C74 36109.00 2009550.18 318\nUPI/P2A/165532563485/MADHUKAR BALAJIRAO\n10-11-2025 JADHAV/Meter/HDFC BANK LTD 11600.00 1997950.18 318\nTRF/318/SHOBHA GOPAL\n26-11-2025 331812 /Shobha Gopal 85761.00 1912189.18 318\nCREDIT BALANCE REFUND\n27-11-2025 4000000000000000 1866.00 1914055.18 400\nIMPS/P2A/534962100164/RameshGopalraoDeshmukh/X\n15-12-2025 001676/HDFCBANKLTD/ 500000.00 1414055.18 318\nSB:911010000004321:Int.Pd:01-10-2025 to 31-\n01-01-2026 12-2025 11860.00 1425915.18 318\nCreditCard Payment XX 0000\n12-01-2026 Ref#LRO861KXH048QN 70228.00 1355687.18 318\nCreditCard Payment XX 0000\n23-01-2026 Ref#JRMNFU6BRTO0LM 6080.00 1349607.18 318",
+   "tables": [
+    [
+     [
+      "Tran Date",
+      "Chq No",
+      "Particulars",
+      "Debit",
+      "Credit",
+      "Balance",
+      "Init.\nBr"
+     ],
+     [
+      "",
+      "",
+      "OPENING BALANCE",
+      "",
+      "",
+      "124189.43",
+      ""
+     ],
+     [
+      "13-04-2025",
+      "",
+      "Sweep/VO000000087559330/19000014841287",
+      "250.00",
+      "",
+      "123939.43",
+      "318"
+     ],
+     [
+      "14-04-2025",
+      "",
+      "Sweep/VO000000087773750/19000014841287",
+      "250.00",
+      "",
+      "123689.43",
+      "318"
+     ],
+     [
+      "02-05-2025",
+      "",
+      "RTGS/HDFCR52025050266560113/DR\nRAMESH GOPAL DESHMUK/HDFC\nBANK///Self//OP",
+      "",
+      "350000.00",
+      "473689.43",
+      "248"
+     ],
+     [
+      "02-05-2025",
+      "331809",
+      "BRN-CLG-CHQ PAID TO Wipro Ge\nHealth/HONGKONG and S",
+      "400000.00",
+      "",
+      "73689.43",
+      "2568"
+     ],
+     [
+      "01-07-2025",
+      "",
+      "SB:911010000004321:Int.Pd:01-04-2025 to 30-\n06-2025",
+      "",
+      "633.00",
+      "74322.43",
+      "318"
+     ],
+     [
+      "23-07-2025",
+      "",
+      "MOB/TPFT/SUNITA RAMESH\nP/911010000004322",
+      "",
+      "2000000.00",
+      "2074322.43",
+      "318"
+     ],
+     [
+      "23-07-2025",
+      "",
+      "NEFT/MB/AXOMB20402110637/Ramesh\nGopalrao Deshmukh/HDFC BANK/OTHERS",
+      "1500000.00",
+      "",
+      "574322.43",
+      "318"
+     ],
+     [
+      "24-07-2025",
+      "",
+      "MOB/TPFT/SUNITA RAMESH\nP/911010000004322",
+      "",
+      "2000000.00",
+      "2574322.43",
+      "318"
+     ],
+     [
+      "25-07-2025",
+      "",
+      "MOB/TPFT/SUNITA RAMESH\nP/911010000004322",
+      "",
+      "1000000.00",
+      "3574322.43",
+      "318"
+     ],
+     [
+      "26-07-2025",
+      "",
+      "NEFT/MB/AXOMB20702009852/Ramesh\nGopalrao Deshmukh/HDFC BANK/OTHERS",
+      "1500000.00",
+      "",
+      "2074322.43",
+      "318"
+     ],
+     [
+      "07-08-2025",
+      "331811",
+      "BRN-CLG-CHQ PAID TO Johnson Lifts\nP/KOTAK MAHINDRA",
+      "21694.00",
+      "",
+      "2052628.43",
+      "2568"
+     ],
+     [
+      "12-08-2025",
+      "",
+      "CreditCard Payment XX 0000\nRef#GFYPDNWLV474ZO",
+      "3194.00",
+      "",
+      "2049434.43",
+      "318"
+     ],
+     [
+      "29-08-2025",
+      "",
+      "CreditCard Payment XX 0000\nRef#AZAKI7SOC1EYIT",
+      "20587.00",
+      "",
+      "2028847.43",
+      "318"
+     ],
+     [
+      "20-09-2025",
+      "",
+      "NEFT/U000000988763903/Sovereign Gold Bonds\nInteres/RESERVE BANK OF INDI/",
+      "",
+      "7403.75",
+      "2036251.18",
+      "248"
+     ],
+     [
+      "01-10-2025",
+      "",
+      "SB:911010000004321:Int.Pd:01-07-2025 to 30-\n09-2025",
+      "",
+      "9958.00",
+      "2046209.18",
+      "318"
+     ],
+     [
+      "08-10-2025",
+      "",
+      "IPPF/0318PPF0000000000092/911010000004321",
+      "550.00",
+      "",
+      "2045659.18",
+      "318"
+     ],
+     [
+      "12-10-2025",
+      "",
+      "CreditCard Payment XX 0000\nRef#HV98N5BNSI1C74",
+      "36109.00",
+      "",
+      "2009550.18",
+      "318"
+     ],
+     [
+      "10-11-2025",
+      "",
+      "UPI/P2A/165532563485/MADHUKAR BALAJIRAO\nJADHAV/Meter/HDFC BANK LTD",
+      "11600.00",
+      "",
+      "1997950.18",
+      "318"
+     ],
+     [
+      "26-11-2025",
+      "331812",
+      "TRF/318/SHOBHA GOPAL\n/Shobha Gopal",
+      "85761.00",
+      "",
+      "1912189.18",
+      "318"
+     ],
+     [
+      "27-11-2025",
+      "",
+      "CREDIT BALANCE REFUND\n4000000000000000",
+      "",
+      "1866.00",
+      "1914055.18",
+      "400"
+     ],
+     [
+      "15-12-2025",
+      "",
+      "IMPS/P2A/534962100164/RameshGopalraoDeshmukh/X\n001676/HDFCBANKLTD/",
+      "500000.00",
+      "",
+      "1414055.18",
+      "318"
+     ],
+     [
+      "01-01-2026",
+      "",
+      "SB:911010000004321:Int.Pd:01-10-2025 to 31-\n12-2025",
+      "",
+      "11860.00",
+      "1425915.18",
+      "318"
+     ],
+     [
+      "12-01-2026",
+      "",
+      "CreditCard Payment XX 0000\nRef#LRO861KXH048QN",
+      "70228.00",
+      "",
+      "1355687.18",
+      "318"
+     ],
+     [
+      "23-01-2026",
+      "",
+      "CreditCard Payment XX 0000\nRef#JRMNFU6BRTO0LM",
+      "6080.00",
+      "",
+      "1349607.18",
+      "318"
+     ]
+    ]
+   ]
+  },
+  {
+   "page_number": 2,
+   "text": "CreditCard Payment XX 0000\n29-01-2026 Ref#3EIJGBV9RQXSM8 3212.00 1346395.18 318\nUPI/P2M/001422314293/GODAVARI_RESTAU\n31-01-2026 RANT_ /Hotel/YES BANK LIMITED YBS 3466.00 1342929.18 318\nUPI/P2M/092928654106/ZERODHA BROKING\n02-02-2026 LIMIT/098336/HDFC BANK LTD 100000.00 1242929.18 318\nUPI/P2M/184941034386/Naturally Yours /NO\n04-02-2026 REM/AXIS BANK ABR 267.00 1242662.18 318\nUPI/P2A/102648640341/NPCI\n06-02-2026 BHIM/HDFC/BHIMCASH/ 5.00 1242667.18 318\nUPI/P2M/102665647623/SNITCH APPARELS\n08-02-2026 PRIVA/Snitch/HDFC BANK LTD 949.00 1241718.18 318\nCreditCard Payment XX 0000\n09-02-2026 Ref#EF7LKKWG0VPHU0 4557.00 1237161.18 318\nUPI/P2M/124616687102/Blinkit\n15-02-2026 /Blinki/YES BANK LIMITED YBS 530.00 1236631.18 318\nUPI/P2M/109203143105/Zerodha Broking\n16-02-2026 Limit/ITSGab/ICICI Bank 10000.00 1226631.18 318\nUPI/P2M/109203143105/911010000004321/1602\n16-02-2026 26/ICICI Bank 10000.00 1236631.18 318\nUPI/P2M/605426544626/Smallcase/YesBank_Y/\n23-02-2026 Recurrin//P2V/ 12000.00 1224631.18 318\nMOB/TPFT/VIKAS GOPAL\n23-02-2026 P/911010000004323 14000.00 1238631.18 318\nUPI/P2A/102857539820/NPCI\n06-03-2026 BHIM/HDFC/BHIMCASH/ 15.18 1238646.36 318\nUPI/P2A/102866052763/NPCI\n07-03-2026 BHIM/HDFC/BHIMCASH/ 5.20 1238651.56 318\nUPI/P2A/102880009347/NPCI\n09-03-2026 BHIM/HDFC/BHIMCASH/ 5.08 1238656.64 318\nCreditCard Payment XX 0000\n13-03-2026 Ref#I17MYUC8PLUAX6 4421.00 1234235.64 318\n13-03-2026 INB/134762494/INTERNET TAX PAYMENT/ 200000.00 1034235.64 318\nNEFT/U000000999820684/Sovereign Gold Bonds\n20-03-2026 Interes/RESERVE BANK OF INDI/RBI 7403.75 1041639.39 248\nUPI/P2A/102985493417/NPCI\n27-03-2026 BHIM/HDFC/BHIMCASH/ 2.00 1041641.39 318\nSB:911010000004321:Int.Pd:01-01-2026 to 31-\n31-03-2026 03-2026 7680.00 1049321.39 318\nUPI/P2A/103048773172/NPCI\n04-04-2026 BHIM/HDFC/BHIMCASH/ 5.16 1049326.55 318\nUPI/P2A/193203854210/ADITYA RAMESH\n04-04-2026 DESHMUKH /Simba/Kotak Mahindra Bank 10000.00 1039326.55 318\nUPI/P2A/090018204197/ADITYA RAMESH\n06-04-2026 DESHMUKH /NO REM/Kotak Mahindra Bank 20000.00 1019326.55 318\nDD ISSUED/DIBG/Medical officer of Health,\n21-04-2026 NWCMC, N 12500.00 1006826.55 318\nClg/WIPRO GE HEALTHCARE\n02-05-2026 331810 PVT/HONGKONG and S 400000.00 606826.55 2568\nUPI/P2A/103250305464/NPCI\n07-05-2026 BHIM/HDFC/BHIMCASH/ 13.00 606839.55 318\nUPI/P2A/103359784777/NPCI\n27-05-2026 BHIM/HDFC/BHIMCASH/ 10.02 606849.57 318\nCreditCard Payment XX 0000\n30-05-2026 Ref#T4RC93W515W9DF 2296.00 604553.57 318\n30-05-2026 CRD-PMNT-400000****0000 1071.00 603482.57 400\nUPI/P2A/103414340591/NPCI\n03-06-2026 BHIM/HDFC/BHIMCASH/ 8.00 603490.57 318\nTRANSACTION TOTAL 4941572.00 5420873.14\nCLOSING BALANCE 603490.57\nUnless the constituent notifies the bank immediately of any discrepancy found by him/her in this statement of Account, it will be taken that\nhe/she has found the account correct.",
+   "tables": [
+    [
+     [
+      "29-01-2026",
+      "",
+      "CreditCard Payment XX 0000\nRef#3EIJGBV9RQXSM8",
+      "3212.00",
+      "",
+      "1346395.18",
+      "318"
+     ],
+     [
+      "31-01-2026",
+      "",
+      "UPI/P2M/001422314293/GODAVARI_RESTAU\nRANT_ /Hotel/YES BANK LIMITED YBS",
+      "3466.00",
+      "",
+      "1342929.18",
+      "318"
+     ],
+     [
+      "02-02-2026",
+      "",
+      "UPI/P2M/092928654106/ZERODHA BROKING\nLIMIT/098336/HDFC BANK LTD",
+      "100000.00",
+      "",
+      "1242929.18",
+      "318"
+     ],
+     [
+      "04-02-2026",
+      "",
+      "UPI/P2M/184941034386/Naturally Yours /NO\nREM/AXIS BANK ABR",
+      "267.00",
+      "",
+      "1242662.18",
+      "318"
+     ],
+     [
+      "06-02-2026",
+      "",
+      "UPI/P2A/102648640341/NPCI\nBHIM/HDFC/BHIMCASH/",
+      "",
+      "5.00",
+      "1242667.18",
+      "318"
+     ],
+     [
+      "08-02-2026",
+      "",
+      "UPI/P2M/102665647623/SNITCH APPARELS\nPRIVA/Snitch/HDFC BANK LTD",
+      "949.00",
+      "",
+      "1241718.18",
+      "318"
+     ],
+     [
+      "09-02-2026",
+      "",
+      "CreditCard Payment XX 0000\nRef#EF7LKKWG0VPHU0",
+      "4557.00",
+      "",
+      "1237161.18",
+      "318"
+     ],
+     [
+      "15-02-2026",
+      "",
+      "UPI/P2M/124616687102/Blinkit\n/Blinki/YES BANK LIMITED YBS",
+      "530.00",
+      "",
+      "1236631.18",
+      "318"
+     ],
+     [
+      "16-02-2026",
+      "",
+      "UPI/P2M/109203143105/Zerodha Broking\nLimit/ITSGab/ICICI Bank",
+      "10000.00",
+      "",
+      "1226631.18",
+      "318"
+     ],
+     [
+      "16-02-2026",
+      "",
+      "UPI/P2M/109203143105/911010000004321/1602\n26/ICICI Bank",
+      "",
+      "10000.00",
+      "1236631.18",
+      "318"
+     ],
+     [
+      "23-02-2026",
+      "",
+      "UPI/P2M/605426544626/Smallcase/YesBank_Y/\nRecurrin//P2V/",
+      "12000.00",
+      "",
+      "1224631.18",
+      "318"
+     ],
+     [
+      "23-02-2026",
+      "",
+      "MOB/TPFT/VIKAS GOPAL\nP/911010000004323",
+      "",
+      "14000.00",
+      "1238631.18",
+      "318"
+     ],
+     [
+      "06-03-2026",
+      "",
+      "UPI/P2A/102857539820/NPCI\nBHIM/HDFC/BHIMCASH/",
+      "",
+      "15.18",
+      "1238646.36",
+      "318"
+     ],
+     [
+      "07-03-2026",
+      "",
+      "UPI/P2A/102866052763/NPCI\nBHIM/HDFC/BHIMCASH/",
+      "",
+      "5.20",
+      "1238651.56",
+      "318"
+     ],
+     [
+      "09-03-2026",
+      "",
+      "UPI/P2A/102880009347/NPCI\nBHIM/HDFC/BHIMCASH/",
+      "",
+      "5.08",
+      "1238656.64",
+      "318"
+     ],
+     [
+      "13-03-2026",
+      "",
+      "CreditCard Payment XX 0000\nRef#I17MYUC8PLUAX6",
+      "4421.00",
+      "",
+      "1234235.64",
+      "318"
+     ],
+     [
+      "13-03-2026",
+      "",
+      "INB/134762494/INTERNET TAX PAYMENT/",
+      "200000.00",
+      "",
+      "1034235.64",
+      "318"
+     ],
+     [
+      "20-03-2026",
+      "",
+      "NEFT/U000000999820684/Sovereign Gold Bonds\nInteres/RESERVE BANK OF INDI/RBI",
+      "",
+      "7403.75",
+      "1041639.39",
+      "248"
+     ],
+     [
+      "27-03-2026",
+      "",
+      "UPI/P2A/102985493417/NPCI\nBHIM/HDFC/BHIMCASH/",
+      "",
+      "2.00",
+      "1041641.39",
+      "318"
+     ],
+     [
+      "31-03-2026",
+      "",
+      "SB:911010000004321:Int.Pd:01-01-2026 to 31-\n03-2026",
+      "",
+      "7680.00",
+      "1049321.39",
+      "318"
+     ],
+     [
+      "04-04-2026",
+      "",
+      "UPI/P2A/103048773172/NPCI\nBHIM/HDFC/BHIMCASH/",
+      "",
+      "5.16",
+      "1049326.55",
+      "318"
+     ],
+     [
+      "04-04-2026",
+      "",
+      "UPI/P2A/193203854210/ADITYA RAMESH\nDESHMUKH /Simba/Kotak Mahindra Bank",
+      "10000.00",
+      "",
+      "1039326.55",
+      "318"
+     ],
+     [
+      "06-04-2026",
+      "",
+      "UPI/P2A/090018204197/ADITYA RAMESH\nDESHMUKH /NO REM/Kotak Mahindra Bank",
+      "20000.00",
+      "",
+      "1019326.55",
+      "318"
+     ],
+     [
+      "21-04-2026",
+      "",
+      "DD ISSUED/DIBG/Medical officer of Health,\nNWCMC, N",
+      "12500.00",
+      "",
+      "1006826.55",
+      "318"
+     ],
+     [
+      "02-05-2026",
+      "331810",
+      "Clg/WIPRO GE HEALTHCARE\nPVT/HONGKONG and S",
+      "400000.00",
+      "",
+      "606826.55",
+      "2568"
+     ],
+     [
+      "07-05-2026",
+      "",
+      "UPI/P2A/103250305464/NPCI\nBHIM/HDFC/BHIMCASH/",
+      "",
+      "13.00",
+      "606839.55",
+      "318"
+     ],
+     [
+      "27-05-2026",
+      "",
+      "UPI/P2A/103359784777/NPCI\nBHIM/HDFC/BHIMCASH/",
+      "",
+      "10.02",
+      "606849.57",
+      "318"
+     ],
+     [
+      "30-05-2026",
+      "",
+      "CreditCard Payment XX 0000\nRef#T4RC93W515W9DF",
+      "2296.00",
+      "",
+      "604553.57",
+      "318"
+     ],
+     [
+      "30-05-2026",
+      "",
+      "CRD-PMNT-400000****0000",
+      "1071.00",
+      "",
+      "603482.57",
+      "400"
+     ],
+     [
+      "03-06-2026",
+      "",
+      "UPI/P2A/103414340591/NPCI\nBHIM/HDFC/BHIMCASH/",
+      "",
+      "8.00",
+      "603490.57",
+      "318"
+     ],
+     [
+      "",
+      "",
+      "TRANSACTION TOTAL",
+      "4941572.00",
+      "5420873.14",
+      "",
+      ""
+     ],
+     [
+      "",
+      "",
+      "CLOSING BALANCE",
+      "",
+      "",
+      "603490.57",
+      ""
+     ]
+    ]
+   ]
+  },
+  {
+   "page_number": 3,
+   "text": "The closing balance as shown/displayed includes not only the credit balance and / or overdraft limit, but also funds which are under clearing. It\nexcludes the amount marked as lien, if any. Hence the closing balance displayed may not be the effective available balance. For any further\nclarifications, please contact the Branch.\nWe would like to reiterate that, as a policy, Axis Bank never asks you to share, disclose, or revalidate your login Id, password or debit card\nnumber number through emails OR phone call Further,we would like to reiterate that Axis Bank shall not be liable for any losses arising from\nyou sharing/disclosing of your login id, password and debit card number to anyone. Please co-operate by forwarding all such suspicious/spam\nemails, if received by you, to customer.service@axis.bank.in\nWith effect from 1st August 2016, the replacement charges for Debit card and ATM card applicable on Current accounts have been revised. To\nknow more about the applicable charges,please visit www.axis.bank.in\nDeposit Insurance and Credit Guarantee Corporation (DICGC) insurance cover is applicable in all Banks' deposits, such as savings, current,\nfixed, recurring etc* up to maximum amount of Rs 5 Lakh including principal & interest both* (* or exceptions and details please refer\nwww.dicgc.org.in )\nIn compliance with regulatory guidelines, the non-CTS cheque books attached to the accounts would be destroyed in banks core banking\nSystem. Thus, Non CTS cheques will not be valid for CASH, Clearing and Transfer transactions\nTo ensure you never miss any critical communication from us, it is important that your latest / correct mobile number and email ID are updated\nin our records. Kindly visit your nearest Axis Bank Loan Centre /Branch / Agri area office for updating your latest / correct mobile number and\nemail ID in our records. You can also update your email ID using Internet Banking & Mobile Banking App, open\nREGISTERED OFFICE - AXIS BANK LTD,TRISHUL,Opp. Samartheswar Temple, Near Law Garden, Ellisbridge, Ahmedabad . 380006.\nBRANCH ADDRESS - AXIS BANK LTD, SOLAPUR [MH], NIKHIL HEIGHTS, VAZIRABAD BUS STAND, , 413002, SOLAPUR,\nMAHARASHTRA, INDIA, TEL:0000000000 FAX:000000\nLegends :\nICONN-Transaction trough Internet Banking\nVMT-ICON-Visa Money Transfer through Internet Banking\nAUTOSWEEP-Transfer to linked fixed deposit\nREV SWEEP-Interest on Linked fixed Deposit\nSWEEP TRF-Transfer from Linked Fixed Deposit / Account\nVMT-Visa Money Transfer through ATM\nCWDR-Cash Withdrawal through ATM\nPUR-POS purchase\nTIP/ SCG-Surcharge on usage of debit card at pumps/railway ticket purchase or hotel tips\nRATE.DIFF-Difference in rates on usage of card internationally\nCLG-Cheque Clearing Transaction\nEDC-Credit transaction through EDC Machine\nSETU -Seamless electronic fund transfer through AXIS Bank\nInt.pd-Interest paid to customer\nInt.Coll-Interest collected from the customer\nThis is a system generated output and requires no signature.\n++++ End of Statement ++++",
+   "tables": []
+  }
+ ]
+}

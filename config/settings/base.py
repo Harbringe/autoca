@@ -222,6 +222,7 @@ CSRF_COOKIE_SAMESITE = "Lax"
 INTEGRATIONS = {
     "storage": env("STORAGE_BACKEND", "integrations.storage.r2.R2StorageAdapter"),
     "ocr": env("OCR_BACKEND", "integrations.ocr.stub.StubOCRAdapter"),
+    "pdf": env("PDF_BACKEND", "integrations.pdf.pdfplumber_text.PdfPlumberAdapter"),
     "queue": env("QUEUE_BACKEND", "integrations.queue.celery_redis.CeleryRedisQueueAdapter"),
     "kms": env("KMS_BACKEND", "integrations.kms.local_fernet.LocalFernetKMSAdapter"),
     "llm": env("LLM_BACKEND", "integrations.llm.stub.StubLLMAdapter"),
@@ -237,6 +238,7 @@ INTEGRATION_OPTIONS = {
         "root": env("STORAGE_LOCAL_ROOT", str(BASE_DIR / ".devdata" / "storage")),
     },
     "ocr": {},
+    "pdf": {},
     "queue": {
         "broker_url": env("CELERY_BROKER_URL"),
     },

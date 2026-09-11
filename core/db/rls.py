@@ -157,6 +157,52 @@ def bootstrap_operations():
 
 
 # ---------------------------------------------------------------------------
+# Making DDL survive the policies it is installing
+# ---------------------------------------------------------------------------
+
+#: A reserved firm id that no firm will ever hold. Used only to give a DDL
+#: transaction *a* tenant context, so that PostgreSQL's own maintenance queries
+#: are answered instead of raising. It matches nothing, which is the point.
+DDL_FIRM_ID = "00000000-0000-0000-0000-000000000000"
+
+DDL_CONTEXT_SQL = "SELECT set_config('{guc}', '{firm_id}', true);"
+
+
+def ddl_tenant_context_operations():
+    """Give a migration a tenant context. **First operation, or it will not work.**
+
+    Adding a foreign key makes PostgreSQL validate it by scanning the child
+    table and joining the parent:
+
+        SELECT fk.client_id FROM ONLY banking_bank_account fk
+        LEFT OUTER JOIN ONLY core_client pk ON pk.id = fk.client_id
+        WHERE pk.id IS NULL AND fk.client_id IS NOT NULL
+
+    Both sides of that join are firm-scoped, and a migration has no tenant
+    context, so the scan raises ``tenant context missing`` and takes the whole
+    migration with it. The error names the tenancy layer and looks like a bug in
+    it; it is really the cost of ``FORCE ROW LEVEL SECURITY``, which subjects
+    the migration's own owner role to the policies. That is exactly what FORCE
+    is for, so the answer is to give the migration a context, not to weaken it.
+
+    It has to be the first operation because Django holds a migration's foreign
+    key SQL in ``deferred_sql`` and flushes it when the schema editor closes --
+    after every operation has run. ``set_config(..., is_local => true)`` is
+    transaction-scoped and the migration is one transaction, so a context set at
+    the top is still in force at that flush.
+
+    **The caveat, which matters.** Under this context the validation scan sees
+    zero rows, so it validates nothing. For a migration that *creates* a table
+    that is fine: the table is empty and there is nothing to validate. For a
+    migration that adds a foreign key to a table with data in it, this would
+    turn a real integrity check into a no-op -- validate those per firm
+    afterwards rather than trusting the constraint's VALID flag.
+    """
+    sql = DDL_CONTEXT_SQL.format(guc=settings.TENANT_GUC, firm_id=DDL_FIRM_ID)
+    return [migrations.RunSQL(sql=sql, reverse_sql=migrations.RunSQL.noop)]
+
+
+# ---------------------------------------------------------------------------
 # Per-table policy
 # ---------------------------------------------------------------------------
 
@@ -189,9 +235,18 @@ ALTER TABLE {table} DISABLE ROW LEVEL SECURITY;
 def rls_operations(table: str, column: str = "firm_id"):
     """Migration operations that put ``table`` behind tenant isolation.
 
-    Call this in the same migration that creates the table. The isolation test
-    suite fails the build if a firm-scoped table ever ships without it, so a
-    forgotten call is caught by CI rather than by a customer.
+    Call this in a migration that runs *after* the one creating the table, never
+    in the same one. Django flushes a migration's deferred SQL -- which is where
+    foreign key constraints live -- when the schema editor closes, so operations
+    appended to a CreateModel migration are applied before the foreign keys are.
+    Adding a foreign key then triggers PostgreSQL's validation scan over a table
+    that is already FORCE ROW LEVEL SECURITY, from a migration that has no
+    tenant context, and the migration dies with ``tenant context missing``.
+    See ``banking/migrations/0002_row_level_security.py``.
+
+    The isolation test suite fails the build if a firm-scoped table ever ships
+    without a policy, so a forgotten call is caught by CI rather than by a
+    customer.
     """
     return [
         migrations.RunSQL(

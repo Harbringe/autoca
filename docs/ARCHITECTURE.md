@@ -1,9 +1,25 @@
 # Architecture & guardrails
 
-Scope of this phase: project scaffold, tenant isolation, and safety guardrails.
-No document parsing, no classification, no ledger, no GST. Those are later
-prompts, and the placeholder apps (`banking/`, `ledger/`, `gst/`, `classify/`)
-are empty on purpose.
+Built so far: the scaffold and tenant isolation, then one complete vertical
+slice — a bank statement PDF in, Tally vouchers out. `gst/` is still an empty
+placeholder.
+
+```
+statement.pdf
+  -> integrations/pdf/      text and table cells
+  -> banking/parsers/       rows, proved against the statement's own balances
+  -> banking/models         persisted, deduplicated by content
+  -> classify/narration     channel, payee, reference pulled apart
+  -> classify/engine        rules applied; the rest queued for a person
+  -> ledger/vouchers        double entry derived, never stored
+  -> ledger/tally           Tally Prime import XML
+```
+
+Two ideas carry most of the weight, and both are the same idea: **make the
+wrong answer impossible to construct, rather than checking for it afterwards.**
+A statement that does not balance cannot become a `ParsedStatement`; a
+transaction with no ledger cannot become a voucher. Neither has a "validate
+this" call a caller can forget.
 
 ---
 
@@ -16,12 +32,21 @@ file. That single requirement drives the layout.
 core/            tenancy, users, RBAC, audit, crypto call sites
 integrations/    ALL external service calls, behind adapter interfaces
   storage/       dev: Cloudflare R2      beta: AWS S3
+  pdf/           pdfplumber              (text layer + table cells)
   ocr/           dev: stub (see below)   beta: Azure DI S0 / Document AI
   queue/         dev: Upstash Redis      beta: AWS SQS / ElastiCache
   kms/           dev: local Fernet       beta: AWS KMS
-  llm/           not wired this phase
-banking/ ledger/ gst/ classify/   structure only
+  llm/           declared, not wired
+banking/         statement parsing, ingestion, deduplication
+classify/        narration analysis, rules, the review queue
+ledger/          voucher derivation, Tally XML
+gst/             structure only
 ```
+
+`pdf/` is behind the adapter boundary even though pdfplumber runs in-process
+and is not a service. The rule is kept uniform on purpose: the day this moves
+to PyMuPDF or a hosted extractor, the question "what else imports it?" should
+have the same answer it has for boto3.
 
 **Nothing outside `integrations/` imports a vendor SDK.** Not `boto3`, not a
 Supabase client, not `redis`. `integrations/tests/test_adapter_swap.py` walks the
@@ -158,6 +183,121 @@ built by `StorageAdapter.tenant_key()` as `firms/<firm_id>/...`, and
 
 ---
 
+## Rule 4 — a statement is proved, not trusted
+
+A bank statement is one of the few documents in accounting that carries its own
+proof. Every row prints the balance after it; the header and footer print the
+balances either side of the lot. So a parse either reconstructs that chain
+exactly or it is wrong, with no middle state where the output is "mostly right".
+
+Every failure mode of PDF parsing is silent. A row lost at a page break, a debit
+read out of the credit column, a continuation line mistaken for a row,
+`1,00,000.00` losing a digit to a careless separator strip — none of these
+raise, and all of them break the chain. So `ParsedStatement.__post_init__`
+checks it and **refuses to construct** when it does not tie out, naming the row
+where the arithmetic first diverged. The printed footer totals are checked too,
+because they catch a compensating pair of errors that the chain alone would not.
+
+There is no unvalidated `ParsedStatement` for a caller to hold, so no caller has
+to remember to validate. Same shape as `OCRResult` refusing to exist when pages
+went missing, and `PdfDocument` refusing when a backend returned fewer pages
+than the document has.
+
+The practical consequence is that a new bank's format can be accepted without a
+human reading the output. Either it balances or it raises.
+
+### Why the extractor returns cells rather than text
+
+Flattened to a line, a row reads:
+
+```
+13-04-2025  Sweep/VO000000087559330/...  250.00  123939.43  318
+```
+
+and nothing in that string says whether the 250.00 was money in or money out.
+Indian bank statements are ruled tables, so a table extractor recovers Debit and
+Credit as separate cells and the direction is read rather than inferred. This is
+also why `integrations/pdf/` exposes tables at all instead of just text.
+
+---
+
+## Rule 5 — classification keys on the payee, and learns
+
+A narration is not free text; the bank builds it from a template.
+
+```
+UPI/P2M/092928654106/ZERODHA BROKING LIMIT/098336/HDFC BANK LTD
+^   ^   ^            ^                     ^      ^
+|   |   reference    counterparty          remark counterparty's bank
+|   person-to-merchant
+channel
+```
+
+`classify/narration.py` pulls those apart before anything matches, and that
+choice is what makes the feature viable rather than merely demoable. Matched as
+raw substrings, two narrations differing only in their reference number are
+different strings — every transaction needs its own rule and the rule table
+never converges. Matched on the counterparty, one rule covers a payee forever.
+
+From that follows the loop that makes the product worth paying for: a person
+places one of nine identical BHIM cashback credits and places all nine, and the
+rule is there for next month's statement. The queue shrinks each month instead
+of staying the same size. A new rule never overturns a decision a person already
+made — reclassification touches the queue only.
+
+Three details that are less obvious than they look:
+
+**Normalisation discards spaces, it does not collapse them.** The narration
+wraps at the PDF column edge, which lands mid-token as readily as on a space
+(`GODAVARI_RESTAU` / `RANT_`). Rejoining it is a coin flip, and guessing wrong
+gives one payee two match keys. Discarding spaces makes the question moot, and
+incidentally absorbs the bank's own inconsistency between `Ramesh Gopal
+Deshmukh` and `RameshGopalDeshmukh`.
+
+**Self-transfers are matched approximately.** A transfer between two accounts
+the client owns is a contra entry, not income or expenditure, and booking it as
+either inflates both sides of the books. But a bank does not spell its own
+customer's name consistently — one real statement writes the holder three ways
+across its header, a NEFT line and an RTGS line. The threshold sits where a
+spelling variant of one name matches and a relative sharing the surname does
+not, because that is the difference between a contra and drawings.
+
+**Seeds are deliberately thin.** Only what the bank itself did — interest it
+paid, charges it levied — plus transfers between the client's own accounts.
+Those mean the same thing in every set of books. A payee's meaning does not: the
+sample statement maps two payments to the *same broker* to two different ledgers,
+because one was a trade and one was an investment. Seeding a large opinionated
+chart of accounts would be a pile of wrong assumptions to hunt down later.
+
+---
+
+## Rule 6 — vouchers are derived, never stored
+
+A voucher's date, amount and narration come from the statement row; its other
+side comes from the classification. Both are already persisted and audited. A
+stored voucher would be a third copy to keep in step, and the first time a
+reviewer corrects a ledger it becomes a lie that still exports cleanly.
+
+The one genuinely treacherous detail is Tally's sign convention: **a negative
+`<AMOUNT>` is a debit and a positive one is a credit**, which is inverted from
+how anyone writes it down. Get it backwards and the import succeeds, the totals
+tie, and every entry in the client's books faces the wrong way. There is no
+error message anywhere in that sequence, so the tests in
+`ledger/tests/test_tally_export.py` are the error message.
+
+Two more Tally behaviours worth knowing before touching that exporter:
+
+- **An unknown ledger name is created, not rejected.** A trailing space or a
+  changed capitalisation silently starts a second ledger and splits the year
+  across the two. Masters are therefore exported alongside the vouchers, with
+  their groups, rather than letting Tally invent them — and masters come first
+  in the document, because Tally reads it in order.
+- **`REMOTEID` is what makes re-import safe.** "Export again after fixing three
+  classifications" is the normal case, not the exception. The id is derived from
+  the transaction's dedupe hash, so it is stable across exports.
+
+---
+
 ## On OCR — read before wiring a vendor
 
 **Do not use Azure Document Intelligence F0.** It allows 500 pages/month but
@@ -177,6 +317,43 @@ produce a plausible-looking result no matter who writes the adapter.
 
 ---
 
+## Two migration traps, both found the hard way
+
+Both bite any new firm-scoped table, and both produce an error that names the
+tenancy layer while the fault is elsewhere.
+
+**RLS cannot go in the same migration as the table.** Django opens one schema
+editor per migration and flushes its `deferred_sql` — where foreign key
+constraints live — when that editor closes, *after* every operation has run. So
+an `rls_operations()` call appended to a `CreateModel` migration is applied
+before the foreign keys are. Split them; see
+`banking/migrations/0002_row_level_security.py`.
+
+**A table-creating migration needs a tenant context of its own.** Adding a
+foreign key makes PostgreSQL validate it by scanning the child table and joining
+the parent:
+
+```sql
+SELECT fk.client_id FROM ONLY banking_bank_account fk
+LEFT OUTER JOIN ONLY core_client pk ON pk.id = fk.client_id
+WHERE pk.id IS NULL AND fk.client_id IS NOT NULL
+```
+
+`core_client` is already behind `FORCE ROW LEVEL SECURITY`, so that scan raises
+`tenant context missing` and takes the migration with it. FORCE is what makes it
+bite — the owner role running the migration is subject to the policies too,
+which is the entire point of FORCE and is not negotiable. The fix is
+`ddl_tenant_context_operations()` as the **first** operation of the migration:
+it sets a reserved firm id that matches nothing, which is enough to answer the
+scan. It has to be first because the deferred SQL flushes last, and the
+transaction-scoped setting is still in force then.
+
+The caveat is documented at the call site and is worth repeating: under that
+context the scan sees zero rows, so it validates nothing. Harmless for a
+migration that creates an empty table. For one that adds a foreign key to a
+populated table, validate per firm afterwards rather than trusting the
+constraint's VALID flag.
+
 ## Verifying the guarantees
 
 ```bash
@@ -184,6 +361,8 @@ python manage.py check --deploy --database default   # role privileges, middlewa
 python manage.py rls_status                          # live ENABLE/FORCE/policy per table
 pytest core/tests/test_rls_isolation.py              # cross-tenant attack suite
 pytest integrations/tests/test_adapter_swap.py       # adapter boundary + envelope crypto
+pytest banking/tests/test_balance_chain.py           # the arithmetic gate, attacked directly
+pytest ledger/tests/test_tally_export.py             # double entry and Tally's sign convention
 ```
 
 ## Confirmed assumptions

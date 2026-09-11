@@ -12,5 +12,6 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-"*/tests/*" = ["S105", "S106"]
+# Tests parse XML this codebase just produced, not anything untrusted.
+"*/tests/*" = ["S105", "S106", "S314"]
 "config/settings/*" = ["F403", "F405"]

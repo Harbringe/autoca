@@ -353,6 +353,8 @@ def _touch(model) -> dict:
         ("is_active", False),
         ("source_filename", "tampered.pdf"),
         ("narration", "tampered"),
+        ("pattern", "TAMPERED"),
+        ("counterparty", "TAMPERED"),
     ):
         if candidate in names:
             return {candidate: value}

@@ -8,37 +8,16 @@ that cannot express the isolation this system depends on.
 from __future__ import annotations
 
 import datetime
-import json
 from decimal import Decimal
 
 import pytest
 
 from banking.ingest import ingest_statement
 from banking.models import BankAccount, Statement, StatementTransaction
-from banking.tests.conftest import FIXTURES
 from core.db.session import firm_context
 from core.provisioning import create_client, create_firm
-from integrations.pdf.base import PdfDocument, PdfTextAdapter
 
-pytestmark = pytest.mark.django_db
-
-FIXTURE_JSON = json.loads(
-    (FIXTURES / "axis_savings_statement.json").read_text(encoding="utf-8")
-)
-
-
-class FixturePdfAdapter(PdfTextAdapter):
-    """Returns the captured statement regardless of the bytes handed to it.
-
-    Ingestion is being tested here, not extraction, and the input bytes still
-    matter: they are what the content hash and the stored object are built from.
-    """
-
-    def __init__(self, **_ignored):
-        pass
-
-    def extract(self, data: bytes) -> PdfDocument:
-        return PdfDocument.from_dict(FIXTURE_JSON)
+pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("fixture_adapters")]
 
 
 @pytest.fixture
@@ -49,25 +28,6 @@ def firm():
 @pytest.fixture
 def client(firm):
     return create_client(firm, "Ramesh Deshmukh", datetime.date(2025, 4, 1))
-
-
-@pytest.fixture(autouse=True)
-def _fixture_adapters(tmp_path, settings):
-    settings.INTEGRATIONS = {
-        **settings.INTEGRATIONS,
-        "pdf": "banking.tests.test_ingest.FixturePdfAdapter",
-        "storage": "integrations.storage.local.LocalStorageAdapter",
-    }
-    settings.INTEGRATION_OPTIONS = {
-        **settings.INTEGRATION_OPTIONS,
-        "pdf": {},
-        "storage": {"root": str(tmp_path / "storage")},
-    }
-    from integrations.registry import reset_adapter_cache
-
-    reset_adapter_cache()
-    yield
-    reset_adapter_cache()
 
 
 def test_ingest_creates_the_account_statement_and_every_row(client):

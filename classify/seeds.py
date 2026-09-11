@@ -1,0 +1,106 @@
+"""The rules that are true for every client, and the ledgers they need.
+
+Deliberately short. It is tempting to seed a large opinionated chart of accounts
+and a hundred merchant mappings, and it is the wrong instinct: a payee's meaning
+is a fact about a particular client's business, not about the payee. The same
+UPI credit from Zerodha is brokerage income to one client and a redemption of
+the proprietor's own investment to the next, and the sample statement this was
+built against maps two Zerodha payments to two different ledgers on exactly that
+basis.
+
+So only two kinds of rule are seeded:
+
+* what the *bank itself* did -- interest it paid, charges it levied. Those mean
+  the same thing in every set of books.
+* what the client did with their own money -- a transfer between two accounts
+  they own is a contra entry rather than income or expenditure, in every set of
+  books.
+
+Everything else is left to the review queue on the first statement and to
+learned rules thereafter. A firm reaches near-full automation within two or
+three months that way, and never has to hunt for a wrong seeded assumption.
+"""
+
+from __future__ import annotations
+
+from classify.models import (
+    ClassificationRule,
+    Direction,
+    LedgerAccount,
+    LedgerGroup,
+    MatchType,
+    RuleSource,
+)
+from classify.narration import Channel
+
+#: Seeds sit below learned and hand-written rules, so anything a firm decides
+#: for itself wins. See ``classify.engine.LEARNED_PRIORITY``.
+SEED_PRIORITY = 100
+
+#: (ledger name, Tally group)
+SEED_LEDGERS = [
+    ("Bank Interest Received", LedgerGroup.INDIRECT_INCOME),
+    ("Bank Charges", LedgerGroup.INDIRECT_EXPENSE),
+    ("Suspense A/c", LedgerGroup.SUSPENSE),
+]
+
+#: (ledger name, match type, pattern, direction)
+SEED_RULES = [
+    # The bank crediting the account's own interest. Income, always.
+    ("Bank Interest Received", MatchType.CHANNEL_IS, Channel.INTEREST, Direction.CREDIT),
+    # Interest the bank collected, and anything it called a charge or a fee.
+    ("Bank Charges", MatchType.CHANNEL_IS, Channel.INTEREST, Direction.DEBIT),
+    ("Bank Charges", MatchType.CHANNEL_IS, Channel.FEE, Direction.ANY),
+]
+
+
+def seed_client(client, *, created_by=None) -> dict[str, int]:
+    """Give ``client`` the ledgers and rules that are true regardless of trade.
+
+    Idempotent, so it is safe to call on every statement upload rather than
+    only at client creation -- which matters, because a client created before
+    this module existed would otherwise never get them.
+    """
+    ledgers = {}
+    ledgers_created = 0
+    for name, group in SEED_LEDGERS:
+        ledger, created = LedgerAccount.objects.get_or_create(
+            firm_id=client.firm_id, client=client, name=name, defaults={"group": group}
+        )
+        ledgers[name] = ledger
+        ledgers_created += created
+
+    rules_created = 0
+    for ledger_name, match_type, pattern, direction in SEED_RULES:
+        _, created = ClassificationRule.objects.get_or_create(
+            firm_id=client.firm_id,
+            client=client,
+            match_type=match_type,
+            pattern=pattern,
+            direction=direction,
+            defaults={
+                "ledger": ledgers[ledger_name],
+                "source": RuleSource.SEED,
+                "priority": SEED_PRIORITY,
+                "created_by": created_by,
+            },
+        )
+        rules_created += created
+
+    return {"ledgers": ledgers_created, "rules": rules_created}
+
+
+def contra_ledger_for(account) -> LedgerAccount:
+    """The ledger representing one of the client's own bank accounts.
+
+    A transfer between two accounts the client owns posts against the *other*
+    account's ledger, which makes the voucher a Contra. Creating it on demand
+    means the second account does not have to have been uploaded first.
+    """
+    ledger, _ = LedgerAccount.objects.get_or_create(
+        firm_id=account.firm_id,
+        client=account.client,
+        name=account.ledger_name,
+        defaults={"group": LedgerGroup.BANK},
+    )
+    return ledger

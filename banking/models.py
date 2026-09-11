@@ -42,6 +42,14 @@ class BankAccount(UUIDModel, FirmScopedModel):
     account_number = models.CharField(max_length=32)
     ifsc = models.CharField(max_length=16, blank=True)
 
+    #: The name as the *bank* prints it, which is rarely the name the firm filed
+    #: the client under. Classification compares narration parties against this
+    #: to spot transfers between the client's own accounts, and comparing
+    #: against the firm's label instead misses them: a client filed as "Ramesh
+    #: Deshmukh" appears in their own NEFT narrations as "Ramesh Gopal
+    #: Deshmukh", and those are a contra entry, not income.
+    account_holder = models.CharField(max_length=255, blank=True)
+
     #: The ledger name in the client's Tally company. Exported vouchers name
     #: this string, so it must match Tally exactly -- a near-miss creates a
     #: second ledger on import rather than failing.

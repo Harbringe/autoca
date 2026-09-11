@@ -16,6 +16,12 @@ import decimal
 import uuid
 
 from banking.models import BankAccount, Statement, StatementTransaction
+from classify.models import (
+    ClassificationRule,
+    LedgerAccount,
+    LedgerGroup,
+    TransactionClassification,
+)
 from core.models import AuditLog, Client, Firm, FirmMembership, Role, User
 
 
@@ -89,6 +95,35 @@ def _statement_transaction(firm, **kw):
     )
 
 
+def _ledger_account(firm, **kw):
+    return LedgerAccount.objects.create(
+        firm=firm,
+        client=kw.get("client") or _client(firm),
+        name=kw.get("name", f"Ledger {uuid.uuid4().hex[:8]}"),
+        group=kw.get("group", LedgerGroup.INDIRECT_EXPENSE),
+    )
+
+
+def _classification_rule(firm, **kw):
+    ledger = kw.get("ledger") or _ledger_account(firm)
+    return ClassificationRule.objects.create(
+        firm=firm,
+        client=ledger.client,
+        ledger=ledger,
+        pattern=kw.get("pattern", uuid.uuid4().hex[:10].upper()),
+    )
+
+
+def _transaction_classification(firm, **kw):
+    txn = kw.get("transaction") or _statement_transaction(firm)
+    return TransactionClassification.objects.create(
+        firm=firm,
+        transaction=txn,
+        counterparty="ACME TRADERS",
+        channel="UPI",
+    )
+
+
 #: model -> callable(firm, **kwargs) -> instance
 FACTORIES = {
     Client: _client,
@@ -97,6 +132,9 @@ FACTORIES = {
     BankAccount: _bank_account,
     Statement: _statement,
     StatementTransaction: _statement_transaction,
+    LedgerAccount: _ledger_account,
+    ClassificationRule: _classification_rule,
+    TransactionClassification: _transaction_classification,
 }
 
 #: Firm is firm-scoped by primary key rather than by a firm_id column, so it is

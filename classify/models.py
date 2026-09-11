@@ -1,6 +1,281 @@
-"""Placeholder. No models in this phase.
+"""Ledgers, the rules that map transactions onto them, and the results.
 
-When the first model lands here it must subclass core.models.FirmScopedModel and
-its migration must call core.db.rls.rls_operations("<table>"). The isolation
-suite discovers it automatically and will fail the build if either is missing.
+The product this supports is narrow and specific: a firm uploads a statement,
+the system proposes a ledger for every row, and a person looks only at the rows
+it could not place. Every decision that person makes becomes a rule, so the
+queue shrinks each month instead of staying the same size. A classifier that
+cannot learn is a classifier a firm stops using in week three.
+
+Three things follow from that, and they are why the schema looks like this:
+
+* A classification **points at** a transaction, it never edits one. The bank's
+  record of what happened and the firm's opinion about what it means are
+  separate facts, and re-classifying must not rewrite the first.
+* Every classification records *how* it was reached. "The rule that put 1,200
+  rows in Advance Tax was wrong" is a question a firm will ask, and answering it
+  needs the link, not a recomputation against rules that have since changed.
+* A rule is scoped to a client by default and can be promoted to the firm. Payee
+  meanings are not universal -- one firm's ``ZERODHA`` is a broker's fee, the
+  next firm's is the client's own investment -- and a rule table shared across
+  clients by default would quietly cross-contaminate their books.
 """
+
+from __future__ import annotations
+
+import re
+
+from django.db import models
+from django.utils import timezone
+
+from banking.models import StatementTransaction
+from core.models import Client, FirmScopedModel, User, UUIDModel
+
+
+class LedgerGroup(models.TextChoices):
+    """Tally's top-level groups, as far as this system needs to know them.
+
+    Stored on the ledger because the voucher exporter needs it: a transfer to
+    the client's own account at another bank is a Contra, and the only thing
+    that distinguishes it from a Payment is the group of the other ledger.
+    """
+
+    BANK = "BANK", "Bank Accounts"
+    CASH = "CASH", "Cash-in-Hand"
+    DEBTOR = "DEBTOR", "Sundry Debtors"
+    CREDITOR = "CREDITOR", "Sundry Creditors"
+    INDIRECT_EXPENSE = "INDIRECT_EXPENSE", "Indirect Expenses"
+    DIRECT_EXPENSE = "DIRECT_EXPENSE", "Direct Expenses"
+    INDIRECT_INCOME = "INDIRECT_INCOME", "Indirect Incomes"
+    DIRECT_INCOME = "DIRECT_INCOME", "Direct Incomes"
+    DUTIES_AND_TAXES = "DUTIES_AND_TAXES", "Duties & Taxes"
+    LOAN = "LOAN", "Loans (Liability)"
+    INVESTMENT = "INVESTMENT", "Investments"
+    CAPITAL = "CAPITAL", "Capital Account"
+    SUSPENSE = "SUSPENSE", "Suspense A/c"
+
+
+class LedgerAccount(UUIDModel, FirmScopedModel):
+    """A ledger in the client's Tally company.
+
+    ``name`` must match Tally exactly. Tally creates a ledger it does not
+    recognise rather than rejecting the import, so a typo does not fail loudly --
+    it silently splits a year of entries across "Advance Tax" and "Advance tax".
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="ledgers")
+    name = models.CharField(max_length=255)
+    group = models.CharField(
+        max_length=32, choices=LedgerGroup.choices, default=LedgerGroup.SUSPENSE
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "classify_ledger_account"
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["firm", "client", "name"], name="uniq_ledger_name_per_client"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
+
+    @property
+    def is_bank_or_cash(self) -> bool:
+        """True when posting against this ledger makes the voucher a Contra."""
+        return self.group in {LedgerGroup.BANK, LedgerGroup.CASH}
+
+
+class MatchType(models.TextChoices):
+    #: Normalised counterparty equals the pattern. The safest rule, and what
+    #: learning from a human decision produces.
+    PARTY_EQUALS = "PARTY_EQUALS", "Counterparty is exactly"
+    #: Normalised counterparty contains the pattern. For payees whose name the
+    #: bank truncates differently from one channel to the next.
+    PARTY_CONTAINS = "PARTY_CONTAINS", "Counterparty contains"
+    #: Anywhere in the normalised narration. The blunt instrument; use when the
+    #: counterparty could not be extracted.
+    NARRATION_CONTAINS = "NARRATION_CONTAINS", "Narration contains"
+    #: Every transaction on a channel, e.g. all card repayments.
+    CHANNEL_IS = "CHANNEL_IS", "Channel is"
+    REGEX = "REGEX", "Narration matches regular expression"
+
+
+class Direction(models.TextChoices):
+    ANY = "ANY", "Either"
+    DEBIT = "DEBIT", "Money out"
+    CREDIT = "CREDIT", "Money in"
+
+
+class RuleSource(models.TextChoices):
+    #: Shipped with the system. Channel-level accounting that is true for
+    #: everyone, e.g. interest the bank paid is income.
+    SEED = "SEED", "Built in"
+    #: Derived from a person's decision on a row they reviewed.
+    LEARNED = "LEARNED", "Learned from a review"
+    MANUAL = "MANUAL", "Written by hand"
+
+
+class ClassificationRule(UUIDModel, FirmScopedModel):
+    """One mapping from a narration pattern to a ledger."""
+
+    #: NULL means the rule applies to every client in the firm. Scoping to a
+    #: client is the default because payee meanings are not portable between
+    #: them; see the module docstring.
+    client = models.ForeignKey(
+        Client, on_delete=models.CASCADE, related_name="classification_rules", null=True, blank=True
+    )
+    ledger = models.ForeignKey(LedgerAccount, on_delete=models.CASCADE, related_name="rules")
+
+    match_type = models.CharField(
+        max_length=24, choices=MatchType.choices, default=MatchType.PARTY_EQUALS
+    )
+    #: Stored already normalised for the party and narration match types, so
+    #: matching never has to normalise on the read path.
+    pattern = models.CharField(max_length=255)
+    direction = models.CharField(max_length=8, choices=Direction.choices, default=Direction.ANY)
+
+    #: Higher wins. Client rules outrank firm rules, and both outrank seeds, by
+    #: convention of the values assigned in ``classify.seeds``.
+    priority = models.IntegerField(default=100)
+    source = models.CharField(max_length=16, choices=RuleSource.choices, default=RuleSource.LEARNED)
+    is_active = models.BooleanField(default=True)
+
+    #: Maintained by the engine. A rule that never fires is either dead weight
+    #: or a sign that the narration it was written for has changed shape.
+    hit_count = models.PositiveIntegerField(default=0)
+    last_hit_at = models.DateTimeField(null=True, blank=True)
+
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="classification_rules"
+    )
+
+    class Meta:
+        db_table = "classify_rule"
+        ordering = ["-priority", "pattern"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["firm", "client", "match_type", "pattern", "direction"],
+                name="uniq_rule_per_client_pattern",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["firm", "client", "is_active"], name="idx_rule_client_active"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_match_type_display()} {self.pattern!r} -> {self.ledger_id}"
+
+    def matches(self, facts, is_debit: bool) -> bool:
+        """True if this rule claims a transaction with these narration facts."""
+        if not self.is_active:
+            return False
+        if self.direction == Direction.DEBIT and not is_debit:
+            return False
+        if self.direction == Direction.CREDIT and is_debit:
+            return False
+
+        if self.match_type == MatchType.CHANNEL_IS:
+            return facts.channel == self.pattern
+        if self.match_type == MatchType.REGEX:
+            return bool(re.search(self.pattern, facts.raw, re.IGNORECASE))
+
+        from classify.narration import normalise
+
+        if self.match_type == MatchType.PARTY_EQUALS:
+            return bool(facts.counterparty) and normalise(facts.counterparty) == self.pattern
+        if self.match_type == MatchType.PARTY_CONTAINS:
+            return bool(facts.counterparty) and self.pattern in normalise(facts.counterparty)
+        return self.pattern in normalise(facts.raw)
+
+
+class ClassificationMethod(models.TextChoices):
+    RULE = "RULE", "Matched a rule"
+    #: No rule matched. The ledger is NULL and the row is queued for a person.
+    UNRESOLVED = "UNRESOLVED", "Awaiting review"
+    REVIEWED = "REVIEWED", "Set by a person"
+    LLM = "LLM", "Suggested by a language model"
+
+
+class TransactionClassification(UUIDModel, FirmScopedModel):
+    """What one transaction was taken to mean, and on whose authority."""
+
+    transaction = models.OneToOneField(
+        StatementTransaction, on_delete=models.CASCADE, related_name="classification"
+    )
+    #: NULL while unresolved. A null ledger and ``needs_review`` are the same
+    #: state said twice, which is deliberate: the queue is a cheap indexed
+    #: boolean lookup, and "unclassified" stays visible in a join that drops
+    #: nulls.
+    ledger = models.ForeignKey(
+        LedgerAccount, on_delete=models.PROTECT, related_name="classifications", null=True, blank=True
+    )
+    method = models.CharField(
+        max_length=16, choices=ClassificationMethod.choices, default=ClassificationMethod.UNRESOLVED
+    )
+    rule = models.ForeignKey(
+        ClassificationRule,
+        on_delete=models.SET_NULL,
+        related_name="classifications",
+        null=True,
+        blank=True,
+    )
+    confidence = models.FloatField(default=0.0)
+    needs_review = models.BooleanField(default=True)
+
+    #: Facts read out of the narration at classification time, kept so the
+    #: review screen can show why a row was placed where it was without
+    #: re-deriving them against code that has since changed.
+    channel = models.CharField(max_length=16, blank=True)
+    counterparty = models.CharField(max_length=255, blank=True)
+    is_self_transfer = models.BooleanField(default=False)
+
+    reviewed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="classifications"
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "classify_transaction_classification"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["firm", "transaction"], name="uniq_classification_per_transaction"
+            ),
+            # An unresolved row has no ledger, and a resolved one has no reason
+            # to claim it is unresolved. Keeping the two in step in the database
+            # means the review queue cannot drift from what is actually placed.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(method="UNRESOLVED", ledger__isnull=True)
+                    | ~models.Q(method="UNRESOLVED") & models.Q(ledger__isnull=False)
+                ),
+                name="ck_unresolved_has_no_ledger",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["firm", "needs_review"], name="idx_classification_queue"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.transaction_id} -> {self.ledger_id or 'unresolved'}"
+
+    def resolve(self, ledger: LedgerAccount, user=None, *, method=ClassificationMethod.REVIEWED):
+        """Place this row in a ledger on a person's authority."""
+        self.ledger = ledger
+        self.method = method
+        self.confidence = 1.0
+        self.needs_review = False
+        self.reviewed_by = user
+        self.reviewed_at = timezone.now()
+        self.save(
+            update_fields=[
+                "ledger",
+                "method",
+                "confidence",
+                "needs_review",
+                "reviewed_by",
+                "reviewed_at",
+            ]
+        )
+        return self

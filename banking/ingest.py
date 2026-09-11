@@ -114,11 +114,15 @@ def _account_for(client: Client, parsed: ParsedStatement) -> BankAccount:
         client=client,
         bank_code=parsed.bank_code,
         account_number=parsed.account_number,
-        defaults={"ifsc": parsed.ifsc},
+        defaults={"ifsc": parsed.ifsc, "account_holder": parsed.account_holder},
     )
-    if not created and parsed.ifsc and account.ifsc != parsed.ifsc:
-        account.ifsc = parsed.ifsc
-        account.save(update_fields=["ifsc"])
+    if not created:
+        latest = {"ifsc": parsed.ifsc, "account_holder": parsed.account_holder}
+        changed = [f for f, value in latest.items() if value and getattr(account, f) != value]
+        for field in changed:
+            setattr(account, field, latest[field])
+        if changed:
+            account.save(update_fields=changed)
     return account
 
 

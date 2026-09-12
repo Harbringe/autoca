@@ -1,4 +1,4 @@
-"""Put the banking tables behind tenant isolation.
+"""Put the documents tables behind tenant isolation.
 
 Separate from the migration that creates them, and it has to be. Django opens
 one schema editor per migration and flushes its deferred SQL -- which is where
@@ -10,15 +10,12 @@ can no longer read.
 
 from django.db import migrations
 
-from core.db.rls import rls_operations, sequence_grant_sql
+from core.db.rls import rls_operations
 
 
 class Migration(migrations.Migration):
-    dependencies = [("banking", "0001_initial")]
+    dependencies = [("documents", "0001_initial")]
 
     operations = [
-        *rls_operations("banking_bank_account"),
-        *rls_operations("banking_statement"),
-        *rls_operations("banking_statement_transaction"),
-        migrations.RunSQL(sql=sequence_grant_sql(), reverse_sql=migrations.RunSQL.noop),
+        *rls_operations("documents_document"),
     ]

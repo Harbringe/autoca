@@ -349,10 +349,11 @@ def _touch(model) -> dict:
     for candidate, value in (
         ("name", f"tampered-{uuid.uuid4().hex[:6]}"),
         ("path", "/tampered/"),
-        ("role", "OWNER"),
+        ("role", "SENIOR_CA"),
         ("is_active", False),
-        ("source_filename", "tampered.pdf"),
+        ("original_filename", "tampered.pdf"),
         ("narration", "tampered"),
+        ("parser", "TAMPERED"),
         ("pattern", "TAMPERED"),
         ("counterparty", "TAMPERED"),
     ):

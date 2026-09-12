@@ -24,7 +24,6 @@ import re
 from integrations.pdf.base import PdfDocument
 
 from .base import (
-    ZERO,
     ParsedStatement,
     ParsedTransaction,
     StatementParseError,
@@ -75,6 +74,7 @@ def _normalise_header(cell: str) -> str:
 
 class AxisStatementParser(StatementParser):
     bank_code = "AXIS"
+    version = 1
 
     @classmethod
     def detect(cls, document: PdfDocument) -> bool:
@@ -145,10 +145,10 @@ class AxisStatementParser(StatementParser):
             ifsc=ifsc.group(1).upper() if ifsc else "",
             period_start=period_start,
             period_end=period_end,
-            opening_balance=opening,
-            closing_balance=closing,
-            stated_total_debit=total_debit,
-            stated_total_credit=total_credit,
+            opening_balance_paise=opening,
+            closing_balance_paise=closing,
+            stated_total_debit_paise=total_debit,
+            stated_total_credit_paise=total_credit,
             transactions=tuple(transactions),
         )
 
@@ -181,9 +181,9 @@ class AxisStatementParser(StatementParser):
             date=date,
             narration=collapse_whitespace(cell.get("narration")),
             cheque_number=collapse_whitespace(cell.get("cheque_number")),
-            debit=parse_amount(cell.get("debit")) or ZERO,
-            credit=parse_amount(cell.get("credit")) or ZERO,
-            balance=parse_amount(cell.get("balance")) or ZERO,
+            debit_paise=parse_amount(cell.get("debit")) or 0,
+            credit_paise=parse_amount(cell.get("credit")) or 0,
+            balance_paise=parse_amount(cell.get("balance")) or 0,
             branch_code=collapse_whitespace(cell.get("branch_code")),
         )
 

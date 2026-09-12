@@ -71,7 +71,8 @@ INSTALLED_APPS = [
     # First-party
     "core",
     "integrations",
-    # Feature apps: structure only in this phase, no models yet.
+    "documents",
+    # Feature apps.
     "banking",
     "ledger",
     "gst",
@@ -162,6 +163,12 @@ DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 # The Postgres GUC every RLS policy reads. Changing this means changing every
 # policy, so it is defined in exactly one place.
 TENANT_GUC = "app.firm_id"
+
+# Keys every deterministic lookup column for an encrypted identifier -- bank
+# account numbers today, GSTIN and PAN when the GST module lands. Generated once
+# and kept: rotating it makes every existing blind index unfindable, which is a
+# data migration, not a config change. See core/crypto.blind_index.
+BLIND_INDEX_KEY = env("BLIND_INDEX_KEY", "")
 
 # Set before the firm GUC, and only ever read by the membership bootstrap
 # policy. It exists so that "which firm am I in?" can be answered under RLS

@@ -1,24 +1,21 @@
 """Bank accounts, statements, and the transaction rows read out of them.
 
-These are the first firm-scoped tables outside ``core``. Each one subclasses
-:class:`~core.models.FirmScopedModel` and gets an RLS policy in the migration
-that creates it; the isolation suite discovers them automatically and fails the
-build if either half is missing.
+Three things here are worth understanding before changing anything:
 
-Design notes worth keeping in mind when extending this:
+* **Rows are facts, not judgements.** Nothing in this app says what a
+  transaction *means* -- no ledger, no party, no tax treatment. That lives in
+  ``classify/`` and points back at these rows, so re-classifying never rewrites
+  the bank's own record of what happened.
+* **Money is a whole number of paise**, in fields named ``*_paise``. See
+  ``core/money.py`` for why the unit is in the field name.
+* **The account number is encrypted**, with a keyed fingerprint beside it so
+  rows can still be found. Statements arrive naming an account; matching that
+  name to a row is the one operation the ciphertext cannot serve, which is
+  exactly what the blind index is for.
 
-* Rows are **facts**, not judgements. Nothing here says what a transaction
-  *means* -- no ledger, no category, no party. That lives in ``classify/`` and
-  points back at these rows, so a re-classification never rewrites the bank's
-  own record of what happened.
-* ``dedupe_hash`` makes re-uploading an overlapping period safe. CA firms do
-  this constantly: a client sends April-September in October and April-March in
-  April, and the six months in the middle must not double up. The hash includes
-  the running balance, which is what distinguishes two genuinely separate
-  transactions that happen to share a date, narration and amount.
-* Money is ``Decimal``, never float. A statement that ties out to the paisa in
-  Decimal will not in binary floating point, and the balance chain check in
-  ``banking/parsers/base.py`` would start failing on correct parses.
+``dedupe_hash`` is what makes re-uploading an overlapping period safe. CA firms
+do this constantly -- a client sends April-September in October and April-March
+in April, and the six months in the middle must not double up.
 """
 
 from __future__ import annotations
@@ -27,11 +24,14 @@ import hashlib
 
 from django.db import models
 
+from core.crypto import blind_index, decrypt_text_for_firm, encrypt_for_firm
 from core.models import Client, FirmScopedModel, UUIDModel
+from documents.models import Document
 
-#: 18 digits is comfortably past any Indian client's turnover, and two decimal
-#: places is the paisa. Both are fixed here so no table drifts.
-MONEY = {"max_digits": 18, "decimal_places": 2}
+#: Encryption context domain. A ciphertext minted for a bank account will not
+#: decrypt when handed to code expecting GST data, which turns a whole class of
+#: "wrong blob, right firm" bugs into a hard error.
+CRYPTO_PURPOSE = "banking.account"
 
 
 class BankAccount(UUIDModel, FirmScopedModel):
@@ -39,36 +39,88 @@ class BankAccount(UUIDModel, FirmScopedModel):
 
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="bank_accounts")
     bank_code = models.CharField(max_length=16, help_text="Parser identifier, e.g. AXIS.")
-    account_number = models.CharField(max_length=32)
-    ifsc = models.CharField(max_length=16, blank=True)
 
-    #: The name as the *bank* prints it, which is rarely the name the firm filed
-    #: the client under. Classification compares narration parties against this
-    #: to spot transfers between the client's own accounts, and comparing
-    #: against the firm's label instead misses them: a client filed as "Ramesh
-    #: Deshmukh" appears in their own NEFT narrations as "Ramesh Gopal
-    #: Deshmukh", and those are a contra entry, not income.
-    account_holder = models.CharField(max_length=255, blank=True)
+    #: AES-256-GCM under the firm's data key, bound to the firm id as additional
+    #: authenticated data. Never read directly -- use ``account_number``.
+    account_number_enc = models.BinaryField()
+    #: Keyed fingerprint of the account number, for lookup and uniqueness. Not
+    #: reversible; see ``core.crypto.blind_index``.
+    account_number_hash = models.CharField(max_length=64, db_index=True)
+    #: For display: "Axis ••••7214" without decrypting anything.
+    account_last4 = models.CharField(max_length=4, blank=True)
+
+    #: The holder's name as the *bank* prints it, encrypted. Classification
+    #: compares narration parties against this to spot transfers between the
+    #: client's own accounts; comparing against the firm's label for the client
+    #: misses them, because a client filed as "Ramesh Deshmukh" appears in their
+    #: own NEFT narrations as "Ramesh Gopal Deshmukh".
+    account_holder_enc = models.BinaryField(blank=True, null=True)
+
+    ifsc = models.CharField(max_length=16, blank=True)
 
     #: The ledger name in the client's Tally company. Exported vouchers name
     #: this string, so it must match Tally exactly -- a near-miss creates a
     #: second ledger on import rather than failing.
     ledger_name = models.CharField(max_length=255, blank=True)
 
+    #: Explicitly confirmed, never assumed to be zero. A client onboarding in
+    #: October has nine months of history this system will never see, and
+    #: starting their books at zero misstates every balance from then on.
+    opening_balance_paise = models.BigIntegerField(null=True, blank=True)
+    opening_as_of = models.DateField(null=True, blank=True)
+
     is_active = models.BooleanField(default=True)
 
     class Meta:
         db_table = "banking_bank_account"
-        ordering = ["bank_code", "account_number"]
+        ordering = ["bank_code", "account_last4"]
         constraints = [
             models.UniqueConstraint(
-                fields=["firm", "client", "bank_code", "account_number"],
+                fields=["firm", "client", "bank_code", "account_number_hash"],
                 name="uniq_bank_account_per_client",
+            ),
+            # An opening balance without a date is meaningless, and a date
+            # without a balance is a half-finished confirmation.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(opening_balance_paise__isnull=True, opening_as_of__isnull=True)
+                    | models.Q(opening_balance_paise__isnull=False, opening_as_of__isnull=False)
+                ),
+                name="ck_opening_balance_has_a_date",
             ),
         ]
 
     def __str__(self) -> str:
-        return self.ledger_name or f"{self.bank_code} A/c {self.account_number}"
+        return self.ledger_name or f"{self.bank_code} ••••{self.account_last4}"
+
+    # -- the encrypted pair, handled in one place -----------------------------
+
+    @property
+    def account_number(self) -> str:
+        return decrypt_text_for_firm(bytes(self.account_number_enc), self.firm_id, CRYPTO_PURPOSE)
+
+    @property
+    def account_holder(self) -> str:
+        if not self.account_holder_enc:
+            return ""
+        return decrypt_text_for_firm(bytes(self.account_holder_enc), self.firm_id, CRYPTO_PURPOSE)
+
+    def set_account_number(self, number: str) -> None:
+        """Set all three columns together. They must never disagree."""
+        number = number.strip()
+        self.account_number_enc = encrypt_for_firm(number, self.firm_id, CRYPTO_PURPOSE)
+        self.account_number_hash = blind_index(number, self.firm_id, CRYPTO_PURPOSE)
+        self.account_last4 = number[-4:]
+
+    def set_account_holder(self, name: str) -> None:
+        self.account_holder_enc = (
+            encrypt_for_firm(name.strip(), self.firm_id, CRYPTO_PURPOSE) if name else None
+        )
+
+    @classmethod
+    def lookup_hash(cls, number: str, firm_id) -> str:
+        """The value to filter ``account_number_hash`` on."""
+        return blind_index(number.strip(), firm_id, CRYPTO_PURPOSE)
 
     def save(self, *args, **kwargs):
         if not self.ledger_name:
@@ -79,52 +131,56 @@ class BankAccount(UUIDModel, FirmScopedModel):
         """Tally's own convention for a bank ledger, matched by the sample data."""
         return f"{self.bank_code.title()} Bank A/c {self.account_number}"
 
+    @property
+    def has_opening_balance(self) -> bool:
+        return self.opening_balance_paise is not None
+
 
 class Statement(UUIDModel, FirmScopedModel):
-    """One parsed statement file.
+    """What was read out of one bank-statement document.
 
-    The balances and totals here are the *statement's own* figures, copied
-    verbatim. They are what the transaction rows were proved against at parse
-    time, and keeping them makes that proof re-runnable later against rows that
-    may since have been edited.
+    The file itself is a :class:`~documents.models.Document`; this is the parse
+    of it. Splitting them matters when a parser bug is fixed and re-run: the
+    file is unchanged and keeps its identity, while everything derived from it
+    is replaceable.
+
+    The balances here are the *statement's own* figures, copied verbatim. They
+    are what the rows were proved against at parse time, which makes that proof
+    re-runnable later and makes the month-end check possible at all.
     """
 
+    document = models.OneToOneField(Document, on_delete=models.CASCADE, related_name="statement")
     bank_account = models.ForeignKey(
         BankAccount, on_delete=models.CASCADE, related_name="statements"
     )
 
-    source_filename = models.CharField(max_length=255, blank=True)
-    #: SHA-256 of the uploaded bytes. The idempotency key: the same file
-    #: uploaded twice is the same statement, whatever it was named.
-    source_sha256 = models.CharField(max_length=64, db_index=True)
-    storage_key = models.CharField(max_length=512, blank=True)
-
     period_start = models.DateField()
     period_end = models.DateField()
-    opening_balance = models.DecimalField(**MONEY)
-    closing_balance = models.DecimalField(**MONEY)
-    total_debit = models.DecimalField(**MONEY)
-    total_credit = models.DecimalField(**MONEY)
+    opening_balance_paise = models.BigIntegerField()
+    closing_balance_paise = models.BigIntegerField()
+    total_debit_paise = models.BigIntegerField()
+    total_credit_paise = models.BigIntegerField()
     transaction_count = models.PositiveIntegerField(default=0)
 
     parser = models.CharField(max_length=64, blank=True)
-    page_count = models.PositiveSmallIntegerField(default=0)
+    #: Bumped whenever a parser's output could change. A parser bug can then be
+    #: re-run against exactly the statements it affected, rather than against
+    #: everything or against a list someone kept by hand.
+    parser_version = models.PositiveIntegerField(default=1)
 
     class Meta:
         db_table = "banking_statement"
         ordering = ["-period_end", "-created_at"]
-        constraints = [
-            models.UniqueConstraint(
-                fields=["firm", "bank_account", "source_sha256"],
-                name="uniq_statement_per_source_file",
-            ),
-        ]
         indexes = [
-            models.Index(fields=["firm", "bank_account", "period_start"], name="idx_stmt_account_period"),
+            models.Index(
+                fields=["firm", "bank_account", "period_start"], name="idx_stmt_account_period"
+            ),
         ]
 
     def __str__(self) -> str:
-        return f"{self.bank_account} {self.period_start:%d-%m-%Y} to {self.period_end:%d-%m-%Y}"
+        return (
+            f"{self.bank_account} {self.period_start:%d-%m-%Y} to {self.period_end:%d-%m-%Y}"
+        )
 
 
 class StatementTransaction(UUIDModel, FirmScopedModel):
@@ -133,9 +189,8 @@ class StatementTransaction(UUIDModel, FirmScopedModel):
     statement = models.ForeignKey(
         Statement, on_delete=models.CASCADE, related_name="transactions"
     )
-    #: Denormalised from ``statement``. Classification and ledger export query
-    #: by account across statements, and this keeps that off a join that would
-    #: otherwise be on every read path.
+    #: Denormalised from ``statement``. Classification and the ledger query by
+    #: account across statements, and this keeps that off a join on every read.
     bank_account = models.ForeignKey(
         BankAccount, on_delete=models.CASCADE, related_name="transactions"
     )
@@ -144,9 +199,9 @@ class StatementTransaction(UUIDModel, FirmScopedModel):
     value_date = models.DateField()
     narration = models.TextField(help_text="The bank's particulars, line wrapping removed.")
     cheque_number = models.CharField(max_length=32, blank=True)
-    debit = models.DecimalField(default=0, **MONEY)
-    credit = models.DecimalField(default=0, **MONEY)
-    balance = models.DecimalField(**MONEY)
+    debit_paise = models.BigIntegerField(default=0)
+    credit_paise = models.BigIntegerField(default=0)
+    balance_paise = models.BigIntegerField()
     branch_code = models.CharField(max_length=16, blank=True)
 
     dedupe_hash = models.CharField(max_length=64)
@@ -159,57 +214,69 @@ class StatementTransaction(UUIDModel, FirmScopedModel):
                 fields=["firm", "statement", "row_number"],
                 name="uniq_transaction_row_per_statement",
             ),
-            # The real idempotency boundary: the same transaction never lands
-            # twice for an account, even from two overlapping statement files.
+            # The real idempotency boundary: one transaction never lands twice
+            # for an account, even from two overlapping statement files.
             models.UniqueConstraint(
                 fields=["firm", "bank_account", "dedupe_hash"],
                 name="uniq_transaction_per_account",
             ),
             models.CheckConstraint(
-                condition=models.Q(debit__gte=0) & models.Q(credit__gte=0),
+                condition=models.Q(debit_paise__gte=0) & models.Q(credit_paise__gte=0),
                 name="ck_transaction_amounts_non_negative",
             ),
             # Direction is carried by the column, so exactly one side is filled.
-            # A row with both or neither means the parse went wrong upstream.
+            # Both or neither means the parse went wrong upstream.
             models.CheckConstraint(
                 condition=(
-                    (models.Q(debit__gt=0) & models.Q(credit=0))
-                    | (models.Q(debit=0) & models.Q(credit__gt=0))
+                    (models.Q(debit_paise__gt=0) & models.Q(credit_paise=0))
+                    | (models.Q(debit_paise=0) & models.Q(credit_paise__gt=0))
                 ),
                 name="ck_transaction_is_one_sided",
             ),
         ]
         indexes = [
-            models.Index(fields=["firm", "bank_account", "value_date"], name="idx_txn_account_date"),
+            models.Index(
+                fields=["firm", "bank_account", "value_date"], name="idx_txn_account_date"
+            ),
         ]
 
     def __str__(self) -> str:
-        side = "Dr" if self.is_debit else "Cr"
-        return f"{self.value_date:%d-%m-%Y} {self.amount} {side}"
+        return f"{self.value_date:%d-%m-%Y} {self.amount_paise} {'Dr' if self.is_debit else 'Cr'}"
 
     @property
     def is_debit(self) -> bool:
-        return self.debit > 0
+        return self.debit_paise > 0
 
     @property
-    def amount(self):
-        return self.debit if self.is_debit else self.credit
+    def amount_paise(self) -> int:
+        return self.debit_paise if self.is_debit else self.credit_paise
+
+    @property
+    def signed_paise(self) -> int:
+        """Effect on the balance: negative for money out."""
+        return self.credit_paise - self.debit_paise
 
     @staticmethod
-    def compute_dedupe_hash(*, account_number, value_date, narration, debit, credit, balance) -> str:
+    def compute_dedupe_hash(
+        *, account_hash: str, value_date, narration: str, debit_paise: int, credit_paise: int,
+        balance_paise: int,
+    ) -> str:
         """Identity of a transaction, independent of which file it arrived in.
 
-        The balance is part of it on purpose. Two payments of the same amount to
-        the same payee on the same day are genuinely distinct rows, and the only
-        thing on the statement that distinguishes them is the running balance
-        after each.
+        The running balance is part of it on purpose. Two payments of the same
+        amount to the same payee on the same day are genuinely distinct rows,
+        and the balance after each is the only thing on the statement that
+        tells them apart.
+
+        Keyed on the account's blind index rather than its number, so no
+        plaintext account number is reconstructible from this column.
         """
         parts = [
-            str(account_number),
+            account_hash,
             value_date.isoformat(),
             " ".join(str(narration).split()).upper(),
-            f"{debit:.2f}",
-            f"{credit:.2f}",
-            f"{balance:.2f}",
+            str(int(debit_paise)),
+            str(int(credit_paise)),
+            str(int(balance_paise)),
         ]
         return hashlib.sha256("|".join(parts).encode()).hexdigest()

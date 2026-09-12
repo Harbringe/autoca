@@ -30,8 +30,8 @@ from __future__ import annotations
 
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass
-from decimal import Decimal
 
+from core.money import format_inr, to_rupees
 from ledger.vouchers import Voucher, build_voucher, ledger_master_group
 
 
@@ -64,8 +64,8 @@ def export_statement(statement, *, company_name: str, include_masters: bool = Tr
         classification = transaction.classification
         if classification.ledger is None:
             skipped.append(
-                f"{transaction.value_date:%d-%m-%Y} {transaction.amount} "
-                f"{transaction.narration[:50]}"
+                f"{transaction.value_date:%d-%m-%Y} "
+                f"{format_inr(transaction.amount_paise)} {transaction.narration[:50]}"
             )
             continue
         vouchers.append(build_voucher(classification))
@@ -153,11 +153,14 @@ def _append_voucher(parent, voucher: Voucher) -> None:
         entry = ET.SubElement(node, "ALLLEDGERENTRIES.LIST")
         ET.SubElement(entry, "LEDGERNAME").text = line.ledger_name
         ET.SubElement(entry, "ISDEEMEDPOSITIVE").text = line.is_deemed_positive
-        ET.SubElement(entry, "AMOUNT").text = _amount(line.amount)
+        ET.SubElement(entry, "AMOUNT").text = _amount(line.amount_paise)
 
 
-def _amount(value: Decimal) -> str:
-    return f"{value:.2f}"
+def _amount(paise: int) -> str:
+    """Rupees with two decimals -- Tally's wire format, and the only place the
+    ledger leaves paise. Exact, because the conversion is a Decimal divide by
+    100 rather than a float one."""
+    return f"{to_rupees(paise):.2f}"
 
 
 def _pretty(element) -> str:

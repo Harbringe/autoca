@@ -148,7 +148,12 @@ class User(UUIDModel, AbstractBaseUser, PermissionsMixin):
 
 
 class Role(models.TextChoices):
-    """One role per firm-user, for now.
+    """One role per firm-user.
+
+    The split that matters is between preparing and approving. A CA carries
+    personal legal responsibility for what is filed, so approval -- the moment a
+    suggestion becomes an immutable ledger entry -- is restricted to the two
+    senior roles, enforced server-side rather than by hiding a button.
 
     Intra-firm, per-client RBAC is a later phase. The hook for it is
     ``FirmMembership.scope_all_clients`` plus ``accessible_clients()`` -- adding
@@ -156,8 +161,17 @@ class Role(models.TextChoices):
     rewrite of every call site.
     """
 
-    OWNER = "OWNER", "Owner"
+    FIRM_ADMIN = "FIRM_ADMIN", "Firm administrator"
+    SENIOR_CA = "SENIOR_CA", "Senior CA"
     STAFF = "STAFF", "Staff"
+    READ_ONLY = "READ_ONLY", "Read only"
+
+
+#: Roles that may turn a suggestion into a posted journal entry.
+APPROVER_ROLES = frozenset({Role.FIRM_ADMIN, Role.SENIOR_CA})
+
+#: Roles that may create or edit anything at all.
+PREPARER_ROLES = frozenset({Role.FIRM_ADMIN, Role.SENIOR_CA, Role.STAFF})
 
 
 class FirmMembership(UUIDModel, FirmScopedModel):
@@ -180,6 +194,16 @@ class FirmMembership(UUIDModel, FirmScopedModel):
 
     def __str__(self) -> str:
         return f"{self.user_id} @ {self.firm_id} ({self.role})"
+
+    @property
+    def can_approve(self) -> bool:
+        """May post entries to the immutable ledger. Checked server-side."""
+        return self.is_active and self.role in APPROVER_ROLES
+
+    @property
+    def can_prepare(self) -> bool:
+        """May create and edit staged suggestions."""
+        return self.is_active and self.role in PREPARER_ROLES
 
     def accessible_clients(self):
         """Clients this membership may act on.

@@ -12,7 +12,6 @@ the suite immediately starts attacking it from the wrong tenant.
 from __future__ import annotations
 
 import datetime
-import decimal
 import uuid
 
 from banking.models import BankAccount, Statement, StatementTransaction
@@ -23,6 +22,7 @@ from classify.models import (
     TransactionClassification,
 )
 from core.models import AuditLog, Client, Firm, FirmMembership, Role, User
+from documents.models import Document, DocumentKind
 
 
 def _client(firm, **kw):
@@ -52,12 +52,25 @@ def _audit(firm, **kw):
 
 
 def _bank_account(firm, **kw):
-    return BankAccount.objects.create(
+    account = BankAccount(
         firm=firm,
         client=kw.get("client") or _client(firm),
         bank_code=kw.get("bank_code", "AXIS"),
-        account_number=kw.get("account_number", uuid.uuid4().int % 10**15),
         ifsc=kw.get("ifsc", "UTIB0000318"),
+    )
+    account.set_account_number(str(kw.get("account_number", uuid.uuid4().int % 10**15)))
+    account.set_account_holder(kw.get("account_holder", "RAMESH GOPAL DESHMUKH"))
+    account.save()
+    return account
+
+
+def _document(firm, **kw):
+    return Document.objects.create(
+        firm=firm,
+        client=kw.get("client") or _client(firm),
+        kind=kw.get("kind", DocumentKind.BANK_STATEMENT),
+        original_filename="statement.pdf",
+        sha256=kw.get("sha256", uuid.uuid4().hex * 2),
     )
 
 
@@ -65,15 +78,14 @@ def _statement(firm, **kw):
     account = kw.get("bank_account") or _bank_account(firm)
     return Statement.objects.create(
         firm=firm,
+        document=kw.get("document") or _document(firm, client=account.client),
         bank_account=account,
-        source_filename="statement.pdf",
-        source_sha256=uuid.uuid4().hex * 2,
         period_start=datetime.date(2025, 4, 1),
         period_end=datetime.date(2026, 3, 31),
-        opening_balance=decimal.Decimal("1000.00"),
-        closing_balance=decimal.Decimal("900.00"),
-        total_debit=decimal.Decimal("100.00"),
-        total_credit=decimal.Decimal("0.00"),
+        opening_balance_paise=100_000,
+        closing_balance_paise=90_000,
+        total_debit_paise=10_000,
+        total_credit_paise=0,
         transaction_count=1,
         parser="AXIS",
     )
@@ -88,9 +100,9 @@ def _statement_transaction(firm, **kw):
         row_number=kw.get("row_number", 1),
         value_date=datetime.date(2025, 4, 13),
         narration="Sweep/VO000000087559330/19000014841287",
-        debit=decimal.Decimal("100.00"),
-        credit=decimal.Decimal("0.00"),
-        balance=decimal.Decimal("900.00"),
+        debit_paise=10_000,
+        credit_paise=0,
+        balance_paise=90_000,
         dedupe_hash=uuid.uuid4().hex * 2,
     )
 
@@ -129,6 +141,7 @@ FACTORIES = {
     Client: _client,
     FirmMembership: _membership,
     AuditLog: _audit,
+    Document: _document,
     BankAccount: _bank_account,
     Statement: _statement,
     StatementTransaction: _statement_transaction,

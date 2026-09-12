@@ -13,9 +13,9 @@ here is mechanical.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
 
 from classify.models import LedgerGroup
+from core.money import format_inr
 
 
 class VoucherType:
@@ -37,11 +37,11 @@ class VoucherLine:
     #: debit and a positive one is a credit. This trips up everyone who writes a
     #: Tally importer, and the failure is quiet -- the voucher imports, the
     #: totals are right, and every entry is the wrong way round.
-    amount: Decimal
+    amount_paise: int
 
     @property
     def is_debit(self) -> bool:
-        return self.amount < 0
+        return self.amount_paise < 0
 
     @property
     def is_deemed_positive(self) -> str:
@@ -63,10 +63,10 @@ class Voucher:
     reference: str = ""
 
     def __post_init__(self):
-        total = sum(line.amount for line in self.lines)
+        total = sum(line.amount_paise for line in self.lines)
         if total != 0:
             raise ValueError(
-                f"Voucher does not balance: lines sum to {total}, not zero. "
+                f"Voucher does not balance: lines sum to {format_inr(total)}, not zero. "
                 f"Tally would reject this, but only after importing everything "
                 f"before it."
             )
@@ -111,7 +111,7 @@ def build_voucher(classification) -> Voucher:
         )
 
     bank_ledger = transaction.bank_account.ledger_name
-    amount = transaction.amount
+    amount = transaction.amount_paise
 
     # Money out: debit the other ledger, credit the bank. Money in: the reverse.
     # Negative is the debit side; see VoucherLine.amount.

@@ -1,9 +1,11 @@
-"""Put the classification tables behind tenant isolation.
+"""Put the classify tables behind tenant isolation.
 
-Separate from the migration that creates them, for the reason set out in
-``banking/migrations/0002_row_level_security.py``: Django flushes a migration's
-foreign key SQL after every operation has run, so a policy applied in the same
-migration is in force when PostgreSQL validates those keys.
+Separate from the migration that creates them, and it has to be. Django opens
+one schema editor per migration and flushes its deferred SQL -- which is where
+foreign key constraints live -- when that editor closes, after every operation
+has run. A policy applied in the same migration is therefore already in force
+when PostgreSQL validates those keys, and the validation scan dies on a table it
+can no longer read.
 """
 
 from django.db import migrations

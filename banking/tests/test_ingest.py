@@ -8,7 +8,6 @@ that cannot express the isolation this system depends on.
 from __future__ import annotations
 
 import datetime
-from decimal import Decimal
 
 import pytest
 
@@ -16,6 +15,7 @@ from banking.ingest import ingest_statement
 from banking.models import BankAccount, Statement, StatementTransaction
 from core.db.session import firm_context
 from core.provisioning import create_client, create_firm
+from documents.models import Document
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("fixture_adapters")]
 
@@ -42,11 +42,12 @@ def test_ingest_creates_the_account_statement_and_every_row(client):
         assert account.bank_code == "AXIS"
         assert account.account_number == "911010000004321"
         assert account.ifsc == "UTIB0000318"
+        assert account.account_last4 == "4321"
 
         statement = result.statement
         assert statement.period_start == datetime.date(2025, 4, 1)
-        assert statement.opening_balance == Decimal("124189.43")
-        assert statement.closing_balance == Decimal("603490.57")
+        assert statement.opening_balance_paise == 1_24_189_43
+        assert statement.closing_balance_paise == 6_03_490_57
         assert statement.transaction_count == 54
         assert StatementTransaction.objects.filter(statement=statement).count() == 54
 
@@ -66,9 +67,9 @@ def test_rows_keep_the_banks_own_figures(client):
         first = StatementTransaction.objects.order_by("row_number").first()
         assert first.value_date == datetime.date(2025, 4, 13)
         assert first.narration == "Sweep/VO000000087559330/19000014841287"
-        assert first.debit == Decimal("250.00")
-        assert first.credit == Decimal("0.00")
-        assert first.balance == Decimal("123939.43")
+        assert first.debit_paise == 250_00
+        assert first.credit_paise == 0
+        assert first.balance_paise == 1_23_939_43
         assert first.branch_code == "318"
 
 
@@ -108,7 +109,7 @@ def test_the_original_file_is_kept_as_evidence(client):
     with firm_context(client.firm_id):
         result = ingest_statement(client=client, data=b"%PDF-1.4 axis", filename="axis.pdf")
 
-        key = result.statement.storage_key
+        key = result.document.storage_key
         assert key.startswith(f"firms/{client.firm_id}/")
         assert get_storage().get(key) == b"%PDF-1.4 axis"
 
@@ -123,3 +124,4 @@ def test_a_second_firm_cannot_see_the_first_firms_statements(client):
         assert BankAccount.objects.count() == 0
         assert Statement.objects.count() == 0
         assert StatementTransaction.objects.count() == 0
+        assert Document.objects.count() == 0

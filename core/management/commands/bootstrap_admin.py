@@ -73,7 +73,7 @@ class Command(BaseCommand):
 
         with firm_context(firm.pk):
             membership, m_created = FirmMembership.objects.get_or_create(
-                firm=firm, user=user, defaults={"role": Role.OWNER}
+                firm=firm, user=user, defaults={"role": Role.FIRM_ADMIN}
             )
             if opts["demo"]:
                 for name in ("Tata Steel Ltd", "Reliance Retail", "HDFC Bank"):

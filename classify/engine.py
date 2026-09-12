@@ -254,7 +254,14 @@ def _facts_for(classification) -> NarrationFacts:
 
 
 def _own_account_numbers(client) -> list[str]:
-    return list(client.bank_accounts.values_list("account_number", flat=True))
+    """The client's own account numbers, for spotting contra transfers.
+
+    Decrypted one row at a time rather than selected as a column, because the
+    stored value is ciphertext. There are a handful of accounts per client, so
+    the cost is nil -- and the alternative, a plaintext column to make this
+    query convenient, is exactly the shortcut the encryption exists to prevent.
+    """
+    return [account.account_number for account in client.bank_accounts.all()]
 
 
 def _record_hits(rules) -> None:

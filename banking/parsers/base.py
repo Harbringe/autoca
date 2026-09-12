@@ -31,11 +31,9 @@ import abc
 import datetime
 import re
 from dataclasses import dataclass, field
-from decimal import Decimal, InvalidOperation
 
+from core.money import MoneyError, format_inr, to_paise
 from integrations.pdf.base import PdfDocument
-
-ZERO = Decimal("0.00")
 
 
 class StatementParseError(RuntimeError):
@@ -59,36 +57,23 @@ class NoTextLayerError(StatementParseError):
     """A scanned statement. OCR is the fallback path and is not wired yet."""
 
 
-def parse_amount(raw: str | None) -> Decimal | None:
-    """Parse an Indian-format money cell. ``None`` for an empty cell.
+def parse_amount(raw: str | None) -> int | None:
+    """Parse an Indian-format money cell to whole paise. ``None`` if empty.
 
-    Handles ``1,00,000.00`` (lakh grouping), a trailing ``Cr``/``Dr`` marker,
-    and unicode minus. Refuses anything else rather than guessing -- a cell that
-    does not look like money is a sign the column mapping is wrong, and that is
-    exactly the bug the balance chain exists to catch early.
+    Handles ``1,00,000.00`` lakh grouping and a trailing ``Cr``/``Dr`` marker.
+    Refuses anything else rather than guessing -- a cell that does not look like
+    money means the column mapping is wrong, and catching that here is far
+    cheaper than catching it three steps downstream.
     """
     if raw is None:
         return None
-    text = raw.strip().replace("\n", " ")
+    text = collapse_whitespace(raw)
     if not text or text in {"-", "--"}:
         return None
-
-    text = text.replace("−", "-").replace(",", "").replace(" ", "")
-    sign = Decimal(1)
-    upper = text.upper()
-    for marker in ("CR", "DR"):
-        if upper.endswith(marker):
-            text = text[: -len(marker)]
-            if marker == "DR":
-                sign = Decimal(-1)
-            break
-    if text.startswith("(") and text.endswith(")"):
-        text, sign = text[1:-1], Decimal(-1)
-
     try:
-        return (Decimal(text) * sign).quantize(ZERO)
-    except (InvalidOperation, ValueError) as exc:
-        raise StatementParseError(f"Not a money value: {raw!r}") from exc
+        return to_paise(text)
+    except MoneyError as exc:
+        raise StatementParseError(str(exc)) from exc
 
 
 def parse_date(raw: str | None, formats=("%d-%m-%Y", "%d/%m/%Y", "%d-%b-%Y", "%d %b %Y")):
@@ -126,26 +111,27 @@ class ParsedTransaction:
     row_number: int
     date: datetime.date
     narration: str
-    debit: Decimal = ZERO
-    credit: Decimal = ZERO
-    balance: Decimal = ZERO
+    debit_paise: int = 0
+    credit_paise: int = 0
+    balance_paise: int = 0
     cheque_number: str = ""
     branch_code: str = ""
 
     def __post_init__(self):
-        if self.debit < 0 or self.credit < 0:
+        if self.debit_paise < 0 or self.credit_paise < 0:
             raise StatementParseError(
                 f"Row {self.row_number}: negative amount "
-                f"(debit={self.debit}, credit={self.credit}). Direction is "
-                f"carried by which column the amount is in, not by its sign."
+                f"(debit={self.debit_paise}, credit={self.credit_paise}). Direction "
+                f"is carried by which column the amount is in, not by its sign."
             )
-        if self.debit and self.credit:
+        if self.debit_paise and self.credit_paise:
             raise StatementParseError(
                 f"Row {self.row_number}: amounts in both the debit and credit "
-                f"columns ({self.debit} / {self.credit}). The column mapping is "
-                f"wrong, or the row is a summary line that should not be here."
+                f"columns ({format_inr(self.debit_paise)} / "
+                f"{format_inr(self.credit_paise)}). The column mapping is wrong, or "
+                f"the row is a summary line that should not be here."
             )
-        if not self.debit and not self.credit:
+        if not self.debit_paise and not self.credit_paise:
             raise StatementParseError(
                 f"Row {self.row_number}: no amount in either column. A zero-value "
                 f"transaction is not a thing; this is a header or total row that "
@@ -155,16 +141,16 @@ class ParsedTransaction:
     @property
     def is_debit(self) -> bool:
         """True when money left the account."""
-        return self.debit > 0
+        return self.debit_paise > 0
 
     @property
-    def amount(self) -> Decimal:
-        return self.debit if self.is_debit else self.credit
+    def amount_paise(self) -> int:
+        return self.debit_paise if self.is_debit else self.credit_paise
 
     @property
-    def signed_amount(self) -> Decimal:
+    def signed_paise(self) -> int:
         """Effect on the balance: negative for money out."""
-        return self.credit - self.debit
+        return self.credit_paise - self.debit_paise
 
 
 @dataclass(frozen=True)
@@ -178,16 +164,16 @@ class ParsedStatement:
     account_number: str
     period_start: datetime.date
     period_end: datetime.date
-    opening_balance: Decimal
-    closing_balance: Decimal
+    opening_balance_paise: int
+    closing_balance_paise: int
     transactions: tuple[ParsedTransaction, ...] = field(default_factory=tuple)
     account_holder: str = ""
     ifsc: str = ""
     #: The statement's own footer totals, when it prints them. A second,
     #: independent check: the chain can only be reproduced by getting every row
     #: right, but these catch a compensating pair of errors.
-    stated_total_debit: Decimal | None = None
-    stated_total_credit: Decimal | None = None
+    stated_total_debit_paise: int | None = None
+    stated_total_credit_paise: int | None = None
 
     def __post_init__(self):
         self._check_balance_chain()
@@ -197,37 +183,39 @@ class ParsedStatement:
     # -- the gate -----------------------------------------------------------
 
     def _check_balance_chain(self) -> None:
-        running = self.opening_balance
+        running = self.opening_balance_paise
         for txn in self.transactions:
-            running += txn.signed_amount
-            if running != txn.balance:
+            running += txn.signed_paise
+            if running != txn.balance_paise:
                 raise BalanceChainError(
                     f"Balance chain broke at row {txn.row_number} "
                     f"({txn.date:%d-%m-%Y}, {collapse_whitespace(txn.narration)[:60]!r}): "
-                    f"expected a balance of {running} after applying "
-                    f"{txn.signed_amount:+}, but the statement prints {txn.balance}. "
-                    f"A row was dropped, duplicated, or read into the wrong column "
-                    f"at or before this point."
+                    f"expected a balance of {format_inr(running)} after applying "
+                    f"{format_inr(txn.signed_paise)}, but the statement prints "
+                    f"{format_inr(txn.balance_paise)}. A row was dropped, duplicated, "
+                    f"or read into the wrong column at or before this point."
                 )
-        if running != self.closing_balance:
+        if running != self.closing_balance_paise:
             raise BalanceChainError(
-                f"Statement does not close: {len(self.transactions)} rows take "
-                f"the opening balance of {self.opening_balance} to {running}, but "
-                f"the statement prints a closing balance of {self.closing_balance}. "
-                f"Rows are missing from the end, most likely a final page that "
-                f"was not extracted."
+                f"Statement does not close: {len(self.transactions)} rows take the "
+                f"opening balance of {format_inr(self.opening_balance_paise)} to "
+                f"{format_inr(running)}, but the statement prints a closing balance "
+                f"of {format_inr(self.closing_balance_paise)}. Rows are missing from "
+                f"the end, most likely a final page that was not extracted."
             )
 
     def _check_stated_totals(self) -> None:
-        if self.stated_total_debit is not None and self.total_debit != self.stated_total_debit:
+        stated_debit = self.stated_total_debit_paise
+        if stated_debit is not None and self.total_debit_paise != stated_debit:
             raise BalanceChainError(
-                f"Debit total mismatch: rows sum to {self.total_debit}, statement "
-                f"footer says {self.stated_total_debit}."
+                f"Debit total mismatch: rows sum to {format_inr(self.total_debit_paise)}, "
+                f"statement footer says {format_inr(stated_debit)}."
             )
-        if self.stated_total_credit is not None and self.total_credit != self.stated_total_credit:
+        stated_credit = self.stated_total_credit_paise
+        if stated_credit is not None and self.total_credit_paise != stated_credit:
             raise BalanceChainError(
-                f"Credit total mismatch: rows sum to {self.total_credit}, statement "
-                f"footer says {self.stated_total_credit}."
+                f"Credit total mismatch: rows sum to {format_inr(self.total_credit_paise)}, "
+                f"statement footer says {format_inr(stated_credit)}."
             )
 
     def _check_period(self) -> None:
@@ -248,12 +236,12 @@ class ParsedStatement:
     # -- derived ------------------------------------------------------------
 
     @property
-    def total_debit(self) -> Decimal:
-        return sum((t.debit for t in self.transactions), ZERO)
+    def total_debit_paise(self) -> int:
+        return sum(t.debit_paise for t in self.transactions)
 
     @property
-    def total_credit(self) -> Decimal:
-        return sum((t.credit for t in self.transactions), ZERO)
+    def total_credit_paise(self) -> int:
+        return sum(t.credit_paise for t in self.transactions)
 
     def __len__(self) -> int:
         return len(self.transactions)
@@ -264,6 +252,12 @@ class StatementParser(abc.ABC):
 
     #: Short stable identifier, stored on every row this parser produces.
     bank_code: str = ""
+
+    #: Bump on any change that could alter this parser's output. Recorded on
+    #: each statement, so a parser bug can be re-run against exactly the
+    #: statements it touched instead of against everything, or against a list
+    #: someone kept by hand and forgot to update.
+    version: int = 1
 
     @classmethod
     @abc.abstractmethod

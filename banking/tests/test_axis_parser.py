@@ -7,7 +7,6 @@ these fail with the specific row that moved rather than with a count.
 from __future__ import annotations
 
 import datetime
-from decimal import Decimal
 
 import pytest
 
@@ -46,12 +45,12 @@ def test_reads_every_row_and_the_statement_balances(axis_document):
     statement = parse_statement(axis_document)
 
     assert len(statement) == 54
-    assert statement.opening_balance == Decimal("124189.43")
-    assert statement.closing_balance == Decimal("603490.57")
-    assert statement.total_debit == Decimal("4941572.00")
-    assert statement.total_credit == Decimal("5420873.14")
-    assert statement.stated_total_debit == statement.total_debit
-    assert statement.stated_total_credit == statement.total_credit
+    assert statement.opening_balance_paise == 1_24_189_43
+    assert statement.closing_balance_paise == 6_03_490_57
+    assert statement.total_debit_paise == 49_41_572_00
+    assert statement.total_credit_paise == 54_20_873_14
+    assert statement.stated_total_debit_paise == statement.total_debit_paise
+    assert statement.stated_total_credit_paise == statement.total_credit_paise
 
 
 def test_summary_rows_are_not_transactions(axis_document):
@@ -71,12 +70,12 @@ def test_debit_and_credit_come_from_separate_columns(axis_document):
     rows = parse_statement(axis_document).transactions
 
     assert rows[0].is_debit
-    assert rows[0].debit == Decimal("250.00")
-    assert rows[0].credit == Decimal("0.00")
+    assert rows[0].debit_paise == 250_00
+    assert rows[0].credit_paise == 0
 
     assert not rows[2].is_debit
-    assert rows[2].credit == Decimal("350000.00")
-    assert rows[2].signed_amount == Decimal("350000.00")
+    assert rows[2].credit_paise == 3_50_000_00
+    assert rows[2].signed_paise == 3_50_000_00
 
 
 def test_narration_keeps_its_content_and_loses_its_line_wrapping(axis_document):
@@ -159,12 +158,12 @@ def test_a_row_with_an_amount_but_no_date_is_refused_not_skipped(axis_document):
 @pytest.mark.parametrize(
     ("raw", "expected"),
     [
-        ("250.00", Decimal("250.00")),
-        ("4,941,572.00", Decimal("4941572.00")),
-        ("1,00,000.00", Decimal("100000.00")),  # lakh grouping
-        ("7403.75", Decimal("7403.75")),
-        ("1,234.00 Cr", Decimal("1234.00")),
-        ("1,234.00 Dr", Decimal("-1234.00")),
+        ("250.00", 250_00),
+        ("4,941,572.00", 49_41_572_00),
+        ("1,00,000.00", 1_00_000_00),  # lakh grouping
+        ("7403.75", 7403_75),
+        ("1,234.00 Cr", 1234_00),
+        ("1,234.00 Dr", -1234_00),
         ("", None),
         ("   ", None),
         ("-", None),

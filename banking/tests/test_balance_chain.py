@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import dataclasses
 import datetime
-from decimal import Decimal
 
 import pytest
 
@@ -30,22 +29,22 @@ def _statement(**overrides) -> ParsedStatement:
         "account_number": "911010000004321",
         "period_start": datetime.date(2025, 4, 1),
         "period_end": datetime.date(2026, 3, 31),
-        "opening_balance": Decimal("1000.00"),
-        "closing_balance": Decimal("1150.00"),
+        "opening_balance_paise": 1000_00,
+        "closing_balance_paise": 1150_00,
         "transactions": (
             ParsedTransaction(
                 row_number=1,
                 date=datetime.date(2025, 4, 13),
                 narration="Sweep/VO000000087559330",
-                debit=Decimal("250.00"),
-                balance=Decimal("750.00"),
+                debit_paise=250_00,
+                balance_paise=750_00,
             ),
             ParsedTransaction(
                 row_number=2,
                 date=datetime.date(2025, 5, 2),
                 narration="NEFT/MB/AXOMB20402110637",
-                credit=Decimal("400.00"),
-                balance=Decimal("1150.00"),
+                credit_paise=400_00,
+                balance_paise=1150_00,
             ),
         ),
     }
@@ -71,12 +70,12 @@ def test_a_debit_read_as_a_credit_is_caught():
         row_number=1,
         date=datetime.date(2025, 4, 13),
         narration="Sweep/VO000000087559330",
-        credit=Decimal("250.00"),  # was a debit
-        balance=Decimal("750.00"),
+        credit_paise=250_00,  # was a debit
+        balance_paise=750_00,
     )
 
     with pytest.raises(BalanceChainError, match="row 1"):
-        _statement(transactions=(flipped,), closing_balance=Decimal("750.00"))
+        _statement(transactions=(flipped,), closing_balance_paise=750_00)
 
 
 def test_a_duplicated_row_is_caught():
@@ -97,10 +96,10 @@ def test_a_missing_final_page_is_named_as_such():
 def test_footer_totals_catch_a_compensating_pair_of_errors():
     """Two errors that cancel keep the chain intact. The printed totals do not."""
     with pytest.raises(BalanceChainError, match="Debit total mismatch"):
-        _statement(stated_total_debit=Decimal("300.00"))
+        _statement(stated_total_debit_paise=300_00)
 
     with pytest.raises(BalanceChainError, match="Credit total mismatch"):
-        _statement(stated_total_credit=Decimal("500.00"))
+        _statement(stated_total_credit_paise=500_00)
 
 
 def test_a_date_outside_the_period_is_caught():
@@ -118,9 +117,9 @@ def test_a_row_cannot_hold_both_a_debit_and_a_credit():
             row_number=1,
             date=datetime.date(2025, 4, 13),
             narration="x",
-            debit=Decimal("1.00"),
-            credit=Decimal("1.00"),
-            balance=Decimal("0.00"),
+            debit_paise=1_00,
+            credit_paise=1_00,
+            balance_paise=0,
         )
 
 
@@ -131,7 +130,7 @@ def test_a_row_must_hold_an_amount():
             row_number=1,
             date=datetime.date(2025, 4, 13),
             narration="TRANSACTION TOTAL",
-            balance=Decimal("0.00"),
+            balance_paise=0,
         )
 
 
@@ -141,6 +140,6 @@ def test_direction_is_never_carried_by_a_sign():
             row_number=1,
             date=datetime.date(2025, 4, 13),
             narration="x",
-            debit=Decimal("-1.00"),
-            balance=Decimal("0.00"),
+            debit_paise=-1_00,
+            balance_paise=0,
         )

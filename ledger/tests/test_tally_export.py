@@ -10,7 +10,6 @@ from __future__ import annotations
 
 import datetime
 import xml.etree.ElementTree as ET
-from decimal import Decimal
 
 import pytest
 
@@ -80,10 +79,10 @@ def test_money_out_debits_the_expense_and_credits_the_bank(client, statement):
     assert voucher.party_ledger == "Office Expenses"
     debit, credit = voucher.lines
     assert debit.ledger_name == "Office Expenses"
-    assert debit.amount == Decimal("-530.00")
+    assert debit.amount_paise == -530_00
     assert debit.is_deemed_positive == "Yes"
     assert credit.ledger_name == "Axis Bank A/c 911010000004321"
-    assert credit.amount == Decimal("530.00")
+    assert credit.amount_paise == 530_00
     assert credit.is_deemed_positive == "No"
 
 
@@ -97,9 +96,9 @@ def test_money_in_debits_the_bank_and_credits_the_income(client, statement):
     assert voucher.voucher_type == VoucherType.RECEIPT
     debit, credit = voucher.lines
     assert debit.ledger_name == "Axis Bank A/c 911010000004321"
-    assert debit.amount == Decimal("-2.00")
+    assert debit.amount_paise == -2_00
     assert credit.ledger_name == "Bhim Cash Back"
-    assert credit.amount == Decimal("2.00")
+    assert credit.amount_paise == 2_00
 
 
 def test_every_voucher_balances(client, statement):
@@ -109,7 +108,7 @@ def test_every_voucher_balances(client, statement):
 
     for row in statement.transactions.filter(classification__ledger__isnull=False):
         voucher = build_voucher(row.classification)
-        assert sum(line.amount for line in voucher.lines) == 0
+        assert sum(line.amount_paise for line in voucher.lines) == 0
 
 
 # ---------------------------------------------------------------------------
@@ -246,7 +245,7 @@ def test_an_unbalanced_voucher_cannot_be_rendered():
             voucher_type=VoucherType.PAYMENT,
             narration="x",
             party_ledger="Office Expenses",
-            lines=(VoucherLine("Office Expenses", Decimal("-100")), VoucherLine("Bank", Decimal("90"))),
+            lines=(VoucherLine("Office Expenses", -100_00), VoucherLine("Bank", 90_00)),
             remote_id="autoca-test",
         )
 

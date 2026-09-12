@@ -64,8 +64,17 @@ class MFARequiredMiddleware:
 
 
 def _wants_json(request) -> bool:
-    """True for a caller that cannot make sense of an HTML redirect."""
-    if request.path.startswith(tuple(settings.API_PATH_PREFIXES)):
+    """True for a caller that cannot make sense of an HTML redirect.
+
+    The documentation pages are the exception that proves the rule: they live
+    under ``/api/`` and are read by a person in a browser, so a half-verified
+    session opening ``/api/docs/`` should be taken to the enrolment page, not
+    handed a JSON error to read.
+    """
+    path = request.path
+    if path.startswith(tuple(settings.API_DOC_PATH_PREFIXES)):
+        return False
+    if path.startswith(tuple(settings.API_PATH_PREFIXES)):
         return True
     accept = request.headers.get("Accept", "")
     return "application/json" in accept and "text/html" not in accept

@@ -110,3 +110,29 @@ def test_healthz_needs_no_auth_and_no_tenant_context():
     response = HttpClient().get("/healthz")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+
+
+def test_the_docs_page_is_a_browser_page_not_an_api_caller():
+    """/api/docs/ sits under /api/ but a person reads it, so redirect them.
+
+    Without the exemption a half-verified session opening the Swagger page gets
+    a JSON 403 rendered as text in the browser, with no way forward.
+    """
+    firm = create_firm("Firm C")
+    user = create_user("reader@example.com", PASSWORD)
+    add_member(firm, user)
+
+    http = HttpClient()
+    http.post(
+        "/auth/login/",
+        {"email": "reader@example.com", "password": PASSWORD},
+        content_type="application/json",
+    )
+
+    docs = http.get("/api/docs/", HTTP_ACCEPT="text/html")
+    assert docs.status_code == 302
+    assert docs["Location"] == "/auth/mfa/setup/?next=/api/docs/"
+
+    # The API itself still answers in JSON.
+    assert http.get("/api/v1/me/").status_code == 403
+    assert http.get("/api/v1/me/").json()["code"] == "mfa_enrolment_required"

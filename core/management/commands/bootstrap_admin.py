@@ -3,7 +3,7 @@
 The admin runs on the low-privilege ``autoca_web`` role under RLS, and
 ``TenantContextMiddleware`` rejects any authenticated user with no firm
 membership. A bare ``createsuperuser`` account therefore gets a 403 on every
-page. This command creates the user, a firm, and an OWNER membership in one go.
+page. This command creates the user, a firm, and a firm-admin membership in one go.
 
     python manage.py bootstrap_admin --email you@example.com --firm "Acme & Co CA"
     python manage.py bootstrap_admin --email you@example.com --firm-id <uuid>   # reuse a firm
@@ -29,7 +29,7 @@ MIN_PASSWORD_LEN = 12
 
 
 class Command(BaseCommand):
-    help = "Create a superuser bound to a firm (with an OWNER membership)."
+    help = "Create a superuser bound to a firm (with a firm-admin membership)."
 
     def add_arguments(self, parser):
         parser.add_argument("--email", required=True)
@@ -89,7 +89,10 @@ class Command(BaseCommand):
         self.stdout.write(self.style.SUCCESS("Ready."))
         self.stdout.write(f"  user       {email}  ({'created' if created else 'updated'}, superuser)")
         self.stdout.write(f"  firm       {firm.name}  ({firm.pk})")
-        self.stdout.write(f"  membership OWNER  ({'created' if m_created else 'existing'})")
+        self.stdout.write(
+            f"  membership {membership.get_role_display()}  "
+            f"({'created' if m_created else 'existing'})"
+        )
         if opts["demo"]:
             self.stdout.write("  demo       3 clients + 1 R2 object under firms/<id>/_seed/")
         self.stdout.write("")

@@ -210,6 +210,10 @@ OTP_TOTP_ISSUER = env("OTP_TOTP_ISSUER", "AutoCA")
 # that it cannot proceed.
 API_PATH_PREFIXES = ("/api/",)
 
+# ...except these, which are HTML pages a person opens in a browser. They sit
+# under /api/ but are documentation, not the API.
+API_DOC_PATH_PREFIXES = ("/api/docs/", "/api/redoc/")
+
 # TOTP is mandatory. These are the only paths reachable by a session that has
 # passed a password check but not yet a second factor.
 MFA_EXEMPT_PATH_PREFIXES = (

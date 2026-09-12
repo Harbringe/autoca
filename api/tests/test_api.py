@@ -161,7 +161,12 @@ def test_an_unreadable_file_fails_the_job_rather_than_the_request(api, client_re
     settings.INTEGRATIONS = {**settings.INTEGRATIONS, "pdf": "integrations.pdf.pdfplumber_text.PdfPlumberAdapter"}
     reset_adapter_cache()
 
-    upload = SimpleUploadedFile("notes.pdf", b"this is not a pdf", content_type="application/pdf")
+    # Carries the PDF signature, so it gets past the boundary check and to the
+    # extractor -- which is the failure this test is about. A file without the
+    # signature is refused earlier, with a 400; see test_hardening.
+    upload = SimpleUploadedFile(
+        "notes.pdf", b"%PDF-1.7 followed by nothing a PDF parser can read", content_type="application/pdf"
+    )
     response = api.post(
         f"{V1}/clients/{client_record.pk}/statements/upload/", {"file": upload}, format="multipart"
     )

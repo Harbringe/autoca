@@ -16,9 +16,10 @@ from __future__ import annotations
 
 import logging
 import time
-import uuid
 
 from django.db import DatabaseError
+
+from core.http import client_ip, request_id
 
 logger = logging.getLogger("autoca.audit")
 
@@ -30,7 +31,7 @@ class AuditMiddleware:
         self.get_response = get_response
 
     def __call__(self, request):
-        request.request_id = request.headers.get("X-Request-ID") or uuid.uuid4().hex
+        request.request_id = request_id(request)
         started = time.monotonic()
 
         response = self.get_response(request)
@@ -66,7 +67,7 @@ class AuditMiddleware:
                 method=request.method,
                 path=request.get_full_path()[:512],
                 status_code=response.status_code,
-                ip_address=self._client_ip(request),
+                ip_address=client_ip(request),
                 user_agent=request.headers.get("User-Agent", "")[:512],
                 request_id=request.request_id,
                 duration_ms=int(elapsed * 1000),
@@ -81,12 +82,3 @@ class AuditMiddleware:
                 request.path,
                 request.request_id,
             )
-
-    @staticmethod
-    def _client_ip(request):
-        # Render terminates TLS and sets X-Forwarded-For. Take the first entry,
-        # which is the client as seen by the edge.
-        forwarded = request.headers.get("X-Forwarded-For", "")
-        if forwarded:
-            return forwarded.split(",")[0].strip() or None
-        return request.META.get("REMOTE_ADDR") or None

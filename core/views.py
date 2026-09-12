@@ -16,6 +16,7 @@ from __future__ import annotations
 import base64
 import io
 import json
+import logging
 
 from django.conf import settings
 from django.contrib.auth import authenticate, login, logout
@@ -28,20 +29,18 @@ from django.views.decorators.http import require_GET, require_http_methods, requ
 from django_otp import login as otp_login
 from django_otp.plugins.otp_totp.models import TOTPDevice
 
+from core import throttle
+from core.http import client_ip
+from core.http import wants_json as _wants_json
+
+security_log = logging.getLogger("autoca.security")
+
 
 def _body(request) -> dict:
     try:
         return json.loads(request.body or b"{}")
     except (ValueError, TypeError):
         return {}
-
-
-def _wants_json(request) -> bool:
-    """True for SPA/API callers, False for a browser rendering HTML."""
-    if request.content_type == "application/json":
-        return True
-    accept = request.headers.get("Accept", "")
-    return "application/json" in accept and "text/html" not in accept
 
 
 def _safe_next(request, default: str = "/admin/") -> str:
@@ -80,18 +79,45 @@ def healthz(request):
     return JsonResponse({"status": "ok"})
 
 
+def _throttled(exc: throttle.Throttled) -> JsonResponse:
+    response = JsonResponse(
+        {
+            "code": "too_many_attempts",
+            "detail": f"Too many attempts. Try again in {max(exc.retry_after // 60, 1)} minutes.",
+        },
+        status=429,
+    )
+    response["Retry-After"] = str(exc.retry_after)
+    return response
+
+
 @require_POST
 def login_view(request):
     data = _body(request)
-    user = authenticate(
-        request, username=data.get("email", ""), password=data.get("password", "")
-    )
+    email = str(data.get("email", ""))[:254].strip().lower()
+    address = client_ip(request) or ""
+
+    # Refuse before hashing anything, so a locked-out caller costs nothing.
+    try:
+        throttle.check("login", address, email)
+    except throttle.Throttled as exc:
+        security_log.warning("login refused (locked out) ip=%s", address)
+        return _throttled(exc)
+
+    user = authenticate(request, username=email, password=str(data.get("password", "")))
     if user is None:
         # One message for both wrong-email and wrong-password. Distinguishing
         # them turns this endpoint into a user-enumeration oracle.
-        return JsonResponse({"detail": "Invalid credentials."}, status=401)
+        throttle.record_failure("login", address, email)
+        security_log.info("login failed ip=%s", address)
+        return JsonResponse(
+            {"code": "invalid_credentials", "detail": "Invalid credentials."}, status=401
+        )
 
     login(request, user)
+    user.last_login_ip = address or None
+    user.save(update_fields=["last_login_ip"])
+    security_log.info("login password accepted user=%s ip=%s", user.pk, address)
     return JsonResponse(
         {
             "detail": "Password accepted. A second factor is required.",
@@ -179,12 +205,23 @@ def mfa_verify(request):
     )
 
     if _wants_json(request) and request.method == "POST":
+        address = client_ip(request) or ""
+        try:
+            throttle.check("mfa", address, str(request.user.pk))
+        except throttle.Throttled as exc:
+            security_log.warning("mfa refused (locked out) user=%s ip=%s", request.user.pk, address)
+            return _throttled(exc)
         token = str(_body(request).get("token", "")).strip()
         if device is None:
-            return JsonResponse({"detail": "No TOTP device enrolled."}, status=400)
+            return JsonResponse(
+                {"code": "mfa_not_enrolled", "detail": "No TOTP device enrolled."}, status=400
+            )
         if not device.verify_token(token):
-            return JsonResponse({"detail": "Invalid code."}, status=401)
+            throttle.record_failure("mfa", address, str(request.user.pk))
+            security_log.info("mfa failed user=%s ip=%s", request.user.pk, address)
+            return JsonResponse({"code": "invalid_code", "detail": "Invalid code."}, status=401)
         _confirm_and_login(request, device)
+        security_log.info("mfa verified user=%s ip=%s", request.user.pk, address)
         return JsonResponse({"detail": "Verified."})
 
     if device is None:
@@ -192,10 +229,17 @@ def mfa_verify(request):
 
     error = None
     if request.method == "POST":
-        if device.verify_token(request.POST.get("token", "").strip()):
-            _confirm_and_login(request, device)
-            return redirect(_safe_next(request))
-        error = "That code didn't match. Enter the current one from your app."
+        address = client_ip(request) or ""
+        try:
+            throttle.check("mfa", address, str(request.user.pk))
+        except throttle.Throttled as exc:
+            error = f"Too many attempts. Try again in {max(exc.retry_after // 60, 1)} minutes."
+        else:
+            if device.verify_token(request.POST.get("token", "").strip()):
+                _confirm_and_login(request, device)
+                return redirect(_safe_next(request))
+            throttle.record_failure("mfa", address, str(request.user.pk))
+            error = "That code didn't match. Enter the current one from your app."
 
     return render(
         request,

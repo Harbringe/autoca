@@ -19,7 +19,22 @@ SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "same-origin"
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
+# The application shell is served from this origin, so nothing legitimate
+# arrives with the session cookie from a cross-site navigation.
+SESSION_COOKIE_SAMESITE = "Strict"
+CSRF_COOKIE_SAMESITE = "Strict"
 X_FRAME_OPTIONS = "DENY"
+
+# Exactly one TLS-terminating proxy in front of the app. Set explicitly per
+# deployment rather than guessed; see core.http.client_ip.
+TRUSTED_PROXY_COUNT = int(env("TRUSTED_PROXY_COUNT", "1"))
+
+# The browsable API renderer is a debugging aid. In production it is only a
+# way to enumerate field names, so it is removed rather than left to a comment.
+REST_FRAMEWORK = {
+    **REST_FRAMEWORK,  # noqa: F405
+    "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
+}
 
 CSRF_TRUSTED_ORIGINS = [
     o.strip() for o in env("CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import uuid
 
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema
@@ -65,7 +66,10 @@ class JournalEntryViewSet(
         )
         client_id = self.request.query_params.get("client")
         if client_id:
-            queryset = queryset.filter(client_id=client_id)
+            try:
+                queryset = queryset.filter(client_id=uuid.UUID(client_id))
+            except ValueError as exc:
+                raise serializers.ValidationError({"client": "Not a client id."}) from exc
         if self.request.query_params.get("live") == "true":
             queryset = queryset.filter(superseded_by_set__isnull=True)
         return queryset

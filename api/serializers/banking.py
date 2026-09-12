@@ -9,6 +9,7 @@ endpoint, to a caller who asked for exactly that one account.
 
 from __future__ import annotations
 
+from django.conf import settings
 from rest_framework import serializers
 
 from api.fields import MoneySerializerMixin, PaiseField
@@ -151,6 +152,32 @@ class StatementUploadSerializer(serializers.Serializer):
     """
 
     file = serializers.FileField(help_text="The statement PDF, as uploaded by the client.")
+
+    def validate_file(self, upload):
+        """A PDF, of a plausible size, before a byte of it is parsed.
+
+        The size check is what stops a single request from holding the process's
+        memory; the signature check is what stops a renamed executable or an
+        HTML error page from reaching the PDF library at all. Neither trusts the
+        filename or the declared content type, because both are supplied by the
+        caller.
+        """
+        limit = settings.MAX_STATEMENT_UPLOAD_BYTES
+        if upload.size > limit:
+            raise serializers.ValidationError(
+                f"This file is {upload.size / (1024 * 1024):.1f} MB; the limit is "
+                f"{limit // (1024 * 1024)} MB. A bank statement should be well under that."
+            )
+        if upload.size == 0:
+            raise serializers.ValidationError("The file is empty.")
+        head = upload.read(5)
+        upload.seek(0)
+        if head != b"%PDF-":
+            raise serializers.ValidationError(
+                "This is not a PDF. Only born-digital PDF statements can be read at present."
+            )
+        return upload
+
     allow_gap = serializers.BooleanField(
         default=False,
         help_text=(

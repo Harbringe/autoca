@@ -164,6 +164,27 @@ def check_app_role_cannot_bypass_rls(app_configs, **kwargs):
 
 
 @register(Tags.security, deploy=True)
+def check_shared_cache_for_throttling(app_configs, **kwargs):
+    """Login lockouts are counted in the cache; a deployment must share it.
+
+    An in-memory cache is per process. With two web workers, an attacker gets
+    twice the attempts and a lockout on one worker means nothing on the other.
+    """
+    backend = settings.CACHES["default"]["BACKEND"]
+    if "locmem" in backend:
+        return [
+            Warning(
+                "CACHES['default'] is in-memory. Login and MFA lockout counters are "
+                "per process, so with more than one web worker the limits are not "
+                "enforced as configured.",
+                hint="Set CACHE_URL to a Redis instance shared by every web process.",
+                id="core.W014",
+            )
+        ]
+    return []
+
+
+@register(Tags.security, deploy=True)
 def check_distinct_db_roles(app_configs, **kwargs):
     """In a deployed environment the app and owner roles must differ."""
     app_user = settings.DATABASES["default"].get("USER")

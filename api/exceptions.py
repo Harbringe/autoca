@@ -25,6 +25,8 @@ from __future__ import annotations
 import logging
 
 from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
+from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db.models import ProtectedError
 from django.http import Http404
 from rest_framework import status
 from rest_framework.response import Response
@@ -62,6 +64,29 @@ def api_exception_handler(exc, context):
     if name in DOMAIN_ERRORS:
         http_status, code = DOMAIN_ERRORS[name]
         return Response({"code": code, "detail": str(exc)}, status=http_status)
+
+    if isinstance(exc, ProtectedError):
+        # Deleting a ledger or a vendor that posted entries point at. The
+        # journal is append-only, so the referencing rows cannot go either; the
+        # answer is to deactivate it, and the message says so.
+        return Response(
+            {
+                "code": "in_use",
+                "detail": (
+                    "This is referenced by posted journal entries and cannot be deleted. "
+                    "Mark it inactive instead."
+                ),
+            },
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    if isinstance(exc, DjangoValidationError):
+        # A malformed value that reached the ORM -- a query parameter that is
+        # not a UUID, say. A client error, not a server one.
+        return Response(
+            {"code": "invalid", "detail": "; ".join(exc.messages)},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
 
     if isinstance(exc, DjangoPermissionDenied):
         # Raised by ``core.rbac.require_permission`` deep inside the domain.

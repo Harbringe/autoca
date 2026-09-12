@@ -20,6 +20,8 @@ from django.conf import settings
 from django.http import JsonResponse
 from django.shortcuts import redirect
 
+from core.http import wants_json as _wants_json
+
 
 class MFARequiredMiddleware:
     def __init__(self, get_response):
@@ -61,20 +63,3 @@ class MFARequiredMiddleware:
             return redirect(f"{target}?next={request.get_full_path()}")
 
         return self.get_response(request)
-
-
-def _wants_json(request) -> bool:
-    """True for a caller that cannot make sense of an HTML redirect.
-
-    The documentation pages are the exception that proves the rule: they live
-    under ``/api/`` and are read by a person in a browser, so a half-verified
-    session opening ``/api/docs/`` should be taken to the enrolment page, not
-    handed a JSON error to read.
-    """
-    path = request.path
-    if path.startswith(tuple(settings.API_DOC_PATH_PREFIXES)):
-        return False
-    if path.startswith(tuple(settings.API_PATH_PREFIXES)):
-        return True
-    accept = request.headers.get("Accept", "")
-    return "application/json" in accept and "text/html" not in accept

@@ -85,6 +85,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "core.middleware.headers.SecurityHeadersMiddleware",
     "whitenoise.middleware.WhiteNoiseMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -230,6 +231,102 @@ SESSION_EXPIRE_AT_BROWSER_CLOSE = True
 SESSION_COOKIE_AGE = 60 * 60 * 8
 CSRF_COOKIE_HTTPONLY = False
 CSRF_COOKIE_SAMESITE = "Lax"
+
+# ---------------------------------------------------------------------------
+# Abuse limits
+# ---------------------------------------------------------------------------
+
+# Failed-attempt counters live in the cache. One process can count in memory;
+# more than one must share a Redis so a lockout on one is a lockout on all.
+# core.checks flags a deployed locmem cache.
+CACHES = {
+    "default": (
+        {"BACKEND": "django.core.cache.backends.redis.RedisCache", "LOCATION": env("CACHE_URL")}
+        if env("CACHE_URL")
+        else {"BACKEND": "django.core.cache.backends.locmem.LocMemCache", "LOCATION": "autoca"}
+    )
+}
+
+# attempts within window_seconds -> locked out for lockout_seconds. Keyed on
+# the address and on the account separately; see core/throttle.py.
+THROTTLE_LIMITS = {
+    "login": {"attempts": 10, "window_seconds": 15 * 60, "lockout_seconds": 15 * 60},
+    # TOTP codes are six digits and a window is thirty seconds. django-otp
+    # throttles the device itself as well; this is the address-level backstop.
+    "mfa": {"attempts": 6, "window_seconds": 10 * 60, "lockout_seconds": 15 * 60},
+}
+
+# How many reverse proxies stand between the internet and this process. Zero
+# means X-Forwarded-For is a header anyone could have sent and is ignored.
+TRUSTED_PROXY_COUNT = int(env("TRUSTED_PROXY_COUNT", "0"))
+
+# A bank statement PDF for a year is a few megabytes. This is a ceiling for the
+# request body, not a target; the upload serializer applies a tighter one to
+# the file itself and checks that it is a PDF before reading it.
+MAX_STATEMENT_UPLOAD_BYTES = 25 * 1024 * 1024
+DATA_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
+FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
+DATA_UPLOAD_MAX_NUMBER_FILES = 5
+
+# ---------------------------------------------------------------------------
+# Browser-enforced policy
+#
+# Strict by default: the application shell needs nothing from any other origin
+# and runs no inline script. The documentation viewer and the Django admin
+# cannot live under that and get their own, still without framing.
+# ---------------------------------------------------------------------------
+
+_CSP_STRICT = (
+    "default-src 'self'; "
+    "script-src 'self'; "
+    "style-src 'self'; "
+    "img-src 'self' data:; "
+    "font-src 'self'; "
+    "connect-src 'self'; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
+    "frame-ancestors 'none'; "
+    "upgrade-insecure-requests"
+)
+_CSP_DOCS = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+    "font-src 'self' https://fonts.gstatic.com; "
+    "img-src 'self' data: https://cdn.jsdelivr.net; "
+    "worker-src 'self' blob:; "
+    "connect-src 'self'; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
+    "frame-ancestors 'none'"
+)
+_CSP_ADMIN = (
+    "default-src 'self'; "
+    "script-src 'self' 'unsafe-inline'; "
+    "style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; "
+    "connect-src 'self'; "
+    "object-src 'none'; "
+    "base-uri 'self'; "
+    "form-action 'self'; "
+    "frame-ancestors 'none'"
+)
+CONTENT_SECURITY_POLICIES = {
+    "default": _CSP_STRICT,
+    "by_prefix": {
+        "/api/docs/": _CSP_DOCS,
+        "/api/redoc/": _CSP_DOCS,
+        "/admin/": _CSP_ADMIN,
+        # The MFA pages carry an inline SVG QR code and a small inline style.
+        "/auth/mfa/": _CSP_ADMIN,
+    },
+}
+PERMISSIONS_POLICY = (
+    "camera=(), microphone=(), geolocation=(), payment=(), usb=(), "
+    "accelerometer=(), gyroscope=(), magnetometer=(), interest-cohort=()"
+)
 
 # ---------------------------------------------------------------------------
 # Integrations: the adapter registry.
@@ -396,12 +493,21 @@ LOGGING = {
     "formatters": {
         "standard": {"format": "%(asctime)s %(levelname)s %(name)s %(message)s"},
     },
+    "filters": {
+        # Every record is masked before it is written. See core/logging.py.
+        "mask_identifiers": {"()": "core.logging.MaskingFilter"},
+    },
     "handlers": {
-        "console": {"class": "logging.StreamHandler", "formatter": "standard"},
+        "console": {
+            "class": "logging.StreamHandler",
+            "formatter": "standard",
+            "filters": ["mask_identifiers"],
+        },
     },
     "root": {"handlers": ["console"], "level": env("LOG_LEVEL", "INFO")},
     "loggers": {
         "autoca.audit": {"handlers": ["console"], "level": "INFO", "propagate": False},
         "autoca.tenancy": {"handlers": ["console"], "level": "INFO", "propagate": False},
+        "autoca.security": {"handlers": ["console"], "level": "INFO", "propagate": False},
     },
 }

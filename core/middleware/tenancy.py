@@ -25,8 +25,10 @@ import logging
 
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
+from django.http import JsonResponse
 
 from core.db.session import _apply, _apply_user
+from core.http import wants_json
 from core.models import FirmMembership
 
 logger = logging.getLogger("autoca.tenancy")
@@ -79,8 +81,8 @@ class TenantContextMiddleware:
                 )
                 request.firm = None
                 request.membership = None
-                raise PermissionDenied(
-                    "Your account is not attached to an active firm."
+                return _refuse(
+                    request, "no_firm", "Your account is not attached to an active firm."
                 )
 
             firm_id = str(membership.firm_id)
@@ -90,10 +92,17 @@ class TenantContextMiddleware:
             # policy guarantees it is that firm's row and no other.
             firm = membership.firm
             if not firm.is_active:
-                raise PermissionDenied("This firm has been deactivated.")
+                return _refuse(request, "firm_inactive", "This firm has been deactivated.")
 
             request.firm = firm
             request.membership = membership
             request.firm_id = firm_id
 
             return self.get_response(request)
+
+
+def _refuse(request, code: str, detail: str):
+    """A 403 the caller can read: JSON for the API, Django's page for a browser."""
+    if wants_json(request):
+        return JsonResponse({"code": code, "detail": detail}, status=403)
+    raise PermissionDenied(detail)

@@ -125,9 +125,22 @@ def run_job_sync(**kwargs) -> Job:
 
 
 def _fail(job: Job, exc: Exception, *, expected: bool) -> Job:
+    """Record the failure on the job.
+
+    An expected failure carries the domain's own message, which was written for
+    the person who will read it. An unexpected one does not: a stray exception
+    from a driver or a library quotes whatever it was holding -- a SQL
+    statement, a file path, a narration -- and none of that belongs in an API
+    response. The traceback is in the log under the job id, which is what the
+    message points at.
+    """
     name = type(exc).__name__
     job.status = JobStatus.FAILED
-    job.error = str(exc) if expected else f"{name}: {exc}"
+    job.error = (
+        str(exc)
+        if expected
+        else f"Something went wrong while running this job. It has been logged (job {job.pk})."
+    )
     job.error_code = ERROR_CODES.get(name, "internal_error")
     job.finished_at = timezone.now()
     job.save(update_fields=["status", "error", "error_code", "finished_at"])

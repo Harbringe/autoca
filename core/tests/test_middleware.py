@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from django.core.checks import Error
 from django.test import RequestFactory
@@ -136,16 +138,24 @@ def test_context_is_established_and_torn_down():
 
 
 def test_user_without_a_membership_is_refused():
+    """A browser gets Django's 403 page; an API caller gets JSON it can read."""
     from django.core.exceptions import PermissionDenied
 
     from core.middleware.tenancy import TenantContextMiddleware
 
     user = create_user("orphan@example.com", PASSWORD)
-    request = RequestFactory().get("/api/me/")
-    request.user = user
+    middleware = TenantContextMiddleware(lambda r: _response(200))
 
+    request = RequestFactory().get("/admin/", HTTP_ACCEPT="text/html")
+    request.user = user
     with pytest.raises(PermissionDenied):
-        TenantContextMiddleware(lambda r: _response(200))(request)
+        middleware(request)
+
+    request = RequestFactory().get("/api/v1/me/")
+    request.user = user
+    response = middleware(request)
+    assert response.status_code == 403
+    assert json.loads(response.content)["code"] == "no_firm"
 
 
 def _response(status):

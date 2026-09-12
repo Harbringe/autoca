@@ -8,16 +8,27 @@ narration, how confident the system is and on what basis.
 
 from __future__ import annotations
 
+import re
+
 from rest_framework import serializers
 
 from api.serializers.banking import StatementTransactionSerializer
 from classify.models import (
     ClassificationRule,
     LedgerAccount,
+    MatchType,
     TransactionClassification,
     Vendor,
 )
 from classify.treatment import ReviewBand, TdsSection
+from core.identifiers import is_valid_gstin
+
+#: A quantifier applied to a group that itself contains a quantifier --
+#: ``(a+)+``, ``(\w*)*`` -- is the shape that makes a regex engine backtrack
+#: exponentially. A rule is evaluated against every row of every statement, so
+#: one such pattern from one member of staff would stall the firm's uploads.
+_NESTED_QUANTIFIER = re.compile(r"\([^()]*[+*][^()]*\)\s*[+*{]")
+MAX_RULE_PATTERN_LENGTH = 200
 
 
 class LedgerAccountSerializer(serializers.ModelSerializer):
@@ -58,6 +69,15 @@ class VendorSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["id", "alias_token", "created_at"]
+
+    def validate_gstin(self, value):
+        value = (value or "").strip().upper()
+        if value and not is_valid_gstin(value):
+            raise serializers.ValidationError(
+                "Not a valid GSTIN. Fifteen characters: state code, PAN, entity "
+                "number, Z, check character."
+            )
+        return value
 
     def create(self, validated_data):
         gstin = validated_data.pop("gstin", "")
@@ -100,6 +120,29 @@ class ClassificationRuleSerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["id", "ledger_name", "source", "hit_count", "last_hit_at", "created_at"]
+
+    def validate(self, attrs):
+        match_type = attrs.get("match_type", getattr(self.instance, "match_type", None))
+        pattern = attrs.get("pattern", getattr(self.instance, "pattern", ""))
+        if len(pattern) > MAX_RULE_PATTERN_LENGTH:
+            raise serializers.ValidationError(
+                {"pattern": f"At most {MAX_RULE_PATTERN_LENGTH} characters."}
+            )
+        if match_type == MatchType.REGEX:
+            if _NESTED_QUANTIFIER.search(pattern):
+                raise serializers.ValidationError(
+                    {
+                        "pattern": (
+                            "A repeated group containing a repetition -- like (a+)+ -- can "
+                            "take the matcher exponential time. Rewrite without nesting."
+                        )
+                    }
+                )
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise serializers.ValidationError({"pattern": f"Not a valid regex: {exc}"}) from exc
+        return attrs
 
 
 class TreatmentSerializer(serializers.Serializer):

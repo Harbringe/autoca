@@ -349,6 +349,14 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
     counterparty = models.CharField(max_length=255, blank=True)
     is_self_transfer = models.BooleanField(default=False)
 
+    #: A model-sourced suggestion's reasoning, one sentence, for the reviewer.
+    #: Also set when the model looked and declined, so the reviewer knows.
+    rationale = models.TextField(
+        blank=True,
+        default="",
+        help_text="Why the model suggested what it did, in one sentence a reviewer can check.",
+    )
+
     reviewed_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name="classifications"
     )

@@ -91,6 +91,11 @@ def approve(classification, *, membership, narration: str | None = None) -> Appr
         approved_by=membership.user,
     )
 
+    # Approving a model's suggestion is a person agreeing with it, and that
+    # agreement is worth remembering: next month the same payee is a rule hit
+    # in the high band instead of another model call and another review.
+    learned_from_model = classification.method == ClassificationMethod.LLM
+
     classification.method = ClassificationMethod.REVIEWED
     classification.needs_review = False
     classification.confidence = 1.0
@@ -99,6 +104,11 @@ def approve(classification, *, membership, narration: str | None = None) -> Appr
     classification.save(
         update_fields=["method", "needs_review", "confidence", "reviewed_by", "reviewed_at"]
     )
+
+    if learned_from_model and classification.treatment is not None:
+        from classify.engine import learn_rule_from
+
+        learn_rule_from(classification, classification.treatment, membership.user)
 
     return ApprovalResult(entry=entry, classification=classification)
 

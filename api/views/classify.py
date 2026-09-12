@@ -7,9 +7,10 @@ much of it is bulk-approvable, and one endpoint per decision.
 
 from __future__ import annotations
 
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema
-from rest_framework import mixins, viewsets
+from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -24,6 +25,7 @@ from api.serializers.classify import (
     TreatmentSerializer,
     VendorSerializer,
 )
+from api.serializers.core import JobSerializer
 from api.views.base import ClientScopedMixin, FirmScopedViewSet
 from classify.engine import (
     pending_approval,
@@ -32,6 +34,7 @@ from classify.engine import (
     review_summary,
     unresolved_for,
 )
+from classify.llm import suggest_unresolved
 from classify.models import (
     ClassificationRule,
     LedgerAccount,
@@ -39,7 +42,9 @@ from classify.models import (
     Vendor,
 )
 from classify.treatment import ReviewBand, Treatment
+from core.jobs import run_job
 from core.models import Client
+from core.rbac import has_permission
 
 BANDS = (ReviewBand.HIGH, ReviewBand.ADVISED, ReviewBand.JUDGEMENT)
 
@@ -160,6 +165,46 @@ class ReviewQueueViewSet(
     )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="Ask the model about every unresolved row",
+        description=(
+            "Runs the model tier over the rows no rule could place. Each row the "
+            "model is confident about becomes a *suggestion* in the ADVISED band -- "
+            "never HIGH, so never bulk-approvable -- with a one-line rationale. Rows "
+            "it is not confident about stay unresolved, with the rationale attached. "
+            "Returns **202** with a job; the result carries `suggested`, `declined` "
+            "and `error` (empty unless the provider failed).\n\n"
+            "Nothing identifying leaves the server: narrations are masked, people "
+            "are pseudonymised, known vendors are aliased. Requires "
+            "`transaction.classify`."
+        ),
+        request=None,
+        responses={202: JobSerializer},
+    )
+    @action(detail=False, methods=["post"], url_path="suggest")
+    def suggest(self, request, client_id=None):
+        client = self.client
+        if not has_permission(request.membership, "transaction.classify"):
+            raise PermissionDenied("Your role does not permit transaction.classify.")
+
+        def work():
+            outcome = suggest_unresolved(client)
+            return {
+                "considered": outcome.considered,
+                "suggested": outcome.suggested,
+                "declined": outcome.declined,
+                "error": outcome.error,
+            }
+
+        outcome = run_job(
+            firm_id=request.firm.pk,
+            kind="classify.suggest",
+            user=request.user,
+            message=f"Asking the model about {client.name}'s unresolved rows",
+            work=work,
+        )
+        return Response(JobSerializer(outcome.job).data, status=status.HTTP_202_ACCEPTED)
 
     @extend_schema(
         summary="How much work is waiting",

@@ -186,6 +186,7 @@ class ClassificationSerializer(serializers.ModelSerializer):
         source="vendor.canonical_name", read_only=True, allow_null=True
     )
     is_posted = serializers.SerializerMethodField()
+    method_display = serializers.CharField(source="get_method_display", read_only=True)
 
     class Meta:
         model = TransactionClassification
@@ -199,6 +200,8 @@ class ClassificationSerializer(serializers.ModelSerializer):
             "rcm",
             "tds_section",
             "method",
+            "method_display",
+            "rationale",
             "confidence",
             "review_band",
             "needs_review",

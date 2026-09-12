@@ -24,6 +24,7 @@ from api.views.base import ClientScopedMixin, FirmScopedViewSet
 from banking.ingest import confirm_opening_balance, ingest_statement
 from banking.models import BankAccount, Statement, StatementTransaction
 from classify.engine import classify_statement
+from classify.llm import suggest_unresolved
 from classify.seeds import seed_client
 from core.jobs import run_job
 from core.models import Client
@@ -102,6 +103,11 @@ def _ingest(*, client, data, filename, user, allow_gap) -> dict:
     seed_client(client, created_by=user)
     classified = classify_statement(result.statement)
 
+    # The model tier, for whatever the rules left. It only ever suggests, and
+    # a provider failure is reported on the job rather than failing it: the
+    # upload has already succeeded and the rows are in the queue either way.
+    model = suggest_unresolved(client, classifications=_unresolved_in(result.statement))
+
     return {
         "statement": str(result.statement.pk),
         "bank_account": str(result.bank_account.pk),
@@ -111,7 +117,19 @@ def _ingest(*, client, data, filename, user, allow_gap) -> dict:
         "needs_opening_confirmation": result.needs_opening_confirmation,
         "suggested": classified.placed,
         "queued_for_review": classified.queued,
+        "model_suggested": model.suggested,
+        "model_declined": model.declined,
+        "model_error": model.error,
     }
+
+
+def _unresolved_in(statement):
+    """The statement's own unresolved rows, for the model tier."""
+    from classify.models import TransactionClassification
+
+    return TransactionClassification.objects.filter(
+        firm_id=statement.firm_id, transaction__statement=statement, ledger__isnull=True
+    )
 
 
 @extend_schema(tags=["statements"])

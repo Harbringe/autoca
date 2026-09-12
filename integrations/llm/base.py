@@ -1,13 +1,19 @@
-"""LLM interface -- declared, not wired.
+"""LLM interface.
 
-Classification (embedding tier, LLM fallback, masking/pseudonymisation) is a
-later phase. The interface exists now only so that nothing outside
-integrations/llm/ has to change when it lands.
+The model performs one narrow task in this system: given a bank transaction
+that no rule could place, suggest which of the client's own ledger heads it
+belongs to. It is a fallback behind the rules, its answer is a suggestion a
+person reviews, and it never sees an unmasked narration.
 
-When it does land, note the constraint that shapes it: client financial data
-must be masked or pseudonymised before it leaves the deployment. That belongs in
-the classify/ app, above this adapter -- an adapter that quietly did its own
-masking would make the guarantee impossible to audit.
+That last constraint is enforced *above* this adapter, in ``classify/``. An
+adapter that quietly did its own masking would make the guarantee impossible
+to audit -- the reviewer would have to read every adapter to know what left the
+building. So this layer is deliberately dumb: it takes a system prompt and a
+user message, asks for a JSON object back, and reports what it cost.
+
+The interface is shaped for structured output because the caller needs a
+parseable answer, not prose. Every adapter must honour ``temperature=0`` and
+JSON-only responses; a provider that cannot is not a fit for this slot.
 """
 
 from __future__ import annotations
@@ -16,8 +22,18 @@ import abc
 from dataclasses import dataclass
 
 
+class LLMError(RuntimeError):
+    """The provider could not be reached, refused, or returned nothing usable."""
+
+
+class LLMUnavailable(LLMError):
+    """No provider is configured. Callers degrade rather than fail."""
+
+
 @dataclass(frozen=True)
 class LLMResponse:
+    #: The model's reply. For :meth:`LLMAdapter.complete_json` this is a JSON
+    #: document -- the adapter has already checked that it parses.
     text: str
     model: str
     input_tokens: int = 0
@@ -25,9 +41,18 @@ class LLMResponse:
 
 
 class LLMAdapter(abc.ABC):
+    #: False for the stub. Callers check this once rather than catching
+    #: :class:`LLMUnavailable` on every row.
+    is_available: bool = True
+
     @abc.abstractmethod
-    def complete(self, prompt: str, *, max_tokens: int = 1024, **kwargs) -> LLMResponse:
-        ...
+    def complete_json(self, system: str, user: str, *, max_tokens: int = 2048) -> LLMResponse:
+        """Ask for a single JSON object and return it, unparsed, in ``text``.
+
+        Raises :class:`LLMError` on transport failure, a provider error, or a
+        reply that is not JSON. Never raises anything else: the caller's job is
+        to degrade gracefully, and it can only do that against one exception.
+        """
 
     @property
     def name(self) -> str:

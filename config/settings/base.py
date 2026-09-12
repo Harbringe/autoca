@@ -367,8 +367,23 @@ INTEGRATION_OPTIONS = {
         "key_id": env("KMS_KEY_ID"),
         "region": env("KMS_REGION"),
     },
-    "llm": {},
+    "llm": {
+        # Groq (dev). Key from the Groq console; the model is optional.
+        "api_key": env("GROQ_API_KEY"),
+        "model": env("GROQ_MODEL"),
+        "base_url": env("GROQ_BASE_URL"),
+        "timeout_seconds": float(env("LLM_TIMEOUT_SECONDS", "30")),
+    },
 }
+
+# Rows per model call. Classification is not latency-sensitive; fewer, larger
+# calls share the system prompt and cost less.
+LLM_BATCH_SIZE = int(env("LLM_BATCH_SIZE", "25"))
+
+# Whether an organisation's name may be sent to the model as part of a row.
+# People's names never are -- see classify/pseudonymise.py. A firm that wants
+# nothing but aliases sent sets this to 0 and accepts weaker suggestions.
+LLM_SHARE_BUSINESS_NAMES = env_bool("LLM_SHARE_BUSINESS_NAMES", True)
 
 # ---------------------------------------------------------------------------
 # API

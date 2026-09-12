@@ -1,15 +1,21 @@
-"""Stub LLM adapter. Out of scope for this phase; raises if called."""
+"""No model. The default until a provider is configured.
 
-from .base import LLMAdapter
+``is_available`` is False, so the classifier skips the model tier entirely and
+every unplaced row goes to a person. A firm that never configures a provider
+gets the rules-plus-review product, which is complete in itself.
+"""
+
+from .base import LLMAdapter, LLMUnavailable
 
 
 class StubLLMAdapter(LLMAdapter):
+    is_available = False
+
     def __init__(self, **_ignored):
         pass
 
-    def complete(self, prompt, *, max_tokens=1024, **kwargs):
-        raise NotImplementedError(
-            "No LLM backend is wired. The classification engine is a later "
-            "phase; this adapter exists so its call sites can be written "
-            "against a stable interface."
+    def complete_json(self, system, user, *, max_tokens=2048):
+        raise LLMUnavailable(
+            "No LLM backend is configured. Set LLM_BACKEND to a provider adapter "
+            "(e.g. integrations.llm.groq.GroqLLMAdapter) and its key."
         )

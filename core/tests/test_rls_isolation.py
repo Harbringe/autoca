@@ -355,6 +355,7 @@ def _touch(model) -> dict:
         ("narration", "tampered"),
         ("parser", "TAMPERED"),
         ("pattern", "TAMPERED"),
+        ("canonical_name", "TAMPERED"),
         ("counterparty", "TAMPERED"),
     ):
         if candidate in names:

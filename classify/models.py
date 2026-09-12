@@ -22,13 +22,19 @@ Three things follow from that, and they are why the schema looks like this:
 
 from __future__ import annotations
 
+import hashlib
 import re
 
 from django.db import models
 from django.utils import timezone
 
 from banking.models import StatementTransaction
+from classify.treatment import ReviewBand, TdsSection, Treatment, band_for
+from core.crypto import blind_index, decrypt_text_for_firm, encrypt_for_firm
 from core.models import Client, FirmScopedModel, User, UUIDModel
+
+#: Encryption context domain for identifiers held in this app.
+CRYPTO_PURPOSE = "classify.vendor"
 
 
 class LedgerGroup(models.TextChoices):
@@ -87,6 +93,85 @@ class LedgerAccount(UUIDModel, FirmScopedModel):
         return self.group in {LedgerGroup.BANK, LedgerGroup.CASH}
 
 
+class Vendor(UUIDModel, FirmScopedModel):
+    """A party the client transacts with.
+
+    Separate from the ledger head because they answer different questions. The
+    ledger says what kind of expense it was; the vendor says who it was with,
+    and "how much did we pay this vendor this year" is a question a firm is
+    asked constantly and cannot answer from ledger heads alone.
+
+    The vendor is also where reverse-charge and TDS defaults live, because those
+    are properties of *who you are paying*, not of the category you booked it
+    under. A goods transport agency is reverse-charge whether the payment lands
+    in Freight or in Direct Expenses.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="vendors")
+    canonical_name = models.CharField(max_length=255)
+
+    #: A stable stand-in for the name -- "V" plus a short hash. When a narration
+    #: is sent to a language model for classification, known vendors are
+    #: replaced by this, so the model sees the shape of the transaction without
+    #: the counterparty's identity. The mapping back happens server-side.
+    alias_token = models.CharField(max_length=24, db_index=True)
+
+    gstin_enc = models.BinaryField(blank=True, null=True)
+    gstin_hash = models.CharField(max_length=64, blank=True, db_index=True)
+
+    #: Reverse charge applies to this vendor by default. Learned once per client
+    #: and then applied, rather than re-decided every month.
+    rcm_default = models.BooleanField(default=False)
+    #: TDS section that normally applies to payments to this vendor, if any.
+    tds_section = models.CharField(max_length=16, blank=True, choices=TdsSection.CHOICES)
+
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "classify_vendor"
+        ordering = ["canonical_name"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["firm", "client", "canonical_name"], name="uniq_vendor_name_per_client"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return self.canonical_name
+
+    def save(self, *args, **kwargs):
+        if not self.alias_token:
+            self.alias_token = self.make_alias(self.canonical_name, self.firm_id)
+        return super().save(*args, **kwargs)
+
+    @staticmethod
+    def make_alias(name: str, firm_id) -> str:
+        """A stable pseudonym, unique within a firm and meaningless outside it."""
+        seed = f"{firm_id}|{name.strip().upper()}".encode()
+        return "V" + hashlib.sha256(seed).hexdigest()[:10].upper()
+
+    @property
+    def gstin(self) -> str:
+        if not self.gstin_enc:
+            return ""
+        return decrypt_text_for_firm(bytes(self.gstin_enc), self.firm_id, CRYPTO_PURPOSE)
+
+    def set_gstin(self, gstin: str) -> None:
+        """Store the GSTIN encrypted, with a blind index for reconciliation.
+
+        GST reconciliation matches purchase-register rows to GSTR-2B rows on
+        vendor GSTIN. That join has to work on ciphertext that is different
+        every time, which is what the hash column is for.
+        """
+        gstin = (gstin or "").strip().upper()
+        if not gstin:
+            self.gstin_enc = None
+            self.gstin_hash = ""
+            return
+        self.gstin_enc = encrypt_for_firm(gstin, self.firm_id, CRYPTO_PURPOSE)
+        self.gstin_hash = blind_index(gstin, self.firm_id, CRYPTO_PURPOSE)
+
+
 class MatchType(models.TextChoices):
     #: Normalised counterparty equals the pattern. The safest rule, and what
     #: learning from a human decision produces.
@@ -126,7 +211,22 @@ class ClassificationRule(UUIDModel, FirmScopedModel):
     client = models.ForeignKey(
         Client, on_delete=models.CASCADE, related_name="classification_rules", null=True, blank=True
     )
+    # -- the treatment this rule applies -----------------------------------
+    # All four together, because they were decided together. A rule that
+    # remembered the ledger and forgot the reverse-charge flag would look like
+    # it worked until a return was prepared from incomplete books.
     ledger = models.ForeignKey(LedgerAccount, on_delete=models.CASCADE, related_name="rules")
+    vendor = models.ForeignKey(
+        Vendor, on_delete=models.SET_NULL, null=True, blank=True, related_name="rules"
+    )
+    rcm = models.BooleanField(default=False)
+    tds_section = models.CharField(max_length=16, blank=True, choices=TdsSection.CHOICES)
+
+    #: How sure a match on this rule should make us. Defaulted from the match
+    #: type -- a rule learned from a person naming this exact payee is a far
+    #: stronger claim than one matching every transaction on a channel -- and
+    #: adjustable per rule, because a firm knows its own exceptions.
+    confidence = models.FloatField(default=0.9)
 
     match_type = models.CharField(
         max_length=24, choices=MatchType.choices, default=MatchType.PARTY_EQUALS
@@ -166,6 +266,12 @@ class ClassificationRule(UUIDModel, FirmScopedModel):
 
     def __str__(self) -> str:
         return f"{self.get_match_type_display()} {self.pattern!r} -> {self.ledger_id}"
+
+    @property
+    def treatment(self) -> Treatment:
+        return Treatment(
+            ledger=self.ledger, vendor=self.vendor, rcm=self.rcm, tds_section=self.tds_section
+        )
 
     def matches(self, facts, is_debit: bool) -> bool:
         """True if this rule claims a transaction with these narration facts."""
@@ -211,6 +317,12 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
     ledger = models.ForeignKey(
         LedgerAccount, on_delete=models.PROTECT, related_name="classifications", null=True, blank=True
     )
+    vendor = models.ForeignKey(
+        Vendor, on_delete=models.SET_NULL, null=True, blank=True, related_name="classifications"
+    )
+    rcm = models.BooleanField(default=False)
+    tds_section = models.CharField(max_length=16, blank=True, choices=TdsSection.CHOICES)
+
     method = models.CharField(
         max_length=16, choices=ClassificationMethod.choices, default=ClassificationMethod.UNRESOLVED
     )
@@ -221,7 +333,13 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
         null=True,
         blank=True,
     )
+    #: Design principle: every automated decision carries a confidence and a
+    #: provenance. ``method`` and ``rule`` are the provenance; this is the
+    #: confidence, and ``review_band`` is how it is presented.
     confidence = models.FloatField(default=0.0)
+    review_band = models.CharField(
+        max_length=12, choices=ReviewBand.CHOICES, default=ReviewBand.JUDGEMENT
+    )
     needs_review = models.BooleanField(default=True)
 
     #: Facts read out of the narration at classification time, kept so the
@@ -260,19 +378,55 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
     def __str__(self) -> str:
         return f"{self.transaction_id} -> {self.ledger_id or 'unresolved'}"
 
-    def resolve(self, ledger: LedgerAccount, user=None, *, method=ClassificationMethod.REVIEWED):
-        """Place this row in a ledger on a person's authority."""
-        self.ledger = ledger
+    @property
+    def treatment(self) -> Treatment | None:
+        if self.ledger is None:
+            return None
+        return Treatment(
+            ledger=self.ledger, vendor=self.vendor, rcm=self.rcm, tds_section=self.tds_section
+        )
+
+    def apply(self, treatment: Treatment, *, method, confidence: float, rule=None, user=None):
+        """Record a decision about this row, however it was reached.
+
+        One method for all four sources -- rule, model, person -- so a new
+        source cannot accidentally set some of the fields and leave the rest at
+        their defaults.
+        """
+        self.ledger = treatment.ledger
+        self.vendor = treatment.vendor
+        self.rcm = treatment.rcm
+        self.tds_section = treatment.tds_section
         self.method = method
-        self.confidence = 1.0
+        self.rule = rule
+        self.confidence = confidence
+        self.review_band = band_for(confidence)
+        self.needs_review = confidence < 1.0
+        if user is not None:
+            self.reviewed_by = user
+        return self
+
+    def resolve(self, treatment: Treatment, user=None, *, method=ClassificationMethod.REVIEWED):
+        """Place this row on a person's authority. Confidence is total.
+
+        The timestamp is set whether or not a user was supplied. A resolve is by
+        definition a deliberate act, and "reviewed, by nobody recorded" is a
+        more honest gap than "never reviewed" -- the latter would let a
+        command-line correction masquerade as an untouched row.
+        """
+        self.apply(treatment, method=method, confidence=1.0, user=user)
         self.needs_review = False
-        self.reviewed_by = user
         self.reviewed_at = timezone.now()
         self.save(
             update_fields=[
                 "ledger",
+                "vendor",
+                "rcm",
+                "tds_section",
                 "method",
+                "rule",
                 "confidence",
+                "review_band",
                 "needs_review",
                 "reviewed_by",
                 "reviewed_at",

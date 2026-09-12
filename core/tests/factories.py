@@ -20,6 +20,7 @@ from classify.models import (
     LedgerAccount,
     LedgerGroup,
     TransactionClassification,
+    Vendor,
 )
 from core.models import AuditLog, Client, Firm, FirmMembership, Role, User
 from documents.models import Document, DocumentKind
@@ -116,6 +117,14 @@ def _ledger_account(firm, **kw):
     )
 
 
+def _vendor(firm, **kw):
+    return Vendor.objects.create(
+        firm=firm,
+        client=kw.get("client") or _client(firm),
+        canonical_name=kw.get("canonical_name", f"Vendor {uuid.uuid4().hex[:8]}"),
+    )
+
+
 def _classification_rule(firm, **kw):
     ledger = kw.get("ledger") or _ledger_account(firm)
     return ClassificationRule.objects.create(
@@ -146,6 +155,7 @@ FACTORIES = {
     Statement: _statement,
     StatementTransaction: _statement_transaction,
     LedgerAccount: _ledger_account,
+    Vendor: _vendor,
     ClassificationRule: _classification_rule,
     TransactionClassification: _transaction_classification,
 }

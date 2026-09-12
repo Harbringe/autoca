@@ -7,15 +7,20 @@ The loop this implements:
                           -> a rule is minted from that decision
                           -> reclassify_unresolved() applies it to the backlog
 
-That last step is what makes the queue shrink. A person who places one of
-nineteen identical BHIM cashback credits has placed all nineteen; making them do
-it nineteen times is how a tool gets abandoned.
+That last step is what makes the queue shrink. A person who places one of nine
+identical BHIM cashback credits has placed all nine; making them do it nine
+times is how a tool gets abandoned.
 
-Matching is deterministic and ordered, never first-match-wins over an arbitrary
-queryset order. Two rules can legitimately claim one row -- a client rule for a
-payee and a firm-wide rule for the channel it arrived on -- and which of them
-wins has to be a property of the rules, not of how the database felt like
-returning them.
+Two properties are deliberate and worth keeping:
+
+* **Matching is ordered, never first-match-wins over an arbitrary queryset.**
+  Two rules can legitimately claim one row -- a client rule for a payee and a
+  firm-wide rule for the channel it arrived on -- and which wins has to be a
+  property of the rules, not of how the database felt like returning them.
+* **Every decision carries a confidence and a provenance.** The review screen
+  sorts by confidence, and that ordering is what turns an hour of checking into
+  minutes. A suggestion with no confidence attached is a guess wearing a
+  uniform.
 """
 
 from __future__ import annotations
@@ -31,12 +36,43 @@ from classify.models import (
     ClassificationMethod,
     ClassificationRule,
     Direction,
-    LedgerAccount,
     MatchType,
     RuleSource,
     TransactionClassification,
+    Vendor,
 )
 from classify.narration import NarrationFacts, analyse, normalise
+from classify.treatment import ReviewBand, Treatment, band_for
+
+#: Learned rules outrank seeds but sit below anything written by hand, so a
+#: deliberate rule is never overridden by an inference from a single click.
+LEARNED_PRIORITY = 500
+
+#: Default confidence by match type. A rule learned from a person naming this
+#: exact payee is a far stronger claim than one matching every transaction on a
+#: channel, and the review screen should say so.
+CONFIDENCE_BY_MATCH = {
+    MatchType.PARTY_EQUALS: 0.95,
+    MatchType.PARTY_CONTAINS: 0.85,
+    MatchType.NARRATION_CONTAINS: 0.85,
+    MatchType.REGEX: 0.85,
+    # A channel rule is a generalisation about how money moved, not about who it
+    # moved to. Right often enough to suggest, never certain enough to assert --
+    # except for the seeded ones, which describe what the bank itself did.
+    MatchType.CHANNEL_IS: 0.80,
+}
+
+
+def default_confidence(match_type: str, source: str) -> float:
+    """What a fresh rule of this kind should claim.
+
+    Seeded rules describe the bank's own behaviour -- interest it paid, charges
+    it levied -- and those mean the same thing in every set of books, so they
+    assert rather than suggest even though they match on a channel.
+    """
+    if source == RuleSource.SEED:
+        return 0.95
+    return CONFIDENCE_BY_MATCH.get(match_type, 0.85)
 
 
 @dataclass(frozen=True)
@@ -53,6 +89,28 @@ class ClassifyResult:
         return self.placed / self.total if self.total else 0.0
 
 
+@dataclass(frozen=True)
+class ReviewSummary:
+    """The "which entries need looking at" view the requirements document asks for."""
+
+    high: int
+    advised: int
+    judgement: int
+
+    @property
+    def total(self) -> int:
+        return self.high + self.advised + self.judgement
+
+    @property
+    def bulk_approvable(self) -> int:
+        return self.high
+
+
+# ---------------------------------------------------------------------------
+# Matching
+# ---------------------------------------------------------------------------
+
+
 def rules_for(client) -> list[ClassificationRule]:
     """Active rules that may apply to ``client``, strongest first.
 
@@ -67,7 +125,7 @@ def rules_for(client) -> list[ClassificationRule]:
     """
     candidates = ClassificationRule.objects.filter(
         Q(client=client) | Q(client__isnull=True), is_active=True
-    ).select_related("ledger")
+    ).select_related("ledger", "vendor")
     return sorted(
         candidates,
         key=lambda rule: (rule.client_id is not None, rule.priority, len(rule.pattern)),
@@ -117,17 +175,27 @@ def reclassify_unresolved(client, *, rules=None) -> ClassifyResult:
     placed = 0
     for classification in queued:
         txn = classification.transaction
-        facts = _facts_for(classification)
-        rule = first_matching_rule(facts, txn.is_debit, rules)
+        rule = first_matching_rule(_facts_for(classification), txn.is_debit, rules)
         if rule is None:
             continue
-        classification.ledger = rule.ledger
-        classification.rule = rule
-        classification.method = ClassificationMethod.RULE
-        classification.confidence = 1.0
-        classification.needs_review = False
+        classification.apply(
+            rule.treatment,
+            method=ClassificationMethod.RULE,
+            confidence=rule.confidence,
+            rule=rule,
+        )
         classification.save(
-            update_fields=["ledger", "rule", "method", "confidence", "needs_review"]
+            update_fields=[
+                "ledger",
+                "vendor",
+                "rcm",
+                "tds_section",
+                "rule",
+                "method",
+                "confidence",
+                "review_band",
+                "needs_review",
+            ]
         )
         _record_hits([rule])
         placed += 1
@@ -135,9 +203,18 @@ def reclassify_unresolved(client, *, rules=None) -> ClassifyResult:
     return ClassifyResult(placed=placed, queued=len(queued) - placed)
 
 
+# ---------------------------------------------------------------------------
+# Review and learning
+# ---------------------------------------------------------------------------
+
+
 @db_transaction.atomic
-def review(classification, ledger: LedgerAccount, user=None, *, learn: bool = True):
-    """Place a queued row in a ledger, and learn the rule it implies.
+def review(classification, treatment, user=None, *, learn: bool = True):
+    """Place a queued row, and learn the rule its treatment implies.
+
+    ``treatment`` may be a :class:`~classify.treatment.Treatment` or a bare
+    ledger, which is the common case from a UI where the reviewer only changed
+    the ledger head.
 
     ``learn`` exists for the case a person means "this one row only" -- a
     refund, a one-off that happens to name a regular payee. Defaulting it to
@@ -146,17 +223,18 @@ def review(classification, ledger: LedgerAccount, user=None, *, learn: bool = Tr
     up as a queue that never gets shorter, which just looks like the tool not
     working.
     """
-    classification.resolve(ledger, user)
+    treatment = _coerce_treatment(treatment)
+    classification.resolve(treatment, user)
     if not learn:
         return classification, None
 
-    rule = learn_rule_from(classification, ledger, user)
+    rule = learn_rule_from(classification, treatment, user)
     if rule is not None:
         reclassify_unresolved(classification.transaction.bank_account.client)
     return classification, rule
 
 
-def learn_rule_from(classification, ledger: LedgerAccount, user=None) -> ClassificationRule | None:
+def learn_rule_from(classification, treatment, user=None) -> ClassificationRule | None:
     """Derive a reusable rule from one human decision.
 
     Keys on the counterparty, not on the narration. A narration carries a
@@ -168,6 +246,7 @@ def learn_rule_from(classification, ledger: LedgerAccount, user=None) -> Classif
     Returns None when there is nothing generalisable to learn, rather than
     inventing a rule that will misfire.
     """
+    treatment = _coerce_treatment(treatment)
     facts = _facts_for(classification)
     if not facts.counterparty:
         return None
@@ -184,29 +263,102 @@ def learn_rule_from(classification, ledger: LedgerAccount, user=None) -> Classif
         pattern=pattern,
         direction=Direction.ANY,
         defaults={
-            "ledger": ledger,
+            **treatment.as_fields(),
             "source": RuleSource.LEARNED,
             "priority": LEARNED_PRIORITY,
+            "confidence": default_confidence(MatchType.PARTY_EQUALS, RuleSource.LEARNED),
             "created_by": user,
         },
     )
-    if not created and rule.ledger_id != ledger.pk:
-        # The person changed their mind about this payee. Their latest decision
-        # is the one that stands.
-        rule.ledger = ledger
+    if not created and not treatment.matches(rule):
+        # The person changed their mind about this payee -- a different ledger,
+        # or the same ledger now flagged reverse-charge. Their latest decision
+        # is the one that stands, on all four counts rather than just the one
+        # they happened to click.
+        for field, value in treatment.as_fields().items():
+            setattr(rule, field, value)
         rule.is_active = True
-        rule.save(update_fields=["ledger", "is_active"])
+        rule.save(update_fields=["ledger", "vendor", "rcm", "tds_section", "is_active"])
     return rule
 
 
-#: Learned rules outrank seeds but sit below anything written by hand, so a
-#: deliberate rule is never overridden by an inference from a single click.
-LEARNED_PRIORITY = 500
+def vendor_for(client, name: str, *, rcm: bool = False, tds_section: str = "") -> Vendor:
+    """Find or open the vendor record for a counterparty name.
+
+    Matched on the normalised name, so the bank's inconsistent spacing and case
+    do not produce three vendors for one payee.
+    """
+    canonical = " ".join(name.split())
+    existing = next(
+        (
+            vendor
+            for vendor in Vendor.objects.filter(firm_id=client.firm_id, client=client)
+            if normalise(vendor.canonical_name) == normalise(canonical)
+        ),
+        None,
+    )
+    if existing is not None:
+        return existing
+
+    return Vendor.objects.create(
+        firm_id=client.firm_id,
+        client=client,
+        canonical_name=canonical,
+        rcm_default=rcm,
+        tds_section=tds_section,
+    )
+
+
+# ---------------------------------------------------------------------------
+# The queue
+# ---------------------------------------------------------------------------
+
+
+def unresolved_for(client):
+    """Rows nobody has placed yet, most recent first."""
+    return (
+        TransactionClassification.objects.filter(
+            firm_id=client.firm_id, needs_review=True, ledger__isnull=True
+        )
+        .filter(transaction__bank_account__client=client)
+        .select_related("transaction")
+        .order_by("-transaction__value_date")
+    )
+
+
+def review_queue(client, band: str | None = None):
+    """Everything awaiting a person, optionally one band at a time.
+
+    Ordered by confidence descending, so the rows the system is surest about --
+    the ones eligible for bulk approval -- come first, and the genuinely
+    ambiguous ones sit at the bottom where they belong.
+    """
+    queue = (
+        TransactionClassification.objects.filter(firm_id=client.firm_id, needs_review=True)
+        .filter(transaction__bank_account__client=client)
+        .select_related("transaction", "ledger", "vendor")
+        .order_by("-confidence", "-transaction__value_date")
+    )
+    return queue.filter(review_band=band) if band else queue
+
+
+def review_summary(client) -> ReviewSummary:
+    """How much work is waiting, split by how much thought each row needs."""
+    counts = Counter(review_queue(client).values_list("review_band", flat=True))
+    return ReviewSummary(
+        high=counts.get(ReviewBand.HIGH, 0),
+        advised=counts.get(ReviewBand.ADVISED, 0),
+        judgement=counts.get(ReviewBand.JUDGEMENT, 0),
+    )
 
 
 # ---------------------------------------------------------------------------
 # internals
 # ---------------------------------------------------------------------------
+
+
+def _coerce_treatment(value) -> Treatment:
+    return value if isinstance(value, Treatment) else Treatment(ledger=value)
 
 
 def _classify_rows(transactions, rules, holder, own_accounts, firm_id) -> ClassifyResult:
@@ -228,13 +380,16 @@ def _classify_rows(transactions, rules, holder, own_accounts, firm_id) -> Classi
         if rule is None:
             row.method = ClassificationMethod.UNRESOLVED
             row.needs_review = True
+            row.confidence = 0.0
+            row.review_band = band_for(0.0)
             queued += 1
         else:
-            row.ledger = rule.ledger
-            row.rule = rule
-            row.method = ClassificationMethod.RULE
-            row.confidence = 1.0
-            row.needs_review = False
+            row.apply(
+                rule.treatment,
+                method=ClassificationMethod.RULE,
+                confidence=rule.confidence,
+                rule=rule,
+            )
             hits.append(rule)
             placed += 1
         fresh.append(row)
@@ -267,9 +422,9 @@ def _own_account_numbers(client) -> list[str]:
 def _record_hits(rules) -> None:
     """Count firings in the database, not from a stale in-memory value.
 
-    The same rule usually fires many times in one statement -- nineteen BHIM
-    cashbacks is one rule and nineteen hits -- so this has to add a count rather
-    than set one, or a whole statement's worth of hits registers as a single
+    The same rule usually fires many times in one statement -- nine BHIM
+    cashbacks is one rule and nine hits -- so this adds a count rather than
+    setting one, or a whole statement's worth of hits registers as a single
     firing.
     """
     counted = Counter(rule.pk for rule in rules)
@@ -278,14 +433,3 @@ def _record_hits(rules) -> None:
         ClassificationRule.objects.filter(pk=pk).update(
             hit_count=F("hit_count") + times, last_hit_at=now
         )
-
-
-def unresolved_for(client):
-    """The review queue, most recent first."""
-    return (
-        TransactionClassification.objects.filter(
-            firm_id=client.firm_id, needs_review=True, transaction__bank_account__client=client
-        )
-        .select_related("transaction")
-        .order_by("-transaction__value_date")
-    )

@@ -23,6 +23,7 @@ three months that way, and never has to hunt for a wrong seeded assumption.
 
 from __future__ import annotations
 
+from classify.engine import default_confidence
 from classify.models import (
     ClassificationRule,
     Direction,
@@ -82,6 +83,7 @@ def seed_client(client, *, created_by=None) -> dict[str, int]:
                 "ledger": ledgers[ledger_name],
                 "source": RuleSource.SEED,
                 "priority": SEED_PRIORITY,
+                "confidence": default_confidence(match_type, RuleSource.SEED),
                 "created_by": created_by,
             },
         )

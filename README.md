@@ -87,7 +87,7 @@ python manage.py runserver
 ```
 
 For frontend work, `npm run dev` in `frontend/` serves the app at
-`http://localhost:5173/static/app/` with the API proxied to the Django server,
+`http://localhost:5173/app/` with the API proxied to the Django server,
 so the session cookie and CSRF flow are the real ones.
 
 ### With Docker

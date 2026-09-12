@@ -1,17 +1,23 @@
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 
-// The built bundle is served by Django/WhiteNoise under STATIC_URL, so asset
-// URLs are absolute under /static/app/. The application itself lives at /app/
-// (see config/urls.py); the router's basename is set there, not here.
+// Built: hashed assets land in dist/app/assets/ and are referenced as
+// /static/app/assets/..., served by Django/WhiteNoise with frontend/dist as an
+// *unprefixed* STATICFILES_DIRS entry. (A prefixed entry -- ("app", dist) --
+// looks equivalent and is not: Django's FileSystemFinder compares the prefix
+// with os.sep, so on Windows every /static/app/... lookup misses and the page
+// loads with no script.) index.html is served for every /app/ route by
+// core/spa.py, and the router's basename is /app.
 //
-// In development `npm run dev` proxies the API to the Django dev server so
-// the session cookie and CSRF flow are the real ones.
-export default defineConfig({
+// Dev: `npm run dev` serves the app at http://localhost:5173/app/ and proxies
+// the API to the Django dev server, so the session cookie and CSRF flow are
+// the real ones.
+export default defineConfig(({ command }) => ({
   plugins: [react()],
-  base: '/static/app/',
+  base: command === 'build' ? '/static/' : '/app/',
   build: {
     outDir: 'dist',
+    assetsDir: 'app/assets',
     emptyOutDir: true,
     sourcemap: false,
   },
@@ -23,4 +29,4 @@ export default defineConfig({
       '/healthz': 'http://127.0.0.1:8000',
     },
   },
-})
+}))

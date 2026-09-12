@@ -505,7 +505,9 @@ STORAGES = {
 # The built frontend. Vite writes hashed assets here; they are served under
 # /static/app/ by WhiteNoise, and index.html by core.spa.
 FRONTEND_DIST = Path(env("FRONTEND_DIST", str(BASE_DIR / "frontend" / "dist")))
-STATICFILES_DIRS = [("app", FRONTEND_DIST)] if FRONTEND_DIST.exists() else []
+# Unprefixed on purpose: Vite already writes the assets under app/assets/. A
+# ("app", dir) prefix breaks lookups on Windows; see frontend/vite.config.ts.
+STATICFILES_DIRS = [FRONTEND_DIST] if FRONTEND_DIST.exists() else []
 # Vite's asset names already carry a content hash, and some bundlers emit
 # references the manifest storage cannot resolve. Missing references should
 # not fail collectstatic.

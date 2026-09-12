@@ -37,8 +37,12 @@ approved can be altered afterwards: the journal tables have no UPDATE or DELETE
 grant and triggers that raise. Corrections are new entries that reverse and
 replace, leaving the original visible.
 
-Axis is the only statement format implemented. GST reconciliation is Phase 2 and
-`gst/` is still an empty placeholder.
+**Any bank.** There is no per-bank requirement: the generic parser infers which
+column is which and proves the inference against the statement's own running
+balance, so a format nobody anticipated either reads correctly or is refused.
+A dedicated parser (Axis has one) is an optimisation, not a prerequisite.
+
+GST reconciliation is Phase 2 and `gst/` is still an empty placeholder.
 
 ## Setup
 
@@ -92,12 +96,43 @@ suggestion, and only `ledger.approval.approve()` (senior CA or firm admin) turns
 one into a book entry. Approve, then export again; the `REMOTEID` on each
 voucher is stable, so Tally updates rather than duplicating.
 
+## Checking the work by hand
+
+No Tally and no review screen yet, so everything is drivable and inspectable
+from the command line.
+
+```bash
+# one page showing every row: as the bank printed it, as it was read,
+# how it was classified and why, and the entry it became
+python manage.py verify_statement --firm <uuid> --client "Acme" --out report.html
+
+# the review queue, sorted by confidence
+python manage.py review --firm <uuid> --client "Acme"
+python manage.py review --firm <uuid> --client "Acme" --band JUDGEMENT
+
+# place one row; the rule learned from it usually places several more
+python manage.py review --firm <uuid> --client "Acme" \
+    --place 1 --ledger "Office Expenses" --group INDIRECT_EXPENSE
+
+# post them -- only a senior CA or firm admin may
+python manage.py approve --firm <uuid> --client "Acme" --as ca@firm.test --band HIGH
+
+# the books, and whether they agree with the bank
+python manage.py books --firm <uuid> --client "Acme" --fy 2025 --reconcile 31-03-2026
+```
+
+`verify_statement` is the one to reach for when checking a new bank's format:
+open it beside the original PDF and read down. The **Chain** column re-walks the
+running balance independently of the parse, so a tick on every row means the
+figures are the bank's own.
+
 ## Verifying the guarantees
 
 ```bash
 pytest core/tests/test_rls_isolation.py        # cross-tenant attack suite
 pytest integrations/tests/test_adapter_swap.py # adapter boundary, envelope crypto
 pytest banking/tests/test_balance_chain.py     # dropped rows, flipped columns, bad totals
+pytest banking/tests/test_generic_parser.py    # five bank layouts, no bank-specific code
 pytest ledger/tests/test_approval.py           # immutability, attacked via ORM and raw SQL
 pytest ledger/tests/test_tally_export.py       # double entry, Tally's inverted signs
 pytest ledger/tests/test_reconciliation.py     # month end: books vs bank
@@ -123,18 +158,25 @@ core/            tenancy, users, RBAC, audit, crypto call sites
 integrations/    every external service, behind an adapter interface
 documents/       every uploaded file, whatever kind, in one registry
 banking/         statement parsing, ingestion, deduplication, continuity
-  parsers/       one per bank format; each proves its own arithmetic
+  parsers/       generic (any bank) plus dedicated ones; all prove their arithmetic
 classify/        narration analysis, rules, vendors, the review queue
 ledger/          approval, the immutable journal, Tally XML, reports
 gst/             placeholder, no logic yet
 scripts/         database role bootstrap, Supabase keepalive
 ```
 
-Adding a bank format is one file in `banking/parsers/` plus an entry in
-`PARSERS`. It does not need its own validation: `ParsedStatement` refuses to
-exist unless the rows reproduce the statement's own opening balance, running
-balances, printed totals and closing balance. Either it balances or it raises
-with the row where the arithmetic first went wrong.
+Most banks need no code at all. `banking/parsers/generic.py` reads any ruled
+transaction table by working out the column layout and checking it against the
+running balance; `banking/tests/layouts.py` holds the arrangements it is proved
+against (HDFC, ICICI, Kotak, SBI, and a header-less export). Add a new
+arrangement there first -- a layout in that file and failing is a bug report, a
+layout only in a customer's inbox is a support ticket.
+
+A dedicated parser earns its place by being needed: when a layout defeats the
+inference, or to pick up detail the generic path drops. It is one file plus an
+entry in `DEDICATED_PARSERS`, and needs no validation of its own --
+`ParsedStatement` refuses to exist unless the rows reproduce the statement's own
+opening balance, running balances, printed totals and closing balance.
 
 ## Running the tests locally
 

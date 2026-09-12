@@ -1,10 +1,22 @@
 """Parser registry: document in, proved statement out.
 
-Detection is by content, not by filename or by a field the uploader picked.
-A firm's staff will upload the wrong bank's statement eventually, and a
+Two tiers, and the ordering is the point.
+
+**Dedicated parsers** know one bank's layout exactly. They are worth writing
+when a format defeats inference, or to pick up detail the generic path drops.
+They are an optimisation, not a requirement.
+
+**The generic parser** reads any ruled transaction table by inferring which
+column is which and proving the inference against the statement's own running
+balance. It is what makes "works with whatever bank the client uses" true
+rather than aspirational -- a firm with thirty clients sees a dozen banks, and
+waiting for someone to write a parser for each is waiting forever.
+
+Detection is by content, never by filename or by a field the uploader picked. A
+firm's staff will upload the wrong bank's statement eventually, and a
 mis-declared format that parses anyway is how a client's year gets silently
-misstated. Two parsers claiming the same document is also an error rather than
-a first-match-wins, because it means one of the detectors is too loose.
+misstated. Two dedicated parsers claiming one document is an error rather than
+first-match-wins, because it means one of their detectors is too loose.
 """
 
 from __future__ import annotations
@@ -21,10 +33,19 @@ from .base import (
     StatementParser,
     UnsupportedBankError,
 )
+from .generic import GenericStatementParser
 
-PARSERS: tuple[type[StatementParser], ...] = (AxisStatementParser,)
+#: Tried first, in order. Each must recognise only its own bank.
+DEDICATED_PARSERS: tuple[type[StatementParser], ...] = (AxisStatementParser,)
+
+#: Tried when no dedicated parser claims the document.
+FALLBACK_PARSER: type[StatementParser] = GenericStatementParser
+
+PARSERS: tuple[type[StatementParser], ...] = (*DEDICATED_PARSERS, FALLBACK_PARSER)
 
 __all__ = [
+    "DEDICATED_PARSERS",
+    "FALLBACK_PARSER",
     "PARSERS",
     "BalanceChainError",
     "NoTextLayerError",
@@ -46,19 +67,25 @@ def detect_parser(document: PdfDocument) -> StatementParser:
             "integrations/ocr/base.py before reaching for a vendor."
         )
 
-    matches = [parser for parser in PARSERS if parser.detect(document)]
-    if not matches:
-        raise UnsupportedBankError(
-            f"No parser recognised this statement. Supported formats: "
-            f"{', '.join(p.bank_code for p in PARSERS)}."
-        )
+    matches = [parser for parser in DEDICATED_PARSERS if parser.detect(document)]
     if len(matches) > 1:
         raise UnsupportedBankError(
             f"{len(matches)} parsers claim this document "
             f"({', '.join(p.bank_code for p in matches)}). One of their detectors "
             f"is too loose; guessing between them would be worse than refusing."
         )
-    return matches[0]()
+    if matches:
+        return matches[0]()
+
+    if FALLBACK_PARSER.detect(document):
+        return FALLBACK_PARSER()
+
+    raise UnsupportedBankError(
+        "Nothing in this document looks like a transaction table: no page has "
+        "rows carrying a date and two amounts. If the statement is a scan, it "
+        "needs OCR; if its table has no ruled borders, the extractor found no "
+        "cells to read."
+    )
 
 
 def parse_statement(document: PdfDocument) -> ParsedStatement:

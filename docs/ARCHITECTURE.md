@@ -217,6 +217,40 @@ than the document has.
 The practical consequence is that a new bank's format can be accepted without a
 human reading the output. Either it balances or it raises.
 
+### Any bank, without a parser per bank
+
+A parser per bank is exact and does not scale to the actual requirement: a firm
+with thirty clients sees a dozen banks and a new one the week after you finish
+the last. The architecture's answer was a generic table extractor with
+"mandatory human column-confirmation". The implementation improves on that, and
+the improvement comes free from Rule 4.
+
+**Column roles are guessed, then proved.** The balance column is a running
+total, so the difference between consecutive balances is exactly what that row
+did to the account. A candidate mapping is correct if and only if the amounts it
+picks out reproduce those differences on *every* row. Wrong mappings do not
+almost-work -- they fail on the first pair and keep failing. So
+`banking/parsers/columns.py` enumerates the plausible mappings and keeps the one
+the arithmetic endorses.
+
+That is a stronger check than a human confirming columns by eye, and it needs
+nobody's attention. Between them the mappings cover every arrangement in Indian
+retail banking: separate Withdrawal/Deposit columns in either order, Debit and
+Credit with other columns interleaved, one Amount column with a Dr/Cr flag, and
+tables with no header row at all.
+
+Two things the arithmetic cannot vouch for, both handled explicitly:
+
+- **The narration column** takes no part in the sums. It falls back to "the wide
+  text column that is not a date", and the mapping records that it was a guess.
+- **A serial-number column** parses as money -- `1, 2, 3` is a perfectly good
+  rupee amount -- and would otherwise be tried as an amount column. Columns that
+  are consecutive small integers are excluded up front.
+
+`banking/tests/layouts.py` holds the layouts this is proved against. The
+strongest test is that the generic parser reads the real 54-row Axis statement
+identically to the dedicated Axis parser, row for row.
+
 ### Why the extractor returns cells rather than text
 
 Flattened to a line, a row reads:

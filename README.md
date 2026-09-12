@@ -70,6 +70,39 @@ python manage.py rls_status
 python manage.py runserver
 ```
 
+## The API
+
+`/api/v1/`, plain REST and JSON, documented at **`/api/docs/`** (Swagger UI) and
+`/api/redoc/`. The schema at `/api/schema/` is generated from the code, so it
+cannot drift from what the endpoints actually do.
+
+```bash
+python manage.py runserver
+# then sign in at /auth/login/, pass the second factor, and open /api/docs/
+```
+
+Authentication is the session cookie the web login already issues, not a token.
+A stolen JWT is valid until it expires and cannot be revoked, which is a poor
+trade for a product holding client financial records. Everything behind
+`/api/v1/` requires an authenticated, second-factor-verified session that
+belongs to a firm; an API caller that has not passed MFA gets a JSON `403` with
+a code, never a redirect to an HTML page.
+
+Three conventions the whole API follows:
+
+- **Money is an integer number of paise**, in `*_paise`, with a `*_display`
+  twin already grouped the Indian way. Use the integer for arithmetic and the
+  string for rendering. A JSON number with a decimal point becomes a float in a
+  browser, which is precisely the error the backend exists to avoid.
+- **Slow work returns `202` with a job.** Poll `/api/v1/jobs/{id}/` or subscribe
+  to `/api/v1/jobs/{id}/events/` for server-sent events. Work runs inline today;
+  the contract is in place so moving it to a worker changes nothing a client
+  sees.
+- **Errors carry a stable `code` and a readable `detail`.** The parser's own
+  messages name the row and the figure that broke, and they are passed through
+  rather than replaced. `422` means the document could not be read, `409` that
+  the request conflicts with the current state, `403` a role boundary.
+
 ## Two conventions that are load-bearing
 
 **Money is a whole number of paise**, in fields named `*_paise`. Never a float,
@@ -136,6 +169,7 @@ pytest banking/tests/test_generic_parser.py    # five bank layouts, no bank-spec
 pytest ledger/tests/test_approval.py           # immutability, attacked via ORM and raw SQL
 pytest ledger/tests/test_tally_export.py       # double entry, Tally's inverted signs
 pytest ledger/tests/test_reconciliation.py     # month end: books vs bank
+pytest api/tests/test_api.py                   # the API, through the whole stack
 pytest                                          # everything
 ```
 
@@ -155,6 +189,7 @@ config/          settings (base / dev / prod / test), urls, celery
 core/            tenancy, users, RBAC, audit, crypto call sites
   db/            RLS policy generation, session context, introspection
   middleware/    mfa -> tenancy -> audit, in that order
+api/              REST API and the generated OpenAPI schema
 integrations/    every external service, behind an adapter interface
 documents/       every uploaded file, whatever kind, in one registry
 banking/         statement parsing, ingestion, deduplication, continuity

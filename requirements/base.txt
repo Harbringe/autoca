@@ -2,6 +2,12 @@
 Django==5.2.6
 psycopg[binary]==3.2.9
 
+# --- API ---
+# Session-authenticated REST, and OpenAPI generated from the code rather
+# than maintained beside it -- a hand-written schema is wrong within a week.
+djangorestframework==3.16.1
+drf-spectacular==0.28.0
+
 # --- Config ---
 dj-database-url==3.0.1
 python-dotenv==1.1.1

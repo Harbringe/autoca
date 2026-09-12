@@ -24,7 +24,7 @@ from classify.models import (
     TransactionClassification,
     Vendor,
 )
-from core.models import AuditLog, Client, Firm, FirmMembership, Role, User
+from core.models import AuditLog, Client, Firm, FirmMembership, Job, Role, User
 from documents.models import Document, DocumentKind
 from ledger.models import Direction, JournalEntry, JournalLine, VoucherSequence, VoucherType
 
@@ -52,6 +52,14 @@ def _audit(firm, **kw):
         path="/test/",
         status_code=200,
         request_id=uuid.uuid4().hex,
+    )
+
+
+def _job(firm, **kw):
+    return Job.objects.create(
+        firm=firm,
+        kind=kw.get("kind", "statement.ingest"),
+        idempotency_key=kw.get("idempotency_key", uuid.uuid4().hex),
     )
 
 
@@ -191,6 +199,7 @@ FACTORIES = {
     Client: _client,
     FirmMembership: _membership,
     AuditLog: _audit,
+    Job: _job,
     Document: _document,
     BankAccount: _bank_account,
     Statement: _statement,

@@ -59,8 +59,31 @@ def test_password_alone_does_not_grant_access():
     assert login.status_code == 200
     assert login.json()["mfa"] == "setup"
 
+    # A JSON endpoint answers in JSON. A 302 to the HTML enrolment page is
+    # unreadable to a fetch(), and an HTTP client that follows redirects by
+    # default would report the refusal as a success.
     response = http.get("/api/me/")
+    assert response.status_code == 403
+    assert response.json()["code"] == "mfa_enrolment_required"
+    assert response.json()["verify_at"] == "/auth/mfa/setup/"
+
+
+def test_a_browser_is_still_redirected_to_enrol():
+    """The HTML flow is unchanged: a person gets taken to the page they need."""
+    firm = create_firm("Firm B")
+    user = create_user("browser@example.com", PASSWORD)
+    add_member(firm, user)
+
+    http = HttpClient()
+    http.post(
+        "/auth/login/",
+        {"email": "browser@example.com", "password": PASSWORD},
+        content_type="application/json",
+    )
+
+    response = http.get("/admin/", HTTP_ACCEPT="text/html")
     assert response.status_code == 302
+    assert response["Location"].startswith("/auth/mfa/setup/")
     assert "/auth/mfa/setup/" in response["Location"]
 
 

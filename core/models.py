@@ -223,6 +223,86 @@ class FirmMembership(UUIDModel, FirmScopedModel):
 # ---------------------------------------------------------------------------
 
 
+class JobStatus(models.TextChoices):
+    PENDING = "PENDING", "Queued"
+    RUNNING = "RUNNING", "Running"
+    SUCCEEDED = "SUCCEEDED", "Succeeded"
+    FAILED = "FAILED", "Failed"
+
+    @classmethod
+    def terminal(cls) -> set[str]:
+        return {cls.SUCCEEDED, cls.FAILED}
+
+
+class Job(UUIDModel, FirmScopedModel):
+    """A unit of work the API reports on rather than blocking for.
+
+    Parsing a statement, classifying it, reconciling a period: all of these are
+    slow enough that an HTTP request should not sit on them. The architecture is
+    specific about the shape -- 202 Accepted with a job id, and the client
+    follows progress separately -- and that shape is a contract with every
+    client that will ever be written. Establishing it now costs one table;
+    retrofitting it later means changing every call site in a frontend.
+
+    **Work currently runs inline**, inside the request that created the job, and
+    the job is already finished by the time the 202 is returned. That is a
+    deliberate half-step, not an oversight: the contract is real, the Job row is
+    real, and moving execution onto a Celery worker is a change inside
+    ``core.jobs.run_job`` rather than a change to the API. What a caller sees
+    does not move.
+
+    ``idempotency_key`` is what makes a retried request safe. The architecture
+    calls for jobs keyed on something natural -- a statement id and a parser
+    version, say -- so that re-running a parse updates its suggestions instead
+    of duplicating them.
+    """
+
+    kind = models.CharField(max_length=64, help_text="e.g. statement.ingest")
+    status = models.CharField(max_length=16, choices=JobStatus.choices, default=JobStatus.PENDING)
+
+    #: Natural key. Two requests carrying the same one are the same job.
+    idempotency_key = models.CharField(max_length=255, blank=True)
+
+    progress = models.PositiveSmallIntegerField(default=0)
+    #: What the job is doing, in words a person can read while they wait.
+    message = models.CharField(max_length=255, blank=True)
+
+    #: Whatever the caller asked for, once there is an answer.
+    result = models.JSONField(default=dict, blank=True)
+    #: The failure, in the words the domain used. These messages are written for
+    #: people -- "Balance chain broke at row 30" -- so they are surfaced rather
+    #: than replaced with something generic.
+    error = models.TextField(blank=True)
+    error_code = models.CharField(max_length=64, blank=True)
+
+    started_at = models.DateTimeField(null=True, blank=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+    created_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="jobs"
+    )
+
+    class Meta:
+        db_table = "core_job"
+        ordering = ["-created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["firm", "idempotency_key"],
+                condition=~models.Q(idempotency_key=""),
+                name="uniq_job_idempotency_key",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["firm", "status"], name="idx_job_firm_status"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.kind} [{self.status}]"
+
+    @property
+    def is_finished(self) -> bool:
+        return self.status in JobStatus.terminal()
+
+
 class AuditLog(UUIDModel, FirmScopedModel):
     """Append-only record of who touched what.
 

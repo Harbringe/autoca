@@ -1,0 +1,102 @@
+"""Turning domain exceptions into HTTP responses that say something useful.
+
+The exceptions this codebase raises were written to be read. "Balance chain
+broke at row 30 (26-07-2025, 'NEFT/MB/AXOMB20702009852/...'): expected a balance
+of ₹20,74,322.43 after applying -₹15,00,000.00, but the statement prints
+₹5,74,322.43" tells a person exactly what to look at. Replacing that with
+"400 Bad Request" throws away the entire value of having written it.
+
+So the handler passes the message through, and adds a stable ``code`` beside it
+for clients that need to branch on the kind of failure rather than parse prose.
+
+The status codes are chosen to mean something:
+
+* **422** -- the document is not what it claims to be, or cannot be read. The
+  request was well-formed; the file was the problem.
+* **409** -- the request conflicts with the current state. Already posted, a
+  missing statement period, an entry already corrected. Retrying will not help
+  until something changes.
+* **403** -- a role boundary. Never silently downgraded to "not found".
+* **404** -- nothing to act on.
+"""
+
+from __future__ import annotations
+
+import logging
+
+from django.core.exceptions import PermissionDenied as DjangoPermissionDenied
+from django.http import Http404
+from rest_framework import status
+from rest_framework.response import Response
+from rest_framework.views import exception_handler as drf_exception_handler
+
+logger = logging.getLogger("autoca.api")
+
+#: Exception class name -> (HTTP status, stable code). Kept as names rather than
+#: classes so this module imports nothing from the feature apps and can be
+#: loaded during settings evaluation.
+DOMAIN_ERRORS = {
+    # The document could not be read, or is not a statement.
+    "NoTextLayerError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "no_text_layer"),
+    "UnsupportedBankError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "unsupported_bank"),
+    "ColumnInferenceError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "columns_not_inferred"),
+    "BalanceChainError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "balance_chain_broken"),
+    "StatementParseError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "statement_unreadable"),
+    "PdfExtractionError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "unreadable_file"),
+    "PdfTruncationError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "pages_missing"),
+    "MoneyError": (status.HTTP_400_BAD_REQUEST, "bad_amount"),
+    # The request conflicts with where things currently stand.
+    "StatementContinuityError": (status.HTTP_409_CONFLICT, "statement_period_missing"),
+    "AlreadyPostedError": (status.HTTP_409_CONFLICT, "already_posted"),
+    "NotApprovableError": (status.HTTP_409_CONFLICT, "not_approvable"),
+    "TenantContextError": (status.HTTP_409_CONFLICT, "tenant_context"),
+    # Nothing to act on.
+    "NoStatementError": (status.HTTP_404_NOT_FOUND, "no_statement_for_date"),
+}
+
+
+def api_exception_handler(exc, context):
+    """DRF's handler, with the domain's own exceptions given first refusal."""
+    name = type(exc).__name__
+
+    if name in DOMAIN_ERRORS:
+        http_status, code = DOMAIN_ERRORS[name]
+        return Response({"code": code, "detail": str(exc)}, status=http_status)
+
+    if isinstance(exc, DjangoPermissionDenied):
+        # Raised by ``core.rbac.require_permission`` deep inside the domain.
+        # Surfaced as a 403 with its own message, which names the permission.
+        return Response(
+            {"code": "forbidden", "detail": str(exc) or "Not permitted."},
+            status=status.HTTP_403_FORBIDDEN,
+        )
+
+    response = drf_exception_handler(exc, context)
+    if response is not None:
+        response.data = _normalise(response.data, exc)
+        return response
+
+    # Nothing recognised it. That is a bug, not an outcome: log it with a
+    # traceback and return something that does not leak internals.
+    logger.exception("unhandled exception in %s", context.get("view"))
+    if isinstance(exc, Http404):
+        return Response({"code": "not_found", "detail": "Not found."}, status=404)
+    return Response(
+        {"code": "internal_error", "detail": "Something went wrong. It has been logged."},
+        status=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    )
+
+
+def _normalise(data, exc):
+    """Give DRF's own errors the same shape as the domain's.
+
+    A client should not have to tell a validation error from a parse error by
+    the shape of the body. Field errors keep their structure under ``fields``,
+    because losing which field was wrong would be worse than consistency.
+    """
+    code = getattr(exc, "default_code", "error")
+    if isinstance(data, dict) and "detail" in data and len(data) == 1:
+        return {"code": code, "detail": str(data["detail"])}
+    if isinstance(data, dict):
+        return {"code": "invalid", "detail": "Some fields are invalid.", "fields": data}
+    return {"code": code, "detail": data}

@@ -1,0 +1,321 @@
+"""Approval, corrections, reports, reconciliation and the Tally export."""
+
+from __future__ import annotations
+
+import datetime
+
+from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import OpenApiParameter, extend_schema
+from rest_framework import mixins, serializers, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.response import Response
+
+from api.pagination import DefaultPagination
+from api.permissions import CanApprove, HasFirmPermission
+from api.serializers.classify import ApproveSerializer
+from api.serializers.ledger import (
+    BalanceCheckSerializer,
+    BalanceSheetSerializer,
+    CorrectionSerializer,
+    JournalEntrySerializer,
+    ProfitAndLossSerializer,
+    TallyExportSerializer,
+    TrialBalanceSerializer,
+)
+from banking.models import BankAccount, Statement
+from classify.engine import pending_approval
+from classify.models import LedgerAccount, Vendor
+from classify.treatment import Treatment
+from core.fy import financial_year
+from core.models import Client
+from ledger.approval import approve_many, correct
+from ledger.models import JournalEntry
+from ledger.reconciliation import check_balance
+from ledger.reports import balance_sheet, profit_and_loss, trial_balance
+from ledger.tally import export_statement
+
+FY_PARAM = OpenApiParameter(
+    "fy", int, description="Financial year by its starting year: 2025 means FY2025-26."
+)
+
+
+@extend_schema(tags=["ledger"])
+class JournalEntryViewSet(
+    mixins.RetrieveModelMixin, mixins.ListModelMixin, viewsets.GenericViewSet
+):
+    """The permanent record.
+
+    Read-only over HTTP, and read-only in PostgreSQL too -- the journal tables
+    carry no UPDATE or DELETE grant and triggers that raise. Entries are created
+    by approval, never by a POST to a collection: there is a permission to check
+    and a voucher number to allocate under a lock.
+    """
+
+    serializer_class = JournalEntrySerializer
+    permission_classes = [HasFirmPermission]
+    pagination_class = DefaultPagination
+    required_permission = "journal.view"
+    queryset = JournalEntry.objects.all()
+
+    def get_queryset(self):
+        queryset = (
+            JournalEntry.objects.filter(firm_id=self.request.firm.pk)
+            .select_related("approved_by")
+            .prefetch_related("lines__ledger_account", "lines__vendor", "superseded_by_set")
+        )
+        client_id = self.request.query_params.get("client")
+        if client_id:
+            queryset = queryset.filter(client_id=client_id)
+        if self.request.query_params.get("live") == "true":
+            queryset = queryset.filter(superseded_by_set__isnull=True)
+        return queryset
+
+    @extend_schema(
+        parameters=[
+            OpenApiParameter("client", str, description="Filter to one client."),
+            OpenApiParameter(
+                "live",
+                str,
+                enum=["true"],
+                description=(
+                    "Only entries that have not been corrected. A superseded entry "
+                    "stays in the record permanently, so it is included by default."
+                ),
+            ),
+        ]
+    )
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="Correct a posted entry",
+        description=(
+            "The original is not edited -- it cannot be. A correction is a new "
+            "entry carrying a reversal of the original's lines plus the corrected "
+            "ones, linked back to it. The original stays visible, which is what "
+            "company law expects, and the two together net to the corrected "
+            "position so the trial balance is right at every point in the chain.\n\n"
+            "Requires `journal.correct`: senior CA or firm admin."
+        ),
+        request=CorrectionSerializer,
+        responses={201: JournalEntrySerializer},
+    )
+    @action(detail=True, methods=["post"], permission_classes=[CanApprove])
+    def correct(self, request, pk=None):
+        entry = self.get_object()
+        payload = CorrectionSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        treatment_data = payload.validated_data["treatment"]
+
+        client = entry.client
+        ledger = get_object_or_404(
+            LedgerAccount, pk=treatment_data["ledger"], firm_id=request.firm.pk, client=client
+        )
+        vendor = (
+            get_object_or_404(
+                Vendor, pk=treatment_data["vendor"], firm_id=request.firm.pk, client=client
+            )
+            if treatment_data.get("vendor")
+            else None
+        )
+
+        corrected = correct(
+            entry,
+            membership=request.membership,
+            treatment=Treatment(
+                ledger=ledger,
+                vendor=vendor,
+                rcm=treatment_data["rcm"],
+                tds_section=treatment_data.get("tds_section", ""),
+            ),
+            narration=payload.validated_data.get("narration") or None,
+        )
+        return Response(
+            JournalEntrySerializer(corrected).data, status=status.HTTP_201_CREATED
+        )
+
+
+@extend_schema(tags=["ledger"])
+class ApprovalView(viewsets.GenericViewSet):
+    """Turn reviewed rows into permanent entries."""
+
+    serializer_class = ApproveSerializer
+    permission_classes = [CanApprove]
+
+    @extend_schema(
+        summary="Approve classified rows",
+        description=(
+            "The moment a suggestion becomes a permanent ledger entry. Restricted "
+            "to senior CA and firm admin, server-side -- a CA is personally "
+            "answerable for what is filed, so this is a professional boundary "
+            "rather than a hidden button.\n\n"
+            "Send either an explicit list of classification ids, or a whole "
+            "confidence band. `band=HIGH` is the one-click bulk approval for "
+            "everything the system is sure about.\n\n"
+            "**All or nothing.** One unapprovable row fails the batch rather than "
+            "leaving it half-posted, which would be worse -- the reviewer would "
+            "have to work out which half."
+        ),
+        request=ApproveSerializer,
+        responses={201: JournalEntrySerializer(many=True)},
+    )
+    def create(self, request, client_id=None):
+        client = get_object_or_404(Client, pk=client_id, firm_id=request.firm.pk)
+        payload = self.get_serializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+
+        rows = list(pending_approval(client))
+        if payload.validated_data.get("band"):
+            band = payload.validated_data["band"]
+            rows = [row for row in rows if row.review_band == band]
+        else:
+            wanted = {str(pk) for pk in payload.validated_data["classifications"]}
+            rows = [row for row in rows if str(row.pk) in wanted]
+            missing = wanted - {str(row.pk) for row in rows}
+            if missing:
+                raise serializers.ValidationError(
+                    {
+                        "classifications": (
+                            f"{len(missing)} of these are not awaiting approval -- "
+                            f"already posted, or not yet placed in a ledger."
+                        )
+                    }
+                )
+
+        results = approve_many(rows, membership=request.membership)
+        return Response(
+            JournalEntrySerializer([r.entry for r in results], many=True).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+
+@extend_schema(tags=["reports"])
+class ReportView(viewsets.GenericViewSet):
+    """Trial Balance, P&L and Balance Sheet.
+
+    Every one states the year it covers, how many entries are behind it, and how
+    many rows are still unposted. A report over incomplete books is not wrong,
+    but handing one to a client without knowing that is.
+    """
+
+    permission_classes = [HasFirmPermission]
+    required_permission = "report.view"
+    serializer_class = TrialBalanceSerializer
+
+    def _client_and_year(self, request, client_id):
+        client = get_object_or_404(Client, pk=client_id, firm_id=request.firm.pk)
+        raw = request.query_params.get("fy")
+        if raw:
+            try:
+                year = int(raw)
+            except ValueError as exc:
+                raise serializers.ValidationError(
+                    {"fy": "Give the financial year by its starting year, e.g. 2025 for FY2025-26."}
+                ) from exc
+        else:
+            year = financial_year(datetime.date.today())
+        return client, year
+
+    @extend_schema(
+        summary="Trial balance",
+        parameters=[FY_PARAM],
+        responses=TrialBalanceSerializer,
+    )
+    @action(detail=False, methods=["get"], url_path="trial-balance")
+    def trial_balance(self, request, client_id=None):
+        client, year = self._client_and_year(request, client_id)
+        return Response(TrialBalanceSerializer(trial_balance(client, year)).data)
+
+    @extend_schema(
+        summary="Profit and loss", parameters=[FY_PARAM], responses=ProfitAndLossSerializer
+    )
+    @action(detail=False, methods=["get"], url_path="profit-and-loss")
+    def profit_and_loss(self, request, client_id=None):
+        client, year = self._client_and_year(request, client_id)
+        return Response(ProfitAndLossSerializer(profit_and_loss(client, year)).data)
+
+    @extend_schema(
+        summary="Balance sheet", parameters=[FY_PARAM], responses=BalanceSheetSerializer
+    )
+    @action(detail=False, methods=["get"], url_path="balance-sheet")
+    def balance_sheet(self, request, client_id=None):
+        client, year = self._client_and_year(request, client_id)
+        return Response(BalanceSheetSerializer(balance_sheet(client, year)).data)
+
+
+@extend_schema(tags=["reports"])
+class ReconciliationView(viewsets.GenericViewSet):
+    """Does the bank ledger agree with the bank?"""
+
+    permission_classes = [HasFirmPermission]
+    required_permission = "journal.view"
+    serializer_class = BalanceCheckSerializer
+    #: Declared so the schema knows the path parameter is a bank account id and
+    #: types it as a uuid rather than falling back to an untyped string.
+    queryset = BankAccount.objects.none()
+
+    @extend_schema(
+        summary="Month-end balance check",
+        description=(
+            "Compares the computed bank-ledger balance against the statement's own "
+            "closing figure. One subtraction that catches what every other check "
+            "misses -- a row posted twice, a correction reversed the wrong way, an "
+            "entry approved against the wrong account.\n\n"
+            "`can_close` is the one to act on: it requires both that the figures "
+            "agree *and* that nothing up to that date is still unposted. A period "
+            "that does not reconcile is not finished."
+        ),
+        parameters=[
+            OpenApiParameter(
+                "as_of", str, required=True, description="Date to reconcile at, as YYYY-MM-DD."
+            )
+        ],
+        responses=BalanceCheckSerializer,
+    )
+    @action(detail=True, methods=["get"])
+    def reconciliation(self, request, pk=None):
+        account = get_object_or_404(BankAccount, pk=pk, firm_id=request.firm.pk)
+        raw = request.query_params.get("as_of")
+        if not raw:
+            raise serializers.ValidationError({"as_of": "Required, as YYYY-MM-DD."})
+        try:
+            as_of = datetime.date.fromisoformat(raw)
+        except ValueError as exc:
+            raise serializers.ValidationError({"as_of": f"Not a date: {raw!r}."}) from exc
+
+        return Response(BalanceCheckSerializer(check_balance(account, as_of)).data)
+
+
+@extend_schema(tags=["reports"])
+class TallyExportView(viewsets.GenericViewSet):
+    """The Tally Prime import document for a statement."""
+
+    permission_classes = [HasFirmPermission]
+    required_permission = "report.view"
+    serializer_class = TallyExportSerializer
+    queryset = Statement.objects.none()
+
+    @extend_schema(
+        summary="Export approved entries as Tally XML",
+        description=(
+            "Only what has been **approved**. A classification is a suggestion, and "
+            "an export that quietly included one would put work nobody signed off "
+            "into a client's books.\n\n"
+            "Each voucher carries a stable `REMOTEID`, so re-exporting after a "
+            "correction updates in Tally rather than duplicating. Superseded "
+            "entries are left out: their correction carries both the reversal and "
+            "the corrected position, so including them would double-count."
+        ),
+        responses=TallyExportSerializer,
+    )
+    @action(detail=True, methods=["get"], url_path="tally-export")
+    def tally_export(self, request, pk=None):
+        statement = get_object_or_404(
+            Statement.objects.select_related("bank_account__client"),
+            pk=pk,
+            firm_id=request.firm.pk,
+        )
+        result = export_statement(
+            statement, company_name=statement.bank_account.client.name
+        )
+        return Response(TallyExportSerializer(result).data)

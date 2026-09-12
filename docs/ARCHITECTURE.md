@@ -47,6 +47,7 @@ integrations/    ALL external service calls, behind adapter interfaces
   queue/         dev: Upstash Redis      beta: AWS SQS / ElastiCache
   kms/           dev: local Fernet       beta: AWS KMS
   llm/           declared, not wired
+api/             REST surface, permissions, error mapping, OpenAPI
 documents/       one registry for every uploaded file
 banking/         statement parsing, ingestion, deduplication, continuity
 classify/        narration analysis, rules, vendors, the review queue
@@ -448,6 +449,55 @@ phase ships `StubOCRAdapter`, which **raises** rather than returning empty text.
 The defence against this returning later is structural: `OCRResult` refuses to be
 constructed when `pages_processed != page_count`. A truncating backend cannot
 produce a plausible-looking result no matter who writes the adapter.
+
+---
+
+## Rule 10 — the API states the conventions it cannot enforce
+
+Everything above this line is enforced by the database or by a type that refuses
+to exist. An HTTP boundary can enforce far less: a client is free to parse a
+number badly, ignore a status code, or format a rupee figure itself. So the API
+is built to make the right thing the easy thing, and to say plainly where it is
+relying on the client.
+
+**Money crosses the wire twice.** Every amount is an integer `*_paise` and a
+formatted `*_display` string. That is not redundancy -- it is the two things a
+client needs, offered so it never has to derive one from the other. JSON
+integers survive JavaScript intact; JSON numbers with a decimal point do not,
+and a browser parsing `530.00` into a float is the rounding error the entire
+backend exists to avoid, reintroduced at the last possible moment. Indian digit
+grouping is likewise not something a frontend gets right by accident.
+
+**Slow work answers 202 with a job.** The architecture asks for this and it is a
+contract with every client that will ever be written, so it is in place now even
+though the work still runs inline inside the request. Moving execution onto a
+Celery worker is a change inside `core.jobs.run_job`; nothing a caller sees
+moves. Retrofitting the shape later would mean changing every call site in a
+frontend at once.
+
+**Errors keep the domain's own words.** "Balance chain broke at row 30
+(26-07-2025, 'NEFT/MB/AXOMB20702009852/...'): expected a balance of ..." tells a
+person exactly what to look at. Replacing that with `400 Bad Request` throws
+away the whole value of having written it. A stable `code` sits beside the prose
+for clients that need to branch, and the status codes mean something: 422 for a
+document that could not be read, 409 for a conflict with current state, 403 for
+a role boundary -- never quietly downgraded to a 404.
+
+**Permission checks are doubled on purpose.** A DRF permission class refuses the
+request, and `ledger.approval.approve` refuses it again. Not belt-and-braces for
+its own sake: the second check is the one that holds for the management
+commands, and for whatever calls the domain next.
+
+**The MFA gate answers in JSON under `/api/`.** A 302 to an HTML enrolment page
+is unreadable to a `fetch()`, and an HTTP client following redirects by default
+would report it as a success.
+
+One thing the schema generator taught us, worth recording because it is the kind
+of thing that only surfaces at runtime: naming a pagination class that lives
+beside the view classes in `DEFAULT_PAGINATION_CLASS` is a circular import, and
+DRF reports it as "module does not define DefaultPagination" -- the symptom, not
+the cause. It lives in `api/pagination.py`, which imports nothing from the rest
+of the project.
 
 ---
 

@@ -7,11 +7,17 @@ logout, and the MFA enrolment/verification flow -- and nothing else.
 Runs BEFORE ``TenantContextMiddleware`` on purpose: a half-authenticated session
 should never acquire a tenant context, so an un-verified request cannot reach a
 firm-scoped query at all.
+
+A browser is redirected to the enrolment or challenge page. An API caller gets a
+403 with a code instead: a 302 to an HTML page is unreadable to a ``fetch()``,
+and an HTTP client that follows redirects by default would report it as a
+success.
 """
 
 from __future__ import annotations
 
 from django.conf import settings
+from django.http import JsonResponse
 from django.shortcuts import redirect
 
 
@@ -32,7 +38,34 @@ class MFARequiredMiddleware:
         # and is True only once a device has been verified this session.
         if not user.is_verified():
             # Enrol if there is no device yet, otherwise challenge.
-            target = "/auth/mfa/setup/" if not user.has_mfa else "/auth/mfa/verify/"
+            enrolled = user.has_mfa
+            target = "/auth/mfa/verify/" if enrolled else "/auth/mfa/setup/"
+
+            # An API caller gets an answer, not a redirect. A 302 to an HTML
+            # enrolment page is unreadable to a fetch() and, worse, looks like a
+            # success to anything that follows redirects by default.
+            if _wants_json(request):
+                return JsonResponse(
+                    {
+                        "code": "mfa_required" if enrolled else "mfa_enrolment_required",
+                        "detail": (
+                            "This session has not passed its second factor."
+                            if enrolled
+                            else "This account has no second factor enrolled yet."
+                        ),
+                        "verify_at": target,
+                    },
+                    status=403,
+                )
+
             return redirect(f"{target}?next={request.get_full_path()}")
 
         return self.get_response(request)
+
+
+def _wants_json(request) -> bool:
+    """True for a caller that cannot make sense of an HTML redirect."""
+    if request.path.startswith(tuple(settings.API_PATH_PREFIXES)):
+        return True
+    accept = request.headers.get("Accept", "")
+    return "application/json" in accept and "text/html" not in accept

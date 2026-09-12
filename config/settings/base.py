@@ -68,8 +68,12 @@ INSTALLED_APPS = [
     "django_otp",
     "django_otp.plugins.otp_totp",
     "django_otp.plugins.otp_static",
+    # API
+    "rest_framework",
+    "drf_spectacular",
     # First-party
     "core",
+    "api",
     "integrations",
     "documents",
     # Feature apps.
@@ -201,6 +205,11 @@ AUTH_PASSWORD_VALIDATORS = [
 LOGIN_URL = "/auth/login/"
 OTP_TOTP_ISSUER = env("OTP_TOTP_ISSUER", "AutoCA")
 
+# Paths that answer with JSON rather than HTML. Used to decide whether a
+# half-authenticated request is redirected to the MFA page or told in a body
+# that it cannot proceed.
+API_PATH_PREFIXES = ("/api/",)
+
 # TOTP is mandatory. These are the only paths reachable by a session that has
 # passed a password check but not yet a second factor.
 MFA_EXEMPT_PATH_PREFIXES = (
@@ -258,6 +267,92 @@ INTEGRATION_OPTIONS = {
         "region": env("KMS_REGION"),
     },
     "llm": {},
+}
+
+# ---------------------------------------------------------------------------
+# API
+#
+# Session authentication, not tokens. A stolen JWT is valid until it expires and
+# cannot be revoked, which is a poor trade for a product holding client
+# financial records -- and the SPA is first-party, so there is no third-party
+# client that a cookie would be awkward for. CSRF is enforced.
+#
+# Nothing is readable without authentication. There is no public corner of this
+# API, so the default permission is the strict one and an endpoint opts out
+# rather than opting in.
+# ---------------------------------------------------------------------------
+
+REST_FRAMEWORK = {
+    "DEFAULT_AUTHENTICATION_CLASSES": [
+        "rest_framework.authentication.SessionAuthentication",
+    ],
+    "DEFAULT_PERMISSION_CLASSES": [
+        "api.permissions.IsFirmMember",
+    ],
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
+    "DEFAULT_PAGINATION_CLASS": "api.pagination.DefaultPagination",
+    "PAGE_SIZE": 50,
+    "EXCEPTION_HANDLER": "api.exceptions.api_exception_handler",
+    "DEFAULT_RENDERER_CLASSES": [
+        "rest_framework.renderers.JSONRenderer",
+        # The browsable API is a genuinely useful way to poke at endpoints by
+        # hand, and it is behind the same login as everything else. Off in
+        # production, where it is only a way to leak field names.
+        "rest_framework.renderers.BrowsableAPIRenderer",
+    ],
+    "COERCE_DECIMAL_TO_STRING": True,
+    "DATETIME_FORMAT": "iso-8601",
+}
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "AutoCA API",
+    "VERSION": "1.0.0",
+    "DESCRIPTION": (
+        "Bank statements in, approved double-entry journal entries out.\n\n"
+        "### Two conventions worth knowing before you read anything else\n\n"
+        "**Money is always a whole number of paise**, in a field named `*_paise`. "
+        "Every amount also carries a `*_display` twin, already formatted with "
+        "Indian digit grouping (`Rs 6,03,490.57`). Use the integer for arithmetic "
+        "and the string for rendering, and never parse the string or format the "
+        "integer yourself -- a JSON number with a decimal point becomes a float "
+        "in a browser, which is exactly the rounding error the backend exists to "
+        "avoid.\n\n"
+        "**Nothing is final until a senior CA approves it.** Uploading a statement "
+        "and classifying its rows produces *suggestions*. Only "
+        "`POST /clients/{id}/approvals/` writes to the ledger, only a senior CA "
+        "or firm admin may call it, and what it writes cannot afterwards be "
+        "edited or deleted -- corrections are new entries that reverse and "
+        "replace.\n\n"
+        "### Slow work\n\n"
+        "Uploading a statement returns **202 Accepted** with a job. Poll "
+        "`/jobs/{id}/` or subscribe to `/jobs/{id}/events/` for server-sent "
+        "events.\n\n"
+        "### Errors\n\n"
+        "Failures carry a stable `code` and a `detail` written to be read by a "
+        "person -- the parser's messages name the row and the figure that broke, "
+        "and they are passed through rather than replaced. `422` means the "
+        "document could not be read; `409` means the request conflicts with the "
+        "current state; `403` is a role boundary and is never disguised as a 404."
+    ),
+    "SERVE_INCLUDE_SCHEMA": False,
+    "COMPONENT_SPLIT_REQUEST": True,
+    "SCHEMA_PATH_PREFIX": "/api/v1",
+    "TAGS": [
+        {"name": "session", "description": "Who is signed in and what they may do."},
+        {"name": "clients", "description": "The firm's clients."},
+        {"name": "statements", "description": "Uploading statements and reading their rows."},
+        {"name": "review", "description": "The review queue and the decisions made against it."},
+        {"name": "ledger", "description": "Approval, the permanent journal, and corrections."},
+        {"name": "reports", "description": "Trial balance, P&L, balance sheet, reconciliation."},
+        {"name": "jobs", "description": "Progress on work the API did not block for."},
+    ],
+    "SWAGGER_UI_SETTINGS": {
+        "persistAuthorization": True,
+        "displayRequestDuration": True,
+        "docExpansion": "none",
+        "filter": True,
+        "tryItOutEnabled": True,
+    },
 }
 
 # ---------------------------------------------------------------------------

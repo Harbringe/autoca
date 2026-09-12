@@ -42,6 +42,14 @@ column is which and proves the inference against the statement's own running
 balance, so a format nobody anticipated either reads correctly or is refused.
 A dedicated parser (Axis has one) is an optimisation, not a prerequisite.
 
+There is a web application over all of it (`frontend/`, served at `/app/`):
+sign in with a second factor, upload, review with the queue sorted by
+confidence, place rows, approve, correct, read the reports, check month end,
+download the Tally file. And there is a model tier behind the rules: rows no
+rule can place are offered to a language model, which suggests a ledger with a
+one-line reason -- never with enough confidence to be bulk-approved, and never
+with anything identifying in the request.
+
 GST reconciliation is Phase 2 and `gst/` is still an empty placeholder.
 
 ## Setup
@@ -67,8 +75,48 @@ python manage.py migrate --database=owner
 python manage.py grant_app_role --database=owner
 python manage.py check --deploy --database default
 python manage.py rls_status
-python manage.py runserver
 ```
+
+Build the web application once (Node 24), then run the server:
+
+```bash
+cd frontend && npm ci && npm run build && cd ..
+python manage.py bootstrap_admin --email you@firm.test --firm "Your Firm" --demo
+python manage.py runserver
+# open http://127.0.0.1:8000/app/  -- sign in, scan the QR, you're in
+```
+
+For frontend work, `npm run dev` in `frontend/` serves the app at
+`http://localhost:5173/static/app/` with the API proxied to the Django server,
+so the session cookie and CSRF flow are the real ones.
+
+### With Docker
+
+```bash
+cp .env.example .env.compose        # fill in the secrets; set POSTGRES_PASSWORD,
+                                    # AUTOCA_OWNER_PASSWORD, AUTOCA_WEB_PASSWORD too
+docker compose up --build
+# http://localhost:8080/app/
+```
+
+That is the whole topology the architecture asks for: nginx in front, one web
+process, one Postgres with the two roles created at first start, one Redis for
+the lockout counters. Migrations run once, as the owner role, before the web
+process starts; the web process never holds the owner credentials.
+
+### The model tier
+
+Off by default. To turn it on with Groq:
+
+```
+LLM_BACKEND=integrations.llm.groq.GroqLLMAdapter
+GROQ_API_KEY=gsk_...
+```
+
+What the model receives, and what it never does, is set out in
+`classify/pseudonymise.py`. In one line: masked narrations, aliased vendors,
+pseudonymised people, amount bands, and the client's ledger names -- and it
+answers with one of those names, which is checked before anything is written.
 
 ## The API
 
@@ -190,6 +238,8 @@ core/            tenancy, users, RBAC, audit, crypto call sites
   db/            RLS policy generation, session context, introspection
   middleware/    mfa -> tenancy -> audit, in that order
 api/              REST API and the generated OpenAPI schema
+frontend/        the web application (React + Vite), built into frontend/dist
+deploy/          nginx config and the compose role bootstrap
 integrations/    every external service, behind an adapter interface
 documents/       every uploaded file, whatever kind, in one registry
 banking/         statement parsing, ingestion, deduplication, continuity
@@ -215,21 +265,17 @@ opening balance, running balances, printed totals and closing balance.
 
 ## Running the tests locally
 
-The dev/test database is behind Supabase's connection pooler, which keeps a warm
-connection to Django's scratch database and makes create/drop racy. Day to day:
-
 ```bash
-pytest --reuse-db
-```
-
-After a schema change or an aborted run, reset it first:
-
-```bash
-.venv/Scripts/python.exe scripts/drop_test_db.py
 pytest
 ```
 
-CI needs neither — its Postgres service container has no pooler in front of it.
+The dev/test database is behind Supabase's connection pooler, which parks warm
+server sessions on Django's scratch database and made every second run fail with
+"already exists". `conftest.py` now clears a leftover scratch database at the
+start of each run, and `pytest.ini` carries `--reuse-db` so Django does not
+attempt the drop that could never succeed. The schema is still rebuilt from
+migrations every run. CI needs none of this -- its Postgres service container
+has no pooler in front of it.
 
 ## Operational notes
 

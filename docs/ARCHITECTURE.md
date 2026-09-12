@@ -501,6 +501,102 @@ of the project.
 
 ---
 
+## Rule 11 — the edges refuse before the middle has to
+
+Everything RLS and the append-only ledger guarantee is about data already in
+the system. The edges -- the login form, the upload endpoint, the headers on
+every response -- guard against what never should get that far.
+
+**Lockouts are counted per address and per account**, in the cache, and checked
+before a password is hashed (`core/throttle.py`). Two keys because each closes
+the gap the other leaves: rotating addresses is caught on the account, spraying
+accounts is caught on the address. A correct password after nine wrong ones is
+still refused for the window; a lockout that a right guess resets is not a
+lockout. A locked-out caller cannot tell a real account from an invented one.
+Multi-process deployments must share the cache (`CACHE_URL`), and
+`check --deploy` says so.
+
+**An upload is a PDF of a plausible size, or it is refused at the serializer.**
+The filename and declared content type are the caller's; the signature bytes
+and the size are not.
+
+**`X-Forwarded-For` is trusted exactly `TRUSTED_PROXY_COUNT` hops deep**, read
+from the right. With zero proxies it is ignored. The audit log records where a
+request came from, not where it said it came from. `X-Request-ID` is accepted
+only as a short token.
+
+**Every response carries a strict Content-Security-Policy** (`self` only, no
+inline script or style, no framing, forms post here). The application shell is
+built to live under it -- Vite emits external assets, and the CSS has no inline
+exceptions. Two page families cannot: the OpenAPI viewer (a CDN script with
+inline bootstrap) and the Django admin (inline scripts of its own). Each gets a
+documented looser policy by path prefix, still without framing.
+
+**Every log record is masked** (`core/logging.py`) with the same function the
+classifier uses before a model sees a narration (`core/masking.py`). One
+implementation, so the two cannot disagree about what counts as identifying.
+The exception messages in this codebase quote the data that broke -- right for
+the person reading the failed job, wrong for a log aggregator with ninety days
+of retention -- and this is what squares the two.
+
+**An unexpected exception never reaches an API caller.** The domain's own
+errors are passed through verbatim because they were written to be read. A
+stray driver error is not: it quotes whatever it was holding. `job.error` gets
+a sentence and the job id; the traceback is in the log under that id.
+
+## The model tier, and what leaves the building
+
+The classifier's third tier (`classify/llm.py`) runs after the rules and before
+a person, and three rules bound it.
+
+It only suggests. A model-sourced row lands in the ADVISED band with a one-line
+rationale, capped at 0.89 -- strictly below the band eligible for bulk approval
+-- so a person looks at every one. A suggestion the model itself rates below
+the review threshold is not recorded as a suggestion; the row stays unresolved
+with the reasoning attached. The requirements document's line about a confident
+wrong answer being worse than an honest "I don't know" is implemented as those
+two numbers.
+
+It only sees pseudonymised rows (`classify/pseudonymise.py`): the narration
+masked by `core.masking`; known vendors as their alias token; people as stable
+pseudonyms; the account holder never; amounts as bands; and the client's ledger
+names. Business names are sent, because "GODAVARI RESTAURANT" is the signal and
+a company is not a person -- and `LLM_SHARE_BUSINESS_NAMES=0` turns even that
+off for a firm that wants only aliases. The model answers with a ledger *name*,
+validated against the list it was given; an invented one is discarded.
+
+It cannot fail the pipeline. A provider outage is a warning in the log and a
+line on the job; the upload has already succeeded and the rows are in the queue
+for a person either way.
+
+Approving a model suggestion teaches a rule, so the same payee is a rule hit in
+the high band next month rather than another model call and another review.
+
+Groq is the first provider (`integrations/llm/groq.py`): plain HTTP,
+temperature 0, JSON mode, bounded retries on 429/5xx only, no SDK. Its default
+terms do not commit to zero retention, which is acceptable exactly because
+nothing identifying is sent. Moving to in-country inference is `LLM_BACKEND`
+and one new file.
+
+## The application shell
+
+`frontend/` is a React SPA built by Vite into `frontend/dist`. Hashed assets are
+served by WhiteNoise under `/static/app/`; `core/spa.py` serves `index.html` for
+every route under `/app/`, and the router in the browser takes it from there.
+
+The shell is exempt from the MFA gate because it carries no data: a session with
+only a password may load the page, and the page then drives the second factor
+itself through the JSON endpoints -- the provisioning URI is drawn as a QR code
+client-side. Everything the page *shows* comes from `/api/`, which is exempt
+from nothing. Authentication is the session cookie; there is no token in
+JavaScript to steal, and every mutating call carries the CSRF header.
+
+The permission list from `/api/v1/me/` decides what the screens *offer*. It
+decides nothing about what the server *allows* -- every permission is checked
+again on every request, and a hidden button is not a permission system.
+
+---
+
 ## Month end is the check that catches what the others miss
 
 Everything else verifies that a step did what it was told. Comparing the

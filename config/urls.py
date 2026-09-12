@@ -10,16 +10,21 @@ firm-scoped table and is not something to publish.
 """
 
 from django.contrib import admin
-from django.urls import include, path
+from django.urls import include, path, re_path
+from django.views.generic import RedirectView
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
 
-from core import views
+from core import spa, views
 
 urlpatterns = [
+    path("", RedirectView.as_view(url="/app/", permanent=False)),
+    # The application shell. Every route under /app/ is the same HTML; the
+    # router in the browser decides what it shows. See core/spa.py.
+    re_path(r"^app(?:/.*)?$", spa.index, name="app"),
     path("healthz", views.healthz, name="healthz"),
     path("auth/csrf/", views.csrf, name="csrf"),
     path("auth/login/", views.login_view, name="login"),

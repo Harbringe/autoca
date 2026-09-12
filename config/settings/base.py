@@ -223,6 +223,10 @@ MFA_EXEMPT_PATH_PREFIXES = (
     "/auth/mfa/",
     "/healthz",
     "/static/",
+    # The application shell is static HTML with no data in it; the page drives
+    # the second factor itself. Everything it shows comes from /api/, which is
+    # not exempt. See core/spa.py.
+    "/app",
 )
 
 SESSION_COOKIE_HTTPONLY = True
@@ -497,6 +501,15 @@ STORAGES = {
     "default": {"BACKEND": "django.core.files.storage.FileSystemStorage"},
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
+
+# The built frontend. Vite writes hashed assets here; they are served under
+# /static/app/ by WhiteNoise, and index.html by core.spa.
+FRONTEND_DIST = Path(env("FRONTEND_DIST", str(BASE_DIR / "frontend" / "dist")))
+STATICFILES_DIRS = [("app", FRONTEND_DIST)] if FRONTEND_DIST.exists() else []
+# Vite's asset names already carry a content hash, and some bundlers emit
+# references the manifest storage cannot resolve. Missing references should
+# not fail collectstatic.
+WHITENOISE_MANIFEST_STRICT = False
 
 # ---------------------------------------------------------------------------
 # Logging

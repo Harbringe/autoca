@@ -1,9 +1,9 @@
-"""Vouchers and the Tally XML they render to.
+"""The Tally XML export, from approved entries only.
 
-The sign convention is the thing to get right here. Tally accepts a voucher
-whose entries are reversed without complaint -- the import succeeds, the totals
-tie out, and every entry in the client's books faces the wrong way. There is no
-error message anywhere in that sequence, so these tests are the error message.
+The sign convention is the thing to get right. Tally accepts a voucher whose
+entries are reversed without complaint -- the import succeeds, the totals tie,
+and every entry in the client's books faces the wrong way. There is no error
+message anywhere in that sequence, so these tests are the error message.
 """
 
 from __future__ import annotations
@@ -13,20 +13,17 @@ import xml.etree.ElementTree as ET
 
 import pytest
 
-from banking.models import StatementTransaction
 from banking.tests.support import ingest_fixture_statement
-from classify.engine import classify_statement, review, unresolved_for
+from classify.engine import classify_statement, review, review_queue
 from classify.models import LedgerAccount, LedgerGroup
 from classify.seeds import seed_client
+from classify.treatment import Treatment
 from core.db.session import firm_context
+from core.models import FirmMembership, Role, User
 from core.provisioning import create_client, create_firm
-from ledger.tally import export_statement, render
-from ledger.vouchers import (
-    UnclassifiedTransactionError,
-    VoucherType,
-    build_voucher,
-    voucher_type_for,
-)
+from ledger.approval import approve, correct
+from ledger.models import JournalEntry
+from ledger.tally import export_statement, remote_id_for, render
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("fixture_adapters")]
 
@@ -34,9 +31,20 @@ COMPANY = "Ramesh Deshmukh"
 
 
 @pytest.fixture
-def client():
-    firm = create_firm("Export Test Firm")
+def firm():
+    return create_firm("Export Test Firm")
+
+
+@pytest.fixture
+def client(firm):
     return create_client(firm, COMPANY, datetime.date(2025, 4, 1))
+
+
+@pytest.fixture
+def senior(firm):
+    user = User.objects.create_user(email="ca@example.com", password="correct-horse-battery")
+    with firm_context(firm.pk):
+        return FirmMembership.objects.create(firm=firm, user=user, role=Role.SENIOR_CA)
 
 
 @pytest.fixture
@@ -54,212 +62,201 @@ def ledger(client, name, group=LedgerGroup.INDIRECT_EXPENSE):
     )
 
 
-def place(client, fragment, target):
-    row = unresolved_for(client).filter(transaction__narration__icontains=fragment).first()
-    return review(row, target)[0]
+def post(client, senior, fragment, target):
+    """Classify and approve one row, returning its journal entry."""
+    row = review_queue(client).filter(transaction__narration__icontains=fragment).first()
+    classification = review(row, target)[0]
+    return approve(classification, membership=senior).entry
 
 
 def parse(xml: str):
     return ET.fromstring(xml)
 
 
-# ---------------------------------------------------------------------------
-# Double entry
-# ---------------------------------------------------------------------------
-
-
-def test_money_out_debits_the_expense_and_credits_the_bank(client, statement):
-    """A Payment: the bank goes down, the expense goes up."""
-    expenses = ledger(client, "Office Expenses")
-    row = place(client, "Blinkit", expenses)
-
-    voucher = build_voucher(row)
-
-    assert voucher.voucher_type == VoucherType.PAYMENT
-    assert voucher.party_ledger == "Office Expenses"
-    debit, credit = voucher.lines
-    assert debit.ledger_name == "Office Expenses"
-    assert debit.amount_paise == -530_00
-    assert debit.is_deemed_positive == "Yes"
-    assert credit.ledger_name == "Axis Bank A/c 911010000004321"
-    assert credit.amount_paise == 530_00
-    assert credit.is_deemed_positive == "No"
-
-
-def test_money_in_debits_the_bank_and_credits_the_income(client, statement):
-    """A Receipt is the mirror image, and the half everyone gets backwards."""
-    income = ledger(client, "Bhim Cash Back", LedgerGroup.INDIRECT_INCOME)
-    row = place(client, "102985493417", income)
-
-    voucher = build_voucher(row)
-
-    assert voucher.voucher_type == VoucherType.RECEIPT
-    debit, credit = voucher.lines
-    assert debit.ledger_name == "Axis Bank A/c 911010000004321"
-    assert debit.amount_paise == -2_00
-    assert credit.ledger_name == "Bhim Cash Back"
-    assert credit.amount_paise == 2_00
-
-
-def test_every_voucher_balances(client, statement):
-    """Tally rejects an unbalanced voucher -- after importing everything before it."""
-    expenses = ledger(client, "Office Expenses")
-    place(client, "Blinkit", expenses)
-
-    for row in statement.transactions.filter(classification__ledger__isnull=False):
-        voucher = build_voucher(row.classification)
-        assert sum(line.amount_paise for line in voucher.lines) == 0
+def amounts_for(xml: str, ledger_name: str) -> list[str]:
+    out = []
+    for item in parse(xml).iter("ALLLEDGERENTRIES.LIST"):
+        if item.findtext("LEDGERNAME") == ledger_name:
+            out.append(item.findtext("AMOUNT"))
+    return out
 
 
 # ---------------------------------------------------------------------------
-# Contra
+# Nothing unapproved gets out
 # ---------------------------------------------------------------------------
 
 
-def test_a_transfer_to_the_clients_own_account_is_a_contra(client, statement):
-    """Not expenditure and not income. Only the other ledger's group says so."""
-    other_bank = ledger(client, "HDFC Bank A/c 50100000009876", LedgerGroup.BANK)
-    row = place(client, "AXOMB20402110637", other_bank)
+def test_only_approved_entries_are_exported(client, statement, senior):
+    """A classification is a suggestion. Exporting one would bypass the CA."""
+    post(client, senior, "Blinkit", ledger(client, "Office Expenses"))
 
-    assert row.is_self_transfer
-    assert voucher_type_for(row) == VoucherType.CONTRA
-
-
-def test_a_self_looking_narration_filed_against_an_expense_is_not_a_contra(client, statement):
-    """A misfiled row must not be silently reclassified by the exporter.
-
-    Both the narration evidence and the reviewer's ledger have to agree, or a
-    supplier who shares the client's surname becomes a Contra.
-    """
-    expenses = ledger(client, "Professional Fees")
-    row = place(client, "AXOMB20402110637", expenses)
-
-    assert row.is_self_transfer
-    assert voucher_type_for(row) == VoucherType.PAYMENT
-
-
-def test_a_payment_to_a_relative_is_not_a_contra(client, statement):
-    drawings = ledger(client, "Drawings", LedgerGroup.CAPITAL)
-    row = place(client, "ADITYA RAMESH DESHMUKH", drawings)
-
-    assert not row.is_self_transfer
-    assert voucher_type_for(row) == VoucherType.PAYMENT
-
-
-# ---------------------------------------------------------------------------
-# The XML itself
-# ---------------------------------------------------------------------------
-
-
-def test_the_export_is_a_tally_import_envelope(client, statement):
-    place(client, "Blinkit", ledger(client, "Office Expenses"))
     result = export_statement(statement, company_name=COMPANY)
 
-    root = parse(result.xml)
+    assert result.voucher_count == 1
+    assert result.unapproved == 53
+
+
+def test_an_export_with_nothing_approved_is_empty_but_valid(client, statement):
+    result = export_statement(statement, company_name=COMPANY)
+
+    assert result.voucher_count == 0
+    assert parse(result.xml).tag == "ENVELOPE"
+
+
+# ---------------------------------------------------------------------------
+# The sign convention
+# ---------------------------------------------------------------------------
+
+
+def test_a_payment_credits_the_bank_in_tallys_inverted_signs(client, statement, senior):
+    """Debit side: ISDEEMEDPOSITIVE Yes and a negative amount. Both, together."""
+    expenses = ledger(client, "Office Expenses")
+    post(client, senior, "Blinkit", expenses)
+
+    result = export_statement(statement, company_name=COMPANY)
+    entries = {
+        item.findtext("LEDGERNAME"): (
+            item.findtext("ISDEEMEDPOSITIVE"),
+            item.findtext("AMOUNT"),
+        )
+        for item in parse(result.xml).iter("ALLLEDGERENTRIES.LIST")
+    }
+
+    assert entries["Office Expenses"] == ("Yes", "-530.00")
+    assert entries["Axis Bank A/c 911010000004321"] == ("No", "530.00")
+
+
+def test_a_receipt_debits_the_bank(client, statement, senior):
+    income = ledger(client, "Bhim Cash Back", LedgerGroup.INDIRECT_INCOME)
+    post(client, senior, "102985493417", income)
+
+    result = export_statement(statement, company_name=COMPANY)
+
+    assert amounts_for(result.xml, "Axis Bank A/c 911010000004321") == ["-2.00"]
+    assert amounts_for(result.xml, "Bhim Cash Back") == ["2.00"]
+
+
+def test_every_exported_voucher_sums_to_zero(client, statement, senior):
+    """Tally rejects an unbalanced voucher -- after importing everything before it."""
+    post(client, senior, "Blinkit", ledger(client, "Office Expenses"))
+    post(client, senior, "INTERNET TAX PAYMENT", ledger(client, "Advance Tax", LedgerGroup.DUTIES_AND_TAXES))
+
+    for voucher in parse(export_statement(statement, company_name=COMPANY).xml).iter("VOUCHER"):
+        total = sum(
+            float(item.findtext("AMOUNT")) for item in voucher.iter("ALLLEDGERENTRIES.LIST")
+        )
+        assert total == 0
+
+
+# ---------------------------------------------------------------------------
+# The document
+# ---------------------------------------------------------------------------
+
+
+def test_the_export_is_a_tally_import_envelope(client, statement, senior):
+    post(client, senior, "Blinkit", ledger(client, "Office Expenses"))
+    root = parse(export_statement(statement, company_name=COMPANY).xml)
+
     assert root.tag == "ENVELOPE"
     assert root.findtext("HEADER/TALLYREQUEST") == "Import Data"
-    assert (
-        root.findtext("BODY/IMPORTDATA/REQUESTDESC/STATICVARIABLES/SVCURRENTCOMPANY") == COMPANY
-    )
+    assert root.findtext("BODY/IMPORTDATA/REQUESTDESC/STATICVARIABLES/SVCURRENTCOMPANY") == COMPANY
 
 
-def test_dates_use_tallys_format(client, statement):
-    place(client, "Blinkit", ledger(client, "Office Expenses"))
-    result = export_statement(statement, company_name=COMPANY)
+def test_dates_use_tallys_format(client, statement, senior):
+    post(client, senior, "Blinkit", ledger(client, "Office Expenses"))
+    dates = {node.text for node in parse(export_statement(statement, company_name=COMPANY).xml).iter("DATE")}
 
-    dates = {node.text for node in parse(result.xml).iter("DATE")}
     assert "20260215" in dates
     assert all(len(value) == 8 and value.isdigit() for value in dates)
 
 
-def test_ledger_masters_are_exported_before_the_vouchers_that_use_them(client, statement):
-    """Tally reads in order and would create a later-defined ledger under a default group."""
-    place(client, "Blinkit", ledger(client, "Office Expenses"))
-    result = export_statement(statement, company_name=COMPANY)
+def test_the_voucher_carries_its_allocated_number(client, statement, senior):
+    """Auditors expect contiguous numbering, and Tally should show ours."""
+    post(client, senior, "Blinkit", ledger(client, "Office Expenses"))
+    numbers = [n.text for n in parse(export_statement(statement, company_name=COMPANY).xml).iter("VOUCHERNUMBER")]
 
-    request_data = parse(result.xml).find("BODY/IMPORTDATA/REQUESTDATA")
+    assert numbers == ["1"]
+
+
+def test_ledger_masters_come_before_the_vouchers_that_use_them(client, statement, senior):
+    """Tally reads in order and would create a later-defined ledger under a default group."""
+    post(client, senior, "Blinkit", ledger(client, "Office Expenses"))
+    request_data = parse(
+        export_statement(statement, company_name=COMPANY).xml
+    ).find("BODY/IMPORTDATA/REQUESTDATA")
     kinds = [list(message)[0].tag for message in request_data]
 
     assert "LEDGER" in kinds
     assert kinds.index("VOUCHER") > max(i for i, k in enumerate(kinds) if k == "LEDGER")
 
 
-def test_ledgers_carry_their_tally_group(client, statement):
-    place(client, "INTERNET TAX PAYMENT", ledger(client, "Advance Tax", LedgerGroup.DUTIES_AND_TAXES))
-    result = export_statement(statement, company_name=COMPANY)
-
+def test_ledgers_carry_their_tally_group(client, statement, senior):
+    post(client, senior, "INTERNET TAX PAYMENT", ledger(client, "Advance Tax", LedgerGroup.DUTIES_AND_TAXES))
     groups = {
-        node.findtext("NAME"): node.findtext("PARENT") for node in parse(result.xml).iter("LEDGER")
+        node.findtext("NAME"): node.findtext("PARENT")
+        for node in parse(export_statement(statement, company_name=COMPANY).xml).iter("LEDGER")
     }
+
     assert groups["Advance Tax"] == "Duties & Taxes"
     assert groups["Axis Bank A/c 911010000004321"] == "Bank Accounts"
 
 
-def test_a_re_export_carries_the_same_remote_id(client, statement):
-    """Without it, exporting twice after fixing one row doubles the client's books."""
-    place(client, "Blinkit", ledger(client, "Office Expenses"))
+def test_re_exporting_carries_the_same_remote_id(client, statement, senior):
+    """Without it, exporting twice after a correction doubles the client's books."""
+    post(client, senior, "Blinkit", ledger(client, "Office Expenses"))
 
     first = export_statement(statement, company_name=COMPANY)
     second = export_statement(statement, company_name=COMPANY)
 
     ids = [node.get("REMOTEID") for node in parse(first.xml).iter("VOUCHER")]
     assert ids == [node.get("REMOTEID") for node in parse(second.xml).iter("VOUCHER")]
-    assert all(value and value.startswith("autoca-") for value in ids)
+    assert all(value.startswith("autoca-") for value in ids)
 
 
-def test_unclassified_rows_are_reported_not_exported(client, statement):
-    """Nine tenths of a statement while three rows wait on the client is normal."""
-    place(client, "Blinkit", ledger(client, "Office Expenses"))
-    result = export_statement(statement, company_name=COMPANY)
-
-    assert result.voucher_count == 5  # four seeded interest rows, plus the reviewed one
-    assert len(result.skipped) == 49
-    assert not parse(result.xml).findall(".//VOUCHER[@VCHTYPE='Suspense']")
-
-
-def test_exporting_an_unclassified_row_directly_is_refused(client, statement):
-    row = unresolved_for(client).first()
-
-    with pytest.raises(UnclassifiedTransactionError, match="has not been classified"):
-        build_voucher(row)
-
-
-def test_special_characters_in_a_payee_are_escaped(client, statement):
+def test_special_characters_in_a_ledger_name_are_escaped(client, statement, senior):
     """`&` in a payee name is one hand-built XML string away from a broken export."""
-    awkward = ledger(client, "Smith & Sons <Suppliers>")
-    place(client, "Blinkit", awkward)
-
+    post(client, senior, "Blinkit", ledger(client, "Smith & Sons <Suppliers>"))
     result = export_statement(statement, company_name=COMPANY)
-    names = {node.text for node in parse(result.xml).iter("LEDGERNAME")}
 
-    assert "Smith & Sons <Suppliers>" in names
+    assert "Smith & Sons <Suppliers>" in {
+        node.text for node in parse(result.xml).iter("LEDGERNAME")
+    }
     assert "&amp;" in result.xml
 
 
-def test_an_unbalanced_voucher_cannot_be_rendered():
-    from ledger.vouchers import Voucher, VoucherLine
-
-    with pytest.raises(ValueError, match="does not balance"):
-        Voucher(
-            date="20250413",
-            voucher_type=VoucherType.PAYMENT,
-            narration="x",
-            party_ledger="Office Expenses",
-            lines=(VoucherLine("Office Expenses", -100_00), VoucherLine("Bank", 90_00)),
-            remote_id="autoca-test",
-        )
-
-
-def test_an_empty_export_is_still_a_valid_envelope(client):
+def test_an_empty_export_is_still_a_valid_envelope():
     assert parse(render([], company_name=COMPANY)).tag == "ENVELOPE"
 
 
-def test_narration_reaches_tally_as_the_bank_wrote_it(client, statement):
-    place(client, "Blinkit", ledger(client, "Office Expenses"))
-    result = export_statement(statement, company_name=COMPANY)
+# ---------------------------------------------------------------------------
+# Corrections
+# ---------------------------------------------------------------------------
 
-    narrations = {node.text for node in parse(result.xml).iter("NARRATION")}
-    expected = StatementTransaction.objects.get(
-        narration__icontains="Blinkit", firm_id=client.firm_id
-    ).narration
-    assert expected in narrations
+
+def test_a_superseded_entry_is_not_exported(client, statement, senior):
+    """The correction carries both the reversal and the new position.
+
+    Exporting the original as well would double-count it. It stays visible in
+    this system, which is where company law requires it to be.
+    """
+    original = post(client, senior, "Blinkit", ledger(client, "Office Expenses"))
+    corrected = correct(
+        original, membership=senior, treatment=Treatment(ledger=ledger(client, "Staff Welfare"))
+    )
+
+    result = export_statement(statement, company_name=COMPANY)
+    ids = {node.get("REMOTEID") for node in parse(result.xml).iter("VOUCHER")}
+
+    assert ids == {remote_id_for(corrected)}
+    assert remote_id_for(original) not in ids
+    assert JournalEntry.objects.count() == 2
+
+
+def test_a_correction_exports_as_its_own_voucher(client, statement, senior):
+    """It must not overwrite the entry it replaced in Tally, so its id differs."""
+    original = post(client, senior, "Blinkit", ledger(client, "Office Expenses"))
+    corrected = correct(
+        original, membership=senior, treatment=Treatment(ledger=ledger(client, "Staff Welfare"))
+    )
+
+    assert remote_id_for(corrected) != remote_id_for(original)

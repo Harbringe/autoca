@@ -16,9 +16,9 @@ import pathlib
 
 from django.core.management.base import BaseCommand, CommandError
 
-from banking.ingest import ingest_statement
+from banking.ingest import StatementContinuityError, ingest_statement
 from banking.parsers import StatementParseError
-from classify.engine import classify_statement, unresolved_for
+from classify.engine import classify_statement, review_summary
 from classify.seeds import seed_client
 from core.db.session import firm_context
 from core.models import Client
@@ -55,7 +55,7 @@ class Command(BaseCommand):
                 result = ingest_statement(
                     client=client, data=path.read_bytes(), filename=path.name
                 )
-            except StatementParseError as exc:
+            except (StatementParseError, StatementContinuityError) as exc:
                 raise CommandError(str(exc)) from exc
 
             statement = result.statement
@@ -64,6 +64,14 @@ class Command(BaseCommand):
                 f"{verb}: {statement} -- {result.rows_created} new rows, "
                 f"{result.rows_already_present} already known"
             )
+
+            if result.needs_opening_confirmation:
+                self.stdout.write(
+                    self.style.WARNING(
+                        "first statement for this account: confirm its opening "
+                        "balance before relying on any month-end reconciliation"
+                    )
+                )
 
             if not options["no_seed"]:
                 seed_client(client)
@@ -74,9 +82,15 @@ class Command(BaseCommand):
                 f"for review ({classified.hit_rate:.0%} automatic)"
             )
 
-            queued = unresolved_for(client).count()
-            if queued:
-                self.stdout.write(self.style.WARNING(f"{queued} rows awaiting a ledger"))
+            summary = review_summary(client)
+            if summary.total:
+                self.stdout.write(
+                    self.style.WARNING(
+                        f"awaiting review: {summary.high} high confidence "
+                        f"(bulk approvable), {summary.advised} review advised, "
+                        f"{summary.judgement} need judgement"
+                    )
+                )
 
             if options["export"]:
                 self._export(statement, client, pathlib.Path(options["export"]))
@@ -90,8 +104,8 @@ class Command(BaseCommand):
                 f"ledger masters to {destination}"
             )
         )
-        if result.skipped:
+        if result.unapproved:
             self.stdout.write(
-                f"left out {len(result.skipped)} unclassified rows; "
-                f"classify them and export again"
+                f"left out {result.unapproved} row(s) that have not been approved. "
+                f"Nothing reaches a client's books without a CA signing it off."
             )

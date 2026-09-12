@@ -14,6 +14,8 @@ from __future__ import annotations
 import datetime
 import uuid
 
+from django.utils import timezone as django_timezone
+
 from banking.models import BankAccount, Statement, StatementTransaction
 from classify.models import (
     ClassificationRule,
@@ -24,6 +26,7 @@ from classify.models import (
 )
 from core.models import AuditLog, Client, Firm, FirmMembership, Role, User
 from documents.models import Document, DocumentKind
+from ledger.models import Direction, JournalEntry, JournalLine, VoucherSequence, VoucherType
 
 
 def _client(firm, **kw):
@@ -145,6 +148,44 @@ def _transaction_classification(firm, **kw):
     )
 
 
+def _voucher_sequence(firm, **kw):
+    return VoucherSequence.objects.create(
+        firm=firm,
+        client=kw.get("client") or _client(firm),
+        financial_year=kw.get("financial_year", 2025),
+        voucher_type=kw.get("voucher_type", VoucherType.PAYMENT),
+    )
+
+
+def _journal_entry(firm, **kw):
+    txn = kw.get("transaction") or _statement_transaction(firm)
+    return JournalEntry.objects.create(
+        firm=firm,
+        client=txn.bank_account.client,
+        entry_no=kw.get("entry_no", 1),
+        financial_year=2025,
+        entry_date=datetime.date(2025, 4, 13),
+        voucher_type=VoucherType.PAYMENT,
+        narration="Sweep/VO000000087559330/19000014841287",
+        source_transaction=txn,
+        approved_at=django_timezone.now(),
+    )
+
+
+def _journal_line(firm, **kw):
+    """A balanced pair, because a lone line fails the deferred balance trigger."""
+    entry = kw.get("entry") or _journal_entry(firm)
+    ledger = kw.get("ledger_account") or _ledger_account(firm, client=entry.client)
+    debit = JournalLine.build(
+        entry=entry, ledger_account=ledger, direction=Direction.DEBIT, amount_paise=10_000
+    )
+    credit = JournalLine.build(
+        entry=entry, ledger_account=ledger, direction=Direction.CREDIT, amount_paise=10_000
+    )
+    JournalLine.objects.bulk_create([debit, credit])
+    return debit
+
+
 #: model -> callable(firm, **kwargs) -> instance
 FACTORIES = {
     Client: _client,
@@ -158,6 +199,9 @@ FACTORIES = {
     Vendor: _vendor,
     ClassificationRule: _classification_rule,
     TransactionClassification: _transaction_classification,
+    VoucherSequence: _voucher_sequence,
+    JournalEntry: _journal_entry,
+    JournalLine: _journal_line,
 }
 
 #: Firm is firm-scoped by primary key rather than by a firm_id column, so it is

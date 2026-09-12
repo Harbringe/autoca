@@ -357,6 +357,8 @@ def _touch(model) -> dict:
         ("pattern", "TAMPERED"),
         ("canonical_name", "TAMPERED"),
         ("counterparty", "TAMPERED"),
+        ("next_number", 999),
+        ("tds_section", "194C"),
     ):
         if candidate in names:
             return {candidate: value}

@@ -159,11 +159,8 @@ def _statement_balance_at(statement, as_of: datetime.date) -> int:
 
 
 def _unapproved_up_to(bank_account, as_of: datetime.date) -> int:
-    from classify.models import TransactionClassification
+    from classify.engine import review_queue
 
-    return TransactionClassification.objects.filter(
-        firm_id=bank_account.firm_id,
-        transaction__bank_account=bank_account,
-        transaction__value_date__lte=as_of,
-        needs_review=True,
+    return review_queue(bank_account.client).filter(
+        transaction__bank_account=bank_account, transaction__value_date__lte=as_of
     ).count()

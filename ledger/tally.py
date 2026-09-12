@@ -199,12 +199,10 @@ def _amount(paise: int) -> str:
 
 
 def _unapproved_count(statement) -> int:
-    from classify.models import TransactionClassification
+    from classify.engine import review_queue
 
-    return TransactionClassification.objects.filter(
-        firm_id=statement.firm_id,
-        transaction__statement=statement,
-        needs_review=True,
+    return review_queue(statement.bank_account.client).filter(
+        transaction__statement=statement
     ).count()
 
 

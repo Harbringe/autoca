@@ -13,7 +13,15 @@ import datetime
 import pytest
 
 from banking.tests.support import ingest_fixture_statement
-from classify.engine import classify_statement, review, review_queue, review_summary, vendor_for
+from classify.engine import (
+    classify_statement,
+    pending_approval,
+    review,
+    review_queue,
+    review_summary,
+    unresolved_for,
+    vendor_for,
+)
 from classify.models import (
     ClassificationRule,
     LedgerAccount,
@@ -224,9 +232,20 @@ def test_the_queue_puts_the_surest_rows_first(client, statement):
     assert confidences == sorted(confidences, reverse=True)
 
 
-def test_a_resolved_row_leaves_the_queue_entirely(client, statement):
-    """A suggestion is still work in hand; a decision is not."""
-    before = review_queue(client).count()
-    review(queued(client, "INTERNET TAX PAYMENT"), ledger(client, "Advance Tax", LedgerGroup.DUTIES_AND_TAXES))
+def test_placing_a_row_moves_it_along_the_queue_rather_than_out_of_it(client, statement):
+    """Placed is not posted, and the queue has to keep saying so.
 
-    assert review_queue(client).count() == before - 1
+    Clearing ``needs_review`` on review used to drop the row out of the queue
+    while it had no journal entry behind it -- work that was finished as far as
+    any screen could tell, and absent from the client's books. The queue is
+    defined as "not yet posted" for that reason; only approval empties it.
+    """
+    queue_before = review_queue(client).count()
+    unresolved_before = unresolved_for(client).count()
+    target = ledger(client, "Advance Tax", LedgerGroup.DUTIES_AND_TAXES)
+
+    review(queued(client, "INTERNET TAX PAYMENT"), target)
+
+    assert review_queue(client).count() == queue_before
+    assert unresolved_for(client).count() == unresolved_before - 1
+    assert pending_approval(client).filter(ledger=target).exists()

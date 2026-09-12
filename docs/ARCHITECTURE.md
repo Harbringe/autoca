@@ -1,25 +1,35 @@
 # Architecture & guardrails
 
-Built so far: the scaffold and tenant isolation, then one complete vertical
-slice — a bank statement PDF in, Tally vouchers out. `gst/` is still an empty
-placeholder.
+Built so far: the scaffold and tenant isolation, then Phase 1 end to end — a
+bank statement PDF in, approved permanent journal entries out, with Tally XML
+and the standard reports on top. `gst/` is still an empty placeholder.
 
 ```
 statement.pdf
+  -> documents/             one registry for every uploaded file, hashed
   -> integrations/pdf/      text and table cells
   -> banking/parsers/       rows, proved against the statement's own balances
-  -> banking/models         persisted, deduplicated by content
+  -> banking/ingest         persisted, deduplicated, continuity checked
   -> classify/narration     channel, payee, reference pulled apart
-  -> classify/engine        rules applied; the rest queued for a person
-  -> ledger/vouchers        double entry derived, never stored
+  -> classify/engine        rules applied with a confidence; the rest queued
+  -> [ a person reviews; every decision teaches a rule ]
+  -> ledger/approval        a senior CA posts it -- immutable from here
   -> ledger/tally           Tally Prime import XML
+  -> ledger/reports         Trial Balance, P&L, Balance Sheet
+  -> ledger/reconciliation  month end: does the ledger match the bank?
 ```
 
-Two ideas carry most of the weight, and both are the same idea: **make the
-wrong answer impossible to construct, rather than checking for it afterwards.**
-A statement that does not balance cannot become a `ParsedStatement`; a
-transaction with no ledger cannot become a voucher. Neither has a "validate
-this" call a caller can forget.
+One idea carries most of the weight: **make the wrong answer impossible to
+construct, rather than checking for it afterwards.** A statement that does not
+balance cannot become a `ParsedStatement`. A transaction with no ledger cannot
+become an entry. A posted entry cannot be edited — not "is not edited"; cannot,
+because the grant is revoked. None of these has a "validate this" call a caller
+can forget.
+
+The corollary, which is the shape of the whole product: **staging is mutable,
+the ledger is not.** Everything up to approval can be corrected freely, because
+a review workflow where nothing can be fixed is one nobody uses. Everything
+after it is permanent, because Indian company law requires it to be.
 
 ---
 
@@ -37,9 +47,10 @@ integrations/    ALL external service calls, behind adapter interfaces
   queue/         dev: Upstash Redis      beta: AWS SQS / ElastiCache
   kms/           dev: local Fernet       beta: AWS KMS
   llm/           declared, not wired
-banking/         statement parsing, ingestion, deduplication
-classify/        narration analysis, rules, the review queue
-ledger/          voucher derivation, Tally XML
+documents/       one registry for every uploaded file
+banking/         statement parsing, ingestion, deduplication, continuity
+classify/        narration analysis, rules, vendors, the review queue
+ledger/          approval, the immutable journal, Tally XML, reports
 gst/             structure only
 ```
 
@@ -271,12 +282,101 @@ chart of accounts would be a pile of wrong assumptions to hunt down later.
 
 ---
 
-## Rule 6 — vouchers are derived, never stored
+## Rule 6 — money is a whole number of paise
 
-A voucher's date, amount and narration come from the statement row; its other
-side comes from the classification. Both are already persisted and audited. A
-stored voucher would be a third copy to keep in step, and the first time a
-reviewer corrects a ledger it becomes a lie that still exports cleanly.
+Not a float, and not a `Decimal` either. `Decimal` is exact and would work, but
+integers are the right unit for two reasons that only show up later:
+
+- **Comparison across systems.** GST reconciliation subtracts our figures from
+  GSTR-2B's within a one-rupee tolerance. Subtracting values quantised by two
+  different systems is where "off by one paisa forever" is born. Integers have
+  exactly one representation of every amount.
+- **Nothing to configure.** `Decimal` arithmetic depends on a process-global,
+  mutable context. A library that changes it changes the result of arithmetic
+  already written and tested.
+
+Fields carry the unit in the name — `balance_paise`, never `balance`. It is
+uglier and that is the point: a mixed-unit bug is invisible at the call site and
+obvious at the field. Rupees exist in two places only, the screen and the GST
+tolerance, and both go through `core/money.py` to get there.
+
+`format_inr` uses lakh and crore grouping: `₹6,03,490.57`, not `₹603,490.57`.
+The wrong one is instantly visible to an Indian accountant.
+
+---
+
+## Rule 7 — identifiers are encrypted, and still findable
+
+Bank account numbers and vendor GSTINs are AES-256-GCM under the firm's data
+key. That protects them and destroys what the column was for: the ciphertext is
+randomised, so the same account encrypts differently every time and no index,
+join or uniqueness constraint can touch it — while a statement arriving and
+needing to find its account is exactly that lookup.
+
+So each encrypted identifier gets a **blind index** beside it: a keyed hash used
+only for equality. Three properties are load-bearing, all in
+`core.crypto.blind_index`:
+
+- **Keyed, not a bare hash.** Account numbers and GSTINs are drawn from a small
+  enough space to enumerate; a plain SHA-256 of a GSTIN is a lookup table away
+  from plaintext.
+- **Scoped per firm.** Equal fingerprints across the tenant boundary would leak
+  that two firms bank with the same party — a correlation RLS otherwise
+  prevents.
+- **Separated by purpose**, so an account-number index and a GSTIN index of the
+  same digits cannot collide.
+
+`account_last4` is stored separately, so `Axis ••••7214` on a list screen costs no
+decryption at all.
+
+---
+
+## Rule 8 — the ledger is append-only, in the database
+
+Approval is the moment staging becomes permanent, and permanence is enforced by
+PostgreSQL rather than by convention:
+
+- **No UPDATE or DELETE grant** on `ledger_journal_entry` or
+  `ledger_journal_line`. The application role holds SELECT and INSERT.
+- **Triggers that raise** on either operation. Redundant on purpose: grants get
+  widened by a careless later migration, triggers get lost in a restore from a
+  schema-only dump, and both failing in one deployment is unlikely enough to be
+  worth the duplication. The trigger's message also names the rule, which a bare
+  permission error does not.
+- **A deferred constraint trigger** sums each entry's lines at commit. Deferred
+  because an entry is written a line at a time and is legitimately unbalanced in
+  between; commit is the only point where "balanced" is a meaningful question.
+
+That constraint improved the design it was meant to serve. The data model
+sketched `supersedes_id` *and* `superseded_by_id`; writing the second would
+require an UPDATE on the entry being corrected. So only the correcting entry
+carries the link and the reverse direction is a query — which makes the original
+not merely *treated* as untouched but untouchable. A correction posts a reversal
+of the original's lines plus the corrected ones, so the trial balance is right at
+every point in the chain rather than only at the end.
+
+**Voucher numbers** come from a counter row under `SELECT FOR UPDATE`, per
+client per financial year per voucher type. `MAX(entry_no) + 1` lets two
+concurrent approvals read the same maximum and allocate the same number, and a
+duplicated voucher number is what an audit opens with.
+
+**Who may approve** is a professional boundary, not a UI preference. A CA is
+personally answerable for what is filed, so `journal.approve` belongs to
+`SENIOR_CA` and `FIRM_ADMIN` only, checked server-side in `ledger/approval.py`.
+Hiding a button is not enforcement.
+
+---
+
+## Rule 9 — the export carries only what was approved
+
+A voucher is derived from a journal entry at export time, never stored. The
+entry is already persisted and already audited; a stored voucher would be a
+third copy to keep in step, and the first time a reviewer corrects a ledger it
+becomes a lie that still exports cleanly.
+
+Reading from `JournalEntry` rather than from classifications also closes a
+bypass by construction: before the ledger existed, a statement could be exported
+into a client's books without anyone approving a line of it.
 
 The one genuinely treacherous detail is Tally's sign convention: **a negative
 `<AMOUNT>` is a debit and a positive one is a credit**, which is inverted from
@@ -317,7 +417,22 @@ produce a plausible-looking result no matter who writes the adapter.
 
 ---
 
-## Two migration traps, both found the hard way
+## Month end is the check that catches what the others miss
+
+Everything else verifies that a step did what it was told. Comparing the
+computed bank-ledger balance against the statement's own closing figure verifies
+that the *result* is right — and catches a row posted twice, a correction
+reversed the wrong way, or an entry approved against the wrong account, in one
+subtraction. It is also the check the firm already does by hand, so it is the
+one they will look at first.
+
+A mismatch blocks the period from being marked reviewed, and the report
+distinguishes "does not reconcile" from "not finished yet" — the second is the
+common case, and sending someone hunting for the first wastes an afternoon.
+
+---
+
+## Three migration traps, all found the hard way
 
 Both bite any new firm-scoped table, and both produce an error that names the
 tenancy layer while the fault is elsewhere.
@@ -328,6 +443,14 @@ constraints live — when that editor closes, *after* every operation has run. S
 an `rls_operations()` call appended to a `CreateModel` migration is applied
 before the foreign keys are. Split them; see
 `banking/migrations/0002_row_level_security.py`.
+
+**A deferred trigger fires after the tenant context is gone.** The balance check
+runs during COMMIT, by which point `firm_context()` has cleared the GUC on its
+way out — so the trigger's own `SELECT` hits the table's RLS policy with no
+context and raises `tenant context missing`, which reads like a tenancy bug and
+is really a lifecycle one. The trigger now sets the context from the row it is
+checking. That is not a hole: the only value it can set is the firm owning the
+row being inserted, which the inserting transaction already had.
 
 **A table-creating migration needs a tenant context of its own.** Adding a
 foreign key makes PostgreSQL validate it by scanning the child table and joining
@@ -362,7 +485,9 @@ python manage.py rls_status                          # live ENABLE/FORCE/policy 
 pytest core/tests/test_rls_isolation.py              # cross-tenant attack suite
 pytest integrations/tests/test_adapter_swap.py       # adapter boundary + envelope crypto
 pytest banking/tests/test_balance_chain.py           # the arithmetic gate, attacked directly
+pytest ledger/tests/test_approval.py                 # immutability, via the ORM and raw SQL
 pytest ledger/tests/test_tally_export.py             # double entry and Tally's sign convention
+pytest ledger/tests/test_reconciliation.py           # month end: the books against the bank
 ```
 
 ## Confirmed assumptions

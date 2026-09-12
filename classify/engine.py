@@ -165,12 +165,7 @@ def reclassify_unresolved(client, *, rules=None) -> ClassifyResult:
     """
     rules = rules if rules is not None else rules_for(client)
 
-    queued = TransactionClassification.objects.filter(
-        firm_id=client.firm_id,
-        needs_review=True,
-        ledger__isnull=True,
-        transaction__bank_account__client=client,
-    ).select_related("transaction__bank_account__client")
+    queued = unresolved_for(client).select_related("transaction__bank_account__client")
 
     placed = 0
     for classification in queued:
@@ -314,32 +309,72 @@ def vendor_for(client, name: str, *, rcm: bool = False, tds_section: str = "") -
 # ---------------------------------------------------------------------------
 
 
-def unresolved_for(client):
-    """Rows nobody has placed yet, most recent first."""
-    return (
-        TransactionClassification.objects.filter(
-            firm_id=client.firm_id, needs_review=True, ledger__isnull=True
-        )
-        .filter(transaction__bank_account__client=client)
-        .select_related("transaction")
-        .order_by("-transaction__value_date")
-    )
-
-
 def review_queue(client, band: str | None = None):
-    """Everything awaiting a person, optionally one band at a time.
+    """Everything still to be dealt with, optionally one band at a time.
+
+    "Still to be dealt with" means **not yet posted to the ledger**, not "not
+    yet looked at". Those came apart the first time this pipeline was run end to
+    end: placing a row cleared ``needs_review``, so it vanished from the queue
+    while having no journal entry behind it, and nothing surfaced the gap. A
+    transaction that a person has placed but nobody has approved is not finished
+    work, and a queue that hides it is how a month closes short.
 
     Ordered by confidence descending, so the rows the system is surest about --
     the ones eligible for bulk approval -- come first, and the genuinely
     ambiguous ones sit at the bottom where they belong.
     """
     queue = (
-        TransactionClassification.objects.filter(firm_id=client.firm_id, needs_review=True)
-        .filter(transaction__bank_account__client=client)
+        _unposted(client)
         .select_related("transaction", "ledger", "vendor")
         .order_by("-confidence", "-transaction__value_date")
     )
     return queue.filter(review_band=band) if band else queue
+
+
+def unresolved_for(client):
+    """Rows nobody has placed in a ledger yet, most recent first."""
+    return (
+        _unposted(client)
+        .filter(ledger__isnull=True)
+        .select_related("transaction")
+        .order_by("-transaction__value_date")
+    )
+
+
+def pending_approval(client):
+    """Rows with a ledger, waiting for a senior CA to post them.
+
+    The other half of the queue, and the half that used to be invisible.
+    """
+    return (
+        _unposted(client)
+        .filter(ledger__isnull=False)
+        .select_related("transaction", "ledger", "vendor")
+        .order_by("-confidence", "-transaction__value_date")
+    )
+
+
+def _unposted(client):
+    """Classifications with no live journal entry behind them.
+
+    A superseded entry does not count as posted: its correction is what stands,
+    and the correction carries its own classification.
+
+    Written as an explicit subquery rather than a chained ``exclude()`` across
+    the relation. ``exclude(transaction__journal_entries__superseded_by_set__isnull=True)``
+    reads as "no live entry" and is not -- Django's exclude semantics across two
+    multi-valued relations quietly removed every row, which showed up as an
+    empty review queue the first time this ran against a real statement.
+    """
+    from ledger.models import JournalEntry
+
+    posted = JournalEntry.objects.filter(
+        firm_id=client.firm_id, superseded_by_set__isnull=True
+    ).values("source_transaction_id")
+
+    return TransactionClassification.objects.filter(
+        firm_id=client.firm_id, transaction__bank_account__client=client
+    ).exclude(transaction_id__in=posted)
 
 
 def review_summary(client) -> ReviewSummary:

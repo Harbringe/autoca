@@ -119,6 +119,7 @@ def _ingest(*, client, data, filename, user, allow_gap) -> dict:
         "queued_for_review": classified.queued,
         "model_suggested": model.suggested,
         "model_declined": model.declined,
+        "model_proposed": model.proposed,
         "model_error": model.error,
     }
 

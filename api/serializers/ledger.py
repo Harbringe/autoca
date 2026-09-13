@@ -159,6 +159,7 @@ class BalanceSheetSerializer(MoneySerializerMixin, serializers.Serializer):
     money = (
         "total_assets_paise",
         "total_liabilities_paise",
+        "total_liabilities_and_profit_paise",
         "net_profit_paise",
         "suspense_paise",
     )
@@ -167,6 +168,9 @@ class BalanceSheetSerializer(MoneySerializerMixin, serializers.Serializer):
     liabilities = LedgerBalanceSerializer(many=True)
     total_assets_paise = PaiseField()
     total_liabilities_paise = PaiseField()
+    total_liabilities_and_profit_paise = PaiseField(
+        help_text="Liabilities plus the year's profit (or minus its loss). Equals total assets when the sheet balances."
+    )
     net_profit_paise = PaiseField()
     suspense_paise = PaiseField(
         help_text="Anything unanswered. A balance sheet with a suspense figure has a question on it."

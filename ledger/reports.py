@@ -173,8 +173,13 @@ class BalanceSheet:
         return sum(-row.net_paise for row in self.liabilities)
 
     @property
+    def total_liabilities_and_profit_paise(self) -> int:
+        """The figure that must equal total assets: liabilities plus the year's result."""
+        return self.total_liabilities_paise + self.net_profit_paise
+
+    @property
     def balances(self) -> bool:
-        return self.total_assets_paise == self.total_liabilities_paise + self.net_profit_paise
+        return self.total_assets_paise == self.total_liabilities_and_profit_paise
 
 
 # ---------------------------------------------------------------------------

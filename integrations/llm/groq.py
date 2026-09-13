@@ -10,9 +10,11 @@ What is fixed here and not configurable, on purpose:
 * ``temperature`` is 0. Classification has to be reproducible; the same row
   should get the same suggestion tomorrow.
 * ``response_format`` is JSON. The caller parses the reply; prose is a failure.
-* Retries are bounded (three attempts, exponential backoff) and only on the
-  status codes that mean "try again" -- 429 and 5xx. A 400 is a bug in the
-  prompt and retrying it is noise.
+* Retries are bounded and only on the status codes that mean "try again" --
+  5xx gets three attempts with exponential backoff; 429 gets six, each waiting
+  as long as Groq's ``Retry-After`` says (capped at a minute), because a
+  free-tier token-per-minute limit resets on its clock. A 400 is a bug in the
+  prompt or a reply cut off by ``max_tokens``, and retrying it unchanged is noise.
 * The key is read once at construction and never logged. The request body is
   never logged either; it is already pseudonymised, but a log line is a copy
   and there is no reason to make one.
@@ -43,6 +45,8 @@ logger = logging.getLogger("autoca.llm")
 DEFAULT_BASE_URL = "https://api.groq.com/openai/v1"
 DEFAULT_MODEL = "llama-3.3-70b-versatile"
 RETRY_STATUSES = {429, 500, 502, 503, 504}
+RATE_LIMIT_ATTEMPTS = 6
+MAX_RETRY_AFTER_SECONDS = 60.0
 
 
 class GroqLLMAdapter(LLMAdapter):
@@ -112,20 +116,44 @@ class GroqLLMAdapter(LLMAdapter):
         )
         delay = 1.0
         last_error: Exception | None = None
-        for attempt in range(1, self.max_attempts + 1):
+        attempts = max(self.max_attempts, RATE_LIMIT_ATTEMPTS)
+        for attempt in range(1, attempts + 1):
+            wait = delay
             try:
                 with urllib.request.urlopen(request, timeout=self.timeout) as response:  # noqa: S310
                     return json.loads(response.read().decode())
             except urllib.error.HTTPError as exc:
                 last_error = exc
-                if exc.code not in RETRY_STATUSES or attempt == self.max_attempts:
-                    raise LLMError(f"Groq answered HTTP {exc.code}.") from exc
-                logger.warning("groq HTTP %s on attempt %d; retrying", exc.code, attempt)
+                # A rate limit resets on Groq's clock, not ours: wait as long as it says,
+                # and allow more attempts, since a busy minute is not a failure.
+                limit = self.max_attempts if exc.code != 429 else RATE_LIMIT_ATTEMPTS
+                if exc.code not in RETRY_STATUSES or attempt >= limit:
+                    raise LLMError(f"Groq answered HTTP {exc.code}{_error_code(exc)}.") from exc
+                if exc.code == 429:
+                    wait = _retry_after(exc, default=delay)
+                logger.warning("groq HTTP %s on attempt %d; retrying in %.0fs", exc.code, attempt, wait)
             except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
                 last_error = exc
-                if attempt == self.max_attempts:
+                if attempt >= self.max_attempts:
                     raise LLMError(f"Groq could not be reached: {type(exc).__name__}.") from exc
                 logger.warning("groq %s on attempt %d; retrying", type(exc).__name__, attempt)
-            time.sleep(delay)
+            time.sleep(wait)
             delay *= 2
         raise LLMError("Groq could not be reached.") from last_error
+
+
+def _retry_after(exc: urllib.error.HTTPError, *, default: float) -> float:
+    try:
+        seconds = float(exc.headers.get("retry-after", ""))
+    except (TypeError, ValueError, AttributeError):
+        return default
+    return min(max(seconds, 1.0), MAX_RETRY_AFTER_SECONDS)
+
+
+def _error_code(exc: urllib.error.HTTPError) -> str:
+    """Groq's machine-readable error code, never its message: that can quote the request."""
+    try:
+        code = json.loads(exc.read().decode()).get("error", {}).get("code")
+    except (ValueError, AttributeError, OSError):
+        return ""
+    return f" ({code})" if isinstance(code, str) and code.isidentifier() else ""

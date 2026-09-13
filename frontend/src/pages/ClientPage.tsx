@@ -18,6 +18,10 @@ export default function ClientPage() {
   if (loading) return <Spinner />
   if (error || !client) return <ErrorNote error={error ?? 'Client not found'} />
 
+  // Absolute on purpose: this component renders under a splat route, where a
+  // relative link resolves against the current URL and keeps appending.
+  const base = `/clients/${client.id}`
+
   return (
     <>
       <div className="page-head">
@@ -29,15 +33,15 @@ export default function ClientPage() {
         </div>
       </div>
       <nav className="tabs">
-        <NavLink to="" end>
+        <NavLink to={base} end>
           Statements
         </NavLink>
-        <NavLink to="review">Review queue</NavLink>
-        <NavLink to="ledger">Ledger</NavLink>
-        <NavLink to="reports">Reports</NavLink>
-        <NavLink to="accounts">Chart of accounts</NavLink>
-        <NavLink to="vendors">Vendors</NavLink>
-        <NavLink to="rules">Rules</NavLink>
+        <NavLink to={`${base}/review`}>Review queue</NavLink>
+        <NavLink to={`${base}/ledger`}>Ledger</NavLink>
+        <NavLink to={`${base}/reports`}>Reports</NavLink>
+        <NavLink to={`${base}/accounts`}>Chart of accounts</NavLink>
+        <NavLink to={`${base}/vendors`}>Vendors</NavLink>
+        <NavLink to={`${base}/rules`}>Rules</NavLink>
       </nav>
       <Routes>
         <Route index element={<Statements client={client} />} />

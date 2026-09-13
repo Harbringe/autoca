@@ -433,3 +433,41 @@ def test_the_account_detail_shows_the_number_but_the_list_does_not(api, client_r
     assert "account_number" not in listed
     assert listed["account_last4"] == "4321"
     assert detail["account_number"] == "911010000004321"
+
+
+def _proposal(client_record):
+    from classify.models import LedgerStatus
+    from core.db.session import firm_context
+
+    with firm_context(client_record.firm_id):
+        return LedgerAccount.objects.create(
+            firm_id=client_record.firm_id, client=client_record, name="Rent",
+            group=LedgerGroup.INDIRECT_EXPENSE, status=LedgerStatus.PROPOSED,
+        )
+
+
+def test_staff_cannot_accept_a_proposed_ledger(staff_api, client_record):
+    rent = _proposal(client_record)
+    response = staff_api.post(f"{V1}/clients/{client_record.pk}/ledgers/{rent.pk}/accept/", {}, format="json")
+    assert response.status_code == 403
+
+
+def test_a_senior_ca_accepts_a_proposed_ledger_with_a_tally_name(api, client_record):
+    rent = _proposal(client_record)
+    response = api.post(
+        f"{V1}/clients/{client_record.pk}/ledgers/{rent.pk}/accept/", {"name": "Office Rent"}, format="json"
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["status"] == "ACTIVE" and body["name"] == "Office Rent"
+
+
+def test_rows_cannot_be_placed_by_hand_in_a_proposed_ledger(api, client_record, statement):
+    rent = _proposal(client_record)
+    row = api.get(f"{V1}/clients/{client_record.pk}/review-queue/?stage=unresolved").json()["results"][0]
+    response = api.post(
+        f"{V1}/classifications/{row['id']}/review/",
+        {"ledger": str(rent.pk), "vendor": None, "rcm": False, "tds_section": "", "learn": False},
+        format="json",
+    )
+    assert response.status_code == 400

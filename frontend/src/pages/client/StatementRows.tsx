@@ -15,7 +15,7 @@ export default function StatementRows({ client }: { client: Client }) {
   const rows = useAsync(() => allPages<Transaction>(`${V1}/clients/${client.id}/statements/${statementId}/transactions/`), [statementId])
   const classifications = useAsync(
     async () => {
-      const all = await allPages<Classification>(`${V1}/classifications/`)
+      const all = await allPages<Classification>(`${V1}/classifications/?statement=${statementId}`)
       return new Map(all.map((c) => [c.transaction.id, c]))
     },
     [statementId],
@@ -48,7 +48,7 @@ export default function StatementRows({ client }: { client: Client }) {
     <>
       <div className="row between">
         <div>
-          <Link to="..">← All statements</Link>
+          <Link to={`/clients/${client.id}`}>← All statements</Link>
           {s && (
             <h2>
               {s.bank_account_label} · {formatDate(s.period_start)} – {formatDate(s.period_end)}

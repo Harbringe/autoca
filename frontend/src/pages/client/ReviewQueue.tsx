@@ -6,10 +6,11 @@
 
 import { useMemo, useState, type FormEvent } from 'react'
 import { allPages, api, V1, waitForJob } from '../../api/client'
-import type { Classification, Client, Job, LedgerAccount, PlacementResult, ReviewBand, ReviewSummary, Vendor } from '../../api/types'
+import type { BankAccount, Classification, Client, Job, LedgerAccount, PlacementResult, ReviewBand, ReviewSummary, Vendor } from '../../api/types'
 import { LEDGER_GROUPS, TDS_SECTIONS } from '../../api/types'
 import { useSession } from '../../auth/session'
 import { Badge, BandBadge, Button, Confidence, Empty, ErrorNote, Field, formatDate, Modal, Money, Note, Spinner, useAsync } from '../../components/ui'
+import { RecategorizeButton } from './Recategorize'
 
 type Stage = 'all' | 'unresolved' | 'pending_approval'
 
@@ -33,6 +34,7 @@ export default function ReviewQueue({ client }: { client: Client }) {
   }, [client.id, band, stage])
   const ledgers = useAsync(() => allPages<LedgerAccount>(`${V1}/clients/${client.id}/ledgers/`), [client.id])
   const vendors = useAsync(() => allPages<Vendor>(`${V1}/clients/${client.id}/vendors/`), [client.id])
+  const accounts = useAsync(() => allPages<BankAccount>(`${V1}/clients/${client.id}/bank-accounts/`), [client.id])
 
   const reload = () => {
     summary.reload()
@@ -68,7 +70,7 @@ export default function ReviewQueue({ client }: { client: Client }) {
       const r = job.result as Record<string, number | string>
       if (r.error) setFlash({ tone: 'warn', text: `The model could not be reached: ${String(r.error)}. Rows stay in the queue for a person.` })
       else if (Number(r.considered) === 0) setFlash({ tone: 'info', text: 'Nothing unresolved to ask about — or no model is configured (LLM_BACKEND).' })
-      else setFlash({ tone: 'info', text: `The model suggested ledgers for ${String(r.suggested)} of ${String(r.considered)} rows and declined ${String(r.declined)}. Every suggestion still needs a person.` })
+      else setFlash({ tone: 'info', text: `The model suggested ledgers for ${String(r.suggested)} of ${String(r.considered)} rows and declined ${String(r.declined)}.${Number(r.proposed) > 0 ? ` It proposed ${String(r.proposed)} new ledger${Number(r.proposed) === 1 ? '' : 's'}, waiting for a CA under Chart of accounts.` : ''} Every suggestion still needs a person.` })
       reload()
     } catch (err) {
       setError(err)
@@ -116,6 +118,18 @@ export default function ReviewQueue({ client }: { client: Client }) {
               Ask the model about unresolved rows
             </Button>
           )}
+          {can('transaction.classify') && (
+            <RecategorizeButton
+              client={client}
+              label="Re-categorize all with AI"
+              disabled={!!busy}
+              onBusy={(b) => setBusy(b ? 'recat' : null)}
+              onResult={(f) => {
+                setFlash(f)
+                reload()
+              }}
+            />
+          )}
           {can('journal.approve') && (
             <>
               <Button className="btn-sm" kind="primary" onClick={() => void approve({ band: 'HIGH' }, 'high')} busy={busy === 'high'} disabled={!!busy || !(s?.high && approvable.some((c) => c.review_band === 'HIGH'))}>
@@ -151,7 +165,7 @@ export default function ReviewQueue({ client }: { client: Client }) {
                   <tr key={c.id}>
                     {can('journal.approve') && (
                       <td>
-                        <input type="checkbox" disabled={!c.ledger} checked={selected.has(c.id)} onChange={() => toggle(c.id)} aria-label="Select for approval" />
+                        <input type="checkbox" disabled={!c.ledger || c.ledger_status === 'PROPOSED'} checked={selected.has(c.id)} onChange={() => toggle(c.id)} aria-label="Select for approval" />
                       </td>
                     )}
                     <td>{formatDate(c.transaction.value_date)}</td>
@@ -171,6 +185,11 @@ export default function ReviewQueue({ client }: { client: Client }) {
                       {c.ledger_name ? (
                         <>
                           <strong>{c.ledger_name}</strong>
+                          {c.ledger_status === 'PROPOSED' && (
+                            <div>
+                              <Badge tone="warn">New ledger · awaiting CA</Badge>
+                            </div>
+                          )}
                           {c.vendor_name && <div className="tiny">Party: {c.vendor_name}</div>}
                           <div className="pill-row tiny">
                             <span>{c.method_display}</span>
@@ -208,7 +227,7 @@ export default function ReviewQueue({ client }: { client: Client }) {
         <PlaceRow
           client={client}
           row={placing}
-          ledgers={ledgers.data ?? []}
+          ledgers={(ledgers.data ?? []).filter((l) => l.name !== accounts.data?.find((a) => a.id === placing.transaction.bank_account)?.ledger_name)}
           vendors={vendors.data ?? []}
           onClose={() => setPlacing(null)}
           onDone={(result) => {
@@ -293,7 +312,7 @@ function PlaceRow({
     }
   }
 
-  const activeLedgers = ledgers.filter((l) => l.is_active)
+  const activeLedgers = ledgers.filter((l) => l.is_active && l.status === 'ACTIVE')
   const grouped = LEDGER_GROUPS.map((g) => ({ ...g, items: activeLedgers.filter((l) => l.group === g.value) })).filter((g) => g.items.length)
 
   return (

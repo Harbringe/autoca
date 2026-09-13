@@ -4,18 +4,23 @@
 
 import { useState } from 'react'
 import { allPages, api, V1 } from '../../api/client'
-import type { BalanceCheck, BalanceSheet, BankAccount, Client, LedgerBalance, ProfitAndLoss, ReportFooter, TrialBalance } from '../../api/types'
+import type { BalanceCheck, BalanceSheet, BankAccount, Client, LedgerBalance, ProfitAndLoss, ReportFooter, Statement, TrialBalance } from '../../api/types'
 import { Badge, Button, ErrorNote, formatDate, Money, Note, Spinner, useAsync } from '../../components/ui'
 
-function currentFy(): number {
-  const now = new Date()
-  return now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1
+function fyOf(date: Date): number {
+  return date.getMonth() >= 3 ? date.getFullYear() : date.getFullYear() - 1
 }
 
 export default function Reports({ client }: { client: Client }) {
-  const [fy, setFy] = useState(currentFy())
+  const statements = useAsync(() => allPages<Statement>(`${V1}/clients/${client.id}/statements/`), [client.id])
+  const [picked, setFy] = useState<number | null>(null)
   const [tab, setTab] = useState<'tb' | 'pl' | 'bs' | 'recon'>('tb')
-  const years = Array.from({ length: 6 }, (_, i) => currentFy() - i)
+
+  const latest = (statements.data ?? []).map((s) => s.period_end).sort().at(-1)
+  const fy = picked ?? fyOf(latest ? new Date(latest) : new Date())
+  const years = Array.from({ length: 6 }, (_, i) => Math.max(fyOf(new Date()), fy) - i)
+
+  if (statements.loading) return <Spinner />
 
   return (
     <>
@@ -238,7 +243,7 @@ function BS({ client, fy }: { client: Client; fy: number }) {
               <tr>
                 <td>Total</td>
                 <td className="num" colSpan={2}>
-                  <Money value={data.total_liabilities_display} />
+                  <Money value={data.total_liabilities_and_profit_display} />
                 </td>
               </tr>
             </tfoot>

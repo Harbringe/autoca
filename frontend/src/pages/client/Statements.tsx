@@ -11,12 +11,14 @@ import { allPages, api, V1, waitForJob } from '../../api/client'
 import type { BankAccount, Client, Job, Statement } from '../../api/types'
 import { useSession } from '../../auth/session'
 import { Badge, Button, Empty, ErrorNote, Field, formatDate, Modal, Money, Note, Spinner, useAsync } from '../../components/ui'
+import { RecategorizeButton, type Flash } from './Recategorize'
 
 export default function Statements({ client }: { client: Client }) {
   const { can } = useSession()
   const accounts = useAsync(() => allPages<BankAccount>(`${V1}/clients/${client.id}/bank-accounts/`), [client.id])
   const statements = useAsync(() => allPages<Statement>(`${V1}/clients/${client.id}/statements/`), [client.id])
   const [confirming, setConfirming] = useState<BankAccount | null>(null)
+  const [flash, setFlash] = useState<Flash | null>(null)
 
   const reload = () => {
     accounts.reload()
@@ -96,6 +98,7 @@ export default function Statements({ client }: { client: Client }) {
           <h2>Statements</h2>
         </div>
         <ErrorNote error={statements.error} />
+        {flash && <Note tone={flash.tone}>{flash.text}</Note>}
         {statements.loading ? (
           <Spinner />
         ) : !statements.data?.length ? (
@@ -143,7 +146,10 @@ export default function Statements({ client }: { client: Client }) {
                       <Money value={s.closing_balance_display} />
                     </td>
                     <td className="num">
-                      <Link to={`statements/${s.id}`}>Rows →</Link>
+                      <div className="row end">
+                        {can('transaction.classify') && <RecategorizeButton client={client} statementId={s.id} onResult={setFlash} />}
+                        <Link to={`/clients/${client.id}/statements/${s.id}`}>Rows →</Link>
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -247,6 +253,7 @@ function Upload({ client, onDone }: { client: Client; onDone: () => void }) {
                 <strong>Read {String(result.rows_created)} rows</strong>
                 {Number(result.rows_already_present) > 0 && <> ({String(result.rows_already_present)} already on file from an overlapping statement)</>}. Rules placed{' '}
                 {String(result.suggested)}; the model suggested {String(result.model_suggested ?? 0)}; {String(result.queued_for_review)} went to the queue.
+                {Number(result.model_proposed) > 0 && <div>The model proposed {String(result.model_proposed)} new ledger(s). A CA can accept or reject them under Chart of accounts.</div>}
                 {result.model_error ? <div className="tiny">Model tier: {String(result.model_error)}</div> : null}
                 {result.needs_opening_confirmation ? <div>This account's opening balance still needs confirming.</div> : null}
               </>
@@ -256,7 +263,7 @@ function Upload({ client, onDone }: { client: Client; onDone: () => void }) {
               </>
             )}
             <div>
-              <Link to="review">Go to the review queue →</Link>
+              <Link to={`/clients/${client.id}/review`}>Go to the review queue →</Link>
             </div>
           </Note>
         )}

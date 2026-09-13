@@ -8,9 +8,9 @@ import json
 import pytest
 
 from banking.tests.support import ingest_fixture_statement
-from classify.engine import classify_statement, review_queue, unresolved_for
-from classify.llm import LLM_CONFIDENCE_CAP, suggest_unresolved
-from classify.models import ClassificationMethod, LedgerAccount, LedgerGroup
+from classify.engine import classify_statement, review, review_queue, unresolved_for
+from classify.llm import LLM_CONFIDENCE_CAP, recategorize, suggest_unresolved
+from classify.models import ClassificationMethod, LedgerAccount, LedgerGroup, TransactionClassification
 from classify.seeds import seed_client
 from classify.treatment import ReviewBand
 from core.db.session import firm_context
@@ -147,6 +147,90 @@ def test_the_prompt_carries_no_identifiers_or_exact_amounts(client, classified, 
         assert str(row.amount_paise) not in text
     assert "MADHUKAR" not in text  # a person named in the fixture statement
     assert "Deshmukh" not in text and "DESHMUKH" not in text  # the account holder
+
+
+def test_recategorize_keeps_an_agreeing_rule_and_flags_a_disagreement(client, classified, scripted):
+    with firm_context(client.firm_id):
+        rule_rows = list(
+            review_queue(client).filter(method=ClassificationMethod.RULE).select_related("ledger")
+        )
+        assert rule_rows
+        chosen = rule_rows[0].ledger.name
+        agreeing = [r.pk for r in rule_rows if r.ledger.name == chosen]
+        disagreeing = [r.pk for r in rule_rows if r.ledger.name != chosen]
+        scripted.script = {"*": {"ledger": chosen, "confidence": 0.9, "rationale": "Model view."}}
+
+        outcome = recategorize(client)
+
+        for row in TransactionClassification.objects.filter(pk__in=agreeing):
+            assert row.method == ClassificationMethod.RULE
+            assert row.rationale == "Model view."
+        for row in TransactionClassification.objects.filter(pk__in=disagreeing):
+            assert row.method == ClassificationMethod.LLM
+            assert row.review_band == ReviewBand.ADVISED and row.needs_review
+        assert outcome.confirmed == len(agreeing)
+        assert not review_queue(client).filter(method=ClassificationMethod.UNRESOLVED).exists()
+
+
+def test_recategorize_never_touches_a_persons_decision(client, classified, scripted):
+    scripted.script = {"*": {"ledger": "Investments", "confidence": 0.95}}
+    with firm_context(client.firm_id):
+        row = unresolved_for(client).first()
+        electricity = LedgerAccount.objects.get(client=client, name="Electricity")
+        review(row, electricity, learn=False)
+
+        recategorize(client)
+
+        row.refresh_from_db()
+        assert row.method == ClassificationMethod.REVIEWED
+        assert row.ledger == electricity
+
+
+def test_the_model_can_never_place_a_row_in_its_own_bank_ledger(client, classified, scripted):
+    own = classified.bank_account.ledger_name
+    scripted.script = {"*": {"ledger": own, "confidence": 0.95}}
+    with firm_context(client.firm_id):
+        seed_client(client)
+        outcome = suggest_unresolved(client)
+        assert outcome.suggested == 0
+        assert not review_queue(client).filter(ledger__name=own).exists()
+    offered = {ledger["name"] for prompt in scripted.prompts for ledger in prompt["ledgers"]}
+    assert own not in offered
+
+
+def test_a_stale_model_suggestion_is_withdrawn_when_the_model_declines(client, classified, scripted):
+    scripted.script = {"*": {"ledger": "Electricity", "confidence": 0.9}}
+    with firm_context(client.firm_id):
+        suggest_unresolved(client)
+        assert review_queue(client).filter(method=ClassificationMethod.LLM).exists()
+        scripted.script = {"*": {"ledger": None, "confidence": 0, "rationale": "No signal."}}
+        recategorize(client)
+        assert not review_queue(client).filter(method=ClassificationMethod.LLM).exists()
+
+
+def test_a_cut_off_reply_is_retried_in_smaller_batches(client, classified, scripted, settings):
+    settings.LLM_BATCH_SIZE = 50
+    calls = []
+    original = ScriptedLLM.complete_json
+
+    def truncating(self, system, user, *, max_tokens=2048):
+        rows = len(json.loads(user)["transactions"])
+        calls.append(rows)
+        if rows > 10:
+            raise LLMError("Groq answered HTTP 400 (json_validate_failed).")
+        return original(self, system, user, max_tokens=max_tokens)
+
+    scripted.script = {"*": {"ledger": "Electricity", "confidence": 0.9}}
+    ScriptedLLM.complete_json = truncating
+    try:
+        with firm_context(client.firm_id):
+            outcome = suggest_unresolved(client)
+    finally:
+        ScriptedLLM.complete_json = original
+    assert not outcome.failed
+    assert outcome.suggested == outcome.considered
+    assert calls[0] > 10
+    assert sum(n for n in calls if n <= 10) == outcome.considered
 
 
 def test_batches_share_one_call_per_batch(client, classified, scripted, settings):

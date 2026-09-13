@@ -60,6 +60,19 @@ class LedgerGroup(models.TextChoices):
     SUSPENSE = "SUSPENSE", "Suspense A/c"
 
 
+class LedgerStatus(models.TextChoices):
+    """Whether a ledger may carry entries yet.
+
+    A model may *propose* a ledger the client's chart lacks; it becomes usable
+    only when a CA accepts it. Rejected proposals are kept so the same name is
+    not proposed again next month.
+    """
+
+    ACTIVE = "ACTIVE", "In use"
+    PROPOSED = "PROPOSED", "Proposed, awaiting a CA"
+    REJECTED = "REJECTED", "Rejected by a CA"
+
+
 class LedgerAccount(UUIDModel, FirmScopedModel):
     """A ledger in the client's Tally company.
 
@@ -74,6 +87,8 @@ class LedgerAccount(UUIDModel, FirmScopedModel):
         max_length=32, choices=LedgerGroup.choices, default=LedgerGroup.SUSPENSE
     )
     is_active = models.BooleanField(default=True)
+    status = models.CharField(max_length=16, choices=LedgerStatus.choices, default=LedgerStatus.ACTIVE)
+    proposal_reason = models.TextField(blank=True, default="")
 
     class Meta:
         db_table = "classify_ledger_account"
@@ -91,6 +106,10 @@ class LedgerAccount(UUIDModel, FirmScopedModel):
     def is_bank_or_cash(self) -> bool:
         """True when posting against this ledger makes the voucher a Contra."""
         return self.group in {LedgerGroup.BANK, LedgerGroup.CASH}
+
+    @property
+    def is_proposed(self) -> bool:
+        return self.status == LedgerStatus.PROPOSED
 
 
 class Vendor(UUIDModel, FirmScopedModel):

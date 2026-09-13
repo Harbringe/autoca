@@ -354,6 +354,18 @@ def pending_approval(client):
     )
 
 
+def not_decided_by_a_person(client, statement=None):
+    """Unposted rows whose treatment came from a rule, the model, or nothing.
+
+    What the model may be asked about again. A person's decision and a posted
+    entry are both off limits: the first is authority, the second is immutable.
+    """
+    rows = _unposted(client).exclude(method=ClassificationMethod.REVIEWED)
+    if statement is not None:
+        rows = rows.filter(transaction__statement=statement)
+    return rows.order_by("-transaction__value_date")
+
+
 def _unposted(client):
     """Classifications with no live journal entry behind them.
 

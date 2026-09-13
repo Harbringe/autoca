@@ -16,6 +16,7 @@ from api.serializers.banking import StatementTransactionSerializer
 from classify.models import (
     ClassificationRule,
     LedgerAccount,
+    LedgerGroup,
     MatchType,
     TransactionClassification,
     Vendor,
@@ -33,11 +34,17 @@ MAX_RULE_PATTERN_LENGTH = 200
 
 class LedgerAccountSerializer(serializers.ModelSerializer):
     is_bank_or_cash = serializers.BooleanField(read_only=True)
+    row_count = serializers.IntegerField(
+        read_only=True, default=0, help_text="Classifications currently placed in this ledger."
+    )
 
     class Meta:
         model = LedgerAccount
-        fields = ["id", "name", "group", "is_bank_or_cash", "is_active", "created_at"]
-        read_only_fields = ["id", "is_bank_or_cash", "created_at"]
+        fields = [
+            "id", "name", "group", "is_bank_or_cash", "is_active",
+            "status", "proposal_reason", "row_count", "created_at",
+        ]
+        read_only_fields = ["id", "is_bank_or_cash", "status", "proposal_reason", "row_count", "created_at"]
         extra_kwargs = {
             "name": {
                 "help_text": (
@@ -145,6 +152,21 @@ class ClassificationRuleSerializer(serializers.ModelSerializer):
         return attrs
 
 
+class AcceptProposalSerializer(serializers.Serializer):
+    name = serializers.CharField(
+        required=False, max_length=255, help_text="Rename to match the client's Tally company exactly."
+    )
+    group = serializers.ChoiceField(choices=LedgerGroup.choices, required=False)
+
+
+class MergeProposalSerializer(serializers.Serializer):
+    into = serializers.UUIDField(help_text="An existing, in-use ledger of the same client.")
+
+
+class RecategorizeSerializer(serializers.Serializer):
+    statement = serializers.UUIDField(required=False, allow_null=True)
+
+
 class TreatmentSerializer(serializers.Serializer):
     """One complete accounting decision: where it goes, who it was with, and its tax.
 
@@ -182,6 +204,7 @@ class ClassificationSerializer(serializers.ModelSerializer):
 
     transaction = StatementTransactionSerializer(read_only=True)
     ledger_name = serializers.CharField(source="ledger.name", read_only=True, allow_null=True)
+    ledger_status = serializers.CharField(source="ledger.status", read_only=True, allow_null=True)
     vendor_name = serializers.CharField(
         source="vendor.canonical_name", read_only=True, allow_null=True
     )
@@ -195,6 +218,7 @@ class ClassificationSerializer(serializers.ModelSerializer):
             "transaction",
             "ledger",
             "ledger_name",
+            "ledger_status",
             "vendor",
             "vendor_name",
             "rcm",

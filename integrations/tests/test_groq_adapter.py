@@ -94,3 +94,35 @@ def test_a_dead_network_gives_up_after_the_attempts():
     ):
         adapter.complete_json("s", "u")
     assert opened.call_count == 2
+
+
+def test_a_rate_limit_waits_as_long_as_groq_says():
+    adapter = GroqLLMAdapter(api_key="k", max_attempts=3)
+    too_many = urllib.error.HTTPError("u", 429, "rate", {"retry-after": "7"}, None)
+    with (
+        mock.patch("urllib.request.urlopen", side_effect=[too_many, _ok({"a": 1})]),
+        mock.patch("time.sleep") as slept,
+    ):
+        adapter.complete_json("s", "u")
+    slept.assert_called_once_with(7.0)
+
+
+def test_a_rate_limit_gets_more_attempts_than_a_server_error():
+    adapter = GroqLLMAdapter(api_key="k", max_attempts=3)
+    limits = [urllib.error.HTTPError("u", 429, "rate", {"retry-after": "1"}, None) for _ in range(5)]
+    with (
+        mock.patch("urllib.request.urlopen", side_effect=[*limits, _ok({"a": 1})]) as opened,
+        mock.patch("time.sleep"),
+    ):
+        adapter.complete_json("s", "u")
+    assert opened.call_count == 6
+
+
+def test_the_error_names_groqs_code_without_its_message():
+    adapter = GroqLLMAdapter(api_key="k")
+    body = io.BytesIO(json.dumps({"error": {"code": "json_validate_failed", "message": "quoted text"}}).encode())
+    bad = urllib.error.HTTPError("u", 400, "bad", {}, body)
+    with mock.patch("urllib.request.urlopen", side_effect=[bad]), pytest.raises(LLMError) as raised:
+        adapter.complete_json("s", "u")
+    assert "json_validate_failed" in str(raised.value)
+    assert "quoted text" not in str(raised.value)

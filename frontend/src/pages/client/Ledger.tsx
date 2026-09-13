@@ -153,7 +153,7 @@ function Correct({ entry, ledgers, vendors, onClose, onDone }: { entry: JournalE
           <select required value={ledger} onChange={(e) => setLedger(e.target.value)} autoFocus>
             <option value="">— choose —</option>
             {ledgers
-              .filter((l) => l.is_active)
+              .filter((l) => l.is_active && l.status === 'ACTIVE')
               .map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.name}

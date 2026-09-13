@@ -7,20 +7,27 @@ much of it is bulk-approvable, and one endpoint per decision.
 
 from __future__ import annotations
 
+import uuid
+
 from django.core.exceptions import PermissionDenied
+from django.db.models import Count
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from api.pagination import DefaultPagination
 from api.permissions import HasFirmPermission
 from api.serializers.classify import (
+    AcceptProposalSerializer,
+    MergeProposalSerializer,
     ClassificationRuleSerializer,
     ClassificationSerializer,
     LedgerAccountSerializer,
     PlacementResultSerializer,
+    RecategorizeSerializer,
     ReviewSummarySerializer,
     TreatmentSerializer,
     VendorSerializer,
@@ -34,10 +41,15 @@ from classify.engine import (
     review_summary,
     unresolved_for,
 )
-from classify.llm import suggest_unresolved
+from banking.models import Statement
+from classify.llm import recategorize, suggest_unresolved
+from classify.proposals import accept as accept_proposal
+from classify.proposals import merge as merge_proposal
+from classify.proposals import reject as reject_proposal
 from classify.models import (
     ClassificationRule,
     LedgerAccount,
+    LedgerStatus,
     TransactionClassification,
     Vendor,
 )
@@ -53,7 +65,7 @@ BANDS = (ReviewBand.HIGH, ReviewBand.ADVISED, ReviewBand.JUDGEMENT)
 class LedgerAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
     """The client's chart of accounts."""
 
-    queryset = LedgerAccount.objects.all()
+    queryset = LedgerAccount.objects.annotate(row_count=Count("classifications"))
     serializer_class = LedgerAccountSerializer
     required_permission = {
         "GET": "client.view",
@@ -62,6 +74,70 @@ class LedgerAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
         "PATCH": "ledger.manage",
         "DELETE": "ledger.manage",
     }
+
+    def perform_create(self, serializer):
+        # A name a CA once rejected as a proposal is still a row; typing it in
+        # by hand is a deliberate decision to use it, so revive it.
+        existing = LedgerAccount.objects.filter(
+            firm_id=self.request.firm.pk,
+            client=self.client,
+            name=serializer.validated_data["name"],
+        ).exclude(status=LedgerStatus.ACTIVE).first()
+        if existing is None:
+            serializer.save(firm_id=self.request.firm.pk, client=self.client)
+            return
+        existing.status = LedgerStatus.ACTIVE
+        existing.is_active = True
+        existing.group = serializer.validated_data.get("group", existing.group)
+        existing.save(update_fields=["status", "is_active", "group"])
+        serializer.instance = existing
+
+    def _decision(self, request):
+        if not has_permission(request.membership, "journal.approve"):
+            raise PermissionDenied("Accepting or rejecting a proposed ledger is for a Senior CA or firm admin.")
+        return self.get_object()
+
+    @extend_schema(
+        summary="Accept a proposed ledger",
+        description="Optionally rename it to match Tally. Rows already suggested into it stay as suggestions for review.",
+        request=AcceptProposalSerializer,
+        responses=LedgerAccountSerializer,
+    )
+    @action(detail=True, methods=["post"])
+    def accept(self, request, client_id=None, pk=None):
+        ledger = self._decision(request)
+        payload = AcceptProposalSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        accept_proposal(ledger, **payload.validated_data)
+        return Response(self.get_serializer(self.get_queryset().get(pk=ledger.pk)).data)
+
+    @extend_schema(
+        summary="Merge a proposed ledger into an existing one",
+        request=MergeProposalSerializer,
+        responses={200: None},
+    )
+    @action(detail=True, methods=["post"])
+    def merge(self, request, client_id=None, pk=None):
+        ledger = self._decision(request)
+        payload = MergeProposalSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        into = get_object_or_404(
+            LedgerAccount, pk=payload.validated_data["into"], firm_id=request.firm.pk, client=self.client
+        )
+        moved = merge_proposal(ledger, into)
+        return Response({"moved": moved, "into": str(into.pk)})
+
+    @extend_schema(
+        summary="Reject a proposed ledger",
+        description="Its rows return to the queue unresolved. The name is remembered so it is not proposed again.",
+        request=None,
+        responses={200: None},
+    )
+    @action(detail=True, methods=["post"])
+    def reject(self, request, client_id=None, pk=None):
+        ledger = self._decision(request)
+        released = reject_proposal(ledger)
+        return Response({"released": released})
 
 
 @extend_schema(tags=["review"])
@@ -194,6 +270,7 @@ class ReviewQueueViewSet(
                 "considered": outcome.considered,
                 "suggested": outcome.suggested,
                 "declined": outcome.declined,
+                "proposed": outcome.proposed,
                 "error": outcome.error,
             }
 
@@ -202,6 +279,63 @@ class ReviewQueueViewSet(
             kind="classify.suggest",
             user=request.user,
             message=f"Asking the model about {client.name}'s unresolved rows",
+            work=work,
+        )
+        return Response(JobSerializer(outcome.job).data, status=status.HTTP_202_ACCEPTED)
+
+    @extend_schema(
+        summary="Re-categorize with the model",
+        description=(
+            "Asks the model again about every row that is **not posted** and was "
+            "**not placed by a person** -- rule placements, earlier model "
+            "suggestions and unresolved rows alike. Pass `statement` to limit it "
+            "to one statement.\n\n"
+            "Where the model agrees with a rule, the rule's placement stands "
+            "(`confirmed`). Where it disagrees, the row becomes a model suggestion "
+            "in the ADVISED band, so a person sees the disagreement before it can "
+            "be posted (`suggested`). Where it declines, nothing changes but the "
+            "rationale (`declined`). Posted entries are immutable and never "
+            "touched. Returns **202** with a job."
+        ),
+        request=RecategorizeSerializer,
+        responses={202: JobSerializer},
+    )
+    @action(detail=False, methods=["post"], url_path="recategorize")
+    def recategorize(self, request, client_id=None):
+        client = self.client
+        if not has_permission(request.membership, "transaction.classify"):
+            raise PermissionDenied("Your role does not permit transaction.classify.")
+        payload = RecategorizeSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        statement_id = payload.validated_data.get("statement")
+        statement = (
+            get_object_or_404(
+                Statement,
+                pk=statement_id,
+                firm_id=request.firm.pk,
+                bank_account__client=client,
+            )
+            if statement_id
+            else None
+        )
+
+        def work():
+            outcome = recategorize(client, statement=statement)
+            return {
+                "considered": outcome.considered,
+                "suggested": outcome.suggested,
+                "confirmed": outcome.confirmed,
+                "declined": outcome.declined,
+                "proposed": outcome.proposed,
+                "error": outcome.error,
+            }
+
+        scope = f"statement {statement.pk}" if statement else "all unposted rows"
+        outcome = run_job(
+            firm_id=request.firm.pk,
+            kind="classify.recategorize",
+            user=request.user,
+            message=f"Re-categorizing {client.name}'s {scope} with the model",
             work=work,
         )
         return Response(JobSerializer(outcome.job).data, status=status.HTTP_202_ACCEPTED)
@@ -252,9 +386,16 @@ class ClassificationViewSet(
     }
 
     def get_queryset(self):
-        return TransactionClassification.objects.filter(
+        rows = TransactionClassification.objects.filter(
             firm_id=self.request.firm.pk
         ).select_related("transaction", "ledger", "vendor")
+        statement = self.request.query_params.get("statement")
+        if statement:
+            try:
+                rows = rows.filter(transaction__statement_id=uuid.UUID(statement))
+            except ValueError:
+                return rows.none()
+        return rows
 
     @extend_schema(
         summary="Place a row in a ledger",
@@ -281,6 +422,14 @@ class ClassificationViewSet(
         ledger = get_object_or_404(
             LedgerAccount, pk=data["ledger"], firm_id=request.firm.pk, client=client
         )
+        if ledger.status != LedgerStatus.ACTIVE:
+            raise ValidationError(
+                {"ledger": ["This ledger is only proposed. A CA has to accept it before rows can be placed in it."]}
+            )
+        if ledger.name == classification.transaction.bank_account.ledger_name:
+            raise ValidationError(
+                {"ledger": ["This is the bank account the transaction came from. Choose the other side of the entry."]}
+            )
         vendor = (
             get_object_or_404(
                 Vendor, pk=data["vendor"], firm_id=request.firm.pk, client=client

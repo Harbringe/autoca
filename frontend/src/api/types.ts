@@ -122,6 +122,7 @@ export interface Classification {
   transaction: Transaction
   ledger: string | null
   ledger_name: string | null
+  ledger_status: LedgerStatus | null
   vendor: string | null
   vendor_name: string | null
   rcm: boolean
@@ -203,8 +204,13 @@ export interface LedgerAccount {
   group: LedgerGroup
   is_bank_or_cash: boolean
   is_active: boolean
+  status: LedgerStatus
+  proposal_reason: string
+  row_count: number
   created_at: string
 }
+
+export type LedgerStatus = 'ACTIVE' | 'PROPOSED' | 'REJECTED'
 
 export interface Vendor {
   id: string
@@ -319,6 +325,8 @@ export interface BalanceSheet {
   liabilities: LedgerBalance[]
   total_assets_display: string
   total_liabilities_display: string
+  total_liabilities_and_profit_paise: number
+  total_liabilities_and_profit_display: string
   net_profit_paise: number
   net_profit_display: string
   suspense_paise: number

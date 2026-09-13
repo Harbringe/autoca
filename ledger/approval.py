@@ -77,6 +77,15 @@ def approve(classification, *, membership, narration: str | None = None) -> Appr
         )
 
     transaction_row = classification.transaction
+    _require_ledger_in_use(classification.ledger)
+    if classification.ledger.name == transaction_row.bank_account.ledger_name:
+        raise NotApprovableError(
+            f"Transaction on {transaction_row.value_date:%d-%m-%Y} is placed in "
+            f"{classification.ledger.name!r}, the bank account it came from. That "
+            f"would debit and credit the same ledger. Place it in the other side "
+            f"of the transaction."
+        )
+
     if _live_entry_for(transaction_row) is not None:
         raise AlreadyPostedError(
             f"Transaction on {transaction_row.value_date:%d-%m-%Y} for "
@@ -144,6 +153,7 @@ def correct(entry: JournalEntry, *, membership, treatment, narration: str | None
             f"Correct that entry instead; the chain must stay linear."
         )
 
+    _require_ledger_in_use(treatment.ledger)
     classification = entry.source_transaction.classification
     classification.apply(
         treatment, method=ClassificationMethod.REVIEWED, confidence=1.0, user=membership.user
@@ -165,6 +175,17 @@ def correct(entry: JournalEntry, *, membership, treatment, narration: str | None
 # ---------------------------------------------------------------------------
 # internals
 # ---------------------------------------------------------------------------
+
+
+def _require_ledger_in_use(ledger) -> None:
+    """A proposed ledger is a question for a CA, not somewhere entries may go."""
+    from classify.models import LedgerStatus
+
+    if ledger is not None and ledger.status != LedgerStatus.ACTIVE:
+        raise NotApprovableError(
+            f"{ledger.name!r} is a ledger the model proposed and no CA has accepted. "
+            f"Accept it, merge it into an existing ledger, or place the row elsewhere."
+        )
 
 
 def _write_entry(

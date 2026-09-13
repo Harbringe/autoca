@@ -118,6 +118,37 @@ def test_an_unclassified_row_cannot_be_posted(client, statement, senior):
         approve(unplaced, membership=senior)
 
 
+def test_a_row_placed_in_its_own_bank_ledger_cannot_be_posted(client, statement, senior):
+    """Dr Bank / Cr Bank is not an entry, however the row got there."""
+    from classify.seeds import contra_ledger_for
+
+    own = contra_ledger_for(statement.bank_account)
+    row = placed(client, "Blinkit", own)
+
+    with pytest.raises(NotApprovableError, match="bank account it came from"):
+        approve(row, membership=senior)
+    assert JournalEntry.objects.count() == 0
+
+
+def test_a_row_in_a_proposed_ledger_cannot_be_posted_until_a_ca_accepts_it(client, statement, senior):
+    from classify.models import LedgerStatus
+    from classify.proposals import accept
+
+    proposed = LedgerAccount.objects.create(
+        firm_id=client.firm_id, client=client, name="Rent",
+        group=LedgerGroup.INDIRECT_EXPENSE, status=LedgerStatus.PROPOSED,
+    )
+    row = placed(client, "Blinkit", proposed)
+
+    with pytest.raises(NotApprovableError, match="no CA has accepted"):
+        approve(row, membership=senior)
+    assert JournalEntry.objects.count() == 0
+
+    accept(proposed)
+    row.refresh_from_db()
+    assert approve(row, membership=senior).entry.pk
+
+
 def test_the_same_transaction_cannot_be_posted_twice(client, statement, senior):
     row = placed(client, "Blinkit", ledger(client, "Office Expenses"))
     approve(row, membership=senior)

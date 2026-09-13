@@ -57,7 +57,39 @@ def test_the_ledger_name_matches_tallys_convention(client):
     with firm_context(client.firm_id):
         result = ingest_statement(client=client, data=b"%PDF-1.4 axis")
 
-        assert result.bank_account.ledger_name == "Axis Bank A/c 911010000004321"
+        assert result.bank_account.ledger_name == "Axis Bank A/c 4321"
+
+
+def test_two_accounts_ending_alike_do_not_share_a_ledger(client):
+    """Sharing one would merge two accounts' books; the second falls back to its full number."""
+    with firm_context(client.firm_id):
+        first = ingest_statement(client=client, data=b"%PDF-1.4 axis").bank_account
+        twin = BankAccount(firm_id=client.firm_id, client=client, bank_code="AXIS")
+        twin.set_account_number("922020000004321")
+        twin.save()
+
+        assert twin.ledger_name == "Axis Bank A/c 922020000004321"
+        assert twin.ledger_name != first.ledger_name
+
+
+def test_renaming_the_bank_ledger_carries_its_entries(client):
+    from classify.models import LedgerAccount
+    from classify.seeds import LedgerRenameError, contra_ledger_for, rename_account_ledger
+
+    with firm_context(client.firm_id):
+        account = ingest_statement(client=client, data=b"%PDF-1.4 axis").bank_account
+        ledger = contra_ledger_for(account)
+
+        rename_account_ledger(account, "Axis Bank Current A/c")
+
+        ledger.refresh_from_db()
+        assert ledger.name == "Axis Bank Current A/c"
+        assert contra_ledger_for(account).pk == ledger.pk
+        assert LedgerAccount.objects.filter(client=client, name="Axis Bank A/c 4321").count() == 0
+
+        LedgerAccount.objects.create(firm_id=client.firm_id, client=client, name="Taken")
+        with pytest.raises(LedgerRenameError):
+            rename_account_ledger(account, "Taken")
 
 
 def test_rows_keep_the_banks_own_figures(client):

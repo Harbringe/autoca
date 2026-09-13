@@ -376,6 +376,13 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
         help_text="Why the model suggested what it did, in one sentence a reviewer can check.",
     )
 
+    #: A transfer between two of the client's own accounts appears on both
+    #: statements. The first side approved writes the Contra entry; the other
+    #: side points here instead of writing it again. A plain id rather than a
+    #: foreign key: journal entries can never be deleted, and the column is
+    #: added to a populated, RLS-forced table without a validating scan.
+    mirrored_entry_id = models.UUIDField(null=True, blank=True, db_index=True)
+
     reviewed_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name="classifications"
     )

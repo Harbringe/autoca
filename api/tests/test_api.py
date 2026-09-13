@@ -471,3 +471,21 @@ def test_rows_cannot_be_placed_by_hand_in_a_proposed_ledger(api, client_record, 
         format="json",
     )
     assert response.status_code == 400
+
+
+def test_renaming_the_bank_ledger_moves_the_ledger_and_reports_posted_lines(api, client_record, statement):
+    account = api.get(f"{V1}/clients/{client_record.pk}/bank-accounts/").json()["results"][0]
+    api.post(f"{V1}/clients/{client_record.pk}/approvals/", {"band": ReviewBand.HIGH}, format="json")
+
+    response = api.patch(
+        f"{V1}/clients/{client_record.pk}/bank-accounts/{account['id']}/",
+        {"ledger_name": "Axis Bank Savings"},
+        format="json",
+    )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["ledger_name"] == "Axis Bank Savings"
+    assert body["posted_lines"] > 0
+    names = {l["name"] for l in api.get(f"{V1}/clients/{client_record.pk}/ledgers/").json()["results"]}
+    assert "Axis Bank Savings" in names and account["ledger_name"] not in names

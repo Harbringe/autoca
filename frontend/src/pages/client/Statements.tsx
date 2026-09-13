@@ -19,6 +19,7 @@ export default function Statements({ client }: { client: Client }) {
   const statements = useAsync(() => allPages<Statement>(`${V1}/clients/${client.id}/statements/`), [client.id])
   const [confirming, setConfirming] = useState<BankAccount | null>(null)
   const [flash, setFlash] = useState<Flash | null>(null)
+  const [renaming, setRenaming] = useState<BankAccount | null>(null)
 
   const reload = () => {
     accounts.reload()
@@ -73,7 +74,14 @@ export default function Statements({ client }: { client: Client }) {
                     </td>
                     <td>{account.bank_code}</td>
                     <td className="mono">{account.ifsc || '—'}</td>
-                    <td>{account.ledger_name}</td>
+                    <td>
+                      {account.ledger_name}{' '}
+                      {can('ledger.manage') && (
+                        <Button className="btn-sm" kind="ghost" onClick={() => setRenaming(account)}>
+                          Edit
+                        </Button>
+                      )}
+                    </td>
                     <td className="num">
                       {account.has_opening_balance ? <Money value={account.opening_balance_display} /> : <Badge tone="warn">Not confirmed</Badge>}
                     </td>
@@ -158,6 +166,25 @@ export default function Statements({ client }: { client: Client }) {
           </div>
         )}
       </div>
+
+      {renaming && (
+        <RenameLedger
+          client={client}
+          account={renaming}
+          onClose={() => setRenaming(null)}
+          onDone={(name, postedLines) => {
+            setRenaming(null)
+            setFlash({
+              tone: postedLines > 0 ? 'warn' : 'good',
+              text:
+                postedLines > 0
+                  ? `Renamed to “${name}”. ${postedLines} approved line${postedLines === 1 ? '' : 's'} already used the old name — if they were imported into Tally, rename the ledger there too, or Tally will start a second one.`
+                  : `Renamed to “${name}”.`,
+            })
+            reload()
+          }}
+        />
+      )}
 
       {confirming && (
         <OpeningBalance
@@ -317,6 +344,46 @@ function OpeningBalance({ client, account, onClose, onDone }: { client: Client; 
           <Button onClick={onClose}>Cancel</Button>
           <Button kind="primary" type="submit" busy={busy}>
             Confirm
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+function RenameLedger({ client, account, onClose, onDone }: { client: Client; account: BankAccount; onClose: () => void; onDone: (name: string, postedLines: number) => void }) {
+  const [name, setName] = useState(account.ledger_name)
+  const [error, setError] = useState<unknown>(null)
+  const [busy, setBusy] = useState(false)
+
+  async function submit(event: FormEvent) {
+    event.preventDefault()
+    setBusy(true)
+    setError(null)
+    try {
+      const r = await api.patch<BankAccount & { posted_lines: number }>(`${V1}/clients/${client.id}/bank-accounts/${account.id}/`, { ledger_name: name.trim() })
+      onDone(r.ledger_name, r.posted_lines)
+    } catch (err) {
+      setError(err)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal title={`Tally ledger name — ••••${account.account_last4}`} onClose={onClose}>
+      <p className="sub">
+        Use exactly the name this bank account has in the client’s Tally company. Entries already approved move with the ledger. Rename before the first Tally import if you can: after it, Tally needs the same rename.
+      </p>
+      <form onSubmit={submit}>
+        <ErrorNote error={error} />
+        <Field label="Ledger name" hint="Avoid the full account number — this name appears on every report and export.">
+          <input id="bank-ledger-name" type="text" required value={name} onChange={(e) => setName(e.target.value)} autoFocus />
+        </Field>
+        <div className="row end">
+          <Button onClick={onClose}>Cancel</Button>
+          <Button kind="primary" type="submit" busy={busy}>
+            Rename
           </Button>
         </div>
       </form>

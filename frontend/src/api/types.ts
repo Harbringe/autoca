@@ -292,6 +292,8 @@ export interface ReportFooter {
 export interface LedgerBalance {
   name: string
   group: string
+  opening_paise: number
+  opening_display: string
   debit_paise: number
   debit_display: string
   credit_paise: number

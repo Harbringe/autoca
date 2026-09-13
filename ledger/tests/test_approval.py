@@ -172,7 +172,7 @@ def test_a_payment_debits_the_expense_and_credits_the_bank(client, statement, se
     assert debit.ledger_account_id == expenses.pk
     assert debit.amount_paise == 530_00
     assert credit.direction == Direction.CREDIT
-    assert credit.ledger_account.name == "Axis Bank A/c 911010000004321"
+    assert credit.ledger_account.name == "Axis Bank A/c 4321"
     assert credit.amount_paise == 530_00
 
 
@@ -183,7 +183,7 @@ def test_a_receipt_debits_the_bank_and_credits_the_income(client, statement, sen
 
     debit, credit = entry.lines.all()
     assert entry.voucher_type == VoucherType.RECEIPT
-    assert debit.ledger_account.name == "Axis Bank A/c 911010000004321"
+    assert debit.ledger_account.name == "Axis Bank A/c 4321"
     assert credit.ledger_account_id == income.pk
 
 
@@ -462,3 +462,72 @@ def test_another_firm_sees_no_entries(client, firm):
     with firm_context(other.pk):
         assert JournalEntry.objects.count() == 0
         assert JournalLine.objects.count() == 0
+
+
+# ---------------------------------------------------------------------------
+# A transfer between the client's own accounts, on both statements
+# ---------------------------------------------------------------------------
+
+
+def _other_account_receiving(client, amount_paise, value_date):
+    """A second account whose statement shows the same transfer arriving."""
+    from banking.models import BankAccount, Statement, StatementTransaction
+    from classify.models import TransactionClassification
+    from documents.models import Document, DocumentKind
+
+    hdfc = BankAccount(firm_id=client.firm_id, client=client, bank_code="HDFC", ledger_name="HDFC Bank A/c 9876")
+    hdfc.set_account_number("50100000009876")
+    hdfc.save()
+    document = Document.objects.create(
+        firm_id=client.firm_id, client=client, kind=DocumentKind.BANK_STATEMENT, sha256="hdfc-test"
+    )
+    statement = Statement.objects.create(
+        firm_id=client.firm_id, document=document, bank_account=hdfc,
+        period_start=value_date, period_end=value_date,
+        opening_balance_paise=0, closing_balance_paise=amount_paise,
+        total_debit_paise=0, total_credit_paise=amount_paise, transaction_count=1,
+    )
+    txn = StatementTransaction.objects.create(
+        firm_id=client.firm_id, statement=statement, bank_account=hdfc, row_number=1,
+        value_date=value_date, narration="NEFT/AXIS/RAMESH GOPAL DESHMUKH/Self",
+        credit_paise=amount_paise, balance_paise=amount_paise, dedupe_hash="hdfc-row-1",
+    )
+    row = TransactionClassification.objects.create(firm_id=client.firm_id, transaction=txn, is_self_transfer=True)
+    return hdfc, row
+
+
+def test_a_transfer_seen_on_both_statements_is_posted_once(client, statement, senior):
+    from classify.seeds import contra_ledger_for
+    from ledger.reconciliation import ledger_balance
+
+    axis = statement.bank_account
+    outgoing = review_queue(client).filter(transaction__narration__icontains="AXOMB20402110637").first()
+    amount, sent_on = outgoing.transaction.amount_paise, outgoing.transaction.value_date
+    hdfc, incoming = _other_account_receiving(client, amount, sent_on + datetime.timedelta(days=1))
+
+    first = approve(review(outgoing, contra_ledger_for(hdfc), learn=False)[0], membership=senior)
+    second = approve(review(incoming, contra_ledger_for(axis), learn=False)[0], membership=senior)
+
+    assert first.entry.voucher_type == VoucherType.CONTRA and not first.mirrored
+    assert second.mirrored and second.entry.pk == first.entry.pk
+    assert JournalEntry.objects.filter(voucher_type=VoucherType.CONTRA).count() == 1
+    assert not review_queue(client).filter(pk=incoming.pk).exists()
+    assert ledger_balance(hdfc, sent_on + datetime.timedelta(days=2)) == amount
+
+    with pytest.raises(AlreadyPostedError):
+        approve(incoming, membership=senior)
+
+
+def test_a_similar_transfer_outside_the_window_is_not_mistaken_for_the_same_one(client, statement, senior):
+    from classify.seeds import contra_ledger_for
+
+    axis = statement.bank_account
+    outgoing = review_queue(client).filter(transaction__narration__icontains="AXOMB20402110637").first()
+    amount, sent_on = outgoing.transaction.amount_paise, outgoing.transaction.value_date
+    hdfc, incoming = _other_account_receiving(client, amount, sent_on + datetime.timedelta(days=30))
+
+    approve(review(outgoing, contra_ledger_for(hdfc), learn=False)[0], membership=senior)
+    second = approve(review(incoming, contra_ledger_for(axis), learn=False)[0], membership=senior)
+
+    assert not second.mirrored
+    assert JournalEntry.objects.filter(voucher_type=VoucherType.CONTRA).count() == 2

@@ -97,10 +97,11 @@ class CorrectionSerializer(serializers.Serializer):
 
 
 class LedgerBalanceSerializer(MoneySerializerMixin, serializers.Serializer):
-    money = ("debit_paise", "credit_paise", "closing_debit_paise", "closing_credit_paise")
+    money = ("opening_paise", "debit_paise", "credit_paise", "closing_debit_paise", "closing_credit_paise")
 
     name = serializers.CharField()
     group = serializers.CharField()
+    opening_paise = PaiseField(help_text="Balance before the year. Debits positive.")
     debit_paise = PaiseField()
     credit_paise = PaiseField()
     closing_debit_paise = PaiseField()

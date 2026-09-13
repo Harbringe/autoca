@@ -52,6 +52,7 @@ DOMAIN_ERRORS = {
     "AlreadyPostedError": (status.HTTP_409_CONFLICT, "already_posted"),
     "NotApprovableError": (status.HTTP_409_CONFLICT, "not_approvable"),
     "ProposalError": (status.HTTP_409_CONFLICT, "proposal_conflict"),
+    "LedgerRenameError": (status.HTTP_409_CONFLICT, "ledger_name_taken"),
     "TenantContextError": (status.HTTP_409_CONFLICT, "tenant_context"),
     # Nothing to act on.
     "NoStatementError": (status.HTTP_404_NOT_FOUND, "no_statement_for_date"),

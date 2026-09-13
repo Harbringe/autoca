@@ -25,7 +25,7 @@ from banking.ingest import confirm_opening_balance, ingest_statement
 from banking.models import BankAccount, Statement, StatementTransaction
 from classify.engine import classify_statement
 from classify.llm import suggest_unresolved
-from classify.seeds import seed_client
+from classify.seeds import rename_account_ledger, seed_client
 from core.jobs import run_job
 from core.models import Client
 
@@ -148,6 +148,17 @@ class BankAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
 
     def get_serializer_class(self):
         return BankAccountDetailSerializer if self.action == "retrieve" else self.serializer_class
+
+    def partial_update(self, request, *args, **kwargs):
+        """Renaming the Tally ledger moves the existing ledger, entries and all."""
+        account = self.get_object()
+        payload = self.get_serializer(account, data=request.data, partial=True)
+        payload.is_valid(raise_exception=True)
+        posted_lines = 0
+        if "ledger_name" in payload.validated_data:
+            posted_lines = rename_account_ledger(account, payload.validated_data["ledger_name"])
+        account.refresh_from_db()
+        return Response({**self.get_serializer(account).data, "posted_lines": posted_lines})
 
     @extend_schema(
         summary="Confirm the opening balance",

@@ -37,6 +37,14 @@ class AlreadyPostedError(NotApprovableError):
 class ApprovalResult:
     entry: JournalEntry
     classification: TransactionClassification
+    #: True when no entry was written because the other account's statement
+    #: already posted this transfer; ``entry`` is that existing entry.
+    mirrored: bool = False
+
+
+#: How far apart the two sides of one transfer may be dated. Inter-bank
+#: transfers settle a day or two apart, and across a weekend a little more.
+MIRROR_WINDOW_DAYS = 5
 
 
 def voucher_type_for(classification) -> str:
@@ -86,19 +94,27 @@ def approve(classification, *, membership, narration: str | None = None) -> Appr
             f"of the transaction."
         )
 
-    if _live_entry_for(transaction_row) is not None:
+    if classification.mirrored_entry_id or _live_entry_for(transaction_row) is not None:
         raise AlreadyPostedError(
             f"Transaction on {transaction_row.value_date:%d-%m-%Y} for "
             f"{format_inr(transaction_row.amount_paise)} is already posted. To "
             f"change it, record a correction against the existing entry."
         )
 
-    entry = _write_entry(
-        classification,
-        voucher_type=voucher_type_for(classification),
-        narration=narration if narration is not None else transaction_row.narration,
-        approved_by=membership.user,
-    )
+    voucher_type = voucher_type_for(classification)
+    mirror = _mirror_for(classification) if voucher_type == VoucherType.CONTRA else None
+    if mirror is not None:
+        # The other account's statement already recorded this transfer. Writing
+        # it again would count the money twice in both bank ledgers.
+        entry = mirror
+        classification.mirrored_entry_id = mirror.pk
+    else:
+        entry = _write_entry(
+            classification,
+            voucher_type=voucher_type,
+            narration=narration if narration is not None else transaction_row.narration,
+            approved_by=membership.user,
+        )
 
     # Approving a model's suggestion is a person agreeing with it, and that
     # agreement is worth remembering: next month the same payee is a rule hit
@@ -111,7 +127,9 @@ def approve(classification, *, membership, narration: str | None = None) -> Appr
     classification.reviewed_by = membership.user
     classification.reviewed_at = timezone.now()
     classification.save(
-        update_fields=["method", "needs_review", "confidence", "reviewed_by", "reviewed_at"]
+        update_fields=[
+            "method", "needs_review", "confidence", "reviewed_by", "reviewed_at", "mirrored_entry_id",
+        ]
     )
 
     if learned_from_model and classification.treatment is not None:
@@ -119,7 +137,7 @@ def approve(classification, *, membership, narration: str | None = None) -> Appr
 
         learn_rule_from(classification, classification.treatment, membership.user)
 
-    return ApprovalResult(entry=entry, classification=classification)
+    return ApprovalResult(entry=entry, classification=classification, mirrored=mirror is not None)
 
 
 @transaction.atomic
@@ -175,6 +193,44 @@ def correct(entry: JournalEntry, *, membership, treatment, narration: str | None
 # ---------------------------------------------------------------------------
 # internals
 # ---------------------------------------------------------------------------
+
+
+def _mirror_for(classification) -> JournalEntry | None:
+    """The entry the other account's statement already posted for this transfer, if any.
+
+    The same transfer, seen from the other side, writes identical lines: the
+    receiving bank debited, the paying bank credited, the same amount. So a match
+    is a live Contra with exactly those two lines, dated within a few days,
+    sourced from a different bank account, and not already claimed by another row.
+    """
+    import datetime
+
+    txn = classification.transaction
+    bank = _bank_ledger_for(classification)
+    other = classification.ledger
+    debit_ledger, credit_ledger = (other, bank) if txn.is_debit else (bank, other)
+    window = datetime.timedelta(days=MIRROR_WINDOW_DAYS)
+
+    claimed = TransactionClassification.objects.filter(
+        firm_id=classification.firm_id, mirrored_entry_id__isnull=False
+    ).values("mirrored_entry_id")
+
+    candidates = (
+        JournalEntry.objects.filter(
+            firm_id=classification.firm_id,
+            client_id=txn.bank_account.client_id,
+            voucher_type=VoucherType.CONTRA,
+            superseded_by_set__isnull=True,
+            entry_date__gte=txn.value_date - window,
+            entry_date__lte=txn.value_date + window,
+        )
+        .exclude(source_transaction__bank_account_id=txn.bank_account_id)
+        .exclude(pk__in=claimed)
+        .filter(lines__ledger_account=debit_ledger, lines__direction=Direction.DEBIT, lines__amount_paise=txn.amount_paise)
+        .filter(lines__ledger_account=credit_ledger, lines__direction=Direction.CREDIT, lines__amount_paise=txn.amount_paise)
+        .distinct()
+    )
+    return min(candidates, key=lambda e: abs((e.entry_date - txn.value_date).days), default=None)
 
 
 def _require_ledger_in_use(ledger) -> None:

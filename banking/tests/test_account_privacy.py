@@ -59,7 +59,8 @@ def test_the_last_four_are_kept_for_display_without_decrypting(client):
         account = ingest_fixture_statement(client).bank_account
 
         assert account.account_last4 == "4321"
-        assert str(account) == "Axis Bank A/c 911010000004321"
+        assert str(account) == "Axis Bank A/c 4321"
+        assert ACCOUNT not in account.ledger_name
 
 
 def test_an_account_is_found_again_by_its_number(client):

@@ -385,7 +385,10 @@ def _unposted(client):
     ).values("source_transaction_id")
 
     return TransactionClassification.objects.filter(
-        firm_id=client.firm_id, transaction__bank_account__client=client
+        firm_id=client.firm_id,
+        transaction__bank_account__client=client,
+        # The other side of an own-account transfer is done once its twin is posted.
+        mirrored_entry_id__isnull=True,
     ).exclude(transaction_id__in=posted)
 
 

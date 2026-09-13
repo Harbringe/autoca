@@ -128,8 +128,22 @@ class BankAccount(UUIDModel, FirmScopedModel):
         return super().save(*args, **kwargs)
 
     def default_ledger_name(self) -> str:
-        """Tally's own convention for a bank ledger, matched by the sample data."""
-        return f"{self.bank_code.title()} Bank A/c {self.account_number}"
+        """A bank ledger name that does not put the account number on every screen and export.
+
+        The ledger name is plaintext everywhere it goes -- reports, the Tally
+        file -- so it carries the last four digits, a common Tally convention. A
+        client with two accounts at one bank ending in the same digits gets the
+        full number instead, because two accounts sharing a ledger would merge
+        their books. A CA can rename either to match their Tally company.
+        """
+        bank = f"{self.bank_code.title()} Bank A/c"
+        short = f"{bank} {self.account_last4}"
+        clash = (
+            BankAccount.objects.filter(client_id=self.client_id, ledger_name=short)
+            .exclude(pk=self.pk)
+            .exists()
+        )
+        return f"{bank} {self.account_number}" if clash else short
 
     @property
     def has_opening_balance(self) -> bool:

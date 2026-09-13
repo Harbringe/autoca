@@ -238,6 +238,8 @@ class ClassificationSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_is_posted(self, obj) -> bool:
+        if obj.mirrored_entry_id:
+            return True
         return any(not entry.is_superseded for entry in obj.transaction.journal_entries.all())
 
 

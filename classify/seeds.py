@@ -23,6 +23,8 @@ three months that way, and never has to hunt for a wrong seeded assumption.
 
 from __future__ import annotations
 
+from django.db import transaction
+
 from classify.engine import default_confidence
 from classify.models import (
     ClassificationRule,
@@ -90,6 +92,47 @@ def seed_client(client, *, created_by=None) -> dict[str, int]:
         rules_created += created
 
     return {"ledgers": ledgers_created, "rules": rules_created}
+
+
+class LedgerRenameError(ValueError):
+    """The new name belongs to a different ledger of this client."""
+
+
+@transaction.atomic
+def rename_account_ledger(account, name: str) -> int:
+    """Rename a bank account's ledger, carrying its entries with it.
+
+    Changing only ``account.ledger_name`` would make :func:`contra_ledger_for`
+    open a second, empty ledger under the new name: every approved entry would
+    stay on the old one and month-end reconciliation would stop matching.
+    Returns how many journal lines already name the ledger, so a caller can warn
+    that a Tally company importing under the old name must be renamed too.
+    """
+    from ledger.models import JournalLine
+
+    name = " ".join(name.split())
+    if not name:
+        raise LedgerRenameError("A ledger name is required.")
+    if name == account.ledger_name:
+        return 0
+
+    current = LedgerAccount.objects.filter(
+        firm_id=account.firm_id, client_id=account.client_id, name=account.ledger_name
+    ).first()
+    clash = LedgerAccount.objects.filter(
+        firm_id=account.firm_id, client_id=account.client_id, name=name
+    ).exclude(pk=current.pk if current else None)
+    if clash.exists():
+        raise LedgerRenameError(f"This client already has a ledger named {name!r}.")
+
+    posted = 0
+    if current is not None:
+        posted = JournalLine.objects.filter(firm_id=account.firm_id, ledger_account=current).count()
+        current.name = name
+        current.save(update_fields=["name"])
+    account.ledger_name = name
+    account.save(update_fields=["ledger_name"])
+    return posted
 
 
 def contra_ledger_for(account) -> LedgerAccount:

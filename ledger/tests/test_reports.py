@@ -35,6 +35,7 @@ FY2026_ENTRIES = 10
 # 54,20,836.96 debit and 44,95,705.00 credit. These are those figures.
 BANK_DEBIT = 54_20_836_96
 BANK_CREDIT = 44_95_705_00
+OPENING = 1_24_189_43
 
 
 @pytest.fixture
@@ -60,7 +61,7 @@ def books(client, senior):
     with firm_context(client.firm_id):
         result = ingest_fixture_statement(client)
         confirm_opening_balance(
-            result.bank_account, balance_paise=1_24_189_43, as_of=datetime.date(2025, 4, 1)
+            result.bank_account, balance_paise=OPENING, as_of=datetime.date(2025, 4, 1)
         )
         seed_client(client)
         classify_statement(result.statement)
@@ -112,7 +113,8 @@ def test_the_bank_ledger_matches_the_accountants_own_tally_totals(client, books)
 
     assert bank.debit_paise == BANK_DEBIT
     assert bank.credit_paise == BANK_CREDIT
-    assert bank.net_paise == BANK_DEBIT - BANK_CREDIT
+    assert bank.opening_paise == OPENING
+    assert bank.net_paise == OPENING + BANK_DEBIT - BANK_CREDIT
 
 
 def test_it_renders_in_the_shape_a_firm_already_reads(client, books):
@@ -237,3 +239,57 @@ def test_each_financial_year_reports_only_its_own_entries(client, books):
     assert next_year.footer.entry_count == FY2026_ENTRIES
     assert this_year.footer.entry_count + next_year.footer.entry_count == 54
     assert this_year.balances and next_year.balances
+
+
+# ---------------------------------------------------------------------------
+# Opening balances and carrying forward
+# ---------------------------------------------------------------------------
+
+
+def test_the_confirmed_opening_balance_is_in_the_books(client, books):
+    """The bank's closing figure in the balance sheet is what the bank itself printed."""
+    report = balance_sheet(client, FY)
+    bank = next(r for r in report.assets if r.name.startswith("Axis Bank"))
+    difference = next(r for r in report.liabilities if r.name == "Difference in opening balances")
+
+    assert bank.opening_paise == OPENING
+    assert difference.net_paise == -OPENING
+    assert report.balances
+    assert trial_balance(client, FY).balances
+
+
+def test_the_bank_closing_matches_month_end_reconciliation(client, books):
+    from ledger.reconciliation import ledger_balance
+
+    bank_row = next(r for r in trial_balance(client, FY).rows if r.name.startswith("Axis Bank"))
+    assert bank_row.net_paise == ledger_balance(books.bank_account, datetime.date(2026, 3, 31))
+
+
+def test_the_next_year_carries_balances_and_last_years_result_forward(client, books):
+    this_year = trial_balance(client, FY)
+    next_year = trial_balance(client, FY + 1)
+    last_pl = profit_and_loss(client, FY)
+
+    bank_now = next(r for r in this_year.rows if r.name.startswith("Axis Bank"))
+    bank_next = next(r for r in next_year.rows if r.name.startswith("Axis Bank"))
+    assert bank_next.opening_paise == bank_now.net_paise
+
+    brought_forward = next(r for r in next_year.rows if r.name == "Profit & Loss A/c")
+    assert brought_forward.net_paise == -last_pl.net_profit_paise
+
+    income_next = [r for r in next_year.rows if r.is_profit_and_loss]
+    assert all(r.opening_paise == 0 for r in income_next)
+    assert next_year.balances
+    assert balance_sheet(client, FY + 1).balances
+
+
+def test_without_a_confirmed_opening_there_is_no_difference_line(client, senior):
+    with firm_context(client.firm_id):
+        result = ingest_fixture_statement(client)
+        seed_client(client)
+        classify_statement(result.statement)
+        row = review_queue(client).filter(ledger__isnull=False).first()
+        approve(row, membership=senior)
+
+        names = {r.name for r in trial_balance(client, FY).rows}
+        assert "Difference in opening balances" not in names

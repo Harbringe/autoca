@@ -90,17 +90,25 @@ class ReportFooter:
 
 @dataclass(frozen=True)
 class LedgerBalance:
-    """One ledger account's movement and closing position for the period."""
+    """One ledger account's opening, movement and closing position for the period.
+
+    ``debit_paise`` and ``credit_paise`` are the year's movement only -- what
+    Tally prints as a ledger's totals. ``opening_paise`` is everything before the
+    year: a balance-sheet ledger's history and a confirmed bank opening balance.
+    Income and expense ledgers start every year at zero.
+    """
 
     name: str
     group: str
     debit_paise: int
     credit_paise: int
+    #: Debits positive, like ``net_paise``.
+    opening_paise: int = 0
 
     @property
     def net_paise(self) -> int:
-        """Debits positive. A bank account in funds is positive; income negative."""
-        return self.debit_paise - self.credit_paise
+        """The closing position. Debits positive: a bank in funds is positive, income negative."""
+        return self.opening_paise + self.debit_paise - self.credit_paise
 
     @property
     def closing_debit_paise(self) -> int:
@@ -227,32 +235,82 @@ def balance_sheet(client, financial_year: int) -> BalanceSheet:
     )
 
 
+#: Tally's own names for the two balancing lines, so a CA reads them as familiar.
+PROFIT_BROUGHT_FORWARD = "Profit & Loss A/c"
+OPENING_DIFFERENCE = "Difference in opening balances"
+
+
 def _balances(client, financial_year: int) -> tuple[tuple[LedgerBalance, ...], ReportFooter]:
+    """Every ledger's position at the end of ``financial_year``.
+
+    Balance-sheet ledgers carry their whole history into the year; income and
+    expense ledgers do not, and their earlier years' results arrive as a single
+    Profit & Loss A/c balance instead. Confirmed bank opening balances are added
+    to the bank ledgers, and since nothing else's opening balance is known, their
+    counterpart is shown -- as Tally shows it -- as a difference in opening
+    balances for a CA to allocate, usually to capital. Every line posted up to
+    the year end nets to zero, so the trial balance still balances.
+    """
     start, end = fy_bounds(financial_year)
+    in_year = Q(entry__entry_date__gte=start)
 
     aggregated = (
         JournalLine.objects.filter(
             firm_id=client.firm_id,
             entry__client=client,
-            entry__entry_date__gte=start,
             entry__entry_date__lte=end,
         )
         .values("ledger_account__name", "ledger_account__group")
         .annotate(
-            debit=Sum("amount_paise", filter=Q(direction="DR")),
-            credit=Sum("amount_paise", filter=Q(direction="CR")),
+            debit=Sum("amount_paise", filter=Q(direction="DR") & in_year),
+            credit=Sum("amount_paise", filter=Q(direction="CR") & in_year),
+            before=Sum("signed_paise", filter=Q(entry__entry_date__lt=start)),
         )
-        .order_by("ledger_account__group", "ledger_account__name")
     )
 
+    balances: dict[str, dict] = {}
+    earlier_results = 0
+    for row in aggregated:
+        group = row["ledger_account__group"]
+        before = row["before"] or 0
+        if group in PROFIT_AND_LOSS_GROUPS:
+            earlier_results += before
+            before = 0
+        balances[row["ledger_account__name"]] = {
+            "group": group,
+            "debit": row["debit"] or 0,
+            "credit": row["credit"] or 0,
+            "opening": before,
+        }
+
+    confirmed_openings = 0
+    for account in client.bank_accounts.filter(opening_balance_paise__isnull=False):
+        if account.opening_as_of and account.opening_as_of > end:
+            continue
+        name = account.ledger_name
+        entry = balances.setdefault(name, {"group": LedgerGroup.BANK, "debit": 0, "credit": 0, "opening": 0})
+        entry["opening"] += account.opening_balance_paise
+        confirmed_openings += account.opening_balance_paise
+
+    for name, opening in ((PROFIT_BROUGHT_FORWARD, earlier_results), (OPENING_DIFFERENCE, -confirmed_openings)):
+        if opening:
+            balances[name] = {"group": LedgerGroup.CAPITAL, "debit": 0, "credit": 0, "opening": opening}
+
     rows = tuple(
-        LedgerBalance(
-            name=row["ledger_account__name"],
-            group=row["ledger_account__group"],
-            debit_paise=row["debit"] or 0,
-            credit_paise=row["credit"] or 0,
+        sorted(
+            (
+                LedgerBalance(
+                    name=name,
+                    group=values["group"],
+                    debit_paise=values["debit"],
+                    credit_paise=values["credit"],
+                    opening_paise=values["opening"],
+                )
+                for name, values in balances.items()
+                if values["debit"] or values["credit"] or values["opening"]
+            ),
+            key=lambda r: (r.group, r.name),
         )
-        for row in aggregated
     )
     return rows, _footer(client, financial_year, start, end)
 

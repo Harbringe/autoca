@@ -123,7 +123,7 @@ def test_a_payment_credits_the_bank_in_tallys_inverted_signs(client, statement, 
     }
 
     assert entries["Office Expenses"] == ("Yes", "-530.00")
-    assert entries["Axis Bank A/c 911010000004321"] == ("No", "530.00")
+    assert entries["Axis Bank A/c 4321"] == ("No", "530.00")
 
 
 def test_a_receipt_debits_the_bank(client, statement, senior):
@@ -132,7 +132,7 @@ def test_a_receipt_debits_the_bank(client, statement, senior):
 
     result = export_statement(statement, company_name=COMPANY)
 
-    assert amounts_for(result.xml, "Axis Bank A/c 911010000004321") == ["-2.00"]
+    assert amounts_for(result.xml, "Axis Bank A/c 4321") == ["-2.00"]
     assert amounts_for(result.xml, "Bhim Cash Back") == ["2.00"]
 
 
@@ -198,7 +198,7 @@ def test_ledgers_carry_their_tally_group(client, statement, senior):
     }
 
     assert groups["Advance Tax"] == "Duties & Taxes"
-    assert groups["Axis Bank A/c 911010000004321"] == "Bank Accounts"
+    assert groups["Axis Bank A/c 4321"] == "Bank Accounts"
 
 
 def test_re_exporting_carries_the_same_remote_id(client, statement, senior):

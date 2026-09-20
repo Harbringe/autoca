@@ -13,3 +13,7 @@ htmlcov/
 .ruff_cache/
 .idea/
 .vscode/
+
+# Local tooling, never part of this repo
+.claude/
+pixel-agents/

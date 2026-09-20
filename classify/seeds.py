@@ -13,8 +13,11 @@ So only two kinds of rule are seeded:
 * what the *bank itself* did -- interest it paid, charges it levied. Those mean
   the same thing in every set of books.
 * what the client did with their own money -- a transfer between two accounts
-  they own is a contra entry rather than income or expenditure, in every set of
-  books.
+  they own, or between the bank and the cash box (an ATM withdrawal, a counter
+  deposit), is a contra entry rather than income or expenditure, in every set
+  of books. Cash-in-Hand is therefore seeded: it is not a judgement about the
+  trade, every business has one, and without it the most mechanical rows on a
+  statement have nowhere legal to go.
 
 Everything else is left to the review queue on the first statement and to
 learned rules thereafter. A firm reaches near-full automation within two or
@@ -44,6 +47,7 @@ SEED_PRIORITY = 100
 SEED_LEDGERS = [
     ("Bank Interest Received", LedgerGroup.INDIRECT_INCOME),
     ("Bank Charges", LedgerGroup.INDIRECT_EXPENSE),
+    ("Cash-in-Hand", LedgerGroup.CASH),
     ("Suspense A/c", LedgerGroup.SUSPENSE),
 ]
 
@@ -54,6 +58,8 @@ SEED_RULES = [
     # Interest the bank collected, and anything it called a charge or a fee.
     ("Bank Charges", MatchType.CHANNEL_IS, Channel.INTEREST, Direction.DEBIT),
     ("Bank Charges", MatchType.CHANNEL_IS, Channel.FEE, Direction.ANY),
+    # Cash out of the bank is cash into the box, and the reverse. A contra.
+    ("Cash-in-Hand", MatchType.CHANNEL_IS, Channel.CASH, Direction.ANY),
 ]
 
 

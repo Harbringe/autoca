@@ -27,7 +27,7 @@ from ledger.tally import export_statement, remote_id_for, render
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("fixture_adapters")]
 
-COMPANY = "Ramesh Deshmukh"
+COMPANY = "Arjun Nair"
 
 
 @pytest.fixture
@@ -123,16 +123,16 @@ def test_a_payment_credits_the_bank_in_tallys_inverted_signs(client, statement, 
     }
 
     assert entries["Office Expenses"] == ("Yes", "-530.00")
-    assert entries["Axis Bank A/c 4321"] == ("No", "530.00")
+    assert entries["Axis Bank A/c 0001"] == ("No", "530.00")
 
 
 def test_a_receipt_debits_the_bank(client, statement, senior):
     income = ledger(client, "Bhim Cash Back", LedgerGroup.INDIRECT_INCOME)
-    post(client, senior, "102985493417", income)
+    post(client, senior, "100000000013", income)
 
     result = export_statement(statement, company_name=COMPANY)
 
-    assert amounts_for(result.xml, "Axis Bank A/c 4321") == ["-2.00"]
+    assert amounts_for(result.xml, "Axis Bank A/c 0001") == ["-2.00"]
     assert amounts_for(result.xml, "Bhim Cash Back") == ["2.00"]
 
 
@@ -198,7 +198,7 @@ def test_ledgers_carry_their_tally_group(client, statement, senior):
     }
 
     assert groups["Advance Tax"] == "Duties & Taxes"
-    assert groups["Axis Bank A/c 4321"] == "Bank Accounts"
+    assert groups["Axis Bank A/c 0001"] == "Bank Accounts"
 
 
 def test_re_exporting_carries_the_same_remote_id(client, statement, senior):
@@ -233,6 +233,12 @@ def test_an_empty_export_is_still_a_valid_envelope():
 # ---------------------------------------------------------------------------
 
 
+def sign_off_through(client, entry):
+    from core.models import Client
+
+    Client.objects.filter(pk=client.pk).update(signed_off_through=entry.entry_date)
+
+
 def test_a_superseded_entry_is_not_exported(client, statement, senior):
     """The correction carries both the reversal and the new position.
 
@@ -240,6 +246,7 @@ def test_a_superseded_entry_is_not_exported(client, statement, senior):
     this system, which is where company law requires it to be.
     """
     original = post(client, senior, "Blinkit", ledger(client, "Office Expenses"))
+    sign_off_through(client, original)
     corrected = correct(
         original, membership=senior, treatment=Treatment(ledger=ledger(client, "Staff Welfare"))
     )
@@ -255,6 +262,7 @@ def test_a_superseded_entry_is_not_exported(client, statement, senior):
 def test_a_correction_exports_as_its_own_voucher(client, statement, senior):
     """It must not overwrite the entry it replaced in Tally, so its id differs."""
     original = post(client, senior, "Blinkit", ledger(client, "Office Expenses"))
+    sign_off_through(client, original)
     corrected = correct(
         original, membership=senior, treatment=Treatment(ledger=ledger(client, "Staff Welfare"))
     )

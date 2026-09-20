@@ -1,18 +1,50 @@
-// The review screen. Sorted by confidence, because that ordering is what
-// turns an hour of checking every row into minutes of checking the ones that
-// need it. High-confidence rows can be approved in one click by someone who
-// may approve; everything else is placed one at a time -- and each placement
-// teaches a rule that usually places several siblings.
+// The review screen. Every row reads as a book entry -- what happened, the
+// narration the voucher will carry, and which ledger it sits in and why --
+// so that someone who is not an accountant can follow it, and an accountant
+// can check it in a glance. Sorted by confidence, because that ordering is
+// what turns an hour of checking every row into minutes of checking the ones
+// that need it. Rows the system is sure of are approved in one click by
+// someone who may approve; everything else is placed one at a time, and each
+// placement teaches a rule that usually places several siblings.
 
 import { useMemo, useState, type FormEvent } from 'react'
 import { allPages, api, V1, waitForJob } from '../../api/client'
-import type { BankAccount, Classification, Client, Job, LedgerAccount, PlacementResult, ReviewBand, ReviewSummary, Vendor } from '../../api/types'
+import type { BankAccount, Classification, Client, Job, LedgerAccount, PlacementResult, ReviewBand, ReviewSummary, Party } from '../../api/types'
 import { LEDGER_GROUPS, TDS_SECTIONS } from '../../api/types'
 import { useSession } from '../../auth/session'
-import { Badge, BandBadge, Button, Confidence, Empty, ErrorNote, Field, formatDate, Modal, Money, Note, Spinner, useAsync } from '../../components/ui'
+import { Badge, BandBadge, Button, Empty, ErrorNote, Field, formatDate, Modal, Money, Note, Spinner, useAsync } from '../../components/ui'
 import { RecategorizeButton } from './Recategorize'
 
 type Stage = 'all' | 'unresolved' | 'pending_approval'
+
+// What each Tally group means, in the words a client would use.
+const GROUP_MEANING: Record<string, string> = {
+  BANK: 'one of the client\'s own bank accounts',
+  CASH: 'the cash box',
+  DEBTOR: 'a customer who owes the client',
+  CREDITOR: 'a supplier the client owes',
+  INDIRECT_EXPENSE: 'a cost of running the business',
+  DIRECT_EXPENSE: 'a cost of what the business sells',
+  INDIRECT_INCOME: 'other income',
+  DIRECT_INCOME: 'income from what the business sells',
+  DUTIES_AND_TAXES: 'tax owed to the government',
+  LOAN: 'a loan the client has taken',
+  INVESTMENT: 'an investment the client holds',
+  CAPITAL: 'the owner\'s own money',
+  SUSPENSE: 'not yet decided',
+}
+
+// The API sends a group's display label ("Indirect Expenses"), not its code.
+const GROUP_MEANING_BY_LABEL: Record<string, string> = Object.fromEntries(
+  LEDGER_GROUPS.filter((g) => GROUP_MEANING[g.value]).map((g) => [g.label, GROUP_MEANING[g.value]]),
+)
+
+const VOUCHER_MEANING: Record<string, string> = {
+  Payment: 'money paid out',
+  Receipt: 'money received',
+  Contra: 'moved between own accounts',
+  Journal: 'adjustment',
+}
 
 export default function ReviewQueue({ client }: { client: Client }) {
   const { can } = useSession()
@@ -33,8 +65,25 @@ export default function ReviewQueue({ client }: { client: Client }) {
     return allPages<Classification>(`${V1}/clients/${client.id}/review-queue/${qs ? `?${qs}` : ''}`)
   }, [client.id, band, stage])
   const ledgers = useAsync(() => allPages<LedgerAccount>(`${V1}/clients/${client.id}/ledgers/`), [client.id])
-  const vendors = useAsync(() => allPages<Vendor>(`${V1}/clients/${client.id}/vendors/`), [client.id])
+  const parties = useAsync(() => allPages<Party>(`${V1}/clients/${client.id}/parties/`), [client.id])
   const accounts = useAsync(() => allPages<BankAccount>(`${V1}/clients/${client.id}/bank-accounts/`), [client.id])
+
+  // Saying who a payee is is separate from placing the row: it teaches the
+  // spelling, and every other row with that spelling is recognised at once.
+  const confirmParty = async (row: Classification, partyId: string, name: string) => {
+    setBusy(`who:${row.id}`)
+    setError(null)
+    try {
+      await api.post(`${V1}/classifications/${row.id}/confirm-party/`, { party: partyId })
+      setFlash({ tone: 'good', text: `Remembered: "${row.counterparty}" is ${name}. Other rows with that name are updated too.` })
+      reload()
+      parties.reload()
+    } catch (err) {
+      setError(err)
+    } finally {
+      setBusy(null)
+    }
+  }
 
   const reload = () => {
     summary.reload()
@@ -93,11 +142,11 @@ export default function ReviewQueue({ client }: { client: Client }) {
     <>
       {s && (
         <div className="grid-cards">
-          <SummaryCard label="High confidence" value={s.high} hint="bulk-approvable" onClick={() => setBand(band === 'HIGH' ? '' : 'HIGH')} selected={band === 'HIGH'} />
-          <SummaryCard label="Review advised" value={s.advised} onClick={() => setBand(band === 'ADVISED' ? '' : 'ADVISED')} selected={band === 'ADVISED'} />
-          <SummaryCard label="Needs judgement" value={s.judgement} onClick={() => setBand(band === 'JUDGEMENT' ? '' : 'JUDGEMENT')} selected={band === 'JUDGEMENT'} />
-          <SummaryCard label="Unresolved" value={s.unresolved} hint="no ledger yet" onClick={() => setStage(stage === 'unresolved' ? 'all' : 'unresolved')} selected={stage === 'unresolved'} />
-          <SummaryCard label="Awaiting approval" value={s.pending_approval} hint="placed, not posted" onClick={() => setStage(stage === 'pending_approval' ? 'all' : 'pending_approval')} selected={stage === 'pending_approval'} />
+          <SummaryCard label="Ready to post" value={s.high} hint="booked; approve in one click" onClick={() => setBand(band === 'HIGH' ? '' : 'HIGH')} selected={band === 'HIGH'} />
+          <SummaryCard label="Worth a look" value={s.advised} hint="booked; check the ledger" onClick={() => setBand(band === 'ADVISED' ? '' : 'ADVISED')} selected={band === 'ADVISED'} />
+          <SummaryCard label="Needs an answer" value={s.judgement} hint="a question for the client" onClick={() => setBand(band === 'JUDGEMENT' ? '' : 'JUDGEMENT')} selected={band === 'JUDGEMENT'} />
+          <SummaryCard label="Not booked yet" value={s.unresolved} hint="no ledger" onClick={() => setStage(stage === 'unresolved' ? 'all' : 'unresolved')} selected={stage === 'unresolved'} />
+          <SummaryCard label="Awaiting sign-off" value={s.pending_approval} hint="booked, not yet in the ledger" onClick={() => setStage(stage === 'pending_approval' ? 'all' : 'pending_approval')} selected={stage === 'pending_approval'} />
         </div>
       )}
 
@@ -130,7 +179,7 @@ export default function ReviewQueue({ client }: { client: Client }) {
               }}
             />
           )}
-          {can('journal.approve') && (
+          {(can('journal.approve') && client.can_post) && (
             <>
               <Button className="btn-sm" kind="primary" onClick={() => void approve({ band: 'HIGH' }, 'high')} busy={busy === 'high'} disabled={!!busy || !(s?.high && approvable.some((c) => c.review_band === 'HIGH'))}>
                 Approve all high-confidence
@@ -142,6 +191,10 @@ export default function ReviewQueue({ client }: { client: Client }) {
           )}
         </div>
 
+        <div className="legend">
+          Each row is one bank line and the entry it becomes. <b>Dr · paid</b> means money left the bank; <b>Cr · received</b> means it came in.
+          The ledger named is the other side of the entry — where the money went to, or came from.
+        </div>
         {queue.loading ? (
           <Spinner />
         ) : !queue.data?.length ? (
@@ -151,21 +204,21 @@ export default function ReviewQueue({ client }: { client: Client }) {
             <table className="grid">
               <thead>
                 <tr>
-                  {can('journal.approve') && <th></th>}
+                  {(can('journal.approve') && client.can_post) && <th></th>}
                   <th>Date</th>
-                  <th>Transaction</th>
+                  <th>What the bank shows</th>
                   <th className="num">Amount</th>
-                  <th>Suggested treatment</th>
-                  <th>Confidence</th>
+                  <th>How it is booked</th>
+                  <th>Status</th>
                   <th></th>
                 </tr>
               </thead>
               <tbody>
                 {queue.data.map((c) => (
                   <tr key={c.id}>
-                    {can('journal.approve') && (
+                    {(can('journal.approve') && client.can_post) && (
                       <td>
-                        <input type="checkbox" disabled={!c.ledger || c.ledger_status === 'PROPOSED'} checked={selected.has(c.id)} onChange={() => toggle(c.id)} aria-label="Select for approval" />
+                        <input type="checkbox" disabled={!c.ledger} checked={selected.has(c.id)} onChange={() => toggle(c.id)} aria-label="Select for approval" />
                       </td>
                     )}
                     <td>{formatDate(c.transaction.value_date)}</td>
@@ -181,31 +234,44 @@ export default function ReviewQueue({ client }: { client: Client }) {
                       <Money value={c.transaction.amount_display} />
                       <div className="tiny">{c.transaction.is_debit ? 'Dr · paid' : 'Cr · received'}</div>
                     </td>
-                    <td>
+                    <td className="entry">
                       {c.ledger_name ? (
                         <>
-                          <strong>{c.ledger_name}</strong>
-                          {c.ledger_status === 'PROPOSED' && (
-                            <div>
-                              <Badge tone="warn">New ledger · awaiting CA</Badge>
-                            </div>
-                          )}
-                          {c.vendor_name && <div className="tiny">Party: {c.vendor_name}</div>}
+                          {c.book_narration && <div className="entry-narration">{c.book_narration}</div>}
+                          <EntryLegs row={c} />
                           <div className="pill-row tiny">
-                            <span>{c.method_display}</span>
+                            {c.voucher_type && <Badge tone="info">{c.voucher_type} · {VOUCHER_MEANING[c.voucher_type]}</Badge>}
+                            {c.ledger_opened_by_model && <Badge>new ledger</Badge>}
+                            {c.party_name && <span>Party: {c.party_name}</span>}
                             {c.rcm && <Badge tone="warn">RCM</Badge>}
                             {c.tds_section && <Badge tone="info">TDS {c.tds_section}</Badge>}
                           </div>
+                          {c.rationale && <div className="rationale">Why: {c.rationale}</div>}
+                          {c.open_question && <div className="entry-question"><b>Ask the client:</b> {c.open_question}</div>}
+                        </>
+                      ) : c.open_question ? (
+                        <>
+                          <EntryLegs row={c} />
+                          <div className="entry-question"><b>Ask the client:</b> {c.open_question}</div>
                         </>
                       ) : (
-                        <span className="tiny">No suggestion</span>
+                        <>
+                          <EntryLegs row={c} />
+                          <span className="tiny">Not booked yet</span>
+                          {c.rationale && <div className="rationale">{c.rationale}</div>}
+                        </>
                       )}
-                      {c.rationale && <div className="rationale">“{c.rationale}”</div>}
+                      <WhoIsThis
+                        row={c}
+                        canConfirm={can('transaction.classify')}
+                        busy={busy === `who:${c.id}`}
+                        onConfirm={(partyId, name) => confirmParty(c, partyId, name)}
+                      />
                     </td>
                     <td>
                       <BandBadge band={c.review_band} />
-                      <div>
-                        <Confidence value={c.confidence} />
+                      <div className="tiny" title={`${Math.round(c.confidence * 100)}% sure`}>
+                        {c.method === 'REVIEWED' ? 'decided by a person' : c.method === 'RULE' ? 'by a standing rule' : c.method === 'LLM' ? `by the model · ${Math.round(c.confidence * 100)}%` : ''}
                       </div>
                     </td>
                     <td className="num">
@@ -228,7 +294,7 @@ export default function ReviewQueue({ client }: { client: Client }) {
           client={client}
           row={placing}
           ledgers={(ledgers.data ?? []).filter((l) => l.name !== accounts.data?.find((a) => a.id === placing.transaction.bank_account)?.ledger_name)}
-          vendors={vendors.data ?? []}
+          parties={parties.data ?? []}
           onClose={() => setPlacing(null)}
           onDone={(result) => {
             setPlacing(null)
@@ -237,7 +303,7 @@ export default function ReviewQueue({ client }: { client: Client }) {
               text: result.also_placed > 0 ? `Placed. The rule learned from this also placed ${result.also_placed} other row${result.also_placed === 1 ? '' : 's'}.` : result.rule_learned ? 'Placed, and a rule was learned for this payee.' : 'Placed.',
             })
             ledgers.reload()
-            vendors.reload()
+            parties.reload()
             reload()
           }}
         />
@@ -260,22 +326,22 @@ function PlaceRow({
   client,
   row,
   ledgers,
-  vendors,
+  parties,
   onClose,
   onDone,
 }: {
   client: Client
   row: Classification
   ledgers: LedgerAccount[]
-  vendors: Vendor[]
+  parties: Party[]
   onClose: () => void
   onDone: (result: PlacementResult) => void
 }) {
   const [ledger, setLedger] = useState(row.ledger ?? '')
   const [newLedger, setNewLedger] = useState('')
   const [newGroup, setNewGroup] = useState(row.transaction.is_debit ? 'INDIRECT_EXPENSE' : 'INDIRECT_INCOME')
-  const [vendor, setVendor] = useState(row.vendor ?? '')
-  const [newVendor, setNewVendor] = useState('')
+  const [party, setParty] = useState(row.party ?? '')
+  const [newParty, setNewParty] = useState('')
   const [rcm, setRcm] = useState(row.rcm)
   const [tds, setTds] = useState(row.tds_section)
   const [learn, setLearn] = useState(true)
@@ -292,14 +358,14 @@ function PlaceRow({
         const created = await api.post<LedgerAccount>(`${V1}/clients/${client.id}/ledgers/`, { name: newLedger.trim(), group: newGroup })
         ledgerId = created.id
       }
-      let vendorId: string | null = vendor || null
-      if (vendor === '__new__') {
-        const created = await api.post<Vendor>(`${V1}/clients/${client.id}/vendors/`, { canonical_name: newVendor.trim(), rcm_default: rcm, tds_section: tds })
-        vendorId = created.id
+      let partyId: string | null = party || null
+      if (party === '__new__') {
+        const created = await api.post<Party>(`${V1}/clients/${client.id}/parties/`, { canonical_name: newParty.trim(), rcm_default: rcm, tds_section: tds })
+        partyId = created.id
       }
       const result = await api.post<PlacementResult>(`${V1}/classifications/${row.id}/review/`, {
         ledger: ledgerId,
-        vendor: vendorId,
+        party: partyId,
         rcm,
         tds_section: tds,
         learn,
@@ -373,10 +439,10 @@ function PlaceRow({
             </Field>
           </div>
         )}
-        <Field label="Party (vendor)" hint="Who it was with, where there is an identifiable one. Optional.">
-          <select value={vendor} onChange={(e) => setVendor(e.target.value)}>
+        <Field label="Party (party)" hint="Who it was with, where there is an identifiable one. Optional.">
+          <select value={party} onChange={(e) => setParty(e.target.value)}>
             <option value="">— none —</option>
-            {vendors
+            {parties
               .filter((v) => v.is_active)
               .map((v) => (
                 <option key={v.id} value={v.id}>
@@ -386,9 +452,9 @@ function PlaceRow({
             <option value="__new__">+ New party…</option>
           </select>
         </Field>
-        {vendor === '__new__' && (
+        {party === '__new__' && (
           <Field label="New party name">
-            <input type="text" required value={newVendor || row.counterparty} onChange={(e) => setNewVendor(e.target.value)} />
+            <input type="text" required value={newParty || row.counterparty} onChange={(e) => setNewParty(e.target.value)} />
           </Field>
         )}
         <div className="inline-form">
@@ -418,5 +484,72 @@ function PlaceRow({
         </div>
       </form>
     </Modal>
+  )
+}
+
+// Who the payee is, as far as the system can tell. A recognised payee is a fact
+// (an exact name, or a spelling someone confirmed); a "could be" is only a
+// suggestion, so it comes with its reason and needs a person to say yes.
+function WhoIsThis({ row, canConfirm, busy, onConfirm }: {
+  row: Classification
+  canConfirm: boolean
+  busy: boolean
+  onConfirm: (partyId: string, name: string) => void
+}) {
+  if (!row.counterparty || row.is_self_transfer) return null
+
+  if (row.party_resolution === 'CANDIDATE' && row.party_candidates.length > 0) {
+    return (
+      <div className="payee">
+        <div className="tiny"><b>Is this someone you know?</b></div>
+        {row.party_candidates.map((c) => (
+          <div key={c.party} className="payee-candidate">
+            <span><strong>{c.name}</strong> <span className="tiny">— {c.why}</span></span>
+            {canConfirm && (
+              <Button className="btn-sm" busy={busy} onClick={() => onConfirm(c.party, c.name)}>
+                Yes, same
+              </Button>
+            )}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  // A placed row already shows its party beside the ledger.
+  if (row.ledger_name) return null
+
+  if ((row.party_resolution === 'AUTO' || row.party_resolution === 'CONFIRMED') && row.party_name) {
+    return (
+      <div className="pill-row tiny">
+        <Badge tone="good">{row.party_resolution === 'CONFIRMED' ? 'confirmed' : 'recognised'}</Badge>
+        <span>{row.party_name}</span>
+      </div>
+    )
+  }
+  return <div className="tiny">New payee, not a known party yet</div>
+}
+
+// The entry as a voucher shows it: two lines, one debit and one credit, for the
+// same amount. Every transaction has two sides, and showing only the one the
+// reviewer is choosing hides the other and makes the entry look half-made.
+function EntryLegs({ row }: { row: Classification }) {
+  return (
+    <table className="legs" aria-label="Entry">
+      <tbody>
+        {row.entry_legs.map((leg) => (
+          <tr key={leg.side}>
+            <td className="leg-side">{leg.side}</td>
+            <td className={leg.ledger ? '' : 'leg-missing'}>
+              {leg.ledger ?? 'ledger not chosen'}
+              {!leg.is_bank && leg.group && GROUP_MEANING_BY_LABEL[leg.group] && (
+                <span className="tiny"> — {GROUP_MEANING_BY_LABEL[leg.group]}</span>
+              )}
+            </td>
+            <td className="num"><Money value={leg.amount_display} /></td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   )
 }

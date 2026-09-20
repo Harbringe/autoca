@@ -2,7 +2,7 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { useSession } from '../auth/session'
 
 export default function Layout() {
-  const { me, signOut } = useSession()
+  const { me, signOut, can } = useSession()
   return (
     <div className="shell">
       <aside className="sidebar">
@@ -11,10 +11,18 @@ export default function Layout() {
           <span>AutoCA</span>
         </div>
         <nav>
-          <NavLink to="/clients" end>
-            Clients
-          </NavLink>
-          <NavLink to="/help">How it works</NavLink>
+          {me?.firm && (
+            <>
+              <NavLink to="/clients" end>
+                Clients
+              </NavLink>
+              <NavLink to="/my-work">My work</NavLink>
+              {can('team.view') && <NavLink to="/team">{me.role === 'FIRM_ADMIN' ? 'Team' : 'My team'}</NavLink>}
+              {can('audit.view') && <NavLink to="/audit">Audit log</NavLink>}
+              {can('firm.manage') && <NavLink to="/firm">Firm settings</NavLink>}
+              <NavLink to="/help">How it works</NavLink>
+            </>
+          )}
         </nav>
         <div className="sidebar-foot">
           <div className="who">

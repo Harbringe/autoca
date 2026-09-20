@@ -18,7 +18,8 @@ from api.pagination import DefaultPagination
 from api.permissions import IsFirmMember
 from api.serializers.core import ClientSerializer, JobSerializer, MeSerializer
 from api.views.base import FirmScopedViewSet
-from core.models import Client, Job, JobStatus
+from core.access import visible_clients
+from core.models import Client, Job, JobStatus, Role
 
 
 @extend_schema(tags=["session"])
@@ -45,7 +46,7 @@ class ClientViewSet(FirmScopedViewSet):
     """The firm's clients."""
 
     serializer_class = ClientSerializer
-    queryset = Client.objects.all()
+    queryset = Client.objects.select_related("lead__user")
     search_fields = ["name"]
     required_permission = {
         "GET": "client.view",
@@ -56,7 +57,7 @@ class ClientViewSet(FirmScopedViewSet):
     }
 
     def get_queryset(self):
-        queryset = super().get_queryset()
+        queryset = super().get_queryset().filter(pk__in=visible_clients(self.request.membership).values("pk"))
         search = self.request.query_params.get("search")
         return queryset.filter(name__icontains=search) if search else queryset
 
@@ -67,6 +68,24 @@ class ClientViewSet(FirmScopedViewSet):
     )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        from ledger.models import JournalEntry
+
+        client = self.get_object()
+        posted = JournalEntry.objects.filter(client=client).count()
+        if posted:
+            return Response(
+                {
+                    "code": "in_use",
+                    "detail": (
+                        f"{client.name} has {posted} posted journal entr{'y' if posted == 1 else 'ies'}. "
+                        "The books are permanent, so a client with posted entries can't be deleted."
+                    ),
+                },
+                status=409,
+            )
+        return super().destroy(request, *args, **kwargs)
 
 
 @extend_schema(tags=["jobs"])
@@ -83,7 +102,12 @@ class JobViewSet(mixins.RetrieveModelMixin, mixins.ListModelMixin, viewsets.Gene
     queryset = Job.objects.all()
 
     def get_queryset(self):
-        return Job.objects.filter(firm_id=self.request.firm.pk)
+        jobs = Job.objects.filter(firm_id=self.request.firm.pk)
+        # A job's message and result name the client it ran for. Firm admins see
+        # every job; everyone else sees the jobs they started.
+        if self.request.membership.role == Role.FIRM_ADMIN:
+            return jobs
+        return jobs.filter(created_by=self.request.user)
 
     @extend_schema(
         summary="Follow a job as it progresses",

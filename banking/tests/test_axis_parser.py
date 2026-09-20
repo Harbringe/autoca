@@ -30,8 +30,8 @@ def test_reads_the_account_header(axis_document):
     statement = parse_statement(axis_document)
 
     assert statement.bank_code == "AXIS"
-    assert statement.account_number == "911010000004321"
-    assert statement.ifsc == "UTIB0000318"
+    assert statement.account_number == "900000000000001"
+    assert statement.ifsc == "UTIB0000001"
     assert statement.period_start == datetime.date(2025, 4, 1)
     assert statement.period_end == datetime.date(2026, 6, 3)
 
@@ -84,7 +84,7 @@ def test_narration_keeps_its_content_and_loses_its_line_wrapping(axis_document):
     wrapped = next(r for r in rows if r.narration.startswith("RTGS/"))
 
     assert "\n" not in wrapped.narration
-    assert wrapped.narration.startswith("RTGS/HDFCR52025050266560113/DR")
+    assert wrapped.narration.startswith("RTGS/HDFCR50000000000000001/DR")
     assert wrapped.narration.endswith("BANK///Self//OP")
 
 
@@ -100,7 +100,7 @@ def test_the_table_continues_across_a_page_without_repeating_its_header(axis_doc
 def test_cheque_and_branch_columns_are_carried_through(axis_document):
     cheque_rows = [t for t in parse_statement(axis_document).transactions if t.cheque_number]
 
-    assert {r.cheque_number for r in cheque_rows} == {"331809", "331810", "331811", "331812"}
+    assert {r.cheque_number for r in cheque_rows} == {"100001", "331810", "100002", "100003"}
     assert all(r.branch_code for r in parse_statement(axis_document).transactions)
 
 
@@ -177,7 +177,7 @@ def test_parse_amount(raw, expected):
 def test_parse_amount_refuses_a_cell_that_is_not_money():
     """A non-money cell means the column mapping is wrong. Fail here, not later."""
     with pytest.raises(StatementParseError, match="Not a money value"):
-        parse_amount("Sweep/VO000000087559330")
+        parse_amount("Sweep/VO000000012345678")
 
 
 def test_dates_are_day_first():

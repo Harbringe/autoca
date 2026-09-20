@@ -19,6 +19,7 @@ from drf_spectacular.views import (
 )
 
 from core import spa, views
+from teams.views import accept_invite
 
 urlpatterns = [
     path("", RedirectView.as_view(url="/app/", permanent=False)),
@@ -31,6 +32,7 @@ urlpatterns = [
     path("auth/logout/", views.logout_view, name="logout"),
     path("auth/mfa/setup/", views.mfa_setup, name="mfa-setup"),
     path("auth/mfa/verify/", views.mfa_verify, name="mfa-verify"),
+    path("auth/invite/", accept_invite, name="invite-accept"),
     path("api/me/", views.me, name="me"),
     # --- REST API ---
     path("api/v1/", include("api.urls")),

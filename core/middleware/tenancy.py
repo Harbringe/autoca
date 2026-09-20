@@ -23,9 +23,11 @@ from __future__ import annotations
 
 import logging
 
+from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.http import JsonResponse
+from django.utils.module_loading import import_string
 
 from core.db.session import _apply, _apply_user
 from core.http import wants_json
@@ -73,6 +75,12 @@ class TenantContextMiddleware:
             _apply_user(str(user.pk), "default")
             membership = resolve_membership(user)
 
+            if _firmless_allowed(request, membership):
+                # Only the user context is set; firm-scoped tables still raise.
+                request.firm = None
+                request.membership = None
+                return self.get_response(request)
+
             if membership is None:
                 logger.warning(
                     "authenticated user %s has no active firm membership; "
@@ -99,6 +107,16 @@ class TenantContextMiddleware:
             request.firm_id = firm_id
 
             return self.get_response(request)
+
+
+def _firmless_allowed(request, membership) -> bool:
+    """Serve this request with only the user context, not a firm's?
+
+    ``settings.FIRMLESS_ACCESS`` decides, given the membership that would
+    otherwise be bound (possibly None); unset means never.
+    """
+    path = getattr(settings, "FIRMLESS_ACCESS", None)
+    return bool(path) and import_string(path)(request, membership)
 
 
 def _refuse(request, code: str, detail: str):

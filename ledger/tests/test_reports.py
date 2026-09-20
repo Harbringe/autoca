@@ -45,7 +45,7 @@ def firm():
 
 @pytest.fixture
 def client(firm):
-    return create_client(firm, "Ramesh Deshmukh", datetime.date(2025, 4, 1))
+    return create_client(firm, "Arjun Nair", datetime.date(2025, 4, 1))
 
 
 @pytest.fixture

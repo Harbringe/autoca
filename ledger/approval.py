@@ -13,16 +13,18 @@ boundary, not a UI preference — hiding the button is not enforcement.
 
 from __future__ import annotations
 
+import datetime
 from dataclasses import dataclass
 
 from django.db import transaction
 from django.utils import timezone
 
 from classify.models import ClassificationMethod, TransactionClassification
+from core.access import require_posting_rights, require_sign_off
 from core.fy import financial_year
 from core.money import format_inr
 from core.rbac import require_permission
-from ledger.models import Direction, JournalEntry, JournalLine, VoucherSequence, VoucherType
+from ledger.models import Direction, EntryMarker, JournalEntry, JournalLine, VoucherSequence, VoucherType
 
 
 class NotApprovableError(RuntimeError):
@@ -53,17 +55,18 @@ def voucher_type_for(classification) -> str:
     Direction decides between Payment and Receipt: money out of the bank is a
     Payment, money in is a Receipt. That part is not interesting.
 
-    The Contra case is. A transfer between two accounts the client owns is not
-    expenditure and not income, and the only thing in the data that says so is
-    the *group* of the ledger on the other side. Both conditions are checked --
-    the narration looked like a self-transfer, and the ledger it was placed in
-    is a bank or cash account -- because either alone gets it wrong: a client
-    paying a supplier who shares their surname trips the first, and a genuine
-    transfer misfiled against an expense ledger trips the second. Requiring both
-    means a Contra is produced only when the evidence and the reviewer agree.
+    The Contra case is. Money moving between two accounts the client owns --
+    two banks, or the bank and the cash box -- is not expenditure and not
+    income, and in Tally that is a Contra voucher by definition of the ledger
+    on the other side: the *group* decides. So the group alone decides here.
+    The narration's own opinion (``is_self_transfer``) is not required: an ATM
+    withdrawal names no counterparty and never looks like a self-transfer, yet
+    it is the textbook Contra. The one misfile the group cannot catch --
+    placing a row in the very account it came from -- ``approve`` refuses
+    outright.
     """
     ledger = classification.ledger
-    if classification.is_self_transfer and ledger is not None and ledger.is_bank_or_cash:
+    if ledger is not None and ledger.is_bank_or_cash:
         return VoucherType.CONTRA
     return VoucherType.PAYMENT if classification.transaction.is_debit else VoucherType.RECEIPT
 
@@ -76,6 +79,7 @@ def approve(classification, *, membership, narration: str | None = None) -> Appr
     is a bug or a permission problem, not an outcome a caller should branch on.
     """
     require_permission(membership, "journal.approve")
+    require_posting_rights(membership, classification.transaction.bank_account.client)
 
     if classification.ledger is None:
         raise NotApprovableError(
@@ -101,6 +105,16 @@ def approve(classification, *, membership, narration: str | None = None) -> Appr
             f"change it, record a correction against the existing entry."
         )
 
+    from ledger.editing import locked_through
+
+    through = locked_through(transaction_row.bank_account.client_id)
+    if through is not None and transaction_row.value_date <= through:
+        raise NotApprovableError(
+            f"Transaction on {transaction_row.value_date:%d-%m-%Y} falls inside books signed "
+            f"off through {through:%d-%m-%Y}, so it can no longer be posted. Ask a senior to "
+            f"reopen the books."
+        )
+
     voucher_type = voucher_type_for(classification)
     mirror = _mirror_for(classification) if voucher_type == VoucherType.CONTRA else None
     if mirror is not None:
@@ -112,7 +126,7 @@ def approve(classification, *, membership, narration: str | None = None) -> Appr
         entry = _write_entry(
             classification,
             voucher_type=voucher_type,
-            narration=narration if narration is not None else transaction_row.narration,
+            narration=narration if narration is not None else book_narration_for(classification),
             approved_by=membership.user,
         )
 
@@ -140,6 +154,31 @@ def approve(classification, *, membership, narration: str | None = None) -> Appr
     return ApprovalResult(entry=entry, classification=classification, mirrored=mirror is not None)
 
 
+def book_narration_for(classification) -> str:
+    """The narration the voucher carries.
+
+    The one the model wrote, if it wrote one; otherwise a plain sentence in the
+    form a CA would write, built from what the row already knows. The bank's
+    own string is never used as a narration -- it is evidence of the movement,
+    not a description of the entry -- but it is quoted at the end so the
+    voucher still traces to the statement line by eye.
+    """
+    if classification.book_narration:
+        return classification.book_narration
+    txn = classification.transaction
+    ledger = classification.ledger.name if classification.ledger else "the ledger"
+    amount = format_inr(txn.amount_paise)
+    party = classification.counterparty.strip()
+    channel = classification.channel if classification.channel not in ("", "UNKNOWN") else "bank"
+    if classification.ledger is not None and classification.ledger.is_bank_or_cash:
+        head = f"Being {amount} transferred to {ledger}" if txn.is_debit else f"Being {amount} received into bank from {ledger}"
+    elif txn.is_debit:
+        head = f"Being {amount} paid" + (f" to {party}" if party else "") + f" towards {ledger}"
+    else:
+        head = f"Being {amount} received" + (f" from {party}" if party else "") + f" as {ledger}"
+    return f"{head} by {channel} ({txn.narration.strip()[:80]})"
+
+
 @transaction.atomic
 def approve_many(classifications, *, membership) -> list[ApprovalResult]:
     """Post a batch. All or nothing.
@@ -153,17 +192,37 @@ def approve_many(classifications, *, membership) -> list[ApprovalResult]:
 
 
 @transaction.atomic
-def correct(entry: JournalEntry, *, membership, treatment, narration: str | None = None):
-    """Record a correction to a posted entry.
+def correct(entry: JournalEntry, *, membership, treatment, narration: str | None = None, note: str = ""):
+    """Correct a posted entry.
 
-    The original is untouched -- it cannot be touched -- and stays visible. The
-    correction is a new entry carrying a reversal of the original's lines plus
-    the corrected ones, linked back by ``supersedes``. That is how accounting
-    corrections are supposed to work and what company law expects; it also means
-    the trial balance is right at every point in the chain rather than only at
-    the end.
+    While the books are still a working draft this simply *changes the entry*:
+    what it was is kept in the change log (``ledger.editing``) and nothing is
+    lost, but the books are not left carrying the scaffolding of getting them
+    right. Once a senior has signed the entry's period off, it cannot be changed
+    -- the database refuses -- and the correction is a new entry that reverses
+    the original's lines and carries the corrected ones, linked by
+    ``supersedes`` and dated after the sign-off. Either way the original is
+    never silently lost.
     """
+    from ledger import editing
+
     require_permission(membership, "journal.correct")
+    require_posting_rights(membership, entry.client)
+
+    if not editing.is_locked(entry):
+        from ledger.learning import learn_after_correction
+
+        revised = editing.revise_in_place(
+            entry, treatment, actor=membership.user, narration=narration, note=note
+        )
+        # The correction is a lesson about the payee: learn it, and apply it to
+        # the similar entries the AI placed on its own.
+        learn_after_correction(revised, treatment, membership.user)
+        return revised
+
+    # Books a senior has signed are the senior's to amend: a correction here is
+    # an adjustment in the open period against signed figures.
+    require_sign_off(membership, entry.client)
 
     if entry.is_superseded:
         raise NotApprovableError(
@@ -180,6 +239,7 @@ def correct(entry: JournalEntry, *, membership, treatment, narration: str | None
     classification.reviewed_at = timezone.now()
     classification.save()
 
+    through = editing.locked_through(entry.client_id)
     return _write_entry(
         classification,
         voucher_type=entry.voucher_type,
@@ -187,7 +247,86 @@ def correct(entry: JournalEntry, *, membership, treatment, narration: str | None
         approved_by=membership.user,
         supersedes=entry,
         reversal_of=entry,
+        # The original's date is inside the locked period, and so would the
+        # correction's be. A correction to closed books is an adjustment in the
+        # open period, which is what an accountant would do by hand.
+        entry_date=max(entry.entry_date, through + datetime.timedelta(days=1)),
     )
+
+
+def auto_post(classification) -> JournalEntry | None:
+    """Post a row on the AI's own authority -- only when it is very sure.
+
+    The one place an entry reaches the books with nobody having looked, so the
+    conditions are deliberately many and every one of them errs towards leaving
+    the row in the queue:
+
+    * the row is placed, by a rule or the model, with high confidence (0.90+);
+    * the model asked no question -- a question means it was not sure;
+    * the ledger is in use and is not Suspense, which is where nobody decided;
+    * it is not already posted, nor the twin of a transfer already posted;
+    * its date is not inside books a senior has signed off.
+
+    What it posts is not permanent: until sign-off a CA can change or remove it,
+    and it carries a marker (``EntryMarker.AI_POSTED``) so it can be found. No
+    rule is learned from it -- the AI agreeing with itself is not evidence.
+    """
+    from classify.models import LedgerGroup, LedgerStatus
+    from classify.treatment import ReviewBand
+    from ledger.editing import locked_through
+
+    txn = classification.transaction
+    ledger = classification.ledger
+    if (
+        ledger is None
+        or classification.method not in (ClassificationMethod.RULE, ClassificationMethod.LLM)
+        or classification.review_band != ReviewBand.HIGH
+        or classification.open_question
+        or classification.mirrored_entry_id
+        or ledger.group == LedgerGroup.SUSPENSE
+        or ledger.status != LedgerStatus.ACTIVE
+        or ledger.name == txn.bank_account.ledger_name
+        or _live_entry_for(txn) is not None
+    ):
+        return None
+    through = locked_through(txn.bank_account.client_id)
+    if through is not None and txn.value_date <= through:
+        return None
+
+    voucher_type = voucher_type_for(classification)
+    if voucher_type == VoucherType.CONTRA:
+        mirror = _mirror_for(classification)
+        if mirror is not None:
+            classification.mirrored_entry_id = mirror.pk
+            classification.save(update_fields=["mirrored_entry_id"])
+            return mirror
+    return _write_entry(
+        classification,
+        voucher_type=voucher_type,
+        narration=book_narration_for(classification),
+        approved_by=None,
+        marker=EntryMarker.AI_POSTED,
+    )
+
+
+def auto_post_client(client) -> int:
+    """Post everything for ``client`` that ``auto_post`` is willing to. Returns the count.
+
+    Each row is its own savepoint: one that the database refuses -- a locked
+    period, a constraint -- stays in the queue and does not take the rest down.
+    """
+    from classify.engine import pending_approval
+    from django.db import DatabaseError
+
+    posted = 0
+    for row in list(pending_approval(client)):
+        try:
+            with transaction.atomic():
+                if auto_post(row) is not None:
+                    posted += 1
+        except DatabaseError:
+            continue
+    return posted
 
 
 # ---------------------------------------------------------------------------
@@ -245,18 +384,21 @@ def _require_ledger_in_use(ledger) -> None:
 
 
 def _write_entry(
-    classification, *, voucher_type, narration, approved_by, supersedes=None, reversal_of=None
+    classification, *, voucher_type, narration, approved_by, supersedes=None, reversal_of=None,
+    entry_date=None, marker=EntryMarker.NONE,
 ) -> JournalEntry:
     txn = classification.transaction
     client = txn.bank_account.client
-    year = financial_year(txn.value_date)
+    entry_date = entry_date or txn.value_date
+    year = financial_year(entry_date)
 
     entry = JournalEntry.objects.create(
         firm_id=classification.firm_id,
         client=client,
         entry_no=allocate_voucher_number(client, year, voucher_type),
         financial_year=year,
-        entry_date=txn.value_date,
+        entry_date=entry_date,
+        marker=marker,
         voucher_type=voucher_type,
         narration=narration,
         source_transaction=txn,
@@ -274,7 +416,7 @@ def _write_entry(
                 JournalLine.build(
                     entry=entry,
                     ledger_account=line.ledger_account,
-                    vendor=line.vendor,
+                    party=line.party,
                     direction=(
                         Direction.CREDIT if line.is_debit else Direction.DEBIT
                     ),
@@ -305,7 +447,7 @@ def _double_entry(entry, classification) -> list[JournalLine]:
             JournalLine.build(
                 entry=entry,
                 ledger_account=other,
-                vendor=classification.vendor,
+                party=classification.party,
                 direction=Direction.DEBIT,
                 amount_paise=amount,
                 **shared,
@@ -327,7 +469,7 @@ def _double_entry(entry, classification) -> list[JournalLine]:
         JournalLine.build(
             entry=entry,
             ledger_account=other,
-            vendor=classification.vendor,
+            party=classification.party,
             direction=Direction.CREDIT,
             amount_paise=amount,
             **shared,

@@ -1,10 +1,10 @@
 import { useState, type FormEvent } from 'react'
-import { api, ApiError } from '../api/client'
+import { api } from '../api/client'
 import { useSession } from '../auth/session'
 import { Button, ErrorNote, Field } from '../components/ui'
 
 export default function Login() {
-  const { setMfa } = useSession()
+  const { setMfa, refresh } = useSession()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<unknown>(null)
@@ -15,10 +15,12 @@ export default function Login() {
     setBusy(true)
     setError(null)
     try {
-      const result = await api.post<{ mfa: 'setup' | 'verify' }>('/auth/login/', { email, password })
-      setMfa(result.mfa)
+      const result = await api.post<{ mfa: 'setup' | 'verify' | null }>('/auth/login/', { email, password })
+      // null only when the server runs with MFA_DISABLED for a local demo.
+      if (result.mfa) setMfa(result.mfa)
+      else await refresh()
     } catch (err) {
-      setError(err instanceof ApiError && err.status === 429 ? err : err)
+      setError(err)
     } finally {
       setBusy(false)
     }

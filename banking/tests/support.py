@@ -18,8 +18,8 @@ from integrations.pdf.base import PdfDocument, PdfTextAdapter
 AXIS_FIXTURE = json.loads((FIXTURES / "axis_savings_statement.json").read_text(encoding="utf-8"))
 
 #: What the redacted fixture says about the account it belongs to.
-ACCOUNT_NUMBER = "911010000004321"
-ACCOUNT_HOLDER = "RAMESH GOPAL DESHMUKH"
+ACCOUNT_NUMBER = "900000000000001"
+ACCOUNT_HOLDER = "ARJUN PRATAP NAIR"
 TRANSACTION_COUNT = 54
 
 

@@ -141,7 +141,7 @@ export default function StatementRows({ client }: { client: Client }) {
                       </td>
                       <td>
                         {c?.ledger_name ?? <span className="tiny">—</span>}
-                        {c?.vendor_name && <div className="tiny">{c.vendor_name}</div>}
+                        {c?.party_name && <div className="tiny">{c.party_name}</div>}
                       </td>
                       <td>
                         {!c ? (

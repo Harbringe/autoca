@@ -4,7 +4,7 @@
 
 import { useState, type FormEvent } from 'react'
 import { allPages, api, V1 } from '../../api/client'
-import type { Client, JournalEntry, LedgerAccount, Vendor } from '../../api/types'
+import type { Client, JournalEntry, LedgerAccount, Party } from '../../api/types'
 import { TDS_SECTIONS } from '../../api/types'
 import { useSession } from '../../auth/session'
 import { Badge, Button, Empty, ErrorNote, Field, formatDate, formatDateTime, Modal, Money, Spinner, useAsync } from '../../components/ui'
@@ -15,7 +15,7 @@ export default function Ledger({ client }: { client: Client }) {
   const [correcting, setCorrecting] = useState<JournalEntry | null>(null)
   const entries = useAsync(() => allPages<JournalEntry>(`${V1}/journal-entries/?client=${client.id}${liveOnly ? '&live=true' : ''}`), [client.id, liveOnly])
   const ledgers = useAsync(() => allPages<LedgerAccount>(`${V1}/clients/${client.id}/ledgers/`), [client.id])
-  const vendors = useAsync(() => allPages<Vendor>(`${V1}/clients/${client.id}/vendors/`), [client.id])
+  const parties = useAsync(() => allPages<Party>(`${V1}/clients/${client.id}/parties/`), [client.id])
 
   return (
     <>
@@ -71,7 +71,7 @@ export default function Ledger({ client }: { client: Client }) {
                       {entry.lines.map((line) => (
                         <div key={line.id} className="tiny">
                           <span className={line.direction === 'DR' ? 'dr' : 'cr'}>{line.direction}</span> {line.ledger_name}
-                          {line.vendor_name ? ` · ${line.vendor_name}` : ''} <Money value={line.amount_display} muted />
+                          {line.party_name ? ` · ${line.party_name}` : ''} <Money value={line.amount_display} muted />
                           {line.rcm ? ' · RCM' : ''}
                           {line.tds_section ? ` · TDS ${line.tds_section}` : ''}
                         </div>
@@ -85,7 +85,7 @@ export default function Ledger({ client }: { client: Client }) {
                       <div>{formatDateTime(entry.approved_at)}</div>
                     </td>
                     <td className="num">
-                      {can('journal.correct') && !entry.is_superseded && entry.source_transaction && (
+                      {can('journal.correct') && client.can_post && !entry.is_superseded && entry.source_transaction && (
                         <Button className="btn-sm" onClick={() => setCorrecting(entry)}>
                           Correct
                         </Button>
@@ -103,7 +103,7 @@ export default function Ledger({ client }: { client: Client }) {
         <Correct
           entry={correcting}
           ledgers={ledgers.data ?? []}
-          vendors={vendors.data ?? []}
+          parties={parties.data ?? []}
           onClose={() => setCorrecting(null)}
           onDone={() => {
             setCorrecting(null)
@@ -115,10 +115,10 @@ export default function Ledger({ client }: { client: Client }) {
   )
 }
 
-function Correct({ entry, ledgers, vendors, onClose, onDone }: { entry: JournalEntry; ledgers: LedgerAccount[]; vendors: Vendor[]; onClose: () => void; onDone: () => void }) {
+function Correct({ entry, ledgers, parties, onClose, onDone }: { entry: JournalEntry; ledgers: LedgerAccount[]; parties: Party[]; onClose: () => void; onDone: () => void }) {
   const other = entry.lines.find((l) => !ledgers.find((x) => x.id === l.ledger_account)?.is_bank_or_cash) ?? entry.lines[0]
   const [ledger, setLedger] = useState(other?.ledger_account ?? '')
-  const [vendor, setVendor] = useState(other?.vendor ?? '')
+  const [party, setParty] = useState(other?.party ?? '')
   const [rcm, setRcm] = useState(other?.rcm ?? false)
   const [tds, setTds] = useState(other?.tds_section ?? '')
   const [narration, setNarration] = useState('')
@@ -131,7 +131,7 @@ function Correct({ entry, ledgers, vendors, onClose, onDone }: { entry: JournalE
     setError(null)
     try {
       await api.post(`${V1}/journal-entries/${entry.id}/correct/`, {
-        treatment: { ledger, vendor: vendor || null, rcm, tds_section: tds, learn: true },
+        treatment: { ledger, party: party || null, rcm, tds_section: tds, learn: true },
         narration: narration || undefined,
       })
       onDone()
@@ -162,9 +162,9 @@ function Correct({ entry, ledgers, vendors, onClose, onDone }: { entry: JournalE
           </select>
         </Field>
         <Field label="Party">
-          <select value={vendor} onChange={(e) => setVendor(e.target.value)}>
+          <select value={party} onChange={(e) => setParty(e.target.value)}>
             <option value="">— none —</option>
-            {vendors.map((v) => (
+            {parties.map((v) => (
               <option key={v.id} value={v.id}>
                 {v.canonical_name}
               </option>

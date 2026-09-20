@@ -73,6 +73,35 @@ class Client(UUIDModel, FirmScopedModel):
     fy_start = models.DateField(
         help_text="First day of the client's financial year, e.g. 2026-04-01.",
     )
+    #: The Senior CA (or firm admin) responsible for this client, and the only
+    #: person besides a firm admin who may sign off its entries. None means no
+    #: lead yet, where any approver may sign off, as before leads existed.
+    #: Same-firm is enforced by a composite foreign key carrying firm_id; see
+    #: core/migrations/0009. A plain foreign key is not subject to RLS and
+    #: would accept another firm's membership.
+    lead = models.ForeignKey(
+        "FirmMembership",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="led_clients",
+    )
+
+    #: Everything dated on or before this is locked. Set only by a senior's
+    #: sign-off (``ledger.books.sign_off``); until then the books are a working
+    #: draft that a CA may change freely. The database refuses any write into a
+    #: locked period, and refuses to move this date backwards except through an
+    #: explicit reopen -- see ``ledger/migrations/0008``. NULL means nothing has
+    #: been signed off yet.
+    signed_off_through = models.DateField(null=True, blank=True)
+
+    #: What the client's business is, in the CA's words: "Wholesale cloth trader,
+    #: sells to retailers on 30-day credit; rents a godown; two salaried staff".
+    #: Read by the model tier so it books a "Sharma Traders" credit as sales
+    #: rather than guessing. Free text a person wrote, so it is masked before it
+    #: leaves (see ``classify.llm``); the UI tells the CA not to put names or
+    #: numbers in it.
+    business_profile = models.TextField(blank=True, default="", max_length=2000)
 
     class Meta:
         db_table = "core_client"
@@ -147,6 +176,85 @@ class User(UUIDModel, AbstractBaseUser, PermissionsMixin):
         return TOTPDevice.objects.filter(user=self, confirmed=True).exists()
 
 
+class Designation(models.TextChoices):
+    """What this person is, professionally. Separate from their role in a firm.
+
+    A role says what the software lets you do; a designation says what you are.
+    A Senior CA in one firm and a partner in another are the same designation
+    and different roles, and a firm's letterhead cares about the first.
+    """
+
+    PARTNER = "PARTNER", "Partner"
+    CHARTERED_ACCOUNTANT = "CA", "Chartered Accountant"
+    ARTICLE_ASSISTANT = "ARTICLE", "Article assistant"
+    ACCOUNTANT = "ACCOUNTANT", "Accountant"
+    ADMINISTRATOR = "ADMIN", "Administrator"
+    OTHER = "OTHER", "Other"
+
+
+class Profile(UUIDModel):
+    """The person behind an account: who they are, not what they may do.
+
+    Deliberately NOT firm-scoped, for the same reason :class:`User` is not. A
+    profile hangs off an account, and an account is resolved before any firm
+    context exists. Making this firm-scoped would reintroduce the chicken-and-egg
+    the user table exists to avoid.
+
+    The split is worth keeping clear:
+
+    * :class:`User` is the login -- address, password, whether it works.
+    * :class:`FirmMembership` is the job -- which firm, what role, whose team.
+    * This is the person -- their name as it should be printed, how to reach
+      them, and the membership number that goes on filings.
+
+    One row per account, created automatically, so the page is never missing.
+    """
+
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="profile")
+
+    #: How the name should appear on a document, when that differs from the
+    #: account's own. Blank means use the account's full name.
+    display_name = models.CharField(
+        max_length=255, blank=True, help_text="Leave blank to use the account's full name."
+    )
+    designation = models.CharField(
+        max_length=16, choices=Designation.choices, blank=True, default=""
+    )
+    #: The ICAI membership number a Chartered Accountant signs with. Kept here
+    #: rather than on the membership because it belongs to the person, not the
+    #: firm they currently work at.
+    icai_membership_no = models.CharField(
+        max_length=32, blank=True, default="", verbose_name="ICAI membership number"
+    )
+    phone = models.CharField(max_length=32, blank=True, default="")
+
+    #: A link, not an upload. Uploads in this product go through a tenant-keyed
+    #: storage adapter with its own access rules, and an avatar is not worth
+    #: bending that around.
+    avatar_url = models.URLField(blank=True, default="", verbose_name="Avatar URL")
+
+    timezone = models.CharField(
+        max_length=64,
+        default="Asia/Kolkata",
+        help_text="Used when showing this person dates and times.",
+    )
+    notes = models.TextField(
+        blank=True, default="", help_text="Internal. Visible to the platform owner only."
+    )
+
+    class Meta:
+        db_table = "core_profile"
+        ordering = ["user__email"]
+
+    def __str__(self) -> str:
+        return self.name
+
+    @property
+    def name(self) -> str:
+        """The best name available, in the order a human would pick one."""
+        return self.display_name or self.user.full_name or self.user.email
+
+
 class Role(models.TextChoices):
     """One role per firm-user.
 
@@ -181,23 +289,56 @@ class FirmMembership(UUIDModel, FirmScopedModel):
     role = models.CharField(max_length=16, choices=Role.choices, default=Role.STAFF)
     is_active = models.BooleanField(default=True)
 
-    #: Forward hook for per-client RBAC. True means "every client in the firm",
-    #: which is the only behaviour implemented today. When per-client scoping
-    #: lands, False will mean "only the clients listed in the scope table".
+    #: True: sees every client in the firm. False: only the clients this member
+    #: leads or is assigned to (see core.access). The default stays True so
+    #: existing members are unaffected; invitations pass False explicitly.
     scope_all_clients = models.BooleanField(default=True)
+
+    #: The firm's owner: a firm administrator who alone may add, remove or
+    #: re-role other administrators and hand ownership on. At most one per
+    #: firm. A firm with no owner (created before owners existed) behaves as
+    #: before: every administrator has those powers.
+    is_owner = models.BooleanField(default=False)
+
+    #: The Senior CA (or firm admin) whose team this Staff or Read-only member
+    #: is on. None for firm admins and Senior CAs, and for anyone not yet placed
+    #: on a team. Same-firm is enforced by a composite foreign key carrying
+    #: firm_id; see core/migrations/0009.
+    manager = models.ForeignKey(
+        "self",
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name="reports",
+    )
 
     class Meta:
         db_table = "core_firm_membership"
         constraints = [
-            models.UniqueConstraint(fields=["firm", "user"], name="uniq_membership_per_firm_user"),
+            # One membership per person, not one per firm: an account belongs to
+            # exactly one firm. The platform owner is the exception and has no
+            # membership at all, which is what identifies them.
+            models.UniqueConstraint(fields=["user"], name="uniq_membership_per_user"),
+            models.UniqueConstraint(
+                fields=["firm"], condition=models.Q(is_owner=True), name="uniq_owner_per_firm"
+            ),
         ]
 
     def __str__(self) -> str:
-        return f"{self.user_id} @ {self.firm_id} ({self.role})"
+        # Read by people: admin dropdowns, inline headers, logs of who was
+        # given what. Two raw UUIDs answer no question anyone actually asks, so
+        # this loads the account when it has to. The fallback matters as much as
+        # the happy path -- a label is rendered in places with no tenant context
+        # and after rows are gone, and neither is worth an exception.
+        try:
+            who = self.user.email
+        except Exception:  # noqa: BLE001 - no tenant context, or no row any more
+            who = self.user_id
+        return f"{who} ({self.get_role_display()})"
 
     @property
     def can_approve(self) -> bool:
-        """May post entries to the immutable ledger. Checked server-side."""
+        """A senior: may sign books off. Posting is any CA's (``journal.approve``)."""
         return self.is_active and self.role in APPROVER_ROLES
 
     @property
@@ -206,16 +347,39 @@ class FirmMembership(UUIDModel, FirmScopedModel):
         return self.is_active and self.role in PREPARER_ROLES
 
     def accessible_clients(self):
-        """Clients this membership may act on.
+        """Clients this membership may act on. The rule lives in core.access."""
+        from core.access import visible_clients
 
-        Always firm-filtered, never trusting RLS alone. Defence in depth: RLS is
-        the wall, this is the lock on the door. If one is ever misconfigured the
-        other still holds.
-        """
-        qs = Client.objects.filter(firm_id=self.firm_id)
-        if self.scope_all_clients:
-            return qs
-        return qs.none()
+        return visible_clients(self)
+
+
+class ClientAssignment(UUIDModel, FirmScopedModel):
+    """A member put to work on a client.
+
+    Staff and Read-only members see only the clients they are assigned to; a
+    Senior CA additionally sees the clients they lead. Written only through
+    core.team, which checks that client, member and firm all agree.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="assignments")
+    membership = models.ForeignKey(
+        FirmMembership, on_delete=models.CASCADE, related_name="assignments"
+    )
+    assigned_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="+"
+    )
+
+    class Meta:
+        db_table = "core_client_assignment"
+        ordering = ["created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["client", "membership"], name="uniq_assignment_per_client_member"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.membership_id} on {self.client_id}"
 
 
 # ---------------------------------------------------------------------------

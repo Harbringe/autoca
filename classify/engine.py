@@ -14,9 +14,11 @@ times is how a tool gets abandoned.
 Two properties are deliberate and worth keeping:
 
 * **Matching is ordered, never first-match-wins over an arbitrary queryset.**
-  Two rules can legitimately claim one row -- a client rule for a payee and a
-  firm-wide rule for the channel it arrived on -- and which wins has to be a
-  property of the rules, not of how the database felt like returning them.
+  Two rules can legitimately claim one row -- one for a payee and one for the
+  channel it arrived on -- and which wins has to be a property of the rules,
+  not of how the database felt like returning them. Both are always rules of
+  the same client: rules do not travel between clients, because a ledger
+  belongs to one client and placing a row is naming a ledger.
 * **Every decision carries a confidence and a provenance.** The review screen
   sorts by confidence, and that ordering is what turns an hour of checking into
   minutes. A suggestion with no confidence attached is a guess wearing a
@@ -29,7 +31,7 @@ from collections import Counter
 from dataclasses import dataclass
 
 from django.db import transaction as db_transaction
-from django.db.models import F, Q
+from django.db.models import F
 from django.utils import timezone
 
 from classify.models import (
@@ -39,9 +41,10 @@ from classify.models import (
     MatchType,
     RuleSource,
     TransactionClassification,
-    Vendor,
+    Party,
 )
 from classify.narration import NarrationFacts, analyse, normalise
+from classify.parties import Kind, PartyBook, candidates_as_json, confirm_alias
 from classify.treatment import ReviewBand, Treatment, band_for
 
 #: Learned rules outrank seeds but sit below anything written by hand, so a
@@ -112,25 +115,23 @@ class ReviewSummary:
 
 
 def rules_for(client) -> list[ClassificationRule]:
-    """Active rules that may apply to ``client``, strongest first.
+    """Active rules of ``client``, strongest first.
+
+    Only this client's rules. Rules are not shared between clients even within
+    one firm: a rule names a ledger, a ledger belongs to one client, so a rule
+    borrowed from a sibling client would book this client's money into a set of
+    books that is not theirs.
 
     Ordering, most significant first:
 
-    * a client-specific rule beats a firm-wide one, always. A firm-wide rule is
-      a generalisation; a client rule is a statement about this client's books,
-      and the specific statement wins.
     * higher priority beats lower.
     * a longer pattern beats a shorter one, because it is the more specific
       claim about the same text.
     """
     candidates = ClassificationRule.objects.filter(
-        Q(client=client) | Q(client__isnull=True), is_active=True
-    ).select_related("ledger", "vendor")
-    return sorted(
-        candidates,
-        key=lambda rule: (rule.client_id is not None, rule.priority, len(rule.pattern)),
-        reverse=True,
-    )
+        client=client, is_active=True
+    ).select_related("ledger", "party")
+    return sorted(candidates, key=lambda rule: (rule.priority, len(rule.pattern)), reverse=True)
 
 
 def first_matching_rule(facts: NarrationFacts, is_debit: bool, rules) -> ClassificationRule | None:
@@ -153,7 +154,8 @@ def classify_statement(statement, *, rules=None) -> ClassifyResult:
 
     pending = statement.transactions.filter(classification__isnull=True)
     return _classify_rows(
-        pending, rules, account.account_holder, _own_account_numbers(client), statement.firm_id
+        pending, rules, account.account_holder, _own_account_numbers(client), statement.firm_id,
+        client=client,
     )
 
 
@@ -182,7 +184,7 @@ def reclassify_unresolved(client, *, rules=None) -> ClassifyResult:
         classification.save(
             update_fields=[
                 "ledger",
-                "vendor",
+                "party",
                 "rcm",
                 "tds_section",
                 "rule",
@@ -220,6 +222,7 @@ def review(classification, treatment, user=None, *, learn: bool = True):
     """
     treatment = _coerce_treatment(treatment)
     classification.resolve(treatment, user)
+    _teach_party(classification, treatment, user)
     if not learn:
         return classification, None
 
@@ -227,6 +230,57 @@ def review(classification, treatment, user=None, *, learn: bool = True):
     if rule is not None:
         reclassify_unresolved(classification.transaction.bank_account.client)
     return classification, rule
+
+
+def _teach_party(classification, treatment, user) -> None:
+    """Remember the spelling a person just placed, so it is never asked twice.
+
+    The same move as ``learn_rule_from``, one level down: that turns a decision
+    about *where a payee's money goes* into a rule; this turns a decision about
+    *who the payee is* into an alias. Done even when ``learn`` is off, because
+    "put this one row in Repairs" is a statement about the ledger, while "this
+    is Ramesh Traders" stays true whichever ledger the row lands in.
+    """
+    if treatment.party is not None:
+        confirm_party(classification, treatment.party, user)
+
+
+def confirm_party(classification, party, user=None) -> None:
+    """A person says who this row's payee is. Remember it, and apply it.
+
+    Records the spelling as an alias, marks the row confirmed, and then does the
+    part that makes the queue shrink: every other unposted row for the same
+    spelling is now a recognised payee, not a suggestion, because a person has
+    just settled the question for that spelling. Rows already posted are left
+    alone -- their entries carry their own party and are not this function's to
+    rewrite.
+
+    Does not touch the row's ledger or how it was classified: who the payee is
+    and where the money goes are separate decisions.
+    """
+    client = classification.transaction.bank_account.client
+    facts = _facts_for(classification)
+    spelling = facts.counterparty if not facts.is_self_transfer else ""
+    key = normalise(spelling)
+
+    if key and key != normalise(party.canonical_name):
+        confirm_alias(client, party, spelling, user=user)
+
+    classification.party = party
+    classification.party_resolution = "CONFIRMED"
+    classification.party_candidates = []
+    classification.save(update_fields=["party", "party_resolution", "party_candidates"])
+
+    if not key:
+        return
+    for row in _unposted(client).filter(
+        party__isnull=True, party_resolution__in=["", "NEW", "CANDIDATE"]
+    ).exclude(pk=classification.pk):
+        if normalise(row.counterparty) == key:
+            row.party = party
+            row.party_resolution = "AUTO"
+            row.party_candidates = []
+            row.save(update_fields=["party", "party_resolution", "party_candidates"])
 
 
 def learn_rule_from(classification, treatment, user=None) -> ClassificationRule | None:
@@ -273,29 +327,29 @@ def learn_rule_from(classification, treatment, user=None) -> ClassificationRule 
         for field, value in treatment.as_fields().items():
             setattr(rule, field, value)
         rule.is_active = True
-        rule.save(update_fields=["ledger", "vendor", "rcm", "tds_section", "is_active"])
+        rule.save(update_fields=["ledger", "party", "rcm", "tds_section", "is_active"])
     return rule
 
 
-def vendor_for(client, name: str, *, rcm: bool = False, tds_section: str = "") -> Vendor:
-    """Find or open the vendor record for a counterparty name.
+def party_for(client, name: str, *, rcm: bool = False, tds_section: str = "") -> Party:
+    """Find or open the party record for a counterparty name.
 
     Matched on the normalised name, so the bank's inconsistent spacing and case
-    do not produce three vendors for one payee.
+    do not produce three parties for one payee.
     """
     canonical = " ".join(name.split())
     existing = next(
         (
-            vendor
-            for vendor in Vendor.objects.filter(firm_id=client.firm_id, client=client)
-            if normalise(vendor.canonical_name) == normalise(canonical)
+            party
+            for party in Party.objects.filter(firm_id=client.firm_id, client=client)
+            if normalise(party.canonical_name) == normalise(canonical)
         ),
         None,
     )
     if existing is not None:
         return existing
 
-    return Vendor.objects.create(
+    return Party.objects.create(
         firm_id=client.firm_id,
         client=client,
         canonical_name=canonical,
@@ -325,7 +379,7 @@ def review_queue(client, band: str | None = None):
     """
     queue = (
         _unposted(client)
-        .select_related("transaction", "ledger", "vendor")
+        .select_related("transaction__bank_account", "ledger", "party")
         .order_by("-confidence", "-transaction__value_date")
     )
     return queue.filter(review_band=band) if band else queue
@@ -349,7 +403,7 @@ def pending_approval(client):
     return (
         _unposted(client)
         .filter(ledger__isnull=False)
-        .select_related("transaction", "ledger", "vendor")
+        .select_related("transaction__bank_account", "ledger", "party")
         .order_by("-confidence", "-transaction__value_date")
     )
 
@@ -411,10 +465,11 @@ def _coerce_treatment(value) -> Treatment:
     return value if isinstance(value, Treatment) else Treatment(ledger=value)
 
 
-def _classify_rows(transactions, rules, holder, own_accounts, firm_id) -> ClassifyResult:
+def _classify_rows(transactions, rules, holder, own_accounts, firm_id, *, client) -> ClassifyResult:
     placed = queued = 0
     fresh = []
     hits = []
+    book = PartyBook(client)
 
     for txn in transactions.select_related("bank_account"):
         facts = analyse(txn.narration, holder, own_accounts)
@@ -442,6 +497,19 @@ def _classify_rows(transactions, rules, holder, own_accounts, firm_id) -> Classi
             )
             hits.append(rule)
             placed += 1
+
+        # What the system can say about *who* this is, whether or not a rule
+        # decided *where it goes* -- the two are separate questions, and a row
+        # placed by a rule about the payee's category still deserves to be told
+        # that its payee looks like a known party.
+        if facts.counterparty and not facts.is_self_transfer:
+            found = book.resolve(counterparty=facts.counterparty)
+            row.party_resolution = found.kind
+            row.party_candidates = candidates_as_json(found)
+            # Only a fact fills the party in unasked, and only where nothing has
+            # already named one: a rule's own choice of party stands.
+            if found.kind == Kind.AUTO and row.party_id is None:
+                row.party = found.party
         fresh.append(row)
 
     TransactionClassification.objects.bulk_create(fresh)

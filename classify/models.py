@@ -14,10 +14,12 @@ Three things follow from that, and they are why the schema looks like this:
 * Every classification records *how* it was reached. "The rule that put 1,200
   rows in Advance Tax was wrong" is a question a firm will ask, and answering it
   needs the link, not a recomputation against rules that have since changed.
-* A rule is scoped to a client by default and can be promoted to the firm. Payee
-  meanings are not universal -- one firm's ``ZERODHA`` is a broker's fee, the
-  next firm's is the client's own investment -- and a rule table shared across
-  clients by default would quietly cross-contaminate their books.
+* A rule is scoped to one client, always, and cannot be promoted to the firm.
+  Payee meanings are not universal -- one firm's ``ZERODHA`` is a broker's fee,
+  the next firm's is the client's own investment -- and a rule shared across
+  clients would quietly cross-contaminate their books. There is also nothing a
+  shared rule could point at: a ledger belongs to one client, so a firm-wide
+  rule would name one client's ledger and post everyone else's money into it.
 """
 
 from __future__ import annotations
@@ -34,7 +36,19 @@ from core.crypto import blind_index, decrypt_text_for_firm, encrypt_for_firm
 from core.models import Client, FirmScopedModel, User, UUIDModel
 
 #: Encryption context domain for identifiers held in this app.
+#:
+#: Still "vendor" though the model is now ``Party``. This string is mixed into
+#: the key derivation and the blind index, so changing it would make every
+#: GSTIN already stored undecryptable and every hash already indexed unfindable.
+#: It is a storage detail, not a name anyone reads.
 CRYPTO_PURPOSE = "classify.vendor"
+
+#: Separate domain for counterparty account numbers, so that a party's account
+#: and one of the client's own accounts never produce the same blind index.
+#: They are different questions -- "who did we pay" and "which of our accounts
+#: paid" -- and a collision between them would resolve a self-transfer to a
+#: party.
+PARTY_ACCOUNT_PURPOSE = "classify.party_bank"
 
 
 class LedgerGroup(models.TextChoices):
@@ -112,46 +126,71 @@ class LedgerAccount(UUIDModel, FirmScopedModel):
         return self.status == LedgerStatus.PROPOSED
 
 
-class Vendor(UUIDModel, FirmScopedModel):
+class PartyRole(models.TextChoices):
+    """Which side of the books a party sits on.
+
+    A supplier and a customer are the same kind of object -- a name, a GSTIN, a
+    balance -- differing only in which way the balance runs, so they share a
+    table. ``BOTH`` is common enough to be worth naming: a firm that buys
+    stationery from a client is not two parties. ``OTHER`` covers the ones that
+    are neither, which is where a naive vendor/customer split breaks down --
+    a lender, an employee, a partner drawing from capital.
+    """
+
+    VENDOR = "VENDOR", "Supplier"
+    CUSTOMER = "CUSTOMER", "Customer"
+    BOTH = "BOTH", "Both supplier and customer"
+    OTHER = "OTHER", "Other (lender, employee, related party)"
+
+
+class Party(UUIDModel, FirmScopedModel):
     """A party the client transacts with.
 
     Separate from the ledger head because they answer different questions. The
-    ledger says what kind of expense it was; the vendor says who it was with,
-    and "how much did we pay this vendor this year" is a question a firm is
+    ledger says what kind of expense it was; the party says who it was with,
+    and "how much did we pay this party this year" is a question a firm is
     asked constantly and cannot answer from ledger heads alone.
 
-    The vendor is also where reverse-charge and TDS defaults live, because those
+    The party is also where reverse-charge and TDS defaults live, because those
     are properties of *who you are paying*, not of the category you booked it
     under. A goods transport agency is reverse-charge whether the payment lands
-    in Freight or in Direct Expenses.
+    in Freight or in Direct Expenses. Those two fields are meaningful only when
+    the role includes ``VENDOR`` -- nobody deducts TDS from a customer -- and
+    are left at their defaults otherwise.
     """
 
-    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="vendors")
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="parties")
     canonical_name = models.CharField(max_length=255)
+    role = models.CharField(max_length=16, choices=PartyRole.choices, default=PartyRole.VENDOR)
 
     #: A stable stand-in for the name -- "V" plus a short hash. When a narration
-    #: is sent to a language model for classification, known vendors are
+    #: is sent to a language model for classification, known parties are
     #: replaced by this, so the model sees the shape of the transaction without
     #: the counterparty's identity. The mapping back happens server-side.
+    #:
+    #: Not to be confused with ``PartyAlias``, which is the opposite concern:
+    #: this hides a name from the model, that one recognises a name the bank
+    #: spelled differently. They never interact.
     alias_token = models.CharField(max_length=24, db_index=True)
 
     gstin_enc = models.BinaryField(blank=True, null=True)
     gstin_hash = models.CharField(max_length=64, blank=True, db_index=True)
 
-    #: Reverse charge applies to this vendor by default. Learned once per client
+    #: Reverse charge applies to this party by default. Learned once per client
     #: and then applied, rather than re-decided every month.
     rcm_default = models.BooleanField(default=False)
-    #: TDS section that normally applies to payments to this vendor, if any.
+    #: TDS section that normally applies to payments to this party, if any.
     tds_section = models.CharField(max_length=16, blank=True, choices=TdsSection.CHOICES)
 
+    notes = models.TextField(blank=True, default="")
     is_active = models.BooleanField(default=True)
 
     class Meta:
-        db_table = "classify_vendor"
+        db_table = "classify_party"
         ordering = ["canonical_name"]
         constraints = [
             models.UniqueConstraint(
-                fields=["firm", "client", "canonical_name"], name="uniq_vendor_name_per_client"
+                fields=["firm", "client", "canonical_name"], name="uniq_party_name_per_client"
             ),
         ]
 
@@ -179,7 +218,7 @@ class Vendor(UUIDModel, FirmScopedModel):
         """Store the GSTIN encrypted, with a blind index for reconciliation.
 
         GST reconciliation matches purchase-register rows to GSTR-2B rows on
-        vendor GSTIN. That join has to work on ciphertext that is different
+        party GSTIN. That join has to work on ciphertext that is different
         every time, which is what the hash column is for.
         """
         gstin = (gstin or "").strip().upper()
@@ -189,6 +228,122 @@ class Vendor(UUIDModel, FirmScopedModel):
             return
         self.gstin_enc = encrypt_for_firm(gstin, self.firm_id, CRYPTO_PURPOSE)
         self.gstin_hash = blind_index(gstin, self.firm_id, CRYPTO_PURPOSE)
+
+
+class AliasSource(models.TextChoices):
+    """Where a spelling of a party's name was first seen."""
+
+    BANK_NARRATION = "BANK_NARRATION", "From a bank narration"
+    INVOICE = "INVOICE", "From an invoice"
+    MANUAL = "MANUAL", "Entered by hand"
+
+
+class PartyAlias(UUIDModel, FirmScopedModel):
+    """One spelling of a party's name, confirmed by a person.
+
+    A bank prints the same payee three ways -- ``RAMESH TRADRS PVT``,
+    ``Ramesh Traders``, ``RAMESH TRADERS-SETTL`` -- and an exact match on the
+    canonical name recognises none of them. Fuzzy matching can *suggest* that
+    these are one party, but it may never decide: merging two people's ledgers
+    on a string-similarity score is a mistake nobody would find until the books
+    were wrong in both directions.
+
+    So the alias table is the memory of decisions already made. A person
+    confirms a spelling once; from then on it resolves exactly, with no
+    similarity score involved. This is the same shape as
+    ``classify.engine.learn_rule_from`` -- a human decision becomes a
+    deterministic rule so it is never asked twice.
+
+    The unique constraint is the point: within a client, one spelling resolves
+    to exactly one party. Without it, resolution would be ambiguous exactly
+    where it needs to be certain.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="party_aliases")
+    party = models.ForeignKey(Party, on_delete=models.CASCADE, related_name="aliases")
+
+    #: The form comparisons are made against -- see ``narration.normalise``.
+    alias_normalised = models.CharField(max_length=255)
+    #: As it was actually spelled, for showing a person what they confirmed.
+    alias_display = models.CharField(max_length=255)
+
+    source = models.CharField(
+        max_length=16, choices=AliasSource.choices, default=AliasSource.BANK_NARRATION
+    )
+    confirmed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="confirmed_aliases"
+    )
+    confirmed_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "classify_party_alias"
+        ordering = ["alias_display"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["firm", "client", "alias_normalised"], name="uniq_alias_per_client"
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["firm", "client", "alias_normalised"], name="idx_alias_lookup"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.alias_display} -> {self.party_id}"
+
+
+class PartyBankAccount(UUIDModel, FirmScopedModel):
+    """An account number a party has been seen transacting from.
+
+    The strongest identity signal there is, and the only one strong enough to
+    resolve a party without asking anyone: two transfers quoting the same
+    account number are the same counterparty, whatever the narration called
+    them. Stored as a blind index rather than in the clear, for the same reason
+    the client's own account numbers are -- see ``core.crypto``.
+
+    Note the purpose string differs from the client's own accounts, so the two
+    hash spaces never collide: a client paying themselves must not resolve to a
+    party.
+    """
+
+    client = models.ForeignKey(
+        Client, on_delete=models.CASCADE, related_name="party_bank_accounts"
+    )
+    party = models.ForeignKey(Party, on_delete=models.CASCADE, related_name="bank_accounts")
+
+    account_hash = models.CharField(max_length=64, db_index=True)
+    #: For showing a person which account this was, without storing the number.
+    last4 = models.CharField(max_length=4, blank=True)
+    ifsc = models.CharField(max_length=16, blank=True)
+
+    source = models.CharField(
+        max_length=16, choices=AliasSource.choices, default=AliasSource.BANK_NARRATION
+    )
+    confirmed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True, related_name="confirmed_accounts"
+    )
+    confirmed_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "classify_party_bank_account"
+        ordering = ["last4"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["firm", "client", "account_hash"], name="uniq_party_account_per_client"
+            ),
+        ]
+
+    def __str__(self) -> str:
+        return f"****{self.last4} -> {self.party_id}"
+
+    @staticmethod
+    def hash_for(account_number: str, firm_id) -> str:
+        """The blind index this table is keyed on."""
+        cleaned = re.sub(r"[^A-Z0-9]", "", (account_number or "").upper())
+        if not cleaned:
+            return ""
+        return blind_index(cleaned, firm_id, PARTY_ACCOUNT_PURPOSE)
 
 
 class MatchType(models.TextChoices):
@@ -224,19 +379,21 @@ class RuleSource(models.TextChoices):
 class ClassificationRule(UUIDModel, FirmScopedModel):
     """One mapping from a narration pattern to a ledger."""
 
-    #: NULL means the rule applies to every client in the firm. Scoping to a
-    #: client is the default because payee meanings are not portable between
-    #: them; see the module docstring.
+    #: Always a client. There is no firm-wide rule, and there cannot be one:
+    #: every ``LedgerAccount`` belongs to exactly one client, so a rule that
+    #: applied to the whole firm would still have to name one client's ledger
+    #: and would post every other client's money into it. The generalisation
+    #: has no ledger it could legally point at, so the column is NOT NULL.
     client = models.ForeignKey(
-        Client, on_delete=models.CASCADE, related_name="classification_rules", null=True, blank=True
+        Client, on_delete=models.CASCADE, related_name="classification_rules"
     )
     # -- the treatment this rule applies -----------------------------------
     # All four together, because they were decided together. A rule that
     # remembered the ledger and forgot the reverse-charge flag would look like
     # it worked until a return was prepared from incomplete books.
     ledger = models.ForeignKey(LedgerAccount, on_delete=models.CASCADE, related_name="rules")
-    vendor = models.ForeignKey(
-        Vendor, on_delete=models.SET_NULL, null=True, blank=True, related_name="rules"
+    party = models.ForeignKey(
+        Party, on_delete=models.SET_NULL, null=True, blank=True, related_name="rules"
     )
     rcm = models.BooleanField(default=False)
     tds_section = models.CharField(max_length=16, blank=True, choices=TdsSection.CHOICES)
@@ -255,8 +412,9 @@ class ClassificationRule(UUIDModel, FirmScopedModel):
     pattern = models.CharField(max_length=255)
     direction = models.CharField(max_length=8, choices=Direction.choices, default=Direction.ANY)
 
-    #: Higher wins. Client rules outrank firm rules, and both outrank seeds, by
-    #: convention of the values assigned in ``classify.seeds``.
+    #: Higher wins. A hand-written rule outranks a learned one, and both
+    #: outrank the seeds, by convention of the values assigned in
+    #: ``classify.seeds``. There is no firm tier: every rule is one client's.
     priority = models.IntegerField(default=100)
     source = models.CharField(max_length=16, choices=RuleSource.choices, default=RuleSource.LEARNED)
     is_active = models.BooleanField(default=True)
@@ -286,10 +444,45 @@ class ClassificationRule(UUIDModel, FirmScopedModel):
     def __str__(self) -> str:
         return f"{self.get_match_type_display()} {self.pattern!r} -> {self.ledger_id}"
 
+    def clean(self):
+        """A rule may only name things its own client owns.
+
+        The database enforces this too, with a composite foreign key, and that
+        is the guarantee that matters -- this method exists so the API returns
+        a readable error instead of an IntegrityError. Keep the two in step: a
+        check here that Postgres does not also make is a check that is one
+        ``objects.create`` away from being skipped.
+        """
+        super().clean()
+        errors = {}
+        if self.client_id is None:
+            errors["client"] = (
+                "A rule belongs to one client. There are no firm-wide rules, because "
+                "every ledger belongs to a client and a firm-wide rule would post "
+                "other clients' transactions into it."
+            )
+        else:
+            # These messages name no ledger, party or client. Staff are
+            # assigned to particular clients, so an error that named the owner
+            # would tell a reviewer who is not on that engagement that it
+            # exists -- a smaller leak than the one being closed, but the same
+            # kind. The offending id is in the request the caller sent.
+            if self.ledger_id and self.ledger.client_id != self.client_id:
+                errors["ledger"] = (
+                    "That ledger belongs to another client. A rule cannot place "
+                    "this client's transactions into it."
+                )
+            if self.party_id and self.party.client_id != self.client_id:
+                errors["party"] = "That party belongs to another client."
+        if errors:
+            from django.core.exceptions import ValidationError
+
+            raise ValidationError(errors)
+
     @property
     def treatment(self) -> Treatment:
         return Treatment(
-            ledger=self.ledger, vendor=self.vendor, rcm=self.rcm, tds_section=self.tds_section
+            ledger=self.ledger, party=self.party, rcm=self.rcm, tds_section=self.tds_section
         )
 
     def matches(self, facts, is_debit: bool) -> bool:
@@ -336,8 +529,8 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
     ledger = models.ForeignKey(
         LedgerAccount, on_delete=models.PROTECT, related_name="classifications", null=True, blank=True
     )
-    vendor = models.ForeignKey(
-        Vendor, on_delete=models.SET_NULL, null=True, blank=True, related_name="classifications"
+    party = models.ForeignKey(
+        Party, on_delete=models.SET_NULL, null=True, blank=True, related_name="classifications"
     )
     rcm = models.BooleanField(default=False)
     tds_section = models.CharField(max_length=16, blank=True, choices=TdsSection.CHOICES)
@@ -368,6 +561,27 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
     counterparty = models.CharField(max_length=255, blank=True)
     is_self_transfer = models.BooleanField(default=False)
 
+    #: How sure the system is which party this counterparty is -- separate
+    #: from whether the row's *ledger* is decided, because a firm can be
+    #: certain "this is Ramesh Traders" while still needing a person to say
+    #: which ledger the payment belongs in, and vice versa.
+    #:
+    #: Never set from a similarity score. See ``classify.parties``: the whole
+    #: point of that module is that a fuzzy match is a ``Kind.CANDIDATE``,
+    #: never a ``Kind.AUTO``, however high the score.
+    party_resolution = models.CharField(
+        max_length=16, blank=True, default="", choices=[
+            ("AUTO", "Recognised from a fact -- an account number or GSTIN"),
+            ("CANDIDATE", "Looks similar to a known party -- needs confirming"),
+            ("NEW", "No known party looks like this"),
+            ("CONFIRMED", "A person has confirmed which party this is"),
+        ],
+    )
+    #: Suggestions for who this might be, when it is not certain -- name,
+    #: score, and the reason, so a reviewer sees why rather than a bare guess.
+    #: Never applied to ``party`` on its own; a person always confirms first.
+    party_candidates = models.JSONField(default=list, blank=True)
+
     #: A model-sourced suggestion's reasoning, one sentence, for the reviewer.
     #: Also set when the model looked and declined, so the reviewer knows.
     rationale = models.TextField(
@@ -375,6 +589,17 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
         default="",
         help_text="Why the model suggested what it did, in one sentence a reviewer can check.",
     )
+
+    #: The narration the entry will carry in the books, written the way a CA
+    #: writes one -- "Being courier charges paid to ABC Courier vide UPI ref
+    #: 7781" -- rather than the bank's own string. Set by the model when it
+    #: books the row; a person may rewrite it at approval.
+    book_narration = models.TextField(blank=True, default="")
+
+    #: When the evidence does not say what a row is, the honest outcome is a
+    #: question for the client, not a guess or a Suspense entry. One question,
+    #: in plain words, that the answer to would settle the row.
+    open_question = models.TextField(blank=True, default="")
 
     #: A transfer between two of the client's own accounts appears on both
     #: statements. The first side approved writes the Contra entry; the other
@@ -387,6 +612,11 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name="classifications"
     )
     reviewed_at = models.DateTimeField(null=True, blank=True)
+
+    #: The AI moved this row after a person corrected a similar one. A finding
+    #: aid only: it makes the row easy to spot among the rest, and is cleared as
+    #: soon as a person looks and decides.
+    ai_revised = models.BooleanField(default=False)
 
     class Meta:
         db_table = "classify_transaction_classification"
@@ -417,7 +647,7 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
         if self.ledger is None:
             return None
         return Treatment(
-            ledger=self.ledger, vendor=self.vendor, rcm=self.rcm, tds_section=self.tds_section
+            ledger=self.ledger, party=self.party, rcm=self.rcm, tds_section=self.tds_section
         )
 
     def apply(self, treatment: Treatment, *, method, confidence: float, rule=None, user=None):
@@ -428,7 +658,7 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
         their defaults.
         """
         self.ledger = treatment.ledger
-        self.vendor = treatment.vendor
+        self.party = treatment.party
         self.rcm = treatment.rcm
         self.tds_section = treatment.tds_section
         self.method = method
@@ -450,11 +680,13 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
         """
         self.apply(treatment, method=method, confidence=1.0, user=user)
         self.needs_review = False
+        self.ai_revised = False
         self.reviewed_at = timezone.now()
         self.save(
             update_fields=[
+                "ai_revised",
                 "ledger",
-                "vendor",
+                "party",
                 "rcm",
                 "tds_section",
                 "method",

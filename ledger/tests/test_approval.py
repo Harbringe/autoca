@@ -43,7 +43,7 @@ def firm():
 
 @pytest.fixture
 def client(firm):
-    return create_client(firm, "Ramesh Deshmukh", datetime.date(2025, 4, 1))
+    return create_client(firm, "Arjun Nair", datetime.date(2025, 4, 1))
 
 
 def membership_for(firm, role):
@@ -100,14 +100,21 @@ def test_a_senior_ca_can_post_an_entry(client, statement, senior):
     assert result.entry.approved_at is not None
 
 
-def test_staff_cannot_post_an_entry(client, statement, staff):
-    """A CA is personally answerable for what is filed. Hiding a button is not enforcement."""
+def test_staff_can_post_an_entry_and_read_only_cannot(client, statement, staff, firm):
+    """The CA keeping the books commits their own work; a senior signs the books off.
+
+    Posting is no longer a senior-only act (see ``core.rbac``), but it still is not
+    something a viewer can do -- and hiding a button is not enforcement.
+    """
     row = placed(client, "Blinkit", ledger(client, "Office Expenses"))
+    viewer = membership_for(firm, Role.READ_ONLY)
 
     with pytest.raises(PermissionDenied, match="journal.approve"):
-        approve(row, membership=staff)
-
+        approve(row, membership=viewer)
     assert JournalEntry.objects.count() == 0
+
+    entry = approve(row, membership=staff).entry
+    assert entry.approved_by_id == staff.user_id
 
 
 def test_an_unclassified_row_cannot_be_posted(client, statement, senior):
@@ -172,24 +179,24 @@ def test_a_payment_debits_the_expense_and_credits_the_bank(client, statement, se
     assert debit.ledger_account_id == expenses.pk
     assert debit.amount_paise == 530_00
     assert credit.direction == Direction.CREDIT
-    assert credit.ledger_account.name == "Axis Bank A/c 4321"
+    assert credit.ledger_account.name == "Axis Bank A/c 0001"
     assert credit.amount_paise == 530_00
 
 
 def test_a_receipt_debits_the_bank_and_credits_the_income(client, statement, senior):
     """The half everyone gets backwards."""
     income = ledger(client, "Bhim Cash Back", LedgerGroup.INDIRECT_INCOME)
-    entry = approve(placed(client, "102985493417", income), membership=senior).entry
+    entry = approve(placed(client, "100000000013", income), membership=senior).entry
 
     debit, credit = entry.lines.all()
     assert entry.voucher_type == VoucherType.RECEIPT
-    assert debit.ledger_account.name == "Axis Bank A/c 4321"
+    assert debit.ledger_account.name == "Axis Bank A/c 0001"
     assert credit.ledger_account_id == income.pk
 
 
 def test_a_transfer_between_the_clients_own_accounts_is_a_contra(client, statement, senior):
     other_bank = ledger(client, "HDFC Bank A/c 50100000009876", LedgerGroup.BANK)
-    row = placed(client, "AXOMB20402110637", other_bank)
+    row = placed(client, "AXOMB10000000001", other_bank)
 
     assert row.is_self_transfer
     assert voucher_type_for(row) == VoucherType.CONTRA
@@ -267,7 +274,7 @@ def test_numbers_are_contiguous_within_a_book(client, statement, senior):
 def test_each_voucher_type_has_its_own_series(client, statement, senior):
     approve(placed(client, "Blinkit", ledger(client, "Office Expenses")), membership=senior)
     income = ledger(client, "Bhim Cash Back", LedgerGroup.INDIRECT_INCOME)
-    approve(placed(client, "102985493417", income), membership=senior)
+    approve(placed(client, "100000000013", income), membership=senior)
 
     payment = JournalEntry.objects.get(voucher_type=VoucherType.PAYMENT)
     receipt = JournalEntry.objects.get(voucher_type=VoucherType.RECEIPT)
@@ -299,39 +306,61 @@ def test_an_entry_is_filed_in_the_financial_year_of_its_date(client, statement, 
 # ---------------------------------------------------------------------------
 
 
-def test_a_posted_entry_cannot_be_updated(client, statement, senior):
-    """Not "is not"; cannot. The grant is revoked and a trigger raises."""
+def sign_off_through(client, entry):
+    """Sign the entry's date off, the way ``books.sign_off`` leaves the client."""
+    from core.models import Client
+
+    Client.objects.filter(pk=client.pk).update(signed_off_through=entry.entry_date)
+    return entry
+
+
+def test_a_posted_entry_can_still_be_changed_until_sign_off(client, statement, senior):
+    """The books are a working draft until a senior signs them off."""
     entry = approve(
         placed(client, "Blinkit", ledger(client, "Office Expenses")), membership=senior
     ).entry
+
+    with transaction.atomic():
+        JournalEntry.objects.filter(pk=entry.pk).update(narration="reworded")
+
+
+def test_a_signed_off_entry_cannot_be_updated(client, statement, senior):
+    """Not "is not"; cannot. The trigger raises once the period is signed off."""
+    entry = approve(
+        placed(client, "Blinkit", ledger(client, "Office Expenses")), membership=senior
+    ).entry
+    sign_off_through(client, entry)
 
     with pytest.raises(DatabaseError), transaction.atomic():
         JournalEntry.objects.filter(pk=entry.pk).update(narration="tampered")
 
 
-def test_a_posted_entry_cannot_be_deleted(client, statement, senior):
+def test_a_signed_off_entry_cannot_be_deleted(client, statement, senior):
     entry = approve(
         placed(client, "Blinkit", ledger(client, "Office Expenses")), membership=senior
     ).entry
+    sign_off_through(client, entry)
 
     with pytest.raises(DatabaseError), transaction.atomic():
         JournalEntry.objects.filter(pk=entry.pk).delete()
 
 
-def test_a_journal_line_cannot_be_updated(client, statement, senior):
+def test_a_signed_off_journal_line_cannot_be_updated(client, statement, senior):
     entry = approve(
         placed(client, "Blinkit", ledger(client, "Office Expenses")), membership=senior
     ).entry
+    sign_off_through(client, entry)
 
     with pytest.raises(DatabaseError), transaction.atomic():
         JournalLine.objects.filter(entry=entry).update(amount_paise=1)
 
 
-def test_raw_sql_cannot_alter_an_entry_either(client, statement, senior):
+def test_raw_sql_cannot_alter_a_signed_off_entry_either(client, statement, senior):
     """The application is not what is holding this. The database is."""
     entry = approve(
         placed(client, "Blinkit", ledger(client, "Office Expenses")), membership=senior
     ).entry
+    sign_off_through(client, entry)
 
     with pytest.raises(DatabaseError), transaction.atomic(), connection.cursor() as cursor:
         cursor.execute(
@@ -371,11 +400,31 @@ def test_an_unbalanced_entry_is_refused_at_commit(client, statement, senior):
 # ---------------------------------------------------------------------------
 
 
-def test_a_correction_leaves_the_original_standing(client, statement, senior):
+def test_correcting_an_unsigned_entry_changes_it_and_keeps_the_old_state_in_the_log(
+    client, statement, senior
+):
+    from ledger.models import ChangeAction, EntryChange
+
+    wrong = ledger(client, "Office Expenses")
+    right = ledger(client, "Staff Welfare")
+    original = approve(placed(client, "Blinkit", wrong), membership=senior).entry
+
+    corrected = correct(original, membership=senior, treatment=Treatment(ledger=right))
+
+    assert corrected.pk == original.pk, "a draft is changed, not chained"
+    assert not corrected.is_superseded
+    names = {l.ledger_account.name for l in corrected.lines.select_related("ledger_account")}
+    assert "Staff Welfare" in names and "Office Expenses" not in names
+    change = EntryChange.objects.get(entry_id=original.pk, action=ChangeAction.EDITED)
+    assert "Office Expenses" in str(change.before), "what it was is not lost"
+
+
+def test_a_correction_to_signed_off_books_leaves_the_original_standing(client, statement, senior):
     """Company law expects the original to remain visible, struck through."""
     wrong = ledger(client, "Office Expenses")
     right = ledger(client, "Staff Welfare")
     original = approve(placed(client, "Blinkit", wrong), membership=senior).entry
+    sign_off_through(client, original)
 
     corrected = correct(original, membership=senior, treatment=Treatment(ledger=right))
 
@@ -384,15 +433,17 @@ def test_a_correction_leaves_the_original_standing(client, statement, senior):
     assert original.is_superseded
     assert original.superseded_by.pk == corrected.pk
     assert corrected.supersedes_id == original.pk
+    assert corrected.entry_date > original.entry_date, "an adjustment in the open period"
 
 
-def test_a_correction_reverses_the_original_and_posts_the_new_treatment(
+def test_a_correction_to_signed_off_books_reverses_the_original_and_posts_the_new_treatment(
     client, statement, senior
 ):
     """The two entries together net to the corrected position, at every point."""
     wrong = ledger(client, "Office Expenses")
     right = ledger(client, "Staff Welfare")
     original = approve(placed(client, "Blinkit", wrong), membership=senior).entry
+    sign_off_through(client, original)
 
     corrected = correct(original, membership=senior, treatment=Treatment(ledger=right))
 
@@ -413,19 +464,26 @@ def test_the_correction_chain_stays_linear(client, statement, senior):
     original = approve(
         placed(client, "Blinkit", ledger(client, "Office Expenses")), membership=senior
     ).entry
+    sign_off_through(client, original)
     correct(original, membership=senior, treatment=Treatment(ledger=ledger(client, "Staff Welfare")))
 
     with pytest.raises(NotApprovableError, match="already been corrected"):
         correct(original, membership=senior, treatment=Treatment(ledger=ledger(client, "Rent")))
 
 
-def test_staff_cannot_correct_an_entry(client, statement, senior, staff):
+def test_staff_can_correct_a_draft_entry_but_not_signed_off_books(
+    client, statement, senior, staff
+):
     original = approve(
         placed(client, "Blinkit", ledger(client, "Office Expenses")), membership=senior
     ).entry
 
-    with pytest.raises(PermissionDenied, match="journal.correct"):
-        correct(original, membership=staff, treatment=Treatment(ledger=ledger(client, "Rent")))
+    corrected = correct(original, membership=staff, treatment=Treatment(ledger=ledger(client, "Rent")))
+    assert corrected.pk == original.pk
+
+    sign_off_through(client, original)
+    with pytest.raises(PermissionDenied):
+        correct(original, membership=staff, treatment=Treatment(ledger=ledger(client, "Staff Welfare")))
 
 
 def test_a_corrected_transaction_can_be_posted_again(client, statement, senior):
@@ -433,6 +491,7 @@ def test_a_corrected_transaction_can_be_posted_again(client, statement, senior):
     original = approve(
         placed(client, "Blinkit", ledger(client, "Office Expenses")), membership=senior
     ).entry
+    sign_off_through(client, original)
     corrected = correct(
         original, membership=senior, treatment=Treatment(ledger=ledger(client, "Staff Welfare"))
     )
@@ -489,7 +548,7 @@ def _other_account_receiving(client, amount_paise, value_date):
     )
     txn = StatementTransaction.objects.create(
         firm_id=client.firm_id, statement=statement, bank_account=hdfc, row_number=1,
-        value_date=value_date, narration="NEFT/AXIS/RAMESH GOPAL DESHMUKH/Self",
+        value_date=value_date, narration="NEFT/AXIS/ARJUN PRATAP NAIR/Self",
         credit_paise=amount_paise, balance_paise=amount_paise, dedupe_hash="hdfc-row-1",
     )
     row = TransactionClassification.objects.create(firm_id=client.firm_id, transaction=txn, is_self_transfer=True)
@@ -501,7 +560,7 @@ def test_a_transfer_seen_on_both_statements_is_posted_once(client, statement, se
     from ledger.reconciliation import ledger_balance
 
     axis = statement.bank_account
-    outgoing = review_queue(client).filter(transaction__narration__icontains="AXOMB20402110637").first()
+    outgoing = review_queue(client).filter(transaction__narration__icontains="AXOMB10000000001").first()
     amount, sent_on = outgoing.transaction.amount_paise, outgoing.transaction.value_date
     hdfc, incoming = _other_account_receiving(client, amount, sent_on + datetime.timedelta(days=1))
 
@@ -522,7 +581,7 @@ def test_a_similar_transfer_outside_the_window_is_not_mistaken_for_the_same_one(
     from classify.seeds import contra_ledger_for
 
     axis = statement.bank_account
-    outgoing = review_queue(client).filter(transaction__narration__icontains="AXOMB20402110637").first()
+    outgoing = review_queue(client).filter(transaction__narration__icontains="AXOMB10000000001").first()
     amount, sent_on = outgoing.transaction.amount_paise, outgoing.transaction.value_date
     hdfc, incoming = _other_account_receiving(client, amount, sent_on + datetime.timedelta(days=30))
 

@@ -20,6 +20,7 @@ export default function Statements({ client }: { client: Client }) {
   const [confirming, setConfirming] = useState<BankAccount | null>(null)
   const [flash, setFlash] = useState<Flash | null>(null)
   const [renaming, setRenaming] = useState<BankAccount | null>(null)
+  const [removing, setRemoving] = useState<Statement | null>(null)
 
   const reload = () => {
     accounts.reload()
@@ -157,6 +158,11 @@ export default function Statements({ client }: { client: Client }) {
                       <div className="row end">
                         {can('transaction.classify') && <RecategorizeButton client={client} statementId={s.id} onResult={setFlash} />}
                         <Link to={`/clients/${client.id}/statements/${s.id}`}>Rows →</Link>
+                        {can('statement.delete') && (
+                          <Button kind="ghost" className="btn-sm" onClick={() => setRemoving(s)}>
+                            Remove
+                          </Button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -166,6 +172,19 @@ export default function Statements({ client }: { client: Client }) {
           </div>
         )}
       </div>
+
+      {removing && (
+        <RemoveStatement
+          client={client}
+          statement={removing}
+          onClose={() => setRemoving(null)}
+          onDone={(r) => {
+            setRemoving(null)
+            setFlash({ tone: 'good', text: `Removed ${r.filename || 'the statement'}: ${r.rows} rows and ${r.entries} posted entries.` })
+            reload()
+          }}
+        />
+      )}
 
       {renaming && (
         <RenameLedger
@@ -387,6 +406,52 @@ function RenameLedger({ client, account, onClose, onDone }: { client: Client; ac
           </Button>
         </div>
       </form>
+    </Modal>
+  )
+}
+
+type Removed = { filename: string; rows: number; entries: number }
+
+function RemoveStatement({
+  client,
+  statement,
+  onClose,
+  onDone,
+}: {
+  client: Client
+  statement: Statement
+  onClose: () => void
+  onDone: (r: Removed) => void
+}) {
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<unknown>(null)
+
+  async function remove() {
+    setBusy(true)
+    setError(null)
+    try {
+      onDone(await api.delete<Removed>(`${V1}/clients/${client.id}/statements/${statement.id}/`))
+    } catch (err) {
+      setError(err)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Modal title="Remove this statement?" onClose={onClose}>
+      <p className="sub">
+        <strong>{statement.document.original_filename || 'This statement'}</strong> ({formatDate(statement.period_start)} – {formatDate(statement.period_end)}, {statement.transaction_count} rows) will be removed with
+        everything posted from it, so uploading the right file starts clean. What was posted is kept in the change log. Rules and payee names learned meanwhile stay.
+      </p>
+      <p className="sub">If any of it is already in books a senior signed off, this is refused.</p>
+      <ErrorNote error={error} />
+      <div className="row end">
+        <Button onClick={onClose}>Keep it</Button>
+        <Button kind="danger" busy={busy} onClick={remove}>
+          Remove statement
+        </Button>
+      </div>
     </Modal>
   )
 }

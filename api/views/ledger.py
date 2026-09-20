@@ -5,6 +5,7 @@ from __future__ import annotations
 import datetime
 import uuid
 
+from django.core.exceptions import PermissionDenied
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, serializers, status, viewsets
@@ -15,6 +16,8 @@ from api.pagination import DefaultPagination
 from api.permissions import CanApprove, HasFirmPermission
 from api.serializers.classify import ApproveSerializer
 from api.serializers.ledger import (
+    EntryChangeSerializer,
+    RemoveEntrySerializer,
     BalanceCheckSerializer,
     BalanceSheetSerializer,
     CorrectionSerializer,
@@ -25,12 +28,13 @@ from api.serializers.ledger import (
 )
 from banking.models import BankAccount, Statement
 from classify.engine import pending_approval
-from classify.models import LedgerAccount, Vendor
+from classify.models import LedgerAccount, Party
 from classify.treatment import Treatment
 from core.fy import financial_year
-from core.models import Client
+from core.access import can_post, get_visible_client, posting_refusal, visible_client_ids
 from ledger.approval import approve_many, correct
-from ledger.models import JournalEntry
+from ledger.editing import remove_entry
+from ledger.models import EntryChange, JournalEntry
 from ledger.reconciliation import check_balance
 from ledger.reports import balance_sheet, profit_and_loss, trial_balance
 from ledger.tally import export_statement
@@ -60,9 +64,12 @@ class JournalEntryViewSet(
 
     def get_queryset(self):
         queryset = (
-            JournalEntry.objects.filter(firm_id=self.request.firm.pk)
-            .select_related("approved_by")
-            .prefetch_related("lines__ledger_account", "lines__vendor", "superseded_by_set")
+            JournalEntry.objects.filter(
+                firm_id=self.request.firm.pk,
+                client__in=visible_client_ids(self.request.membership),
+            )
+            .select_related("approved_by", "client")
+            .prefetch_related("lines__ledger_account", "lines__party", "superseded_by_set")
         )
         client_id = self.request.query_params.get("client")
         if client_id:
@@ -115,11 +122,11 @@ class JournalEntryViewSet(
         ledger = get_object_or_404(
             LedgerAccount, pk=treatment_data["ledger"], firm_id=request.firm.pk, client=client
         )
-        vendor = (
+        party = (
             get_object_or_404(
-                Vendor, pk=treatment_data["vendor"], firm_id=request.firm.pk, client=client
+                Party, pk=treatment_data["party"], firm_id=request.firm.pk, client=client
             )
-            if treatment_data.get("vendor")
+            if treatment_data.get("party")
             else None
         )
 
@@ -128,7 +135,7 @@ class JournalEntryViewSet(
             membership=request.membership,
             treatment=Treatment(
                 ledger=ledger,
-                vendor=vendor,
+                party=party,
                 rcm=treatment_data["rcm"],
                 tds_section=treatment_data.get("tds_section", ""),
             ),
@@ -137,6 +144,38 @@ class JournalEntryViewSet(
         return Response(
             JournalEntrySerializer(corrected).data, status=status.HTTP_201_CREATED
         )
+
+    @extend_schema(
+        summary="Remove an entry from the working books",
+        description=(
+            "Only while the entry's period is not signed off. The transaction it came "
+            "from goes back to the queue, and the entry is kept in the change log."
+        ),
+        request=RemoveEntrySerializer,
+        responses={204: None},
+    )
+    @action(detail=True, methods=["post"], permission_classes=[CanApprove])
+    def remove(self, request, pk=None):
+        entry = self.get_object()
+        payload = RemoveEntrySerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        if not can_post(request.membership, entry.client):
+            raise PermissionDenied(posting_refusal(entry.client))
+        remove_entry(entry, actor=request.user, note=payload.validated_data["note"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @extend_schema(
+        summary="What this entry used to be",
+        description="Every change made to the entry while it was a working draft, oldest first.",
+        responses={200: EntryChangeSerializer(many=True)},
+    )
+    @action(detail=True, methods=["get"], pagination_class=None)
+    def changes(self, request, pk=None):
+        entry = self.get_object()
+        rows = EntryChange.objects.filter(
+            firm_id=request.firm.pk, client_id=entry.client_id, entry_id=entry.pk
+        ).select_related("actor")
+        return Response(EntryChangeSerializer(rows, many=True).data)
 
 
 @extend_schema(tags=["ledger"])
@@ -164,7 +203,9 @@ class ApprovalView(viewsets.GenericViewSet):
         responses={201: JournalEntrySerializer(many=True)},
     )
     def create(self, request, client_id=None):
-        client = get_object_or_404(Client, pk=client_id, firm_id=request.firm.pk)
+        client = get_visible_client(request, client_id)
+        if not can_post(request.membership, client):
+            raise PermissionDenied(posting_refusal(client))
         payload = self.get_serializer(data=request.data)
         payload.is_valid(raise_exception=True)
 
@@ -207,7 +248,7 @@ class ReportView(viewsets.GenericViewSet):
     serializer_class = TrialBalanceSerializer
 
     def _client_and_year(self, request, client_id):
-        client = get_object_or_404(Client, pk=client_id, firm_id=request.firm.pk)
+        client = get_visible_client(request, client_id)
         raw = request.query_params.get("fy")
         if raw:
             try:
@@ -278,7 +319,12 @@ class ReconciliationView(viewsets.GenericViewSet):
     )
     @action(detail=True, methods=["get"])
     def reconciliation(self, request, pk=None):
-        account = get_object_or_404(BankAccount, pk=pk, firm_id=request.firm.pk)
+        account = get_object_or_404(
+            BankAccount,
+            pk=pk,
+            firm_id=request.firm.pk,
+            client__in=visible_client_ids(request.membership),
+        )
         raw = request.query_params.get("as_of")
         if not raw:
             raise serializers.ValidationError({"as_of": "Required, as YYYY-MM-DD."})
@@ -318,6 +364,7 @@ class TallyExportView(viewsets.GenericViewSet):
             Statement.objects.select_related("bank_account__client"),
             pk=pk,
             firm_id=request.firm.pk,
+            bank_account__client__in=visible_client_ids(request.membership),
         )
         result = export_statement(
             statement, company_name=statement.bank_account.client.name

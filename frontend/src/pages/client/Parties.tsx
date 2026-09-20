@@ -1,13 +1,13 @@
 import { useState, type FormEvent } from 'react'
 import { allPages, api, V1 } from '../../api/client'
-import type { Client, Vendor } from '../../api/types'
+import type { Client, Party } from '../../api/types'
 import { TDS_SECTIONS } from '../../api/types'
 import { useSession } from '../../auth/session'
 import { Badge, Button, Empty, ErrorNote, Field, Spinner, useAsync } from '../../components/ui'
 
-export default function Vendors({ client }: { client: Client }) {
+export default function Parties({ client }: { client: Client }) {
   const { can } = useSession()
-  const vendors = useAsync(() => allPages<Vendor>(`${V1}/clients/${client.id}/vendors/`), [client.id])
+  const parties = useAsync(() => allPages<Party>(`${V1}/clients/${client.id}/parties/`), [client.id])
   const [name, setName] = useState('')
   const [gstin, setGstin] = useState('')
   const [rcm, setRcm] = useState(false)
@@ -20,12 +20,12 @@ export default function Vendors({ client }: { client: Client }) {
     setBusy(true)
     setError(null)
     try {
-      await api.post(`${V1}/clients/${client.id}/vendors/`, { canonical_name: name.trim(), gstin: gstin.trim().toUpperCase(), rcm_default: rcm, tds_section: tds })
+      await api.post(`${V1}/clients/${client.id}/parties/`, { canonical_name: name.trim(), gstin: gstin.trim().toUpperCase(), rcm_default: rcm, tds_section: tds })
       setName('')
       setGstin('')
       setRcm(false)
       setTds('')
-      vendors.reload()
+      parties.reload()
     } catch (err) {
       setError(err)
     } finally {
@@ -35,7 +35,7 @@ export default function Vendors({ client }: { client: Client }) {
 
   return (
     <>
-      {can('vendor.manage') && (
+      {can('party.manage') && (
         <div className="panel">
           <div className="panel-head">
             <h2>Add a party</h2>
@@ -75,12 +75,12 @@ export default function Vendors({ client }: { client: Client }) {
       <div className="panel">
         <div className="panel-head">
           <h2>Parties</h2>
-          <span className="sub">{vendors.data?.length ?? 0}</span>
+          <span className="sub">{parties.data?.length ?? 0}</span>
         </div>
-        <ErrorNote error={vendors.error} />
-        {vendors.loading ? (
+        <ErrorNote error={parties.error} />
+        {parties.loading ? (
           <Spinner />
-        ) : !vendors.data?.length ? (
+        ) : !parties.data?.length ? (
           <Empty title="No parties yet">Parties are created here or while placing a row in the review queue.</Empty>
         ) : (
           <div className="table-wrap">
@@ -94,7 +94,7 @@ export default function Vendors({ client }: { client: Client }) {
                 </tr>
               </thead>
               <tbody>
-                {vendors.data.map((v) => (
+                {parties.data.map((v) => (
                   <tr key={v.id}>
                     <td>
                       <strong>{v.canonical_name}</strong> {!v.is_active && <Badge>Inactive</Badge>}

@@ -33,7 +33,7 @@ from __future__ import annotations
 from django.db import models
 
 from banking.models import StatementTransaction
-from classify.models import LedgerAccount, Vendor
+from classify.models import LedgerAccount, Party
 from core.fy import fy_label
 from core.models import Client, FirmScopedModel, User, UUIDModel
 from core.money import format_inr
@@ -83,6 +83,21 @@ class VoucherSequence(UUIDModel, FirmScopedModel):
         return f"{self.voucher_type} {self.financial_year} -> {self.next_number}"
 
 
+class EntryMarker(models.TextChoices):
+    """Why a reviewer might want to look at this entry first.
+
+    Set when the AI did something a person did not ask for, so it can be found
+    among hundreds of entries, and cleared when a person has looked. Purely a
+    finding aid: it changes nothing about what the entry means.
+    """
+
+    NONE = "", "No marker"
+    #: The AI posted this itself because it was very sure. Nobody has looked.
+    AI_POSTED = "AI_POSTED", "Posted by the AI"
+    #: A person corrected a similar entry and the AI applied that lesson here.
+    AI_REVISED = "AI_REVISED", "Changed by the AI after a correction"
+
+
 class JournalEntry(UUIDModel, FirmScopedModel):
     """One approved, permanent accounting entry.
 
@@ -122,6 +137,11 @@ class JournalEntry(UUIDModel, FirmScopedModel):
         User, on_delete=models.PROTECT, null=True, blank=True, related_name="approved_entries"
     )
     approved_at = models.DateTimeField()
+
+    #: See ``EntryMarker``. Blank for an entry a person posted or has reviewed.
+    marker = models.CharField(
+        max_length=12, choices=EntryMarker.choices, blank=True, default=EntryMarker.NONE
+    )
 
     class Meta:
         db_table = "ledger_journal_entry"
@@ -165,8 +185,8 @@ class JournalLine(UUIDModel, FirmScopedModel):
     ledger_account = models.ForeignKey(
         LedgerAccount, on_delete=models.PROTECT, related_name="journal_lines"
     )
-    vendor = models.ForeignKey(
-        Vendor, on_delete=models.PROTECT, null=True, blank=True, related_name="journal_lines"
+    party = models.ForeignKey(
+        Party, on_delete=models.PROTECT, null=True, blank=True, related_name="journal_lines"
     )
 
     direction = models.CharField(max_length=2, choices=Direction.choices)
@@ -224,3 +244,74 @@ class JournalLine(UUIDModel, FirmScopedModel):
             signed_paise=amount if direction == Direction.DEBIT else -amount,
             **extra,
         )
+
+
+class BooksAction(models.TextChoices):
+    REQUESTED = "REQUESTED", "Approval requested"
+    RETURNED = "RETURNED", "Returned for changes"
+    SIGNED_OFF = "SIGNED_OFF", "Signed off"
+    REOPENED = "REOPENED", "Reopened"
+
+
+class BooksEvent(UUIDModel, FirmScopedModel):
+    """One step in getting a client's books signed off. Append-only.
+
+    The books move through three states -- open, waiting for the senior, locked --
+    and this is the record of every move between them. The current state is read
+    off the latest event rather than stored, so it cannot disagree with its own
+    history.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="books_events")
+    action = models.CharField(max_length=12, choices=BooksAction.choices)
+    #: The date the books are (or were) signed off through. Set on SIGNED_OFF
+    #: and REOPENED; the date a request covers is the latest entry, so blank there.
+    through_date = models.DateField(null=True, blank=True)
+    note = models.TextField(blank=True, default="")
+    actor = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True, related_name="+")
+
+    class Meta:
+        db_table = "ledger_books_event"
+        ordering = ["created_at"]
+        indexes = [models.Index(fields=["firm", "client", "created_at"], name="idx_books_event")]
+
+    def __str__(self) -> str:
+        return f"{self.get_action_display()} {self.through_date or ''}".strip()
+
+
+class ChangeAction(models.TextChoices):
+    EDITED = "EDITED", "Ledger changed"
+    REMOVED = "REMOVED", "Entry removed"
+    AI_REVISED = "AI_REVISED", "Revised by the AI after a correction"
+    RENUMBERED = "RENUMBERED", "Voucher renumbered at sign-off"
+
+
+class EntryChange(UUIDModel, FirmScopedModel):
+    """What an entry looked like before somebody changed or removed it. Append-only.
+
+    Until sign-off an entry may be edited or deleted, which is what a working
+    draft needs and exactly what an audit trail must not lose. So every change
+    leaves the entry's previous state here -- who, when, why, and the complete
+    before -- and a removed entry is recoverable from it. ``entry_id`` is a plain
+    id, not a foreign key: the whole point is that the entry may no longer exist.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="entry_changes")
+    entry_id = models.UUIDField(db_index=True)
+    voucher_type = models.CharField(max_length=16)
+    entry_no = models.PositiveIntegerField()
+    entry_date = models.DateField()
+    action = models.CharField(max_length=12, choices=ChangeAction.choices)
+    before = models.JSONField(default=dict)
+    after = models.JSONField(default=dict, blank=True)
+    note = models.TextField(blank=True, default="")
+    #: Null when the change was the AI's own.
+    actor = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True, related_name="+")
+
+    class Meta:
+        db_table = "ledger_entry_change"
+        ordering = ["created_at"]
+        indexes = [models.Index(fields=["firm", "client", "created_at"], name="idx_entry_change")]
+
+    def __str__(self) -> str:
+        return f"{self.get_action_display()} {self.voucher_type} #{self.entry_no}"

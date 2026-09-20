@@ -52,8 +52,8 @@ class BankAccount(UUIDModel, FirmScopedModel):
     #: The holder's name as the *bank* prints it, encrypted. Classification
     #: compares narration parties against this to spot transfers between the
     #: client's own accounts; comparing against the firm's label for the client
-    #: misses them, because a client filed as "Ramesh Deshmukh" appears in their
-    #: own NEFT narrations as "Ramesh Gopal Deshmukh".
+    #: misses them, because a client filed as "Arjun Nair" appears in their
+    #: own NEFT narrations as "Arjun Pratap Nair".
     account_holder_enc = models.BinaryField(blank=True, null=True)
 
     ifsc = models.CharField(max_length=16, blank=True)

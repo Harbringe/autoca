@@ -21,7 +21,7 @@ export default function ChartOfAccounts({ client }: { client: Client }) {
   const all = ledgers.data ?? []
   const inUse = all.filter((l) => l.status === 'ACTIVE')
   const proposals = all.filter((l) => l.status === 'PROPOSED')
-  const canDecide = can('journal.approve')
+  const canDecide = can('journal.approve') && client.can_sign_off
 
   async function create(event: FormEvent) {
     event.preventDefault()

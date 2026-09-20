@@ -13,6 +13,7 @@ export type AuthState =
   | { kind: 'anonymous' }
   | { kind: 'mfa'; step: 'setup' | 'verify' }
   | { kind: 'ready'; me: Me }
+  | { kind: 'blocked'; detail: string }
 
 interface SessionValue {
   state: AuthState
@@ -36,6 +37,9 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       if (error instanceof ApiError) {
         if (error.code === 'mfa_enrolment_required') return setState({ kind: 'mfa', step: 'setup' })
         if (error.code === 'mfa_required') return setState({ kind: 'mfa', step: 'verify' })
+        if (error.code === 'no_firm' || error.code === 'firm_inactive') {
+          return setState({ kind: 'blocked', detail: error.message })
+        }
       }
       setState({ kind: 'anonymous' })
     }

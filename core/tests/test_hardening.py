@@ -218,14 +218,14 @@ def test_the_docs_page_gets_the_relaxed_policy_but_still_cannot_be_framed():
     [
         ("PAN ABCPD1234E quoted", "<PAN>"),
         ("GSTIN 27ABCPD1234E1Z5 on invoice", "<GSTIN>"),
-        ("to a/c 911010000004321 via NEFT", "<ACCT>"),
+        ("to a/c 900000000000001 via NEFT", "<ACCT>"),
         ("IFSC UTIB0000123 branch", "<IFSC>"),
         ("call 9876543210 now", "<PHONE>"),
         ("call +91 98765 43210".replace(" ", ""), "<PHONE>"),
         ("aadhaar 2345 6789 0123", "<AADHAAR>"),
         ("CreditCard Payment XX 0000 Ref#GFYPDNWLV474ZO", "<CARD>"),
         ("CRD-PMNT-400000****0000", "<CARD>"),
-        ("mail ramesh@example.com", "<EMAIL>"),
+        ("mail arjun@example.com", "<EMAIL>"),
     ],
 )
 def test_identifiers_are_replaced_with_typed_placeholders(text, placeholder):
@@ -240,8 +240,8 @@ def test_a_gstin_is_masked_whole_not_as_a_pan_with_debris():
 
 def test_what_a_classifier_needs_survives_masking():
     """Channel, payee and remark stay; the reference number goes."""
-    narration = "UPI/P2A/165532563485/MADHUKAR BALAJI JADHAV/Meter/HDFC BANK LTD"
-    assert mask_text(narration) == "UPI/P2A/<ACCT>/MADHUKAR BALAJI JADHAV/Meter/HDFC BANK LTD"
+    narration = "UPI/P2A/100000000003/SURESH KIRAN MENON/Meter/HDFC BANK LTD"
+    assert mask_text(narration) == "UPI/P2A/<ACCT>/SURESH KIRAN MENON/Meter/HDFC BANK LTD"
 
 
 def test_short_numbers_are_left_alone():
@@ -251,7 +251,7 @@ def test_short_numbers_are_left_alone():
 def test_log_records_are_masked_before_they_are_written():
     record = logging.LogRecord(
         "autoca.test", logging.INFO, __file__, 1,
-        "failed for account %s of %s", ("911010000004321", "ABCPD1234E"), None,
+        "failed for account %s of %s", ("900000000000001", "ABCPD1234E"), None,
     )
     assert MaskingFilter().filter(record)
     assert record.getMessage() == "failed for account <ACCT> of <PAN>"

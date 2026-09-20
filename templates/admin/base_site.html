@@ -1,0 +1,28 @@
+{% extends "admin/base.html" %}
+{% comment %}
+Jazzmin supplies the shell; this only paints it in the product's colours.
+Jazzmin's own base_site.html is a bare extends of admin/base.html, so extending
+the same parent layers this on without losing any of its theming.
+
+Only cosmetic. Nothing here changes what the admin shows or who may open it;
+that is core/adminsite.py, core/admin.py and superadmin/admin.py.
+{% endcomment %}
+
+{% block extrastyle %}
+{{ block.super }}
+<style>
+  /* Lifted from frontend/src/styles.css so the panel and the app agree. */
+  :root { --autoca-amber: #fca311; --autoca-navy: #14213d; }
+
+  /* Jazzmin's navbar and sidebar in the product's own navy. */
+  .main-header.navbar, .main-sidebar { background-color: var(--autoca-navy) !important; }
+  .brand-link { border-bottom-color: rgba(255, 255, 255, 0.1) !important; }
+  .brand-link .brand-text { font-weight: 700; letter-spacing: 0.02em; }
+  .nav-sidebar > .nav-item > .nav-link.active,
+  .nav-sidebar .nav-treeview > .nav-item > .nav-link.active {
+    background-color: rgba(255, 255, 255, 0.12) !important;
+    color: #fff !important;
+  }
+  .btn-warning, .bg-warning { background-color: var(--autoca-amber) !important; border-color: var(--autoca-amber) !important; color: var(--autoca-navy) !important; }
+</style>
+{% endblock %}

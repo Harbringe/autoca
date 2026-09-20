@@ -19,6 +19,7 @@ pattern and wire the gate -- before there is real client data to leak.
 
 from __future__ import annotations
 
+import datetime
 import uuid
 
 import pytest
@@ -360,6 +361,7 @@ def _touch(model) -> dict:
         ("next_number", 999),
         ("tds_section", "194C"),
         ("kind", "tampered"),
+        ("created_at", datetime.datetime(2000, 1, 1, tzinfo=datetime.UTC)),
     ):
         if candidate in names:
             return {candidate: value}

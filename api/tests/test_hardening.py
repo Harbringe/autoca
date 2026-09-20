@@ -102,8 +102,8 @@ def test_a_malformed_regex_rule_is_refused(api, client_record):
     assert "Not a valid regex" in response.json()["fields"]["pattern"][0]
 
 
-def test_a_vendor_gstin_is_checked_for_shape_and_check_digit(api, client_record):
-    url = f"{V1}/clients/{client_record.pk}/vendors/"
+def test_a_party_gstin_is_checked_for_shape_and_check_digit(api, client_record):
+    url = f"{V1}/clients/{client_record.pk}/parties/"
     bad = api.post(url, {"canonical_name": "Acme", "gstin": "27AAPFU0939F1ZW"}, format="json")
     assert bad.status_code == 400
     assert "GSTIN" in bad.json()["fields"]["gstin"][0]

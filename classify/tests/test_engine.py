@@ -41,7 +41,7 @@ def client():
     import datetime
 
     firm = create_firm("Classify Test Firm")
-    return create_client(firm, "Ramesh Deshmukh", datetime.date(2025, 4, 1))
+    return create_client(firm, "Arjun Nair", datetime.date(2025, 4, 1))
 
 
 @pytest.fixture
@@ -79,7 +79,7 @@ def test_with_no_rules_every_row_queues_rather_than_guessing(client, statement):
 def test_narration_facts_are_recorded_even_when_nothing_matched(client, statement):
     """The review screen shows why a row is where it is, without re-deriving it."""
     classify_statement(statement)
-    row = queued_for(client, "092928654106")
+    row = queued_for(client, "100000000001")
 
     assert row.channel == Channel.UPI
     assert row.counterparty == "ZERODHA BROKING LIMIT"
@@ -120,12 +120,12 @@ def test_the_learned_rule_keys_on_the_payee_not_the_narration(client, statement)
     classify_statement(statement)
     broker = ledger(client, "ZERODHA", LedgerGroup.INVESTMENT)
 
-    _, rule = review(queued_for(client, "092928654106"), broker)
+    _, rule = review(queued_for(client, "100000000001"), broker)
 
     assert rule.match_type == MatchType.PARTY_EQUALS
     assert rule.pattern == normalise("ZERODHA BROKING LIMIT")
     assert rule.source == RuleSource.LEARNED
-    assert "092928654106" not in rule.pattern
+    assert "100000000001" not in rule.pattern
 
 
 def test_a_learned_rule_carries_forward_to_the_next_statement(client, statement):
@@ -198,34 +198,60 @@ def test_a_new_rule_never_overturns_a_persons_decision(client, statement):
 # ---------------------------------------------------------------------------
 
 
-def test_a_client_rule_beats_a_firm_wide_rule(client, statement):
-    """A firm rule is a generalisation; a client rule is a fact about this client."""
-    firm_wide = ledger(client, "General Expenses")
-    client_specific = ledger(client, "Brokerage")
+def test_a_higher_priority_rule_wins(client, statement):
+    """Between two rules that both claim a row, priority decides."""
+    broad = ledger(client, "General Expenses")
+    specific = ledger(client, "Brokerage")
 
     ClassificationRule.objects.create(
         firm_id=client.firm_id,
-        client=None,
-        ledger=firm_wide,
+        client=client,
+        ledger=broad,
         match_type=MatchType.CHANNEL_IS,
         pattern=Channel.UPI,
-        priority=9999,
+        priority=1,
     )
     ClassificationRule.objects.create(
         firm_id=client.firm_id,
         client=client,
-        ledger=client_specific,
+        ledger=specific,
         match_type=MatchType.PARTY_EQUALS,
         pattern=normalise("ZERODHA BROKING LIMIT"),
-        priority=1,
+        priority=9999,
     )
 
     classify_statement(statement)
     row = TransactionClassification.objects.get(
-        transaction__narration__icontains="092928654106"
+        transaction__narration__icontains="100000000001"
     )
 
-    assert row.ledger_id == client_specific.pk
+    assert row.ledger_id == specific.pk
+
+
+def test_a_sibling_clients_rule_does_not_classify_this_client(client, statement):
+    """Rules do not travel between clients, even inside one firm.
+
+    A rule names a ledger and a ledger belongs to one client, so a rule that
+    reached a sibling would be booking this client's money into another
+    client's books. There is no priority high enough to make that right.
+    """
+    from core.provisioning import create_client
+
+    sibling = create_client(client.firm, "Sibling Client", client.fy_start)
+    sibling_ledger = ledger(sibling, "Sibling Brokerage")
+    ClassificationRule.objects.create(
+        firm_id=client.firm_id,
+        client=sibling,
+        ledger=sibling_ledger,
+        match_type=MatchType.CHANNEL_IS,
+        pattern=Channel.UPI,
+        priority=9999,
+    )
+
+    classify_statement(statement)
+
+    placed = TransactionClassification.objects.filter(ledger=sibling_ledger)
+    assert not placed.exists(), "a sibling client's rule reached into these books"
 
 
 def test_direction_narrows_a_rule(client, statement):

@@ -9,7 +9,7 @@ import pytest
 
 from banking.tests.support import ingest_fixture_statement
 from classify.engine import classify_statement, review, review_queue, unresolved_for
-from classify.llm import LLM_CONFIDENCE_CAP, recategorize, suggest_unresolved
+from classify.llm import recategorize, suggest_unresolved
 from classify.models import ClassificationMethod, LedgerAccount, LedgerGroup, TransactionClassification
 from classify.seeds import seed_client
 from classify.treatment import ReviewBand
@@ -63,7 +63,7 @@ def scripted(settings):
 @pytest.fixture
 def client():
     firm = create_firm("LLM Test Firm")
-    return create_client(firm, "Ramesh Deshmukh", datetime.date(2025, 4, 1))
+    return create_client(firm, "Arjun Nair", datetime.date(2025, 4, 1))
 
 
 @pytest.fixture
@@ -89,31 +89,102 @@ def test_without_a_provider_nothing_happens(client, classified):
         assert unresolved_for(client).count() == before
 
 
-def test_a_confident_suggestion_lands_in_the_advised_band_never_high(client, classified, scripted):
-    scripted.script = {"Meter": {"ledger": "Electricity", "confidence": 0.99, "rationale": "Remark says meter."}}
+def test_a_confident_booking_is_ready_to_post_with_its_narration(client, classified, scripted):
+    scripted.script = {"Meter": {
+        "ledger": "Electricity", "confidence": 0.99, "rationale": "Remark says meter.",
+        "narration": "Being electricity charges paid to MSEDCL vide UPI",
+    }}
     with firm_context(client.firm_id):
         outcome = suggest_unresolved(client)
         assert outcome.suggested >= 1
         row = review_queue(client).filter(method=ClassificationMethod.LLM).first()
         assert row is not None
         assert row.ledger.name == "Electricity"
-        assert row.confidence == LLM_CONFIDENCE_CAP
-        assert row.review_band == ReviewBand.ADVISED
-        assert row.needs_review
+        assert row.confidence == 0.99
+        assert row.review_band == ReviewBand.HIGH
+        assert row.needs_review  # a person still signs
         assert row.rationale == "Remark says meter."
-        # and it is not in the bulk-approvable set
-        assert not review_queue(client, ReviewBand.HIGH).filter(pk=row.pk).exists()
+        assert row.book_narration == "Being electricity charges paid to MSEDCL vide UPI"
+        assert row.open_question == ""
+        assert review_queue(client, ReviewBand.HIGH).filter(pk=row.pk).exists()
 
 
-def test_an_unsure_model_does_not_place_the_row(client, classified, scripted):
-    scripted.script = {"*": {"ledger": "Electricity", "confidence": 0.4, "rationale": "Could be anything."}}
+def test_a_decline_keeps_the_question_for_the_client(client, classified, scripted):
+    scripted.script = {"*": {
+        "ledger": None, "confidence": 0, "rationale": "No remark, unknown person.",
+        "question": "Who is this transfer to, and what was it for?",
+    }}
+    with firm_context(client.firm_id):
+        suggest_unresolved(client)
+        row = unresolved_for(client).first()
+        assert row.open_question == "Who is this transfer to, and what was it for?"
+        assert row.ledger is None
+
+
+def test_a_rule_placed_row_gains_the_models_narration_but_keeps_the_rule(client, classified, scripted):
+    with firm_context(client.firm_id):
+        rule_row = review_queue(client).filter(method=ClassificationMethod.RULE).select_related("ledger").first()
+        assert rule_row is not None
+        scripted.script = {"*": {
+            "ledger": rule_row.ledger.name, "confidence": 0.9, "narration": "Being as the rule says",
+        }}
+        recategorize(client)
+        rule_row.refresh_from_db()
+        assert rule_row.method == ClassificationMethod.RULE
+        assert rule_row.book_narration == "Being as the rule says"
+
+
+def test_an_unsure_model_places_a_flagged_best_guess(client, classified, scripted):
+    """Unsure is not blank: the row gets a ledger, flagged, with the question."""
+    scripted.script = {"*": {
+        "ledger": "Electricity", "confidence": 0.4, "rationale": "Could be anything.",
+        "question": "Is this an electricity bill?",
+    }}
     with firm_context(client.firm_id):
         before = unresolved_for(client).count()
         outcome = suggest_unresolved(client)
+        assert outcome.suggested == before and outcome.declined == 0
+        row = review_queue(client).filter(method=ClassificationMethod.LLM).first()
+        assert row.ledger.name == "Electricity"
+        assert row.review_band == ReviewBand.JUDGEMENT, "a guess must never look bulk-approvable"
+        assert row.needs_review
+        assert row.open_question == "Is this an electricity bill?"
+        assert row.rationale == "Could be anything."
+
+
+def test_a_guess_never_displaces_a_rule(client, classified, scripted):
+    """A rule is somebody's decision; a hunch does not overrule it."""
+    with firm_context(client.firm_id):
+        rule_row = TransactionClassification.objects.filter(
+            method=ClassificationMethod.RULE
+        ).first()
+        original = rule_row.ledger_id
+        scripted.script = {"*": {"ledger": "Electricity", "confidence": 0.3}}
+        recategorize(client)
+        rule_row.refresh_from_db()
+        assert rule_row.method == ClassificationMethod.RULE
+        assert rule_row.ledger_id == original
+
+
+def test_the_model_may_not_park_a_row_in_suspense(client, classified, scripted):
+    """Suspense is where nobody decided; a model that may pick it always will."""
+    scripted.script = {"*": {"ledger": "Suspense A/c", "confidence": 0.9}}
+    with firm_context(client.firm_id):
+        outcome = suggest_unresolved(client)
         assert outcome.suggested == 0
-        assert outcome.declined == before
-        assert unresolved_for(client).count() == before
-        assert unresolved_for(client).first().rationale == "Could be anything."
+        assert not review_queue(client).filter(ledger__name="Suspense A/c").exists()
+    offered = [ledger["name"] for ledger in scripted.prompts[0]["ledgers"]]
+    assert "Suspense A/c" not in offered
+
+
+def test_a_low_confidence_guess_does_not_open_a_new_ledger(client, classified, scripted):
+    scripted.script = {"*": {
+        "ledger": None, "confidence": 0.4,
+        "new_ledger": {"name": "Brand New Ledger", "group": "INDIRECT_EXPENSE"},
+    }}
+    with firm_context(client.firm_id):
+        suggest_unresolved(client)
+        assert not LedgerAccount.objects.filter(client=client, name="Brand New Ledger").exists()
 
 
 def test_an_invented_ledger_is_discarded(client, classified, scripted):
@@ -133,7 +204,7 @@ def test_a_provider_failure_is_reported_not_raised(client, classified, scripted)
         assert unresolved_for(client).count() == before
 
 
-def test_the_prompt_carries_no_identifiers_or_exact_amounts(client, classified, scripted):
+def test_the_prompt_carries_no_identifiers_or_names(client, classified, scripted):
     scripted.script = {}
     with firm_context(client.firm_id):
         suggest_unresolved(client)
@@ -144,9 +215,10 @@ def test_the_prompt_carries_no_identifiers_or_exact_amounts(client, classified, 
         for token in row.narration.split("/"):
             if token.isdigit() and len(token) >= 9:
                 assert token not in text
-        assert str(row.amount_paise) not in text
-    assert "MADHUKAR" not in text  # a person named in the fixture statement
-    assert "Deshmukh" not in text and "DESHMUKH" not in text  # the account holder
+    # exact amounts and dates do go out: a bookkeeper needs them
+    assert any("amount" in t and "date" in t for p in scripted.prompts for t in p["transactions"])
+    assert "SURESH" not in text  # a person named in the fixture statement
+    assert "Nair" not in text and "NAIR" not in text  # the account holder
 
 
 def test_recategorize_keeps_an_agreeing_rule_and_flags_a_disagreement(client, classified, scripted):
@@ -239,3 +311,19 @@ def test_batches_share_one_call_per_batch(client, classified, scripted, settings
         n = unresolved_for(client).count()
         suggest_unresolved(client)
     assert len(scripted.prompts) == -(-n // 5)
+
+
+def test_the_business_profile_reaches_the_model_masked(client, classified, scripted):
+    with firm_context(client.firm_id):
+        client.business_profile = "Wholesale cloth trader. GSTIN 27ABCDE1234F1Z5, pays rent on a godown."
+        client.save(update_fields=["business_profile"])
+        suggest_unresolved(client)
+    business = scripted.prompts[0]["business"]
+    assert "cloth trader" in business and "godown" in business
+    assert "27ABCDE1234F1Z5" not in business
+
+
+def test_no_business_profile_means_no_business_key(client, classified, scripted):
+    with firm_context(client.firm_id):
+        suggest_unresolved(client)
+    assert "business" not in scripted.prompts[0]

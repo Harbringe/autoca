@@ -14,8 +14,10 @@ export interface Me {
   email: string
   full_name: string
   firm: Firm | null
+  membership_id: string | null
   role: string | null
   role_display: string | null
+  is_owner: boolean
   permissions: string[]
 }
 
@@ -23,7 +25,13 @@ export interface Client {
   id: string
   name: string
   fy_start: string
+  /** What the business does, in the CA's words; read by the ledger-suggesting model. */
+  business_profile: string
   created_at: string
+  lead: { id: string; name: string } | null
+  /** May approve and correct this client's entries: its lead, or a firm admin. */
+  can_sign_off: boolean
+  can_post: boolean
 }
 
 export type JobStatus = 'PENDING' | 'RUNNING' | 'SUCCEEDED' | 'FAILED'
@@ -117,14 +125,44 @@ export interface Transaction {
 export type ReviewBand = 'HIGH' | 'ADVISED' | 'JUDGEMENT'
 export type Method = 'RULE' | 'UNRESOLVED' | 'REVIEWED' | 'LLM'
 
+// A suggestion for who a payee is. Never applied on its own -- a person
+// confirms it, and only then is the spelling remembered.
+export interface PartyCandidate {
+  party: string
+  name: string
+  score: number
+  why: string
+  source: string
+}
+
+// One side of the entry a transaction makes. Every transaction touches two
+// accounts -- the bank and whatever the money was for -- so a row always has
+// exactly two legs, and an unplaced row shows the missing one as null.
+export interface EntryLeg {
+  side: 'Dr' | 'Cr'
+  ledger: string | null
+  group?: string | null
+  is_bank: boolean
+  amount_display: string
+}
+
 export interface Classification {
   id: string
   transaction: Transaction
   ledger: string | null
   ledger_name: string | null
   ledger_status: LedgerStatus | null
-  vendor: string | null
-  vendor_name: string | null
+  ledger_group: string | null
+  ledger_group_display: string | null
+  ledger_opened_by_model: boolean
+  voucher_type: 'Payment' | 'Receipt' | 'Contra' | 'Journal' | null
+  entry_legs: EntryLeg[]
+  book_narration: string
+  open_question: string
+  party: string | null
+  party_name: string | null
+  party_resolution: '' | 'AUTO' | 'CANDIDATE' | 'NEW' | 'CONFIRMED'
+  party_candidates: PartyCandidate[]
   rcm: boolean
   tds_section: string
   method: Method
@@ -212,7 +250,7 @@ export interface LedgerAccount {
 
 export type LedgerStatus = 'ACTIVE' | 'PROPOSED' | 'REJECTED'
 
-export interface Vendor {
+export interface Party {
   id: string
   canonical_name: string
   alias_token: string
@@ -228,7 +266,7 @@ export interface Rule {
   client: string | null
   ledger: string
   ledger_name: string
-  vendor: string | null
+  party: string | null
   rcm: boolean
   tds_section: string
   match_type: string
@@ -247,8 +285,8 @@ export interface JournalLine {
   id: string
   ledger_account: string
   ledger_name: string
-  vendor: string | null
-  vendor_name: string | null
+  party: string | null
+  party_name: string | null
   direction: 'DR' | 'CR'
   amount_paise: number
   amount_display: string
@@ -361,4 +399,78 @@ export interface Page<T> {
   next: string | null
   previous: string | null
   results: T[]
+}
+
+// --- GST reconciliation. Money here is paise only; format it with formatPaise. ---
+
+export interface GstRegistration {
+  id: string
+  gstin: string
+  state_code: string
+  registration_type: string
+}
+
+export interface GstRunSummary {
+  id: string
+  registration: string
+  gstin: string
+  period_start: string
+  status: 'draft' | 'signed_off'
+}
+
+export interface GstInvoiceRow {
+  gstin: string
+  invoice_no: string
+  invoice_date: string | null
+  supplier_name: string
+  hsn: string
+  section: string
+  taxable_paise: number
+  igst_paise: number
+  cgst_paise: number
+  sgst_paise: number
+  cess_paise: number
+}
+
+export interface GstMatchRow {
+  id: string
+  itc_status: string
+  eligible_paise: number
+  ineligible_paise: number
+  cause: string
+  action: string
+  timing: boolean
+  differences: Record<string, number>
+  book: GstInvoiceRow | null
+  portal: GstInvoiceRow | null
+  decision: { kind: string; note: string; at: string } | null
+}
+
+export interface GstGroup {
+  kind: string
+  title: string
+  count: number
+  rows: GstMatchRow[]
+}
+
+export interface GstRun {
+  id: string
+  registration: { id: string; gstin: string; state_code: string }
+  period_start: string
+  status: 'draft' | 'signed_off'
+  signed_off_at: string | null
+  has_register: boolean
+  has_portal: boolean
+  summary: {
+    counts: Record<string, number>
+    eligible_paise: number
+    blocked_paise: number
+    ineligible_paise: number
+    rcm_liability_paise: number
+    unclaimed_in_2b_paise: number
+    unresolved: number
+  }
+  groups: GstGroup[]
+  actions: { match: string; text: string }[]
+  gstr3b: { code: string; label: string; igst_paise: number; cgst_paise: number; sgst_paise: number; cess_paise: number }[]
 }

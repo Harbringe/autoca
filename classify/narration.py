@@ -3,7 +3,7 @@
 A narration is not free text. Banks build it from a template, and the template
 says what each slash-separated field means:
 
-    UPI/P2M/092928654106/ZERODHA BROKING LIMIT/098336/HDFC BANK LTD
+    UPI/P2M/100000000001/ZERODHA BROKING LIMIT/098336/HDFC BANK LTD
     ^   ^   ^            ^                     ^      ^
     |   |   reference    counterparty          remark counterparty's bank
     |   person-to-merchant
@@ -106,14 +106,14 @@ def normalise(text: str) -> str:
     A narration is wrapped to the column width in the PDF, and the wrap lands
     mid-token as readily as it lands on a space:
 
-        UPI/P2M/001422314293/GODAVARI_RESTAU
+        UPI/P2M/100000000004/GODAVARI_RESTAU
         RANT_ /Hotel/YES BANK LIMITED YBS
 
     Rejoining that is a coin flip -- a space is right for a payee name split at
     its space, wrong for a merchant name split mid-word -- and getting it wrong
     means the same payee produces two different match keys. Discarding spaces
     entirely makes the question moot, and incidentally makes the bank's own
-    inconsistency (``Ramesh Gopal Deshmukh`` in one row, ``RameshGopalDeshmukh``
+    inconsistency (``Arjun Pratap Nair`` in one row, ``ArjunPratapNair``
     in the next) disappear as well.
 
     This is for matching only. The narration is stored as the bank wrote it.
@@ -133,9 +133,9 @@ def _clean(field: str) -> str:
 # ---------------------------------------------------------------------------
 
 _PATTERNS: list[tuple[str, re.Pattern]] = [
-    # SB:911010000004321:Int.Pd:01-04-2025 to 30-06-2025
+    # SB:900000000000001:Int.Pd:01-04-2025 to 30-06-2025
     (Channel.INTEREST, re.compile(r"^SB:(?P<account>\d+):Int\.(?P<kind>Pd|Coll)", re.I)),
-    # Sweep/VO000000087559330/19000014841287
+    # Sweep/VO000000012345678/19000000000001
     (Channel.SWEEP, re.compile(r"^(?P<kind>SWEEP|AUTOSWEEP|REV SWEEP)\s*[/:](?P<reference>[^/]*)", re.I)),
     # CreditCard Payment XX 0000 Ref#GFYPDNWLV474ZO
     (
@@ -145,12 +145,12 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
     # CRD-PMNT-400000****0000  /  CREDIT BALANCE REFUND 4000000000000000
     (Channel.CARD, re.compile(r"^CRD-PMNT-(?P<instrument>\S+)", re.I)),
     (Channel.CARD, re.compile(r"^CREDIT\s+BALANCE\s+REFUND\s*(?P<instrument>\S+)?", re.I)),
-    # INB/134762494/INTERNET TAX PAYMENT/
+    # INB/100000009/INTERNET TAX PAYMENT/
     (
         Channel.TAX,
         re.compile(r"^INB/(?P<reference>[^/]*)/(?P<counterparty>[^/]*TAX[^/]*)", re.I),
     ),
-    # UPI/P2A/165532563485/MADHUKAR BALAJI JADHAV/Meter/HDFC BANK LTD
+    # UPI/P2A/100000000003/SURESH KIRAN MENON/Meter/HDFC BANK LTD
     (
         Channel.UPI,
         re.compile(
@@ -159,7 +159,7 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
             re.I,
         ),
     ),
-    # IMPS/P2A/534962100164/RameshGopalDeshmukh/X001676/HDFCBANKLTD/
+    # IMPS/P2A/100000000002/ArjunPratapNair/X000001/HDFCBANKLTD/
     (
         Channel.IMPS,
         re.compile(
@@ -168,7 +168,7 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
             re.I,
         ),
     ),
-    # NEFT/MB/AXOMB20402110637/Ramesh Gopal Deshmukh/HDFC BANK/OTHERS
+    # NEFT/MB/AXOMB10000000001/Arjun Pratap Nair/HDFC BANK/OTHERS
     (
         Channel.NEFT,
         re.compile(
@@ -177,7 +177,7 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
             re.I,
         ),
     ),
-    # RTGS/HDFCR52025050266560113/DR RAMESH GOPAL DESHMUK/HDFC BANK///Self//OP
+    # RTGS/HDFCR50000000000000001/DR ARJUN PRATAP NAI/HDFC BANK///Self//OP
     (
         Channel.RTGS,
         re.compile(
@@ -186,12 +186,12 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
             re.I,
         ),
     ),
-    # MOB/TPFT/SUNITA RAMESH D/911010000004322
+    # MOB/TPFT/PRIYA ARJUN N/900000000000002
     (
         Channel.TRANSFER,
         re.compile(r"^MOB/(?:TPFT|TPT)/(?P<counterparty>[^/]*)(?:/(?P<remark>[^/]*))?", re.I),
     ),
-    # TRF/318/SHOBHA GOPAL /Shobha Gopal
+    # TRF/318/MEERA PRATAP /Meera Pratap
     (
         Channel.TRANSFER,
         re.compile(r"^TRF/(?P<reference>\d*)/(?P<counterparty>[^/]*)(?:/(?P<remark>[^/]*))?", re.I),
@@ -208,12 +208,12 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
         Channel.CHEQUE,
         re.compile(r"^Clg/(?P<counterparty>[^/]*)(?:/(?P<counterparty_bank>.*))?", re.I),
     ),
-    # DD ISSUED/DIBG/Medical officer of Health, NWCMC, N
+    # DD ISSUED/DIBG/Medical officer of Health, CMC, N
     (
         Channel.INSTRUMENT,
         re.compile(r"^DD\s+ISSUED/(?P<reference>[^/]*)/(?P<counterparty>.*)", re.I),
     ),
-    # IPPF/0318PPF0000000000092/911010000004321
+    # IPPF/0001PPF0000000000001/900000000000001
     (
         Channel.INSTRUMENT,
         re.compile(r"^(?P<counterparty>IPPF|PPF|RD|TD)/(?P<reference>[^/]*)", re.I),
@@ -303,7 +303,7 @@ def _looks_like_self(raw: str, counterparty: str, account_holder: str, own_accou
     if not account_holder or not counterparty:
         return False
 
-    # Banks run the holder's name together (TusharRangaraoPatil) as readily as
+    # Banks run the holder's name together (MohanDeepakRao) as readily as
     # they space it, so compare on the letters alone.
     holder = re.sub(r"[^A-Z]", "", account_holder.upper())
     other = re.sub(r"[^A-Z]", "", counterparty.upper())
@@ -311,13 +311,13 @@ def _looks_like_self(raw: str, counterparty: str, account_holder: str, own_accou
         return False
 
     # Approximate, not exact, because a bank does not spell its own customer's
-    # name consistently. One real statement carries the holder as TUSHAR RANGRAO
-    # PATIL in the header, Tushar Rangarao Patil in a NEFT narration, and
-    # truncates it to TUSHAR RANGRAO PATI in an RTGS one. Exact or prefix
+    # name consistently. One statement carries the holder as MOHAN DEEPAK RAO
+    # in the header, Mohan Deepak Rao in a NEFT narration, and truncates it to
+    # MOHAN DEEPAK RA in an RTGS one. Exact or prefix
     # matching misses two of those three and books a contra entry as income.
     #
     # The threshold sits where a spelling variant of one name still matches and
-    # a relative sharing a surname does not -- ADITYA RAMESH DESHMUKH against
-    # RAMESH GOPAL DESHMUKH scores well below it. That gap matters: those are
+    # a relative sharing a surname does not -- VIKRAM ARJUN NAIR against
+    # ARJUN PRATAP NAIR scores well below it. That gap matters: those are
     # different people, and one is a contra while the other is drawings.
     return SequenceMatcher(None, holder, other).ratio() >= SELF_NAME_SIMILARITY

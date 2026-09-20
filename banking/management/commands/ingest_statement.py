@@ -1,6 +1,6 @@
 """Run a statement through the whole pipeline from the command line.
 
-    python manage.py ingest_statement --firm <uuid> --client "Ramesh Deshmukh" axis.pdf
+    python manage.py ingest_statement --firm <uuid> --client "Arjun Nair" axis.pdf
     python manage.py ingest_statement --firm <uuid> --client "..." axis.pdf --export books.xml
 
 The firm id is required and cannot be inferred from the client name, because

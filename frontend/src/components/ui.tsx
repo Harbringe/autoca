@@ -27,7 +27,7 @@ export function Badge({ tone = 'neutral', children }: { tone?: 'neutral' | 'good
 
 export function BandBadge({ band }: { band: 'HIGH' | 'ADVISED' | 'JUDGEMENT' }) {
   const tone = band === 'HIGH' ? 'good' : band === 'ADVISED' ? 'warn' : 'bad'
-  const label = band === 'HIGH' ? 'High confidence' : band === 'ADVISED' ? 'Review advised' : 'Needs judgement'
+  const label = band === 'HIGH' ? 'Ready to post' : band === 'ADVISED' ? 'Worth a look' : 'Needs an answer'
   return <Badge tone={tone}>{label}</Badge>
 }
 

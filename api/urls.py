@@ -16,20 +16,23 @@ from __future__ import annotations
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from api.views.audit import AuditLogView
 from api.views.banking import (
     BankAccountViewSet,
     StatementUploadView,
     StatementViewSet,
     TransactionViewSet,
 )
+from api.views.books import BooksView
 from api.views.classify import (
     ClassificationViewSet,
     LedgerAccountViewSet,
     ReviewQueueViewSet,
     RuleViewSet,
-    VendorViewSet,
+    PartyViewSet,
 )
 from api.views.core import ClientViewSet, JobViewSet, MeView
+from api.views.gst import RegistrationViewSet, RunSignOffView, RunViewSet
 from api.views.ledger import (
     ApprovalView,
     JournalEntryViewSet,
@@ -37,6 +40,8 @@ from api.views.ledger import (
     ReportView,
     TallyExportView,
 )
+
+from teams.views import FirmOwnerView, FirmSettingsView
 
 app_name = "api"
 
@@ -55,7 +60,7 @@ per_client = DefaultRouter()
 per_client.register("bank-accounts", BankAccountViewSet, basename="client-bank-account")
 per_client.register("statements", StatementViewSet, basename="client-statement")
 per_client.register("ledgers", LedgerAccountViewSet, basename="client-ledger")
-per_client.register("vendors", VendorViewSet, basename="client-vendor")
+per_client.register("parties", PartyViewSet, basename="client-party")
 per_client.register("rules", RuleViewSet, basename="client-rule")
 per_client.register("review-queue", ReviewQueueViewSet, basename="client-review-queue")
 
@@ -84,6 +89,32 @@ urlpatterns = [
         ApprovalView.as_view({"post": "create"}),
         name="approvals",
     ),
+    path("clients/<uuid:client_id>/books/", BooksView.as_view({"get": "retrieve"}), name="books"),
+    path(
+        "clients/<uuid:client_id>/books/request/",
+        BooksView.as_view({"post": "request_approval"}),
+        name="books-request",
+    ),
+    path(
+        "clients/<uuid:client_id>/books/return/",
+        BooksView.as_view({"post": "return_books"}),
+        name="books-return",
+    ),
+    path(
+        "clients/<uuid:client_id>/books/sign-off/",
+        BooksView.as_view({"post": "sign_off"}),
+        name="books-sign-off",
+    ),
+    path(
+        "clients/<uuid:client_id>/books/reopen/",
+        BooksView.as_view({"post": "reopen"}),
+        name="books-reopen",
+    ),
+    path(
+        "clients/<uuid:client_id>/books/mark-reviewed/",
+        BooksView.as_view({"post": "mark_reviewed"}),
+        name="books-mark-reviewed",
+    ),
     path(
         "clients/<uuid:client_id>/reports/trial-balance/",
         ReportView.as_view({"get": "trial_balance"}),
@@ -99,6 +130,56 @@ urlpatterns = [
         ReportView.as_view({"get": "balance_sheet"}),
         name="report-balance-sheet",
     ),
+    # GST reconciliation -- a removable add-on: delete this block, api/views/gst.py and gst/.
+    path(
+        "clients/<uuid:client_id>/gst/registrations/",
+        RegistrationViewSet.as_view({"get": "list", "post": "create"}),
+        name="gst-registrations",
+    ),
+    path(
+        "clients/<uuid:client_id>/gst/runs/",
+        RunViewSet.as_view({"get": "list", "post": "create"}),
+        name="gst-runs",
+    ),
+    path(
+        "clients/<uuid:client_id>/gst/runs/<uuid:pk>/",
+        RunViewSet.as_view({"get": "retrieve"}),
+        name="gst-run",
+    ),
+    path(
+        "clients/<uuid:client_id>/gst/runs/<uuid:pk>/register/",
+        RunViewSet.as_view({"post": "register"}),
+        name="gst-run-register",
+    ),
+    path(
+        "clients/<uuid:client_id>/gst/runs/<uuid:pk>/portal/",
+        RunViewSet.as_view({"post": "portal"}),
+        name="gst-run-portal",
+    ),
+    path(
+        "clients/<uuid:client_id>/gst/runs/<uuid:pk>/reconcile/",
+        RunViewSet.as_view({"post": "reconcile"}),
+        name="gst-run-reconcile",
+    ),
+    path(
+        "clients/<uuid:client_id>/gst/runs/<uuid:pk>/decisions/",
+        RunViewSet.as_view({"post": "decide"}),
+        name="gst-run-decide",
+    ),
+    path(
+        "clients/<uuid:client_id>/gst/runs/<uuid:pk>/export/",
+        RunViewSet.as_view({"get": "export"}),
+        name="gst-run-export",
+    ),
+    path(
+        "clients/<uuid:client_id>/gst/runs/<uuid:pk>/sign-off/",
+        RunSignOffView.as_view({"post": "create"}),
+        name="gst-run-sign-off",
+    ),
+    path("team/", include("teams.urls")),
+    path("firm/", FirmSettingsView.as_view(), name="firm-settings"),
+    path("firm/owner/", FirmOwnerView.as_view(), name="firm-owner"),
+    path("audit/", AuditLogView.as_view(), name="audit-log"),
     path("", include(root.urls)),
     path("clients/<uuid:client_id>/", include(per_client.urls)),
 ]

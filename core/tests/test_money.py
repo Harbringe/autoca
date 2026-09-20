@@ -45,7 +45,7 @@ def test_an_amount_finer_than_a_paisa_is_refused():
 
 def test_a_narration_is_not_an_amount():
     with pytest.raises(MoneyError, match="Not a money value"):
-        to_paise("Sweep/VO000000087559330")
+        to_paise("Sweep/VO000000012345678")
 
 
 def test_rupees_round_trip_exactly():

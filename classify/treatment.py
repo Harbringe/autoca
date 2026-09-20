@@ -8,16 +8,16 @@ things at once:
 * which **party** it was with, where there is an identifiable one. The
   requirements document is explicit that a ledger head alone is not usable
   output: the ledger-and-party distinction is standard, and dropping it means a
-  firm cannot answer "how much did we pay this vendor this year" without
+  firm cannot answer "how much did we pay this party this year" without
   re-reading narrations;
 * whether **reverse charge** applies, making the client liable for the GST
-  rather than the vendor -- goods transport, legal services, purchases from
+  rather than the party -- goods transport, legal services, purchases from
   unregistered dealers;
 * which **TDS section** applies, if the payment type crosses its threshold.
 
 These travel together because they are learned together. The architecture is
 specific about this: RCM and TDS treatments ride along in the memory row, so
-"this vendor is reverse-charge" is decided once per client and then applied,
+"this party is reverse-charge" is decided once per client and then applied,
 which is exactly the memory behaviour the requirements document asks for.
 
 Carrying them as one object rather than four parameters is not tidiness. It is
@@ -63,8 +63,8 @@ class Treatment:
     """One complete accounting decision about a transaction."""
 
     ledger: object
-    vendor: object = None
-    #: True when the client, as recipient, pays the GST instead of the vendor.
+    party: object = None
+    #: True when the client, as recipient, pays the GST instead of the party.
     rcm: bool = False
     #: Blank when no TDS applies. A section number, e.g. "194J".
     tds_section: str = ""
@@ -87,7 +87,7 @@ class Treatment:
             return False
         return (
             getattr(other, "ledger_id", None) == getattr(self.ledger, "pk", None)
-            and getattr(other, "vendor_id", None) == getattr(self.vendor, "pk", None)
+            and getattr(other, "party_id", None) == getattr(self.party, "pk", None)
             and bool(getattr(other, "rcm", False)) == self.rcm
             and (getattr(other, "tds_section", "") or "") == self.tds_section
         )
@@ -96,7 +96,7 @@ class Treatment:
         """The four columns, for writing onto a rule or a classification."""
         return {
             "ledger": self.ledger,
-            "vendor": self.vendor,
+            "party": self.party,
             "rcm": self.rcm,
             "tds_section": self.tds_section,
         }

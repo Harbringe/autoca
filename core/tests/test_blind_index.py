@@ -17,7 +17,7 @@ from core.crypto import blind_index
 
 FIRM_A = uuid.UUID("11111111-1111-1111-1111-111111111111")
 FIRM_B = uuid.UUID("22222222-2222-2222-2222-222222222222")
-ACCOUNT = "318010100007214"
+ACCOUNT = "123456789012345"
 
 
 def test_the_same_value_indexes_the_same_way():

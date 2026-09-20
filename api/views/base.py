@@ -17,11 +17,11 @@ a 404 rather than an empty list, so a typo in an id is visible immediately.
 
 from __future__ import annotations
 
-from django.shortcuts import get_object_or_404
 from rest_framework import viewsets
 
 from api.pagination import DefaultPagination
 from api.permissions import HasFirmPermission
+from core.access import get_visible_client
 from core.models import Client
 
 
@@ -42,9 +42,7 @@ class ClientScopedMixin:
     @property
     def client(self) -> Client:
         if not hasattr(self, "_client"):
-            self._client = get_object_or_404(
-                Client, pk=self.kwargs["client_id"], firm_id=self.request.firm.pk
-            )
+            self._client = get_visible_client(self.request, self.kwargs["client_id"])
         return self._client
 
     def get_queryset(self):

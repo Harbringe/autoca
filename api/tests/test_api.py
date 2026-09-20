@@ -66,8 +66,11 @@ def test_me_reports_the_firm_and_the_permissions(api, senior):
     assert "journal.approve" in body["permissions"]
 
 
-def test_a_staff_session_does_not_claim_it_can_approve(staff_api):
-    assert "journal.approve" not in staff_api.get(f"{V1}/me/").json()["permissions"]
+def test_a_staff_session_can_post_but_does_not_claim_it_can_sign_off(staff_api):
+    permissions = staff_api.get(f"{V1}/me/").json()["permissions"]
+    assert "journal.approve" in permissions
+    assert "books.request" in permissions
+    assert "books.sign_off" not in permissions
 
 
 # ---------------------------------------------------------------------------
@@ -128,7 +131,7 @@ def test_transaction_rows_carry_both_forms_too(api, client_record, statement):
     first = rows[0]
     assert first["debit_paise"] == 250_00
     assert first["debit_display"] == "₹250.00"
-    assert first["narration"] == "Sweep/VO000000087559330/19000014841287"
+    assert first["narration"] == "Sweep/VO000000012345678/19000000000001"
 
 
 # ---------------------------------------------------------------------------
@@ -273,13 +276,20 @@ def test_a_read_only_member_cannot_place_a_row(reader, client_record, statement)
 # ---------------------------------------------------------------------------
 
 
-def test_staff_cannot_approve(staff_api, client_record, statement):
+def test_staff_can_approve_what_they_have_worked(staff_api, client_record, statement):
+    """Posting is the CA's; what a senior holds back is signing the books off."""
     response = staff_api.post(
         f"{V1}/clients/{client_record.pk}/approvals/", {"band": ReviewBand.HIGH}, format="json"
     )
 
+    assert response.status_code == 201
+    assert JournalEntry.objects.count() == 4
+
+
+def test_staff_cannot_sign_the_books_off(staff_api, client_record, statement):
+    response = staff_api.post(f"{V1}/clients/{client_record.pk}/books/sign-off/", {}, format="json")
+
     assert response.status_code == 403
-    assert JournalEntry.objects.count() == 0
 
 
 def test_a_senior_ca_can_bulk_approve_a_band(api, client_record, statement):
@@ -326,9 +336,31 @@ def test_a_posted_entry_cannot_be_reached_by_any_write_verb(api, client_record, 
     assert api.delete(f"{V1}/journal-entries/{entry.pk}/").status_code == 405
 
 
-def test_a_correction_is_a_new_entry_and_the_original_survives(api, client_record, statement):
+def test_correcting_an_unsigned_entry_changes_it_in_place(api, client_record, statement):
     api.post(f"{V1}/clients/{client_record.pk}/approvals/", {"band": ReviewBand.HIGH}, format="json")
     original = JournalEntry.objects.first()
+    elsewhere = ledger(client_record, "Other Income", LedgerGroup.INDIRECT_INCOME)
+
+    response = api.post(
+        f"{V1}/journal-entries/{original.pk}/correct/",
+        {"treatment": {"ledger": str(elsewhere.pk)}},
+        format="json",
+    )
+
+    assert response.status_code == 201
+    assert response.json()["id"] == str(original.pk)
+    assert response.json()["supersedes"] is None
+    assert api.get(f"{V1}/journal-entries/{original.pk}/").json()["is_superseded"] is False
+
+
+def test_a_correction_to_signed_off_books_is_a_new_entry_and_the_original_survives(
+    api, client_record, statement
+):
+    api.post(f"{V1}/clients/{client_record.pk}/approvals/", {"band": ReviewBand.HIGH}, format="json")
+    original = JournalEntry.objects.first()
+    type(client_record).objects.filter(pk=client_record.pk).update(
+        signed_off_through=original.entry_date
+    )
     elsewhere = ledger(client_record, "Other Income", LedgerGroup.INDIRECT_INCOME)
 
     response = api.post(
@@ -431,8 +463,8 @@ def test_the_account_detail_shows_the_number_but_the_list_does_not(api, client_r
     detail = api.get(f"{base}{account.pk}/").json()
 
     assert "account_number" not in listed
-    assert listed["account_last4"] == "4321"
-    assert detail["account_number"] == "911010000004321"
+    assert listed["account_last4"] == "0001"
+    assert detail["account_number"] == "900000000000001"
 
 
 def _proposal(client_record):
@@ -467,7 +499,7 @@ def test_rows_cannot_be_placed_by_hand_in_a_proposed_ledger(api, client_record, 
     row = api.get(f"{V1}/clients/{client_record.pk}/review-queue/?stage=unresolved").json()["results"][0]
     response = api.post(
         f"{V1}/classifications/{row['id']}/review/",
-        {"ledger": str(rent.pk), "vendor": None, "rcm": False, "tds_section": "", "learn": False},
+        {"ledger": str(rent.pk), "party": None, "rcm": False, "tds_section": "", "learn": False},
         format="json",
     )
     assert response.status_code == 400
@@ -489,3 +521,147 @@ def test_renaming_the_bank_ledger_moves_the_ledger_and_reports_posted_lines(api,
     assert body["posted_lines"] > 0
     names = {l["name"] for l in api.get(f"{V1}/clients/{client_record.pk}/ledgers/").json()["results"]}
     assert "Axis Bank Savings" in names and account["ledger_name"] not in names
+
+
+# ---------------------------------------------------------------------------
+# Who the payee is
+# ---------------------------------------------------------------------------
+
+
+def _party(client_record, name):
+    from classify.models import Party
+
+    return Party.objects.create(firm_id=client_record.firm_id, client=client_record, canonical_name=name)
+
+
+def test_a_queue_row_says_who_the_payee_might_be(api, client_record, statement):
+    row = review_queue(client_record).filter(counterparty="NPCI BHIM").first()
+
+    body = api.get(f"{V1}/classifications/{row.pk}/").json()
+
+    assert "party_resolution" in body
+    assert body["party_candidates"] == []
+
+
+def test_confirming_a_party_covers_every_row_for_that_spelling(api, client_record, statement):
+    from classify.models import PartyAlias
+
+    party = _party(client_record, "NPCI Cashback")
+    row = review_queue(client_record).filter(counterparty="NPCI BHIM").first()
+
+    response = api.post(
+        f"{V1}/classifications/{row.pk}/confirm-party/", {"party": str(party.pk)}, format="json"
+    )
+
+    body = response.json()
+    assert response.status_code == 200
+    assert body["party"] == str(party.pk)
+    assert body["party_resolution"] == "CONFIRMED"
+    # The other eight cashbacks are the same spelling, so the same payee.
+    siblings = review_queue(client_record).filter(counterparty="NPCI BHIM").exclude(pk=row.pk)
+    assert siblings.count() == 8
+    assert {s.party_resolution for s in siblings} == {"AUTO"}
+    assert {s.party_id for s in siblings} == {party.pk}
+    assert PartyAlias.objects.filter(client=client_record, party=party).count() == 1
+
+
+def test_confirming_a_party_does_not_place_the_row_in_a_ledger(api, client_record, statement):
+    party = _party(client_record, "NPCI Cashback")
+    row = review_queue(client_record).filter(counterparty="NPCI BHIM").first()
+
+    body = api.post(
+        f"{V1}/classifications/{row.pk}/confirm-party/", {"party": str(party.pk)}, format="json"
+    ).json()
+
+    assert body["ledger"] is None
+    assert body["method"] == "UNRESOLVED"
+
+
+def test_a_read_only_member_cannot_confirm_a_party(reader, client_record, statement):
+    party = _party(client_record, "NPCI Cashback")
+    row = review_queue(client_record).first()
+
+    response = sign_in(reader.user).post(
+        f"{V1}/classifications/{row.pk}/confirm-party/", {"party": str(party.pk)}, format="json"
+    )
+
+    assert response.status_code == 403
+
+
+def test_a_party_belonging_to_another_client_is_not_found(api, client_record, statement, firm):
+    other = create_client(firm, "Other Client", datetime.date(2025, 4, 1))
+    stranger = _party(other, "Somebody Else")
+    row = review_queue(client_record).first()
+
+    response = api.post(
+        f"{V1}/classifications/{row.pk}/confirm-party/", {"party": str(stranger.pk)}, format="json"
+    )
+
+    assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Every transaction touches two accounts
+# ---------------------------------------------------------------------------
+
+
+def test_a_row_shows_both_sides_of_its_entry(api, client_record, statement):
+    """Money out debits the other ledger and credits the bank; money in reverses it."""
+    target = ledger(client_record, "Office Expenses")
+    rows = api.get(f"{V1}/clients/{client_record.pk}/review-queue/").json()["results"]
+    paid = next(r for r in rows if r["transaction"]["is_debit"])
+
+    unplaced = paid["entry_legs"]
+    assert [leg["side"] for leg in unplaced] == ["Dr", "Cr"]
+    assert unplaced[0]["ledger"] is None, "the missing side must be visible, not omitted"
+    assert unplaced[1]["is_bank"] is True
+
+    api.post(f"{V1}/classifications/{paid['id']}/review/",
+             {"ledger": str(target.pk), "rcm": False, "learn": False}, format="json")
+    placed = api.get(f"{V1}/classifications/{paid['id']}/").json()["entry_legs"]
+    assert (placed[0]["side"], placed[0]["ledger"]) == ("Dr", "Office Expenses")
+    assert (placed[1]["side"], placed[1]["is_bank"]) == ("Cr", True)
+    assert placed[0]["amount_display"] == placed[1]["amount_display"]
+
+
+def test_money_received_debits_the_bank(api, client_record, statement):
+    rows = api.get(f"{V1}/clients/{client_record.pk}/review-queue/").json()["results"]
+    received = next(r for r in rows if not r["transaction"]["is_debit"])
+
+    legs = received["entry_legs"]
+
+    assert (legs[0]["side"], legs[0]["is_bank"]) == ("Dr", True)
+    assert legs[1]["side"] == "Cr"
+
+
+# ---------------------------------------------------------------------------
+# Taking back a statement uploaded by mistake
+# ---------------------------------------------------------------------------
+
+
+def test_staff_can_remove_a_wrongly_uploaded_statement(staff_api, client_record, statement):
+    from banking.models import Statement
+
+    response = staff_api.delete(f"{V1}/clients/{client_record.pk}/statements/{statement.pk}/")
+
+    assert response.status_code == 200
+    assert response.json()["rows"] > 0
+    assert not Statement.objects.filter(pk=statement.pk).exists()
+
+
+def test_a_statement_in_signed_off_books_cannot_be_removed(
+    api, staff_api, client_record, statement
+):
+    from banking.models import Statement
+
+    api.post(f"{V1}/clients/{client_record.pk}/approvals/", {"band": ReviewBand.HIGH}, format="json")
+    entry = JournalEntry.objects.first()
+    type(client_record).objects.filter(pk=client_record.pk).update(
+        signed_off_through=entry.entry_date
+    )
+
+    response = staff_api.delete(f"{V1}/clients/{client_record.pk}/statements/{statement.pk}/")
+
+    assert response.status_code == 409
+    assert response.json()["code"] == "entry_locked"
+    assert Statement.objects.filter(pk=statement.pk).exists()

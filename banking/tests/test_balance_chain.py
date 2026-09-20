@@ -26,7 +26,7 @@ def _statement(**overrides) -> ParsedStatement:
     """A two-row statement that balances, unless an override breaks it."""
     defaults = {
         "bank_code": "AXIS",
-        "account_number": "911010000004321",
+        "account_number": "900000000000001",
         "period_start": datetime.date(2025, 4, 1),
         "period_end": datetime.date(2026, 3, 31),
         "opening_balance_paise": 1000_00,
@@ -35,14 +35,14 @@ def _statement(**overrides) -> ParsedStatement:
             ParsedTransaction(
                 row_number=1,
                 date=datetime.date(2025, 4, 13),
-                narration="Sweep/VO000000087559330",
+                narration="Sweep/VO000000012345678",
                 debit_paise=250_00,
                 balance_paise=750_00,
             ),
             ParsedTransaction(
                 row_number=2,
                 date=datetime.date(2025, 5, 2),
-                narration="NEFT/MB/AXOMB20402110637",
+                narration="NEFT/MB/AXOMB10000000001",
                 credit_paise=400_00,
                 balance_paise=1150_00,
             ),
@@ -69,7 +69,7 @@ def test_a_debit_read_as_a_credit_is_caught():
     flipped = ParsedTransaction(
         row_number=1,
         date=datetime.date(2025, 4, 13),
-        narration="Sweep/VO000000087559330",
+        narration="Sweep/VO000000012345678",
         credit_paise=250_00,  # was a debit
         balance_paise=750_00,
     )

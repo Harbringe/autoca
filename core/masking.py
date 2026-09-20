@@ -29,7 +29,7 @@ kind of thing that was there is useful to a classifier and to a person reading a
 log, while the value is not.
 
 What is *not* masked here: names. A person's name is not regex-detectable, and
-the classifier handles it a different way -- known vendors are swapped for their
+the classifier handles it a different way -- known parties are swapped for their
 alias token, and everything else about a counterparty that a model needs is its
 channel and shape. See ``classify/pseudonymise.py``.
 """

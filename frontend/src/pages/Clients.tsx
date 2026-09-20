@@ -6,7 +6,7 @@ import { useSession } from '../auth/session'
 import { Button, Empty, ErrorNote, Field, formatDate, Modal, Spinner, useAsync } from '../components/ui'
 
 export default function Clients() {
-  const { can } = useSession()
+  const { can, me } = useSession()
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
   const { data, error, loading, reload } = useAsync(
@@ -36,13 +36,24 @@ export default function Clients() {
         {loading ? (
           <Spinner />
         ) : !data?.length ? (
-          <Empty title="No clients yet">Create one, then upload their first bank statement.</Empty>
+          search ? (
+            <Empty title="No client matches that search" />
+          ) : can('client.create') ? (
+            <Empty title="No clients yet">Create one, then upload their first bank statement.</Empty>
+          ) : (
+            <Empty title="You haven't been given any clients yet">
+              {me?.role === 'SENIOR_CA'
+                ? 'A firm administrator makes you the lead of a client.'
+                : 'Your Senior CA puts you on the clients you’ll work on.'}
+            </Empty>
+          )
         ) : (
           <div className="table-wrap">
             <table className="grid">
               <thead>
                 <tr>
                   <th>Client</th>
+                  <th>Lead</th>
                   <th>Financial year starts</th>
                   <th>Added</th>
                   <th></th>
@@ -56,6 +67,7 @@ export default function Clients() {
                         <strong>{client.name}</strong>
                       </Link>
                     </td>
+                    <td>{client.lead?.name ?? <span className="sub">—</span>}</td>
                     <td>{formatDate(client.fy_start)}</td>
                     <td>{formatDate(client.created_at)}</td>
                     <td className="num">

@@ -1,4 +1,4 @@
-"""Vendors, tax treatment, and the confidence bands the review screen sorts by.
+"""Parties, tax treatment, and the confidence bands the review screen sorts by.
 
 The thing being defended: a bookkeeping decision is four facts, not one, and
 they are learned together. A loop that remembers the ledger and forgets the
@@ -20,14 +20,14 @@ from classify.engine import (
     review_queue,
     review_summary,
     unresolved_for,
-    vendor_for,
+    party_for,
 )
 from classify.models import (
     ClassificationRule,
     LedgerAccount,
     LedgerGroup,
     TransactionClassification,
-    Vendor,
+    Party,
 )
 from classify.seeds import seed_client
 from classify.treatment import ReviewBand, TdsSection, Treatment, band_for
@@ -40,7 +40,7 @@ pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("fixture_adapters")
 @pytest.fixture
 def client():
     firm = create_firm("Treatment Test Firm")
-    return create_client(firm, "Ramesh Deshmukh", datetime.date(2025, 4, 1))
+    return create_client(firm, "Arjun Nair", datetime.date(2025, 4, 1))
 
 
 @pytest.fixture
@@ -69,14 +69,14 @@ def queued(client, fragment):
 
 def test_a_treatment_carries_ledger_party_rcm_and_tds(client, statement):
     freight = ledger(client, "Freight Inward", LedgerGroup.DIRECT_EXPENSE)
-    carrier = vendor_for(client, "Speedy Goods Transport", rcm=True)
+    carrier = party_for(client, "Speedy Goods Transport", rcm=True)
 
     row = queued(client, "Johnson Lifts")
-    review(row, Treatment(ledger=freight, vendor=carrier, rcm=True, tds_section=TdsSection.CONTRACTOR))
+    review(row, Treatment(ledger=freight, party=carrier, rcm=True, tds_section=TdsSection.CONTRACTOR))
     row.refresh_from_db()
 
     assert row.ledger_id == freight.pk
-    assert row.vendor_id == carrier.pk
+    assert row.party_id == carrier.pk
     assert row.rcm
     assert row.tds_section == "194C"
 
@@ -84,15 +84,15 @@ def test_a_treatment_carries_ledger_party_rcm_and_tds(client, statement):
 def test_the_whole_treatment_is_learned_not_just_the_ledger(client, statement):
     """The bug this prevents: RCM remembered nowhere, re-decided every month."""
     freight = ledger(client, "Freight Inward", LedgerGroup.DIRECT_EXPENSE)
-    carrier = vendor_for(client, "Speedy Goods Transport")
+    carrier = party_for(client, "Speedy Goods Transport")
 
     _, rule = review(
         queued(client, "Johnson Lifts"),
-        Treatment(ledger=freight, vendor=carrier, rcm=True, tds_section=TdsSection.CONTRACTOR),
+        Treatment(ledger=freight, party=carrier, rcm=True, tds_section=TdsSection.CONTRACTOR),
     )
 
     assert rule.ledger_id == freight.pk
-    assert rule.vendor_id == carrier.pk
+    assert rule.party_id == carrier.pk
     assert rule.rcm
     assert rule.tds_section == "194C"
 
@@ -120,49 +120,49 @@ def test_a_treatment_without_a_ledger_cannot_be_built():
 
 
 # ---------------------------------------------------------------------------
-# Vendors
+# Parties
 # ---------------------------------------------------------------------------
 
 
-def test_a_vendor_is_reused_across_spellings(client):
-    """The bank's inconsistent spacing must not produce three vendors for one payee."""
+def test_a_party_is_reused_across_spellings(client):
+    """The bank's inconsistent spacing must not produce three parties for one payee."""
     with firm_context(client.firm_id):
-        first = vendor_for(client, "WIPRO GE HEALTHCARE PVT")
-        again = vendor_for(client, "Wipro  Ge   Healthcare Pvt")
+        first = party_for(client, "WIPRO GE HEALTHCARE PVT")
+        again = party_for(client, "Wipro  Ge   Healthcare Pvt")
 
         assert again.pk == first.pk
-        assert Vendor.objects.count() == 1
+        assert Party.objects.count() == 1
 
 
-def test_a_vendor_gets_a_stable_pseudonym(client):
+def test_a_party_gets_a_stable_pseudonym(client):
     """What a language model sees instead of the name, when that step lands."""
     with firm_context(client.firm_id):
-        vendor = vendor_for(client, "WIPRO GE HEALTHCARE PVT")
+        party = party_for(client, "WIPRO GE HEALTHCARE PVT")
 
-        assert vendor.alias_token.startswith("V")
-        assert "WIPRO" not in vendor.alias_token
-        assert vendor.alias_token == Vendor.make_alias(
+        assert party.alias_token.startswith("V")
+        assert "WIPRO" not in party.alias_token
+        assert party.alias_token == Party.make_alias(
             "WIPRO GE HEALTHCARE PVT", client.firm_id
         )
 
 
-def test_a_vendor_gstin_is_encrypted_but_still_matchable(client):
-    """GST reconciliation joins on vendor GSTIN, which is ciphertext."""
+def test_a_party_gstin_is_encrypted_but_still_matchable(client):
+    """GST reconciliation joins on party GSTIN, which is ciphertext."""
     with firm_context(client.firm_id):
-        vendor = vendor_for(client, "Wipro GE Healthcare")
-        vendor.set_gstin("29AAACW1234F1Z5")
-        vendor.save()
-        vendor.refresh_from_db()
+        party = party_for(client, "Wipro GE Healthcare")
+        party.set_gstin("29AAACW1234F1Z5")
+        party.save()
+        party.refresh_from_db()
 
-        assert b"29AAACW" not in bytes(vendor.gstin_enc)
-        assert vendor.gstin == "29AAACW1234F1Z5"
-        assert len(vendor.gstin_hash) == 64
+        assert b"29AAACW" not in bytes(party.gstin_enc)
+        assert party.gstin == "29AAACW1234F1Z5"
+        assert len(party.gstin_hash) == 64
 
 
-def test_vendor_defaults_carry_the_tax_treatment(client):
+def test_party_defaults_carry_the_tax_treatment(client):
     """Reverse charge is a property of who you are paying, not of the category."""
     with firm_context(client.firm_id):
-        carrier = vendor_for(client, "Speedy Goods Transport", rcm=True, tds_section="194C")
+        carrier = party_for(client, "Speedy Goods Transport", rcm=True, tds_section="194C")
 
         assert carrier.rcm_default
         assert carrier.tds_section == "194C"

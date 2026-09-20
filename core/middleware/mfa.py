@@ -23,6 +23,11 @@ from django.shortcuts import redirect
 from core.http import wants_json as _wants_json
 
 
+def mfa_disabled() -> bool:
+    """The local-demo switch. Never true outside DEBUG, whatever the setting says."""
+    return bool(settings.DEBUG and getattr(settings, "MFA_DISABLED", False))
+
+
 class MFARequiredMiddleware:
     def __init__(self, get_response):
         self.get_response = get_response
@@ -30,7 +35,7 @@ class MFARequiredMiddleware:
     def __call__(self, request):
         user = getattr(request, "user", None)
 
-        if not user or not user.is_authenticated:
+        if not user or not user.is_authenticated or mfa_disabled():
             return self.get_response(request)
 
         if request.path.startswith(tuple(settings.MFA_EXEMPT_PATH_PREFIXES)):

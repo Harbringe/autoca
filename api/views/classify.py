@@ -25,16 +25,19 @@ from api.serializers.classify import (
     MergeProposalSerializer,
     ClassificationRuleSerializer,
     ClassificationSerializer,
+    ConfirmPartySerializer,
     LedgerAccountSerializer,
     PlacementResultSerializer,
     RecategorizeSerializer,
     ReviewSummarySerializer,
     TreatmentSerializer,
-    VendorSerializer,
+    PartySerializer,
 )
 from api.serializers.core import JobSerializer
 from api.views.base import ClientScopedMixin, FirmScopedViewSet
+from ledger.learning import learn_from_decision
 from classify.engine import (
+    confirm_party as confirm_party_decision,
     pending_approval,
     review,
     review_queue,
@@ -51,12 +54,15 @@ from classify.models import (
     LedgerAccount,
     LedgerStatus,
     TransactionClassification,
-    Vendor,
+    Party,
 )
 from classify.treatment import ReviewBand, Treatment
 from core.jobs import run_job
+from core.access import can_sign_off, get_visible_client, sign_off_refusal, visible_client_ids
 from core.models import Client
 from core.rbac import has_permission
+from teams import activity
+from teams.models import ActivityKind
 
 BANDS = (ReviewBand.HIGH, ReviewBand.ADVISED, ReviewBand.JUDGEMENT)
 
@@ -83,6 +89,7 @@ class LedgerAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
             client=self.client,
             name=serializer.validated_data["name"],
         ).exclude(status=LedgerStatus.ACTIVE).first()
+        self._record(ActivityKind.LEDGER_CREATED)
         if existing is None:
             serializer.save(firm_id=self.request.firm.pk, client=self.client)
             return
@@ -92,9 +99,16 @@ class LedgerAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
         existing.save(update_fields=["status", "is_active", "group"])
         serializer.instance = existing
 
+    def _record(self, kind):
+        activity.record(
+            firm_id=self.request.firm.pk, user=self.request.user, kind=kind, client=self.client
+        )
+
     def _decision(self, request):
         if not has_permission(request.membership, "journal.approve"):
             raise PermissionDenied("Accepting or rejecting a proposed ledger is for a Senior CA or firm admin.")
+        if not can_sign_off(request.membership, self.client):
+            raise PermissionDenied(sign_off_refusal(self.client))
         return self.get_object()
 
     @extend_schema(
@@ -109,6 +123,7 @@ class LedgerAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
         payload = AcceptProposalSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         accept_proposal(ledger, **payload.validated_data)
+        self._record(ActivityKind.PROPOSAL_DECIDED)
         return Response(self.get_serializer(self.get_queryset().get(pk=ledger.pk)).data)
 
     @extend_schema(
@@ -125,6 +140,7 @@ class LedgerAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
             LedgerAccount, pk=payload.validated_data["into"], firm_id=request.firm.pk, client=self.client
         )
         moved = merge_proposal(ledger, into)
+        self._record(ActivityKind.PROPOSAL_DECIDED)
         return Response({"moved": moved, "into": str(into.pk)})
 
     @extend_schema(
@@ -137,27 +153,28 @@ class LedgerAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
     def reject(self, request, client_id=None, pk=None):
         ledger = self._decision(request)
         released = reject_proposal(ledger)
+        self._record(ActivityKind.PROPOSAL_DECIDED)
         return Response({"released": released})
 
 
 @extend_schema(tags=["review"])
-class VendorViewSet(ClientScopedMixin, FirmScopedViewSet):
+class PartyViewSet(ClientScopedMixin, FirmScopedViewSet):
     """Parties the client transacts with.
 
     Separate from ledger heads because they answer different questions: the
-    ledger says what kind of expense it was, the vendor says who it was with.
+    ledger says what kind of expense it was, the party says who it was with.
     Reverse-charge and TDS defaults live here, because they are properties of
     who you are paying rather than of the category it was booked under.
     """
 
-    queryset = Vendor.objects.all()
-    serializer_class = VendorSerializer
+    queryset = Party.objects.all()
+    serializer_class = PartySerializer
     required_permission = {
         "GET": "client.view",
-        "POST": "vendor.manage",
-        "PUT": "vendor.manage",
-        "PATCH": "vendor.manage",
-        "DELETE": "vendor.manage",
+        "POST": "party.manage",
+        "PUT": "party.manage",
+        "PATCH": "party.manage",
+        "DELETE": "party.manage",
     }
 
 
@@ -171,7 +188,7 @@ class RuleViewSet(ClientScopedMixin, FirmScopedViewSet):
     learned.
     """
 
-    queryset = ClassificationRule.objects.select_related("ledger", "vendor").all()
+    queryset = ClassificationRule.objects.select_related("ledger", "party").all()
     serializer_class = ClassificationRuleSerializer
     required_permission = {
         "GET": "client.view",
@@ -180,6 +197,16 @@ class RuleViewSet(ClientScopedMixin, FirmScopedViewSet):
         "PATCH": "suggestion.edit",
         "DELETE": "suggestion.edit",
     }
+
+    def perform_create(self, serializer):
+        super().perform_create(serializer)
+        activity.record(
+            firm_id=self.request.firm.pk,
+            user=self.request.user,
+            kind=ActivityKind.RULE_CREATED,
+            client=self.client,
+            subject_id=serializer.instance.pk,
+        )
 
 
 @extend_schema(tags=["review"])
@@ -202,9 +229,7 @@ class ReviewQueueViewSet(
     @property
     def client(self) -> Client:
         if not hasattr(self, "_client"):
-            self._client = get_object_or_404(
-                Client, pk=self.kwargs["client_id"], firm_id=self.request.firm.pk
-            )
+            self._client = get_visible_client(self.request, self.kwargs["client_id"])
         return self._client
 
     def get_queryset(self):
@@ -252,7 +277,7 @@ class ReviewQueueViewSet(
             "Returns **202** with a job; the result carries `suggested`, `declined` "
             "and `error` (empty unless the provider failed).\n\n"
             "Nothing identifying leaves the server: narrations are masked, people "
-            "are pseudonymised, known vendors are aliased. Requires "
+            "are pseudonymised, known parties are aliased. Requires "
             "`transaction.classify`."
         ),
         request=None,
@@ -280,6 +305,9 @@ class ReviewQueueViewSet(
             user=request.user,
             message=f"Asking the model about {client.name}'s unresolved rows",
             work=work,
+        )
+        activity.record(
+            firm_id=request.firm.pk, user=request.user, kind=ActivityKind.MODEL_RUN, client=client
         )
         return Response(JobSerializer(outcome.job).data, status=status.HTTP_202_ACCEPTED)
 
@@ -338,6 +366,9 @@ class ReviewQueueViewSet(
             message=f"Re-categorizing {client.name}'s {scope} with the model",
             work=work,
         )
+        activity.record(
+            firm_id=request.firm.pk, user=request.user, kind=ActivityKind.MODEL_RUN, client=client
+        )
         return Response(JobSerializer(outcome.job).data, status=status.HTTP_202_ACCEPTED)
 
     @extend_schema(
@@ -387,8 +418,9 @@ class ClassificationViewSet(
 
     def get_queryset(self):
         rows = TransactionClassification.objects.filter(
-            firm_id=self.request.firm.pk
-        ).select_related("transaction", "ledger", "vendor")
+            firm_id=self.request.firm.pk,
+            transaction__bank_account__client__in=visible_client_ids(self.request.membership),
+        ).select_related("transaction__bank_account", "ledger", "party")
         statement = self.request.query_params.get("statement")
         if statement:
             try:
@@ -396,6 +428,30 @@ class ClassificationViewSet(
             except ValueError:
                 return rows.none()
         return rows
+
+    @extend_schema(
+        summary="Say who a row's payee is",
+        description=(
+            "Confirms which party this payee is, without placing the row in a "
+            "ledger. The spelling is remembered, so the same spelling resolves "
+            "on its own from now on, and every other unposted row for it is "
+            "updated at once."
+        ),
+        request=ConfirmPartySerializer,
+        responses={200: ClassificationSerializer},
+    )
+    @action(detail=True, methods=["post"], url_path="confirm-party")
+    def confirm_party(self, request, pk=None):
+        classification = self.get_object()
+        payload = ConfirmPartySerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        client = classification.transaction.bank_account.client
+        party = get_object_or_404(
+            Party, pk=payload.validated_data["party"], firm_id=request.firm.pk, client=client
+        )
+        confirm_party_decision(classification, party, user=request.user)
+        classification.refresh_from_db()
+        return Response(ClassificationSerializer(classification).data)
 
     @extend_schema(
         summary="Place a row in a ledger",
@@ -430,20 +486,20 @@ class ClassificationViewSet(
             raise ValidationError(
                 {"ledger": ["This is the bank account the transaction came from. Choose the other side of the entry."]}
             )
-        vendor = (
+        party = (
             get_object_or_404(
-                Vendor, pk=data["vendor"], firm_id=request.firm.pk, client=client
+                Party, pk=data["party"], firm_id=request.firm.pk, client=client
             )
-            if data.get("vendor")
+            if data.get("party")
             else None
         )
 
         before = unresolved_for(client).count()
-        updated, rule = review(
+        updated, rule, revised, auto_posted = learn_from_decision(
             classification,
             Treatment(
                 ledger=ledger,
-                vendor=vendor,
+                party=party,
                 rcm=data["rcm"],
                 tds_section=data.get("tds_section", ""),
             ),
@@ -451,13 +507,24 @@ class ClassificationViewSet(
             learn=data["learn"],
         )
         after = unresolved_for(client).count()
+        also_placed = max(before - after - 1, 0)
+        activity.record(
+            firm_id=request.firm.pk,
+            user=request.user,
+            kind=ActivityKind.ROW_PLACED,
+            client=client,
+            quantity=1 + also_placed,
+            subject_id=classification.pk,
+        )
 
         return Response(
             PlacementResultSerializer(
                 {
                     "classification": updated,
                     "rule_learned": rule.pk if rule else None,
-                    "also_placed": max(before - after - 1, 0),
+                    "also_placed": also_placed,
+                    "also_revised": revised,
+                    "auto_posted": auto_posted,
                 }
             ).data
         )

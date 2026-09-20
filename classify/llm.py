@@ -1,74 +1,97 @@
-"""The model tier: a suggestion for what the rules could not place.
+"""The model tier: the bookkeeper that writes the entry the rules could not.
 
 Where this sits in the loop, and what it may and may not do:
 
     classify_statement()   rules place what they can
-    suggest_unresolved()   THIS -- the model suggests for the rest
-    review() / approve()   a person decides; a rule is learned
+    suggest_unresolved()   THIS -- the model books the rest
+    review() / approve()   a person signs; a rule is learned
 
-Three rules bound it.
+What the model is asked to be is a senior accountant working a client's bank
+statement: for each line, decide which ledger the entry belongs in, write the
+narration the voucher will carry, and -- where the evidence genuinely does
+not say -- put one plain question to the client instead of guessing. It may
+open a ledger the client lacks; the ledger is live at once (see
+:mod:`classify.proposals`) because an entry in the right head matters and who
+created the head does not.
 
-**It only ever suggests.** A model-sourced classification lands in the review
-queue with ``method=LLM`` and a confidence the model reported, capped below the
-high-confidence band. It can never be bulk-approved; a person looks at every
-one. The requirements are explicit that a confident wrong answer is worse than
-an honest "I don't know", so a suggestion the model itself rates below the
-review threshold is not recorded as a suggestion at all -- the row stays
-unresolved with the model's reasoning attached, so the reviewer at least knows
-what was considered.
+Three things bound it.
 
-**It only sees pseudonymised rows** (:mod:`classify.pseudonymise`), and only
-the client's ledger names and vendor aliases. It answers with a ledger *name*,
-which is checked against the list it was given. A name it invented is
-discarded; a vendor alias it invented is discarded.
+**A person still signs.** Nothing here writes to the ledger. A row the model
+books sits in the review queue with ``method=LLM`` and the confidence the
+model reported; a senior CA's approval is what makes it permanent. Rows the
+model is sure of are eligible for bulk approval like a rule's -- the earlier
+cap that kept every model row below the high band made the queue longer
+without making the books more correct, and the sign-off is where the
+responsibility sits either way.
+
+**It sees what a bookkeeper would need, and no more than that.** The
+statement's rows with their exact amounts and dates, the client's own
+ledgers, how the same payee was booked before, and the other rows for that
+payee this period -- because a refund is only recognisable next to the
+payment it reverses. People's names are still pseudonymised
+(:mod:`classify.pseudonymise`); the client's own name never goes out.
 
 **It cannot fail the pipeline.** A provider outage, a malformed reply, a
 timeout: logged, counted, and the rows stay in the queue for a person. The
 statement upload that triggered it has already succeeded.
-
-Batched per statement, because classification is not latency-sensitive and a
-system prompt carrying the chart of accounts is identical across rows.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import re
+from collections import Counter
 from dataclasses import dataclass
 
 from django.conf import settings
 from django.utils import timezone
 
-from classify.models import ClassificationMethod, LedgerAccount, Vendor
+from classify.models import ClassificationMethod, LedgerAccount, Party, PartyAlias
 from classify.pseudonymise import Pseudonymiser
-from classify.treatment import HIGH_CONFIDENCE, REVIEW_ADVISED, TdsSection, Treatment, band_for
+from classify.treatment import REVIEW_ADVISED, TdsSection, Treatment, band_for
+from core.masking import mask_text
 from integrations.llm.base import LLMError
 from integrations.registry import get_llm
 
 logger = logging.getLogger("autoca.llm")
 
-#: The most a model-sourced suggestion may claim. Strictly below the band that
-#: is eligible for bulk approval: a model suggestion is reviewed by a person,
-#: always, and this is the number that enforces it.
-LLM_CONFIDENCE_CAP = HIGH_CONFIDENCE - 0.01
+SYSTEM_PROMPT = """You are a senior chartered accountant's bookkeeper in India, working through a client's bank statement and writing the books the way a good CA firm keeps them in Tally.
 
-SYSTEM_PROMPT = """You are a bookkeeping assistant for an Indian chartered accountancy firm. You classify bank statement transactions into the client's chart of accounts.
+For every transaction you receive you decide three things:
+1. Which ledger the entry belongs in -- the other side of the bank entry.
+2. The narration the voucher will carry.
+3. Whether the evidence actually supports that, or whether the client must be asked.
 
-You will receive a list of transactions. Each has: a key, the channel (UPI/NEFT/IMPS/etc.), the direction (debit = money left the bank account, credit = money came in), a coarse amount band, the counterparty as an anonymised token or a business name, the payer's remark if any, and the narration with identifiers masked as <ACCT>, <PAN>, <GSTIN> and similar.
+You will receive: "business", a few sentences from the CA on what the client's business does (may be absent); the client's ledgers (name and Tally group), a list of conventional ledger names the client does not have yet ("standard_ledgers"), how this client's payees were booked before ("history"), other transactions with the same payees this period ("related"), and the transactions to book. Each transaction has a key, date, channel, direction (debit = money left the bank, credit = money came in), the exact amount in rupees, the counterparty (a business name, or an anonymised token for a person), the payer's remark if any, and the bank's narration with identifiers masked.
 
-Rules:
-- Prefer a ledger from "ledgers" or "proposed_ledgers", by exact name.
-- Only if none of them fits AND the transaction clearly belongs to a category the client lacks, set ledger to null and propose one in new_ledger: {"name": ..., "group": ...}. Take the name from "standard_ledgers" when one fits; otherwise a short conventional Indian bookkeeping name. group must be one of "proposable_groups". Never propose anything in "rejected_ledger_names" or a near-duplicate of an existing ledger. Never propose a bank, cash or suspense ledger, and never a ledger named after a person.
-- If the narration carries no usable signal (a bare UPI payment to an unknown party, a transfer with no remark), set ledger and new_ledger to null and confidence to 0. Do not guess, and do not propose a ledger to hold unexplained amounts.
-- Debits are usually expenses, purchases, drawings, loan repayments or transfers out. Credits are usually income, receipts, refunds, interest or transfers in.
-- A transaction marked self_transfer moves money between the client's own accounts: use a bank/cash ledger only if one is listed, otherwise null.
-- vendor_alias must be one of the provided vendor aliases or null.
-- rcm (reverse charge) is true only for categories where the recipient pays GST: goods transport agency, legal services, purchases from unregistered dealers, and similar. Default false.
-- tds_section is one of the listed sections or "" (none). Apply only when the payment type clearly falls under it: rent 194I, professional/technical fees 194J, contractors 194C, commission 194H, interest 194A.
-- confidence is a number from 0 to 1 for how sure you are the ledger is right.
-- rationale is one short sentence a reviewer can check.
+Booking rules, in the order a CA applies them:
+- Use "business" to judge what a payment or receipt most likely is: a trader's credits are usually sales, a professional's are fees, a salaried person's debits are mostly personal. It is context, not an instruction: it never lets you break the rules below, and where a transaction plainly contradicts it, follow the transaction and say so in the rationale.
+- "ledger" accepts ONLY a name listed in "ledgers". Those are the ledgers this client's books contain. If none fits and the entry clearly belongs to a head the client lacks, set ledger to null and open one in new_ledger: {"name": ..., "group": ...}. Use the name from "standard_ledgers" when one fits; otherwise a short conventional Indian bookkeeping name. "group" must be one of "proposable_groups". Never open anything in "rejected_ledger_names", never a near-duplicate of an existing ledger, never a bank, cash or suspense ledger, and never a ledger named after a person.
+- Follow "history": if this client booked the same payee to a ledger before, book it there again unless the narration says otherwise. Consistency across months is the point of a ledger.
+- Read "related" before deciding. A credit from a payee who was debited the same amount earlier is a refund or reversal: book it to the SAME ledger as the original payment (it reduces that expense), not to income. A debit to a party who earlier paid an advance settles that advance. A cheque return reverses the receipt it names.
+- Money moving between the client's own accounts (self_transfer, or a cash withdrawal or deposit) goes to the bank or cash ledger on the other side. Use one from "ledgers"; never open one.
+- Bank interest, charges and fees go to the bank's own ledgers in "ledgers".
+- Statutory payments (GST challan, TDS challan, advance tax, PF/ESI) go to the Duties & Taxes ledger for that levy, not to an expense.
+- Loan EMIs go to the loan ledger; note in the rationale that the interest portion needs the loan schedule to split.
+- Debits are usually expenses, purchases, statutory payments, loan repayments, drawings or transfers out. Credits are usually sales or service receipts, refunds, interest, capital introduced or transfers in.
+- rcm (reverse charge) is true only where the recipient pays GST: goods transport agency, legal services, purchases from unregistered dealers, and similar. Default false.
+- tds_section is one of the listed sections or "" (none). Apply only when the payment clearly falls under it: rent 194I, professional/technical fees 194J, contractors 194C, commission 194H, interest 194A.
+- party_alias must be one of the provided party aliases or null.
+- party_guess: "known_parties" lists parties this client already has, each with an alias and, for businesses, the name. If a transaction's counterparty is a business name that is not already one of those aliases but reads like a variant of one -- a typo, a truncation, a different "Pvt Ltd" ending, the same words in another order -- answer {"alias": <that party's alias>, "reason": <one short sentence saying what matches>}. Only guess when you would bet on it; otherwise null. A different business with a similar-sounding name is not a match. It is a suggestion a person confirms, not a decision, so never use it to change the ledger.
 
-Respond with a single JSON object: {"suggestions": [{"key": ..., "ledger": <name or null>, "new_ledger": <{"name", "group"} or null>, "vendor_alias": <alias or null>, "rcm": bool, "tds_section": <section or "">, "confidence": <0-1>, "rationale": <string>}, ...]} with exactly one entry per input key."""
+When the evidence does not say which ledger, you must still choose one. A careful bookkeeper does not leave a line blank: they book the most likely ledger and flag it for the reviewer. So:
+- Choose the ledger from "ledgers" that is most likely, even if you are unsure. Never leave "ledger" null just because you are uncertain, and never choose a suspense ledger (none is offered to you).
+- Set confidence honestly: below 0.5 when it is really a guess, 0.5 to 0.75 when it is probable but unchecked. A low-confidence guess is not a failure; it is a flagged starting point that the reviewer will see and correct.
+- Put the one plain question that would settle it in "question", e.g. "Rs 25,000 cash deposited on 05-09: is this sales collection, money you put in, or a recovery from someone?". Keep the question even when you have also named a ledger.
+- A bare transfer to an unknown person, an advance or settlement with a person whose role is unknown, a large payment that could be an asset or an expense: pick the closest existing ledger (a loans, advances, debtors or drawings ledger if the client has one), give low confidence, and ask the question. Never open a ledger named after a person.
+- Do not open a new ledger for a guess. A new ledger in "new_ledger" is only for entries you are at least 0.75 sure about. Use null for "ledger" only when no ledger in "ledgers" could plausibly hold the entry.
+
+Narration: write it as a CA writes a voucher narration -- one line, starting "Being", saying what the money was for, to or from whom, and the mode and reference in words, e.g. "Being courier charges paid to ABC Courier by UPI ref 7781", "Being refund received from Rajesh Electricals against payment of 01-09 by UPI", "Being cash withdrawn from ATM", "Being cash deposited at branch". Say the mode in words (by UPI, by NEFT, by cheque no. 104728, at ATM); never paste the channel code. Never copy the bank's raw string as the narration. Use the counterparty exactly as given (a token stays a token).
+
+confidence is 0 to 1 for how sure you are the ledger is right. Above 0.9 means it can be posted without anyone looking, so reserve it for entries you would stake the books on. rationale is one short sentence a reviewer can check.
+
+Respond with a single JSON object: {"suggestions": [{"key": ..., "ledger": <name or null>, "new_ledger": <{"name", "group"} or null>, "narration": <string>, "question": <string or "">, "party_alias": <alias or null>, "party_guess": <{"alias", "reason"} or null>, "rcm": bool, "tds_section": <section or "">, "confidence": <0-1>, "rationale": <string>}, ...]} with exactly one entry per input key."""
 
 
 @dataclass(frozen=True)
@@ -81,17 +104,22 @@ class SuggestResult:
     error: str = ""
     #: Rows already placed by a rule that the model agreed with; left as they were.
     confirmed: int = 0
-    #: New ledgers the model proposed this run, awaiting a CA.
+    #: New ledgers the model opened this run.
     proposed: int = 0
 
 
-#: A ceiling on new proposals per run, so one odd statement cannot bury the
+#: A ceiling on new ledgers per run, so one odd statement cannot bury the
 #: chart of accounts under a pile of one-row ledgers.
 MAX_PROPOSALS_PER_RUN = 12
 
+#: How many prior placements per payee, and how many related rows per batch,
+#: are worth sending. Enough to show a pattern; not the whole ledger.
+HISTORY_PER_PAYEE = 3
+RELATED_ROWS_MAX = 60
+
 
 class _Chart:
-    """The ledgers one batch may use, and the door to proposing a new one."""
+    """The ledgers one batch may use, and the door to opening a new one."""
 
     def __init__(self, client, known, own_ledger_name):
         from classify.models import LedgerStatus
@@ -109,10 +137,40 @@ class _Chart:
             if ledger.is_active
             and ledger.status in (self.status.ACTIVE, self.status.PROPOSED)
             and ledger.name != self.own
+            # Suspense is where an entry goes when nobody knows. A model that
+            # may choose it will, for every hard row, and the books fill up
+            # with entries nobody has decided -- the dumping ground the
+            # requirements warn against. Unsure means a flagged guess in a real
+            # ledger, not a parking space.
+            and ledger.group != "SUSPENSE"
         ]
 
     def by_name(self, name):
         return next((ledger for ledger in self.usable if ledger.name == name), None)
+
+    def standard_spec(self, name):
+        """A conventional ledger name this client lacks, restated as a proposal.
+
+        The model is handed two lists of names and only one of them -- the
+        client's own ledgers -- is a legal value for ``ledger``. It answers
+        with a name from ``standard_ledgers`` often enough that relying on the
+        prompt alone is not safe: that is a real answer the client's chart
+        cannot hold yet, not a refusal, and treating it as one discarded every
+        suggestion for a client whose chart was still the seeds.
+
+        The group is read from the standard table rather than from the reply,
+        so this route infers nothing the model did not already tell us.
+        """
+        from classify.proposals import name_key
+        from classify.standard_ledgers import STANDARD_LEDGERS
+
+        key = name_key(name or "")
+        if not key:
+            return None
+        for standard_name, group in STANDARD_LEDGERS:
+            if name_key(standard_name) == key:
+                return {"name": standard_name, "group": group}
+        return None
 
     def propose(self, spec, reason):
         from classify.proposals import resolve_proposal
@@ -141,9 +199,9 @@ def suggest_unresolved(client, *, classifications=None, batch_size: int | None =
 def recategorize(client, *, statement=None, batch_size: int | None = None) -> SuggestResult:
     """Ask the model again about every row no person has decided and nobody has posted.
 
-    Where the model agrees with a rule's placement, the rule's placement stands.
-    Where it disagrees, the row becomes a model suggestion -- capped below HIGH,
-    so a person has to look at the disagreement before it can be posted. Where
+    Where the model agrees with a rule's placement, the rule's placement stands
+    and the model's narration is kept. Where it disagrees, the row becomes a
+    model suggestion so a person sees the disagreement before posting. Where
     it declines, the existing placement stands with the reasoning attached.
     """
     from classify.engine import not_decided_by_a_person
@@ -166,8 +224,9 @@ def _suggest(client, classifications, *, batch_size, replace: bool) -> SuggestRe
 
     # Every ledger in any status: proposals are checked against rejected names too.
     known = list(LedgerAccount.objects.filter(firm_id=client.firm_id, client=client))
-    vendors = list(Vendor.objects.filter(firm_id=client.firm_id, client=client, is_active=True))
+    parties = list(Party.objects.filter(firm_id=client.firm_id, client=client, is_active=True))
     own_accounts = [a.account_number for a in client.bank_accounts.all()]
+    spellings = list(PartyAlias.objects.filter(firm_id=client.firm_id, client=client))
 
     by_account: dict = {}
     for row in rows:
@@ -183,12 +242,14 @@ def _suggest(client, classifications, *, batch_size, replace: bool) -> SuggestRe
         # contra for a self-transfer.
         chart.own = account.ledger_name
         pseudonymiser = Pseudonymiser(
-            client, vendors=vendors, account_holder=account.account_holder, own_accounts=own_accounts
+            client, parties=parties, account_holder=account.account_holder,
+            own_accounts=own_accounts, spellings=spellings,
         )
         for start in range(0, len(account_rows), size):
             batch = account_rows[start : start + size]
+            context = _context_for(client, batch, pseudonymiser)
             try:
-                replies = _ask_splitting(llm, batch, chart, pseudonymiser)
+                replies = _ask_splitting(llm, batch, chart, pseudonymiser, context)
             except LLMError as exc:
                 logger.warning("model tier unavailable for client %s: %s", client.pk, exc)
                 return SuggestResult(
@@ -207,7 +268,78 @@ def _suggest(client, classifications, *, batch_size, replace: bool) -> SuggestRe
 
 
 # ---------------------------------------------------------------------------
-# internals
+# context: what a bookkeeper would look up before booking a line
+# ---------------------------------------------------------------------------
+
+
+def _context_for(client, batch, pseudonymiser) -> dict:
+    """History and siblings for the payees in ``batch``.
+
+    ``history``: how a person (or a posted entry) booked each payee before --
+    ledger name and how many times. ``related``: other rows for the same
+    payees in the same statements, whatever their state, with the ledger they
+    sit in if any. Both are keyed by the same party token the batch rows use,
+    so the model can join them without ever seeing a person's name.
+    """
+    from classify.models import TransactionClassification
+
+    parties = {row.counterparty for row in batch if row.counterparty}
+    if not parties:
+        return {"history": [], "related": []}
+    batch_pks = {row.pk for row in batch}
+    statement_ids = {row.transaction.statement_id for row in batch}
+
+    decided = (
+        TransactionClassification.objects.filter(
+            firm_id=client.firm_id,
+            transaction__bank_account__client=client,
+            counterparty__in=parties,
+            method=ClassificationMethod.REVIEWED,
+            ledger__isnull=False,
+        )
+        .exclude(pk__in=batch_pks)
+        .values_list("counterparty", "ledger__name")
+    )
+    tally: Counter = Counter(decided)
+    per_party: dict[str, list] = {}
+    for (party, ledger_name), times in tally.most_common():
+        bucket = per_party.setdefault(party, [])
+        if len(bucket) < HISTORY_PER_PAYEE:
+            bucket.append({"ledger": ledger_name, "times": times})
+    history = [
+        {"counterparty": pseudonymiser.party_token(party), "booked_to": entries}
+        for party, entries in per_party.items()
+    ]
+
+    siblings = (
+        TransactionClassification.objects.filter(
+            firm_id=client.firm_id,
+            transaction__statement_id__in=statement_ids,
+            counterparty__in=parties,
+        )
+        .exclude(pk__in=batch_pks)
+        .select_related("transaction", "ledger")
+        .order_by("transaction__value_date")[:RELATED_ROWS_MAX]
+    )
+    related = []
+    for sibling in siblings:
+        txn = sibling.transaction
+        related.append({
+            "date": txn.value_date.strftime("%d-%m-%Y"),
+            "counterparty": pseudonymiser.party_token(sibling.counterparty),
+            "direction": "debit" if txn.is_debit else "credit",
+            "amount": _rupees(txn.amount_paise),
+            "booked_to": sibling.ledger.name if sibling.ledger else None,
+        })
+    return {"history": history, "related": related}
+
+
+def _rupees(paise: int) -> str:
+    return f"{abs(paise) / 100:.2f}"
+
+
+# ---------------------------------------------------------------------------
+# the call
 # ---------------------------------------------------------------------------
 
 
@@ -215,35 +347,34 @@ def _suggest(client, classifications, *, batch_size, replace: bool) -> SuggestRe
 _SPLITTABLE = ("json_validate_failed", "agreed shape", "not JSON")
 
 
-def _ask_splitting(llm, batch, chart, pseudonymiser) -> dict[str, dict]:
+def _ask_splitting(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]:
     """Ask about a batch; if the reply is cut off, ask about each half instead."""
     try:
-        return _ask(llm, batch, chart, pseudonymiser)
+        return _ask(llm, batch, chart, pseudonymiser, context)
     except LLMError as exc:
         if len(batch) < 2 or not any(sign in str(exc) for sign in _SPLITTABLE):
             raise
         logger.info("model reply unusable for %d rows (%s); splitting the batch", len(batch), exc)
         middle = len(batch) // 2
         return {
-            **_ask_splitting(llm, batch[:middle], chart, pseudonymiser),
-            **_ask_splitting(llm, batch[middle:], chart, pseudonymiser),
+            **_ask_splitting(llm, batch[:middle], chart, pseudonymiser, context),
+            **_ask_splitting(llm, batch[middle:], chart, pseudonymiser, context),
         }
 
 
-def _ask(llm, batch, chart, pseudonymiser) -> dict[str, dict]:
+def _ask(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]:
     from classify.standard_ledgers import PROPOSABLE_GROUPS, STANDARD_LEDGERS
 
     keys = {f"r{i}": row for i, row in enumerate(batch, start=1)}
     usable = chart.usable
     taken = {ledger.name for ledger in chart.known}
     prompt = {
+        # Free text the CA wrote about this client: masked like any narration
+        # so a stray PAN or account number never leaves. Absent, not empty,
+        # when there is none, so the model is not told to weigh nothing.
+        **({"business": mask_text(profile)} if (profile := (chart.client.business_profile or "").strip()) else {}),
         "ledgers": [
-            {"name": ledger.name, "group": ledger.get_group_display()}
-            for ledger in usable if not ledger.is_proposed
-        ],
-        "proposed_ledgers": [
-            {"name": ledger.name, "group": ledger.get_group_display()}
-            for ledger in usable if ledger.is_proposed
+            {"name": ledger.name, "group": ledger.get_group_display()} for ledger in usable
         ],
         "rejected_ledger_names": [
             ledger.name for ledger in chart.known if ledger.status == chart.status.REJECTED
@@ -252,8 +383,11 @@ def _ask(llm, batch, chart, pseudonymiser) -> dict[str, dict]:
             {"name": name, "group": group} for name, group in STANDARD_LEDGERS if name not in taken
         ],
         "proposable_groups": sorted(PROPOSABLE_GROUPS),
-        "vendor_aliases": pseudonymiser.known_aliases,
+        "party_aliases": pseudonymiser.known_aliases,
+        "known_parties": pseudonymiser.known_parties,
         "tds_sections": [code for code, _ in TdsSection.CHOICES],
+        "history": context.get("history", []),
+        "related": context.get("related", []),
         "transactions": [
             pseudonymiser.row(row.transaction, key=key).as_prompt_dict()
             for key, row in keys.items()
@@ -291,33 +425,52 @@ def _apply(batch, replies, chart, pseudonymiser) -> tuple[int, int, int]:
         if not item:
             continue
         rationale = str(item.get("rationale") or "")[:500]
+        narration = " ".join(str(item.get("narration") or "").split())[:500]
+        question = " ".join(str(item.get("question") or "").split())[:500]
         confidence = _clamp(item.get("confidence"))
-        ledger = chart.by_name(str(item.get("ledger") or ""))
-        if ledger is None and item.get("new_ledger") and confidence >= REVIEW_ADVISED:
+        named = str(item.get("ledger") or "")
+        ledger = chart.by_name(named)
+        # A standard name in ``ledger`` is a new ledger the model mis-filed; see
+        # ``_Chart.standard_spec``. Its own ``new_ledger`` still wins.
+        proposal = item.get("new_ledger") or chart.standard_spec(named)
+        if ledger is None and proposal and confidence >= REVIEW_ADVISED:
             if classification.method == ClassificationMethod.RULE:
-                # A rule placed this row in a ledger that is in use; a proposal
-                # may not displace it, or an approvable row becomes unapprovable
-                # until someone accepts a ledger the rule never needed.
+                # A rule placed this row in a ledger that is in use; a new
+                # head may not displace it without a person seeing why.
                 ledger = None
             else:
-                ledger = chart.propose(item.get("new_ledger"), rationale)
+                ledger = chart.propose(proposal, rationale)
 
-        if ledger is None or confidence < REVIEW_ADVISED:
-            # No forced guess. The reasoning is kept so the reviewer sees what
-            # was considered. A rule's placement stands; an earlier model
-            # suggestion the model no longer stands behind does not.
-            classification.rationale = rationale or "The model found no usable signal."
-            fields = ["rationale"]
+        # Whatever else happens, what the model wrote is kept: the narration
+        # is worth having even on a rule-placed row, and the question is the
+        # whole outcome of a decline.
+        classification.rationale = rationale or classification.rationale
+        classification.book_narration = narration or classification.book_narration
+        # The question stays whenever the model was not sure, even with a ledger
+        # named: the reviewer sees the guess and what would settle it together.
+        unsure = confidence < REVIEW_ADVISED
+        classification.open_question = question if (ledger is None or unsure) else ""
+        kept = ["rationale", "book_narration", "open_question"]
+        if _note_party_guess(classification, item.get("party_guess"), pseudonymiser):
+            kept += ["party_candidates", "party_resolution"]
+
+        if ledger is None or (unsure and classification.method == ClassificationMethod.RULE):
+            # Nothing to place, or a guess that must not displace a rule. A
+            # rule is a decision somebody made and this is a hunch, so the
+            # rule's placement stands; an earlier model suggestion the model
+            # no longer stands behind does not.
+            if not classification.rationale:
+                classification.rationale = "The model found no usable signal."
             if classification.method == ClassificationMethod.LLM:
-                classification.ledger = classification.vendor = None
+                classification.ledger = classification.party = None
                 classification.rcm = False
                 classification.tds_section = ""
                 classification.method = ClassificationMethod.UNRESOLVED
                 classification.confidence = 0.0
                 classification.review_band = band_for(0.0)
                 classification.needs_review = True
-                fields += ["ledger", "vendor", "rcm", "tds_section", "method", "confidence", "review_band", "needs_review"]
-            classification.save(update_fields=fields)
+                kept += ["ledger", "party", "rcm", "tds_section", "method", "confidence", "review_band", "needs_review"]
+            classification.save(update_fields=kept)
             declined += 1
             continue
 
@@ -325,34 +478,80 @@ def _apply(batch, replies, chart, pseudonymiser) -> tuple[int, int, int]:
             classification.method == ClassificationMethod.RULE
             and classification.ledger_id == ledger.pk
         ):
-            # Agreement with a rule adds nothing but a second opinion. Replacing
-            # it would demote a bulk-approvable row to a capped suggestion.
-            classification.rationale = rationale
-            classification.save(update_fields=["rationale"])
+            # Agreement with a rule adds a narration and a second opinion, and
+            # nothing else changes: the rule's confidence stands.
+            classification.save(update_fields=kept)
             confirmed += 1
             continue
 
-        vendor = pseudonymiser.vendor_for_alias(item.get("vendor_alias") or "")
+        party = pseudonymiser.party_for_alias(item.get("party_alias") or "")
+        if party is None and classification.party_resolution in ("AUTO", "CONFIRMED"):
+            # The model named no party, but a fact or a person already did. Not
+            # having an opinion is not a reason to forget that.
+            party = classification.party
         tds = str(item.get("tds_section") or "")
         if tds not in {code for code, _ in TdsSection.CHOICES}:
             tds = ""
         classification.apply(
-            Treatment(ledger=ledger, vendor=vendor, rcm=bool(item.get("rcm")), tds_section=tds),
+            Treatment(ledger=ledger, party=party, rcm=bool(item.get("rcm")), tds_section=tds),
             method=ClassificationMethod.LLM,
-            confidence=min(confidence, LLM_CONFIDENCE_CAP),
+            confidence=confidence,
         )
-        classification.rationale = rationale
         classification.needs_review = True
         classification.reviewed_at = None
         classification.save(
-            update_fields=[
-                "ledger", "vendor", "rcm", "tds_section", "method", "rule",
-                "confidence", "review_band", "needs_review", "rationale", "reviewed_at",
+            update_fields=kept + [
+                "ledger", "party", "rcm", "tds_section", "method", "rule",
+                "confidence", "review_band", "needs_review", "reviewed_at",
             ]
         )
         placed += 1
     logger.debug("model tier applied %d suggestions at %s", placed, now)
     return placed, declined, confirmed
+
+
+_TOKEN = re.compile(r"\b[VP][0-9A-F]{8,10}\b")
+
+
+def _readable(text: str, pseudonymiser) -> str:
+    """Model-written prose with its pseudonym tokens turned back into words.
+
+    A reason such as "same payee as V3F9A1C2B0" is meaningless to the person
+    reading it, and worse, is the shape of token that must never reach a
+    permanent record. A known party's token becomes its name; a person's has no
+    reverse map -- it is a one-way hash by design -- so it becomes "an
+    individual" rather than a guess at a name.
+    """
+    def swap(match):
+        party = pseudonymiser.party_for_alias(match.group(0))
+        return party.canonical_name if party is not None else "an individual"
+
+    return _TOKEN.sub(swap, text or "")
+
+
+def _note_party_guess(classification, guess, pseudonymiser) -> bool:
+    """Record the model's guess at who a counterparty is -- as a suggestion only.
+
+    Returns True when the classification's suggestions changed. The guess is
+    never applied to ``party``: this is the one clue in the list that came from
+    a model, and a model's opinion of who someone is has exactly the standing a
+    spelling similarity does -- something for a person to confirm once, after
+    which it is remembered as a fact. A row whose party is already established
+    by a fact or a person is left alone, since a guess cannot improve on that.
+    """
+    from classify.parties import add_suggestion
+
+    if not isinstance(guess, dict) or classification.party_resolution in ("AUTO", "CONFIRMED"):
+        return False
+    party = pseudonymiser.party_for_alias(str(guess.get("alias") or ""))
+    if party is None:
+        return False  # an alias it made up
+    reason = " ".join(_readable(str(guess.get("reason") or ""), pseudonymiser).split())[:200]
+    classification.party_candidates = add_suggestion(
+        classification.party_candidates, party, reason or "the model thinks so", source="MODEL"
+    )
+    classification.party_resolution = "CANDIDATE"
+    return True
 
 
 def _clamp(value) -> float:
@@ -361,4 +560,3 @@ def _clamp(value) -> float:
     except (TypeError, ValueError):
         return 0.0
     return max(0.0, min(1.0, number))
-

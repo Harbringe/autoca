@@ -23,7 +23,7 @@ from classify.engine import (
     review_queue,
     review_summary,
     unresolved_for,
-    vendor_for,
+    party_for,
 )
 from classify.models import LedgerAccount, LedgerGroup
 from classify.treatment import ReviewBand, Treatment
@@ -51,7 +51,7 @@ class Command(BaseCommand):
             default=LedgerGroup.INDIRECT_EXPENSE,
             help="Tally group, used only when the ledger is being created.",
         )
-        parser.add_argument("--vendor", help="Party name, if there is an identifiable one.")
+        parser.add_argument("--party", help="Party name, if there is an identifiable one.")
         parser.add_argument("--rcm", action="store_true", help="Reverse charge applies.")
         parser.add_argument("--tds", default="", help='TDS section, e.g. "194J".')
         parser.add_argument(
@@ -129,7 +129,7 @@ class Command(BaseCommand):
         )
         treatment = Treatment(
             ledger=target,
-            vendor=vendor_for(client, options["vendor"]) if options["vendor"] else None,
+            party=party_for(client, options["party"]) if options["party"] else None,
             rcm=options["rcm"],
             tds_section=options["tds"],
         )

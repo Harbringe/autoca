@@ -21,13 +21,13 @@ from integrations.kms.base import EnvelopeError
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("fixture_adapters")]
 
-ACCOUNT = "911010000004321"
+ACCOUNT = "900000000000001"
 
 
 @pytest.fixture
 def client():
     firm = create_firm("Privacy Test Firm")
-    return create_client(firm, "Ramesh Deshmukh", datetime.date(2025, 4, 1))
+    return create_client(firm, "Arjun Nair", datetime.date(2025, 4, 1))
 
 
 def test_the_account_number_is_not_stored_in_the_clear(client):
@@ -42,7 +42,7 @@ def test_the_account_number_is_not_stored_in_the_clear(client):
     assert stored
     for number_blob, holder_blob in stored:
         assert ACCOUNT.encode() not in bytes(number_blob)
-        assert b"RAMESH" not in bytes(holder_blob).upper()
+        assert b"ARJUN" not in bytes(holder_blob).upper()
 
 
 def test_the_number_reads_back_intact(client):
@@ -50,16 +50,16 @@ def test_the_number_reads_back_intact(client):
         account = ingest_fixture_statement(client).bank_account
 
         assert account.account_number == ACCOUNT
-        assert account.account_holder == "RAMESH GOPAL DESHMUKH"
+        assert account.account_holder == "ARJUN PRATAP NAIR"
 
 
 def test_the_last_four_are_kept_for_display_without_decrypting(client):
-    """"Axis ••••4321" on a list screen should not cost a KMS call per row."""
+    """"Axis ••••0001" on a list screen should not cost a KMS call per row."""
     with firm_context(client.firm_id):
         account = ingest_fixture_statement(client).bank_account
 
-        assert account.account_last4 == "4321"
-        assert str(account) == "Axis Bank A/c 4321"
+        assert account.account_last4 == "0001"
+        assert str(account) == "Axis Bank A/c 0001"
         assert ACCOUNT not in account.ledger_name
 
 

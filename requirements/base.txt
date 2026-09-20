@@ -32,6 +32,20 @@ pdfplumber==0.11.10
 # integrations/storage/. See docs/ARCHITECTURE.md.
 boto3==1.40.14
 
+# --- GST reconciliation ---
+# Reads the purchase register and GSTR-2B when they arrive as Excel, and writes
+# the reconciliation working paper. In-process and file-only, like pdfplumber.
+openpyxl==3.1.5
+
 # --- Serving ---
 gunicorn==23.0.0
 whitenoise==6.9.0
+
+# --- The platform admin's appearance ---
+# Jazzmin themes django.contrib.admin. It is templates and static files only:
+# it changes nothing about who may open the admin (core/adminsite.py) or what
+# it shows (core/admin.py). Its base template links a Google Fonts stylesheet
+# that the admin's Content-Security-Policy refuses, so the panel renders in the
+# system font stack -- deliberately, rather than announcing each page load to a
+# third party.
+django-jazzmin==3.0.5

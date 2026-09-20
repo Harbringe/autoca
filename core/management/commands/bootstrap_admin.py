@@ -1,9 +1,9 @@
-"""Create a superuser attached to a firm, so the Django admin is reachable.
+"""Create a firm and its owner from the command line.
 
-The admin runs on the low-privilege ``autoca_web`` role under RLS, and
-``TenantContextMiddleware`` rejects any authenticated user with no firm
-membership. A bare ``createsuperuser`` account therefore gets a 403 on every
-page. This command creates the user, a firm, and a firm-admin membership in one go.
+The usual way is the super admin console (New firm), which sends the owner an
+invite link. This is the fallback for a first local setup. The account is the
+firm's owner -- a firm administrator -- and deliberately NOT a Django superuser:
+a superuser with no firm is the AutoCA super admin, and firm staff are not.
 
     python manage.py bootstrap_admin --email you@example.com --firm "Acme & Co CA"
     python manage.py bootstrap_admin --email you@example.com --firm-id <uuid>   # reuse a firm
@@ -29,7 +29,7 @@ MIN_PASSWORD_LEN = 12
 
 
 class Command(BaseCommand):
-    help = "Create a superuser bound to a firm (with a firm-admin membership)."
+    help = "Create a firm and its owner (a firm administrator)."
 
     def add_arguments(self, parser):
         parser.add_argument("--email", required=True)
@@ -57,8 +57,6 @@ class Command(BaseCommand):
         user, created = user_model.objects.get_or_create(
             email=email, defaults={"full_name": opts["name"]}
         )
-        user.is_staff = True
-        user.is_superuser = True
         user.set_password(password)
         if opts["name"]:
             user.full_name = opts["name"]
@@ -72,8 +70,9 @@ class Command(BaseCommand):
             firm = create_firm(opts["firm"])
 
         with firm_context(firm.pk):
+            has_owner = FirmMembership.objects.filter(firm=firm, is_owner=True).exists()
             membership, m_created = FirmMembership.objects.get_or_create(
-                firm=firm, user=user, defaults={"role": Role.FIRM_ADMIN}
+                firm=firm, user=user, defaults={"role": Role.FIRM_ADMIN, "is_owner": not has_owner}
             )
             if opts["demo"]:
                 for name in ("Tata Steel Ltd", "Reliance Retail", "HDFC Bank"):
@@ -87,10 +86,10 @@ class Command(BaseCommand):
             storage.put(key, f"seed marker for {firm.name}\n".encode(), "text/plain")
 
         self.stdout.write(self.style.SUCCESS("Ready."))
-        self.stdout.write(f"  user       {email}  ({'created' if created else 'updated'}, superuser)")
+        self.stdout.write(f"  user       {email}  ({'created' if created else 'updated'})")
         self.stdout.write(f"  firm       {firm.name}  ({firm.pk})")
         self.stdout.write(
-            f"  membership {membership.get_role_display()}  "
+            f"  membership {'Firm owner' if membership.is_owner else membership.get_role_display()}  "
             f"({'created' if m_created else 'existing'})"
         )
         if opts["demo"]:
@@ -98,5 +97,4 @@ class Command(BaseCommand):
         self.stdout.write("")
         self.stdout.write("Next:")
         self.stdout.write("  python manage.py runserver")
-        self.stdout.write("  open http://127.0.0.1:8000/admin/  and sign in")
-        self.stdout.write("  you'll land on the TOTP setup page -- scan the QR, enter the code")
+        self.stdout.write("  open http://127.0.0.1:8000/app/  and sign in")

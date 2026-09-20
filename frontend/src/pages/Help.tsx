@@ -41,13 +41,13 @@ export default function Help() {
 
       <h2>What leaves the server</h2>
       <p>
-        When the model is asked about a row, it receives the channel, direction, an amount band, and the narration with account numbers, references, PAN, GSTIN, phone numbers and card numbers masked. People's names are replaced by stable pseudonyms; known vendors by alias tokens; the account holder's own name is never sent. It answers with a ledger name from the client's own chart of accounts, which is checked before anything is written.
+        When the model is asked about a row, it receives the channel, direction, an amount band, and the narration with account numbers, references, PAN, GSTIN, phone numbers and card numbers masked. People's names are replaced by stable pseudonyms; known parties by alias tokens; the account holder's own name is never sent. It answers with a ledger name from the client's own chart of accounts, which is checked before anything is written.
       </p>
 
       <h2>Roles</h2>
       <ul>
         <li><strong>Read only</strong> — can see everything in the firm, change nothing.</li>
-        <li><strong>Staff</strong> — can upload, place rows, manage ledgers and vendors. Cannot approve.</li>
+        <li><strong>Staff</strong> — can upload, place rows, manage ledgers and parties. Cannot approve.</li>
         <li><strong>Senior CA</strong> — everything staff can, plus approval and corrections.</li>
         <li><strong>Firm administrator</strong> — everything, plus clients and members.</li>
       </ul>

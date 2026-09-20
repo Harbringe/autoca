@@ -79,7 +79,7 @@ class Command(BaseCommand):
     def _render(self, client, statement) -> str:
         rows = list(
             statement.transactions.select_related(
-                "classification__ledger", "classification__vendor"
+                "classification__ledger", "classification__party"
             ).order_by("row_number")
         )
         entries = {
@@ -148,8 +148,8 @@ class Command(BaseCommand):
         if classification.ledger is None:
             return '<span class="warn-text">awaiting a ledger</span>'
         bits = [esc(classification.ledger.name)]
-        if classification.vendor_id:
-            bits.append(f'<span class="muted">{esc(classification.vendor.canonical_name)}</span>')
+        if classification.party_id:
+            bits.append(f'<span class="muted">{esc(classification.party.canonical_name)}</span>')
         if classification.rcm:
             bits.append('<span class="flag">RCM</span>')
         if classification.tds_section:

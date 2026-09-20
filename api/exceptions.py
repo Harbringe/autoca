@@ -54,6 +54,16 @@ DOMAIN_ERRORS = {
     "ProposalError": (status.HTTP_409_CONFLICT, "proposal_conflict"),
     "LedgerRenameError": (status.HTTP_409_CONFLICT, "ledger_name_taken"),
     "TenantContextError": (status.HTTP_409_CONFLICT, "tenant_context"),
+    "TeamError": (status.HTTP_409_CONFLICT, "team_rule"),
+    # The books' review workflow, and the lock that follows sign-off.
+    "NotReadyError": (status.HTTP_409_CONFLICT, "books_not_ready"),
+    "NothingRequestedError": (status.HTTP_409_CONFLICT, "nothing_requested"),
+    "BooksError": (status.HTTP_409_CONFLICT, "books_state"),
+    "EntryLockedError": (status.HTTP_409_CONFLICT, "entry_locked"),
+    "StatementRemovalError": (status.HTTP_409_CONFLICT, "statement_in_use"),
+    # GST reconciliation: an unreadable upload, and a rule that refused the step.
+    "GstParseError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "gst_file_unreadable"),
+    "GstError": (status.HTTP_409_CONFLICT, "gst_rule"),
     # Nothing to act on.
     "NoStatementError": (status.HTTP_404_NOT_FOUND, "no_statement_for_date"),
 }
@@ -65,10 +75,11 @@ def api_exception_handler(exc, context):
 
     if name in DOMAIN_ERRORS:
         http_status, code = DOMAIN_ERRORS[name]
-        return Response({"code": code, "detail": str(exc)}, status=http_status)
+        detail = "; ".join(exc.messages) if isinstance(exc, DjangoValidationError) else str(exc)
+        return Response({"code": code, "detail": detail}, status=http_status)
 
     if isinstance(exc, ProtectedError):
-        # Deleting a ledger or a vendor that posted entries point at. The
+        # Deleting a ledger or a party that posted entries point at. The
         # journal is append-only, so the referencing rows cannot go either; the
         # answer is to deactivate it, and the message says so.
         return Response(

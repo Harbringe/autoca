@@ -8,7 +8,7 @@ classifier needs and nothing else. Concretely, per row:
   numbers, references, PAN, GSTIN, phones, cards, emails become typed
   placeholders. The same function masks every log line, so what the model can
   see and what the log can hold are one definition.
-* **Known vendors become their alias token.** A client's vendor list is the
+* **Known parties become their alias token.** A client's party list is the
   firm's data; the model gets ``V3F9A1C2B0`` and the mapping back happens
   here, server-side. The model can still say "this is the same party as last
   time" without ever learning who that is.
@@ -21,12 +21,14 @@ classifier needs and nothing else. Concretely, per row:
   ``LLM_SHARE_BUSINESS_NAMES`` to false and every party becomes an alias.
 * **The client's own name is never sent.** A transfer to the account holder is
   marked ``self`` and the name dropped.
-* **Amounts become bands.** The model needs to know whether this is a coffee
-  or a car; it does not need the paise.
+* **Amounts and dates go out exactly.** They used to go out as bands; a
+  bookkeeper cannot recognise a refund without seeing that it is the same
+  amount as the payment three weeks earlier, and an amount is not personal
+  data. The band function is kept for display.
 
-What the model receives for a row is therefore: channel, direction, an amount
-band, the masked narration with parties substituted, and the remark if the
-bank carried one. What it gets back is a ledger *name* from the list it was
+What the model receives for a row is therefore: date, channel, direction, the
+exact amount, the masked narration with parties substituted, and the remark
+if the bank carried one. What it gets back is a ledger *name* from the list it was
 given, which is validated against that list before anything is written.
 """
 
@@ -67,6 +69,10 @@ class ModelRow:
     channel: str
     direction: str
     amount_band: str
+    #: Rupees with paise, as text, e.g. "2450.00".
+    amount: str
+    #: dd-mm-yyyy, the way the statement prints it.
+    date: str
     narration: str
     counterparty: str
     remark: str
@@ -77,9 +83,10 @@ class ModelRow:
     def as_prompt_dict(self) -> dict:
         return {
             "key": self.key,
+            "date": self.date,
             "channel": self.channel,
             "direction": self.direction,
-            "amount_band": self.amount_band,
+            "amount": self.amount,
             "counterparty": self.counterparty,
             "remark": self.remark,
             "narration": self.narration,
@@ -134,18 +141,31 @@ def looks_like_a_person(counterparty: str) -> bool:
 class Pseudonymiser:
     """Turns a client's transactions into rows a model may see.
 
-    Built once per batch: it loads the client's vendor aliases and account
+    Built once per batch: it loads the client's party aliases and account
     holder once rather than per row.
     """
 
-    def __init__(self, client, *, vendors, account_holder: str = "", own_accounts=()):
+    def __init__(self, client, *, parties, account_holder: str = "", own_accounts=(), spellings=()):
         self.client = client
         self.firm_id = client.firm_id
         self.account_holder = account_holder
         self.own_accounts = tuple(own_accounts)
         #: normalised canonical name -> alias token
-        self._aliases = {normalise(v.canonical_name): v.alias_token for v in vendors}
-        self._alias_to_vendor = {v.alias_token: v for v in vendors}
+        self._aliases = {normalise(v.canonical_name): v.alias_token for v in parties}
+        self._alias_to_party = {v.alias_token: v for v in parties}
+        # ``spellings`` are ``PartyAlias`` rows: a spelling a person has confirmed
+        # is the same party as its canonical name, so it gets the same token.
+        # Without this a confirmed alias was remembered by the resolver and then
+        # ignored here -- the model was sent the raw spelling of a party the firm
+        # had already identified, and could not join it to that party's history.
+        #
+        # Passed in rather than read here so that building a Pseudonymiser stays
+        # free of database access, as it always was.
+        by_pk = {v.pk: v for v in parties}
+        for alias in spellings:
+            party = by_pk.get(alias.party_id)
+            if party is not None:
+                self._aliases.setdefault(alias.alias_normalised, party.alias_token)
         self.share_business_names = bool(getattr(settings, "LLM_SHARE_BUSINESS_NAMES", True))
 
     # -- outwards --------------------------------------------------------------
@@ -171,6 +191,8 @@ class Pseudonymiser:
             channel=facts.channel if facts.channel != Channel.UNKNOWN else "UNKNOWN",
             direction=direction,
             amount_band=amount_band(transaction.amount_paise),
+            amount=f"{abs(transaction.amount_paise) / 100:.2f}",
+            date=transaction.value_date.strftime("%d-%m-%Y"),
             narration=narration,
             counterparty=party,
             remark=mask(facts.remark).text if facts.remark else "",
@@ -189,13 +211,32 @@ class Pseudonymiser:
 
     # -- back ------------------------------------------------------------------
 
-    def vendor_for_alias(self, alias: str):
-        """Resolve a vendor alias the model handed back. None if it made one up."""
-        return self._alias_to_vendor.get((alias or "").strip().upper())
+    def party_for_alias(self, alias: str):
+        """Resolve a party alias the model handed back. None if it made one up."""
+        return self._alias_to_party.get((alias or "").strip().upper())
 
     @property
     def known_aliases(self) -> list[str]:
-        return sorted(self._alias_to_vendor)
+        return sorted(self._alias_to_party)
+
+    @property
+    def known_parties(self) -> list[dict]:
+        """Each known party as ``{alias, name}`` -- the name only where it may go out.
+
+        A business name is not personal data and is already sent in the clear
+        whenever it appears in a narration, so listing the client's known
+        businesses adds nothing the model could not see. A person's name never
+        goes out, so a person appears here by alias alone -- which is exactly
+        why the model cannot suggest a match for one by name, and why a person
+        is only ever recognised by a fact or a confirmed spelling.
+        """
+        out = []
+        for alias, party in sorted(self._alias_to_party.items()):
+            entry = {"alias": alias}
+            if self.share_business_names and not looks_like_a_person(party.canonical_name):
+                entry["name"] = party.canonical_name
+            out.append(entry)
+        return out
 
 
 def _replace(text: str, needle: str, replacement: str) -> str:

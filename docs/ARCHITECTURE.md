@@ -2,7 +2,8 @@
 
 Built so far: the scaffold and tenant isolation, then Phase 1 end to end — a
 bank statement PDF in, approved permanent journal entries out, with Tally XML
-and the standard reports on top. `gst/` is still an empty placeholder.
+and the standard reports on top. `gst/` adds GST reconciliation beside it: a
+purchase register against GSTR-2B, one GSTIN and month at a time.
 
 ```
 statement.pdf
@@ -17,6 +18,12 @@ statement.pdf
   -> ledger/tally           Tally Prime import XML
   -> ledger/reports         Trial Balance, P&L, Balance Sheet
   -> ledger/reconciliation  month end: does the ledger match the bank?
+
+register.xlsx + GSTR-2B.json
+  -> gst/parsers            invoices, amounts exact in paise
+  -> gst/matching           pure rules: match, mismatch kind, ITC (nothing fuzzy earns credit)
+  -> gst/services           stored as staging; a person decides; a senior signs off
+  -> gst/report             the screen and the Excel working paper, from one dictionary
 ```
 
 One idea carries most of the weight: **make the wrong answer impossible to
@@ -52,7 +59,7 @@ documents/       one registry for every uploaded file
 banking/         statement parsing, ingestion, deduplication, continuity
 classify/        narration analysis, rules, vendors, the review queue
 ledger/          approval, the immutable journal, Tally XML, reports
-gst/             structure only
+gst/             purchase register vs GSTR-2B, ITC, decisions, sign-off (removable add-on)
 ```
 
 `pdf/` is behind the adapter boundary even though pdfplumber runs in-process
@@ -171,6 +178,52 @@ Supabase dev project — the gate must not be skippable because a free-tier proj
 was asleep. `test_connection_role_cannot_bypass_rls` asserts the CI role is not a
 superuser, because if it were, every other assertion would pass vacuously.
 
+### The boundary RLS cannot see: two clients of one firm
+
+Every policy above is keyed on `firm_id`, which is the right boundary for what it
+defends against — one firm reading another's rows is impossible in the database
+whatever the application does. Inside a firm it says nothing. Two clients of the
+same firm are one tenant to PostgreSQL, and a CA firm's liability rests on their
+books being separate.
+
+That gap is not theoretical, and it is reachable in one step. A rule names a
+ledger, a ledger belongs to exactly one client, and nothing in the schema made
+the two agree. A rule carrying `client = NULL` — once described as "firm-wide" —
+applied to every client in the firm while naming one client's ledger, so every
+other client's matching transactions were placed into books that were not theirs.
+It reaches posted journal lines, not just the review queue.
+
+So the client boundary is enforced the same way the firm boundary is, in
+PostgreSQL rather than in application code that the next `objects.create` can
+walk past:
+
+| Guarantee | Where |
+| --- | --- |
+| A rule belongs to exactly one client; there is no firm-wide rule | `classify_rule.client_id` NOT NULL |
+| A rule's ledger is a ledger of that same client | `rule_ledger_same_client`, a composite FK on `(client_id, ledger_id)` |
+| A rule's party is a party of that same client | `rule_vendor_same_client`, likewise |
+| No journal line posts into another client's ledger | `journal_line_one_client`, a BEFORE INSERT trigger |
+
+Three details that are the whole point rather than trivia:
+
+* **`client_id` had to become NOT NULL.** A composite foreign key defaults to
+  `MATCH SIMPLE`, under which a NULL in any referencing column satisfies the key
+  trivially. Left nullable, a firm-wide rule would have walked straight through
+  the constraint added to stop it.
+* **The books get a trigger, not a key.** A composite key would need a
+  `client_id` column on `ledger_journal_line`, and filling one in means an
+  UPDATE against an append-only table that company law is the reason for. The
+  table is insert-only, so `BEFORE INSERT` is exactly as strong.
+* **Pre-existing posted lines are left alone.** A line already posted is part of
+  the permanent record. The remedy for a wrong one is a superseding entry signed
+  by a person, not a migration rewriting history.
+
+`classify/tests/test_client_isolation.py` holds the behavioural half, including
+two tests that bypass `full_clean` entirely to prove the database refuses the
+write on its own. They call `SET CONSTRAINTS ALL IMMEDIATE` first: the composite
+keys are deferred so that deleting a party, which Django handles by nulling the
+reference mid-cascade, does not trip them, and a test transaction never commits.
+
 ---
 
 ## Rule 3 — encryption call sites are correct before there is anything to encrypt
@@ -257,7 +310,7 @@ identically to the dedicated Axis parser, row for row.
 Flattened to a line, a row reads:
 
 ```
-13-04-2025  Sweep/VO000000087559330/...  250.00  123939.43  318
+13-04-2025  Sweep/VO000000012345678/...  250.00  112500.00  318
 ```
 
 and nothing in that string says whether the 250.00 was money in or money out.
@@ -272,7 +325,7 @@ also why `integrations/pdf/` exposes tables at all instead of just text.
 A narration is not free text; the bank builds it from a template.
 
 ```
-UPI/P2M/092928654106/ZERODHA BROKING LIMIT/098336/HDFC BANK LTD
+UPI/P2M/100000000001/ZERODHA BROKING LIMIT/098336/HDFC BANK LTD
 ^   ^   ^            ^                     ^      ^
 |   |   reference    counterparty          remark counterparty's bank
 |   person-to-merchant
@@ -297,8 +350,8 @@ Three details that are less obvious than they look:
 wraps at the PDF column edge, which lands mid-token as readily as on a space
 (`GODAVARI_RESTAU` / `RANT_`). Rejoining it is a coin flip, and guessing wrong
 gives one payee two match keys. Discarding spaces makes the question moot, and
-incidentally absorbs the bank's own inconsistency between `Ramesh Gopal
-Deshmukh` and `RameshGopalDeshmukh`.
+incidentally absorbs the bank's own inconsistency between `Arjun Gopal
+Nair` and `ArjunPratapNair`.
 
 **Self-transfers are matched approximately.** A transfer between two accounts
 the client owns is a contra entry, not income or expenditure, and booking it as

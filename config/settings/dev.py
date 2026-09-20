@@ -10,7 +10,8 @@ from .base import *  # noqa: F401,F403
 from .base import env_bool
 
 DEBUG = env_bool("DJANGO_DEBUG", True)
-ALLOWED_HOSTS = ["localhost", "127.0.0.1", "[::1]", "testserver"]
+MFA_DISABLED = env_bool("MFA_DISABLED", False)
+ALLOWED_HOSTS =["localhost", "127.0.0.1", "[::1]", "testserver"]
 
 # Dev over http://localhost, so no HTTPS-only cookie flags.
 SESSION_COOKIE_SECURE = False

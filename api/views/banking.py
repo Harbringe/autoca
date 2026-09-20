@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from django.shortcuts import get_object_or_404
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -23,11 +24,12 @@ from api.serializers.core import JobSerializer
 from api.views.base import ClientScopedMixin, FirmScopedViewSet
 from banking.ingest import confirm_opening_balance, ingest_statement
 from banking.models import BankAccount, Statement, StatementTransaction
+from banking.removal import remove_statement
 from classify.engine import classify_statement
 from classify.llm import suggest_unresolved
 from classify.seeds import rename_account_ledger, seed_client
 from core.jobs import run_job
-from core.models import Client
+from core.access import get_visible_client, visible_client_ids
 
 
 @extend_schema(tags=["statements"])
@@ -60,7 +62,7 @@ class StatementUploadView(viewsets.GenericViewSet):
         responses={202: JobSerializer},
     )
     def create(self, request, client_id=None):
-        client = get_object_or_404(Client, pk=client_id, firm_id=request.firm.pk)
+        client = get_visible_client(request, client_id)
         payload = self.get_serializer(data=request.data)
         payload.is_valid(raise_exception=True)
 
@@ -108,6 +110,13 @@ def _ingest(*, client, data, filename, user, allow_gap) -> dict:
     # upload has already succeeded and the rows are in the queue either way.
     model = suggest_unresolved(client, classifications=_unresolved_in(result.statement))
 
+    # What the AI is very sure of goes straight into the books, as a working
+    # draft: nothing is permanent until a senior signs off, and each of these is
+    # marked so a CA can find what nobody has yet looked at.
+    from ledger.approval import auto_post_client
+
+    auto_posted = auto_post_client(client)
+
     return {
         "statement": str(result.statement.pk),
         "bank_account": str(result.bank_account.pk),
@@ -121,6 +130,7 @@ def _ingest(*, client, data, filename, user, allow_gap) -> dict:
         "model_declined": model.declined,
         "model_proposed": model.proposed,
         "model_error": model.error,
+        "auto_posted": auto_posted,
     }
 
 
@@ -188,7 +198,11 @@ class BankAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
 
 @extend_schema(tags=["statements"])
 class StatementViewSet(
-    ClientScopedMixin, mixins.RetrieveModelMixin, mixins.ListModelMixin, viewsets.GenericViewSet
+    ClientScopedMixin,
+    mixins.RetrieveModelMixin,
+    mixins.ListModelMixin,
+    mixins.DestroyModelMixin,
+    viewsets.GenericViewSet,
 ):
     """Statements on file for a client."""
 
@@ -196,12 +210,32 @@ class StatementViewSet(
     serializer_class = StatementSerializer
     permission_classes = [HasFirmPermission]
     pagination_class = DefaultPagination
-    required_permission = "document.view"
+    required_permission = {
+        "GET": "document.view",
+        "HEAD": "document.view",
+        "OPTIONS": "document.view",
+        "DELETE": "statement.delete",
+    }
 
     def get_queryset(self):
         return Statement.objects.filter(
             firm_id=self.request.firm.pk, bank_account__client=self.client
         ).select_related("bank_account", "document")
+
+    @extend_schema(
+        summary="Remove a statement uploaded by mistake",
+        description=(
+            "Removes the statement, its rows, the file, and every entry posted from it "
+            "that is not yet signed off (each is kept in the change log). Refused with "
+            "`entry_locked` if any of them is inside signed-off books. Rules and party "
+            "names learned meanwhile are kept. Returns what was removed."
+        ),
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    def destroy(self, request, client_id=None, pk=None):
+        statement = self.get_object()
+        removed = remove_statement(statement, actor=request.user)
+        return Response(removed)
 
     @extend_schema(
         summary="The rows read out of a statement",
@@ -237,4 +271,7 @@ class TransactionViewSet(
     required_permission = "transaction.view"
 
     def get_queryset(self):
-        return StatementTransaction.objects.filter(firm_id=self.request.firm.pk)
+        return StatementTransaction.objects.filter(
+            firm_id=self.request.firm.pk,
+            bank_account__client__in=visible_client_ids(self.request.membership),
+        )

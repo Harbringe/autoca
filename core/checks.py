@@ -23,6 +23,20 @@ OTP_MW = "django_otp.middleware.OTPMiddleware"
 
 
 @register()
+def check_mfa_not_disabled_outside_debug(app_configs, **kwargs):
+    """MFA_DISABLED is a local-demo switch. Anywhere else it is a misconfiguration."""
+    if getattr(settings, "MFA_DISABLED", False) and not settings.DEBUG:
+        return [
+            Error(
+                "MFA_DISABLED is set without DEBUG. The second factor is mandatory "
+                "outside local development; unset MFA_DISABLED.",
+                id="core.E015",
+            )
+        ]
+    return []
+
+
+@register()
 def check_middleware_order(app_configs, **kwargs):
     """The ordering constraints documented in each middleware, enforced."""
     errors = []

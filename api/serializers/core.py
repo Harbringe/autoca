@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from rest_framework import serializers
 
+from core.access import can_post, can_sign_off
 from core.models import Client, Firm, Job
 from core.rbac import PERMISSIONS
 
@@ -16,15 +17,70 @@ class FirmSerializer(serializers.ModelSerializer):
 
 
 class ClientSerializer(serializers.ModelSerializer):
+    #: Who leads the client. Set on the Team page, never through this endpoint.
+    lead = serializers.SerializerMethodField()
+    #: Whether the signed-in member may approve and correct this client's
+    #: entries. Presentation only; ledger.approval checks again.
+    can_sign_off = serializers.SerializerMethodField()
+    can_post = serializers.SerializerMethodField()
+
     class Meta:
         model = Client
-        fields = ["id", "name", "fy_start", "created_at"]
-        read_only_fields = ["id", "created_at"]
+        fields = ["id", "name", "fy_start", "business_profile", "created_at", "lead", "can_sign_off", "can_post"]
+        read_only_fields = ["id", "created_at", "lead", "can_sign_off", "can_post"]
         extra_kwargs = {
             "fy_start": {
                 "help_text": "First day of the client's financial year, normally 1 April.",
-            }
+            },
+            "business_profile": {
+                "help_text": "What the client's business does, in a few sentences. Shown to the model that suggests ledgers.",
+                "required": False,
+                "max_length": 2000,
+            },
         }
+
+    def validate_name(self, value: str) -> str:
+        value = value.strip()
+        if len(value) < 2:
+            raise serializers.ValidationError("Give the client a name.")
+        request = self.context.get("request")
+        firm_id = getattr(getattr(request, "firm", None), "pk", None)
+        clash = Client.objects.filter(firm_id=firm_id, name__iexact=value)
+        if self.instance is not None:
+            clash = clash.exclude(pk=self.instance.pk)
+        if firm_id and clash.exists():
+            raise serializers.ValidationError("The firm already has a client with this name.")
+        return value
+
+    def validate_business_profile(self, value: str) -> str:
+        return value.strip()
+
+    def validate_fy_start(self, value):
+        if value.day != 1:
+            raise serializers.ValidationError("A financial year starts on the 1st of a month (normally 1 April).")
+        if self.instance is not None and value != self.instance.fy_start:
+            from ledger.models import JournalEntry
+
+            if JournalEntry.objects.filter(client=self.instance).exists():
+                raise serializers.ValidationError(
+                    "This client already has posted entries, which are numbered by financial year. "
+                    "The financial year start can't change now."
+                )
+        return value
+
+    def get_lead(self, client) -> dict | None:
+        lead = client.lead
+        if lead is None:
+            return None
+        return {"id": str(lead.pk), "name": lead.user.full_name or lead.user.email}
+
+    def get_can_post(self, client) -> bool:
+        request = self.context.get("request")
+        return can_post(getattr(request, "membership", None), client)
+
+    def get_can_sign_off(self, client) -> bool:
+        request = self.context.get("request")
+        return can_sign_off(getattr(request, "membership", None), client)
 
 
 class MeSerializer(serializers.Serializer):
@@ -39,8 +95,10 @@ class MeSerializer(serializers.Serializer):
     email = serializers.EmailField(read_only=True)
     full_name = serializers.CharField(read_only=True)
     firm = FirmSerializer(read_only=True, allow_null=True)
+    membership_id = serializers.UUIDField(read_only=True, allow_null=True)
     role = serializers.CharField(read_only=True, allow_null=True)
     role_display = serializers.CharField(read_only=True, allow_null=True)
+    is_owner = serializers.BooleanField(read_only=True)
     permissions = serializers.ListField(child=serializers.CharField(), read_only=True)
 
     @classmethod
@@ -52,8 +110,14 @@ class MeSerializer(serializers.Serializer):
             "email": user.email,
             "full_name": user.full_name,
             "firm": getattr(request, "firm", None),
+            "membership_id": membership.pk if membership else None,
             "role": membership.role if membership else None,
-            "role_display": membership.get_role_display() if membership else None,
+            "role_display": (
+                ("Firm owner" if membership.is_owner else membership.get_role_display())
+                if membership
+                else None
+            ),
+            "is_owner": bool(membership and membership.is_owner),
             "permissions": sorted(PERMISSIONS.get(membership.role, set())) if membership else [],
         }
 

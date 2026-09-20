@@ -13,15 +13,15 @@ from rest_framework import serializers
 
 from api.fields import MoneySerializerMixin, PaiseField
 from api.serializers.classify import TreatmentSerializer
-from ledger.models import JournalEntry, JournalLine
+from ledger.models import EntryChange, JournalEntry, JournalLine
 
 
 class JournalLineSerializer(MoneySerializerMixin, serializers.ModelSerializer):
     money = ("amount_paise",)
 
     ledger_name = serializers.CharField(source="ledger_account.name", read_only=True)
-    vendor_name = serializers.CharField(
-        source="vendor.canonical_name", read_only=True, allow_null=True
+    party_name = serializers.CharField(
+        source="party.canonical_name", read_only=True, allow_null=True
     )
 
     class Meta:
@@ -30,8 +30,8 @@ class JournalLineSerializer(MoneySerializerMixin, serializers.ModelSerializer):
             "id",
             "ledger_account",
             "ledger_name",
-            "vendor",
-            "vendor_name",
+            "party",
+            "party_name",
             "direction",
             "amount_paise",
             "rcm",
@@ -51,6 +51,8 @@ class JournalEntrySerializer(MoneySerializerMixin, serializers.ModelSerializer):
     approved_by_email = serializers.CharField(
         source="approved_by.email", read_only=True, allow_null=True
     )
+    marker_display = serializers.CharField(source="get_marker_display", read_only=True)
+    is_locked = serializers.SerializerMethodField()
 
     class Meta:
         model = JournalEntry
@@ -71,8 +73,17 @@ class JournalEntrySerializer(MoneySerializerMixin, serializers.ModelSerializer):
             "approved_by",
             "approved_by_email",
             "approved_at",
+            "marker",
+            "marker_display",
+            "is_locked",
         ]
         read_only_fields = fields
+
+    @extend_schema_field(serializers.BooleanField())
+    def get_is_locked(self, obj) -> bool:
+        """Inside books a senior has signed off, so no longer changeable."""
+        through = getattr(obj.client, "signed_off_through", None)
+        return through is not None and obj.entry_date <= through
 
     @extend_schema_field(serializers.UUIDField(allow_null=True))
     def get_superseded_by(self, obj):
@@ -82,12 +93,33 @@ class JournalEntrySerializer(MoneySerializerMixin, serializers.ModelSerializer):
         return entry.pk if entry else None
 
 
+class RemoveEntrySerializer(serializers.Serializer):
+    note = serializers.CharField(
+        required=False, allow_blank=True, default="", max_length=500,
+        help_text="Why it is being removed. Kept in the change log.",
+    )
+
+
+class EntryChangeSerializer(serializers.ModelSerializer):
+    action_display = serializers.CharField(source="get_action_display", read_only=True)
+    actor_email = serializers.CharField(source="actor.email", read_only=True, allow_null=True)
+
+    class Meta:
+        model = EntryChange
+        fields = [
+            "id", "action", "action_display", "voucher_type", "entry_no", "entry_date",
+            "before", "after", "note", "actor_email", "created_at",
+        ]
+        read_only_fields = fields
+
+
 class CorrectionSerializer(serializers.Serializer):
     """Correct a posted entry.
 
-    The original is not edited -- it cannot be. A correction is a new entry
-    carrying a reversal of the original's lines plus the corrected ones, linked
-    back to it. The original stays visible, which is what company law expects.
+    Until the books are signed off this changes the entry itself, keeping what it
+    was in the change log. After sign-off it is a new entry that reverses the
+    original's lines and carries the corrected ones, linked back to it. Either
+    way the original is never silently lost.
     """
 
     treatment = TreatmentSerializer()

@@ -1,4 +1,4 @@
-"""Ledgers, vendors, rules, and the review queue.
+"""Ledgers, parties, rules, and the review queue.
 
 The review queue is the screen this API exists to make possible, so its
 serializer carries everything a reviewer needs to decide without a second
@@ -19,7 +19,7 @@ from classify.models import (
     LedgerGroup,
     MatchType,
     TransactionClassification,
-    Vendor,
+    Party,
 )
 from classify.treatment import ReviewBand, TdsSection
 from core.identifiers import is_valid_gstin
@@ -56,7 +56,7 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
         }
 
 
-class VendorSerializer(serializers.ModelSerializer):
+class PartySerializer(serializers.ModelSerializer):
     gstin = serializers.CharField(
         required=False,
         allow_blank=True,
@@ -64,7 +64,7 @@ class VendorSerializer(serializers.ModelSerializer):
     )
 
     class Meta:
-        model = Vendor
+        model = Party
         fields = [
             "id",
             "canonical_name",
@@ -88,10 +88,10 @@ class VendorSerializer(serializers.ModelSerializer):
 
     def create(self, validated_data):
         gstin = validated_data.pop("gstin", "")
-        vendor = Vendor(**validated_data)
-        vendor.set_gstin(gstin)
-        vendor.save()
-        return vendor
+        party = Party(**validated_data)
+        party.set_gstin(gstin)
+        party.save()
+        return party
 
     def update(self, instance, validated_data):
         if "gstin" in validated_data:
@@ -112,7 +112,7 @@ class ClassificationRuleSerializer(serializers.ModelSerializer):
             "client",
             "ledger",
             "ledger_name",
-            "vendor",
+            "party",
             "rcm",
             "tds_section",
             "match_type",
@@ -126,7 +126,17 @@ class ClassificationRuleSerializer(serializers.ModelSerializer):
             "last_hit_at",
             "created_at",
         ]
-        read_only_fields = ["id", "ledger_name", "source", "hit_count", "last_hit_at", "created_at"]
+        # ``client`` is set from the URL the rule was created under. Leaving it
+        # writable would let a PATCH move one client's rule into another's book.
+        read_only_fields = [
+            "id",
+            "client",
+            "ledger_name",
+            "source",
+            "hit_count",
+            "last_hit_at",
+            "created_at",
+        ]
 
     def validate(self, attrs):
         match_type = attrs.get("match_type", getattr(self.instance, "match_type", None))
@@ -149,7 +159,34 @@ class ClassificationRuleSerializer(serializers.ModelSerializer):
                 re.compile(pattern)
             except re.error as exc:
                 raise serializers.ValidationError({"pattern": f"Not a valid regex: {exc}"}) from exc
+
+        self._reject_another_clients_objects(attrs)
         return attrs
+
+    def _reject_another_clients_objects(self, attrs):
+        """A rule may not name a ledger or party belonging to a different client.
+
+        ``ModelSerializer`` does not call ``Model.full_clean``, so the model's
+        own ``clean`` never runs on this path and would not be reached until
+        the database rejected the write. The rule's client comes from the URL
+        on create, so the value to check against is the view's client, not
+        anything the request may have put in the body.
+        """
+        client = getattr(self.context.get("view"), "client", None)
+        if client is None:
+            client = attrs.get("client") or getattr(self.instance, "client", None)
+        if client is None:
+            return
+
+        errors = {}
+        ledger = attrs.get("ledger") or getattr(self.instance, "ledger", None)
+        if ledger is not None and ledger.client_id != client.pk:
+            errors["ledger"] = "That ledger belongs to another client."
+        party = attrs.get("party") or getattr(self.instance, "party", None)
+        if party is not None and party.client_id != client.pk:
+            errors["party"] = "That party belongs to another client."
+        if errors:
+            raise serializers.ValidationError(errors)
 
 
 class AcceptProposalSerializer(serializers.Serializer):
@@ -176,12 +213,12 @@ class TreatmentSerializer(serializers.Serializer):
     """
 
     ledger = serializers.UUIDField(help_text="Ledger account id.")
-    vendor = serializers.UUIDField(
+    party = serializers.UUIDField(
         required=False, allow_null=True, help_text="Party id, where there is an identifiable one."
     )
     rcm = serializers.BooleanField(
         default=False,
-        help_text="Reverse charge: the client pays the GST rather than the vendor.",
+        help_text="Reverse charge: the client pays the GST rather than the party.",
     )
     tds_section = serializers.ChoiceField(
         choices=TdsSection.CHOICES,
@@ -199,14 +236,27 @@ class TreatmentSerializer(serializers.Serializer):
     )
 
 
+class ConfirmPartySerializer(serializers.Serializer):
+    party = serializers.UUIDField(help_text="The party this payee is.")
+
+
 class ClassificationSerializer(serializers.ModelSerializer):
     """A row awaiting a decision, with everything needed to make it."""
 
     transaction = StatementTransactionSerializer(read_only=True)
     ledger_name = serializers.CharField(source="ledger.name", read_only=True, allow_null=True)
     ledger_status = serializers.CharField(source="ledger.status", read_only=True, allow_null=True)
-    vendor_name = serializers.CharField(
-        source="vendor.canonical_name", read_only=True, allow_null=True
+    ledger_group = serializers.CharField(source="ledger.group", read_only=True, allow_null=True)
+    ledger_group_display = serializers.CharField(
+        source="ledger.get_group_display", read_only=True, allow_null=True
+    )
+    #: True for a ledger the model opened. Shown so the reviewer can rename it
+    #: to the client's Tally spelling before month end.
+    ledger_opened_by_model = serializers.SerializerMethodField()
+    voucher_type = serializers.SerializerMethodField()
+    entry_legs = serializers.SerializerMethodField()
+    party_name = serializers.CharField(
+        source="party.canonical_name", read_only=True, allow_null=True
     )
     is_posted = serializers.SerializerMethodField()
     method_display = serializers.CharField(source="get_method_display", read_only=True)
@@ -219,8 +269,17 @@ class ClassificationSerializer(serializers.ModelSerializer):
             "ledger",
             "ledger_name",
             "ledger_status",
-            "vendor",
-            "vendor_name",
+            "ledger_group",
+            "ledger_group_display",
+            "ledger_opened_by_model",
+            "voucher_type",
+            "entry_legs",
+            "book_narration",
+            "open_question",
+            "party",
+            "party_name",
+            "party_resolution",
+            "party_candidates",
             "rcm",
             "tds_section",
             "method",
@@ -233,9 +292,45 @@ class ClassificationSerializer(serializers.ModelSerializer):
             "counterparty",
             "is_self_transfer",
             "is_posted",
+            "ai_revised",
             "reviewed_at",
         ]
         read_only_fields = fields
+
+    def get_ledger_opened_by_model(self, obj) -> bool:
+        return bool(obj.ledger and obj.ledger.proposal_reason)
+
+    def get_entry_legs(self, obj) -> list[dict]:
+        """Both sides of the entry this row makes, as a voucher shows them.
+
+        Every transaction touches two accounts: the bank, and whatever the
+        money was for. Money out debits the other ledger and credits the bank;
+        money in is the reverse. ``ledger`` is null while the row is unplaced,
+        and the leg is still listed so the entry is visibly incomplete rather
+        than looking like a one-sided one.
+        """
+        from core.money import format_inr
+
+        txn = obj.transaction
+        amount = format_inr(txn.amount_paise)
+        bank = {"ledger": txn.bank_account.ledger_name, "is_bank": True}
+        other = {
+            "ledger": obj.ledger.name if obj.ledger else None,
+            "group": obj.ledger.get_group_display() if obj.ledger else None,
+            "is_bank": False,
+        }
+        if txn.is_debit:
+            legs = [{"side": "Dr", **other}, {"side": "Cr", **bank}]
+        else:
+            legs = [{"side": "Dr", **bank}, {"side": "Cr", **other}]
+        return [{**leg, "amount_display": amount} for leg in legs]
+
+    def get_voucher_type(self, obj) -> str | None:
+        if obj.ledger is None:
+            return None
+        from ledger.approval import voucher_type_for
+
+        return voucher_type_for(obj)
 
     def get_is_posted(self, obj) -> bool:
         if obj.mirrored_entry_id:
@@ -292,4 +387,15 @@ class PlacementResultSerializer(serializers.Serializer):
     also_placed = serializers.IntegerField(
         read_only=True,
         help_text="How many other queued rows the rule learned from this decision placed.",
+    )
+    also_revised = serializers.IntegerField(
+        read_only=True,
+        help_text=(
+            "How many entries or rows the AI had placed itself that the new rule "
+            "moved. Never includes anything a person decided."
+        ),
+    )
+    auto_posted = serializers.IntegerField(
+        read_only=True,
+        help_text="How many rows became certain enough to be posted automatically.",
     )

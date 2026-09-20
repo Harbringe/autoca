@@ -27,7 +27,7 @@ pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("fixture_adapters")
 @pytest.fixture
 def client():
     firm = create_firm("Continuity Test Firm")
-    return create_client(firm, "Ramesh Deshmukh", datetime.date(2025, 4, 1))
+    return create_client(firm, "Arjun Nair", datetime.date(2025, 4, 1))
 
 
 def test_the_first_statement_asks_for_an_opening_balance(client):

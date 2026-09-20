@@ -10,7 +10,7 @@ real table borders. That means a table extractor can recover the Debit and
 Credit columns as *separate cells*, which matters more than it sounds like it
 should: flattened to a line of text, a row reads
 
-    13-04-2025  Sweep/VO000000087559330/...  250.00  123939.43  318
+    13-04-2025  Sweep/VO000000012345678/...  250.00  112500.00  318
 
 and nothing in that string says whether ``250.00`` was money in or money out.
 So this interface exposes cells, not just text, and the parsers above it never

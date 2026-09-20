@@ -32,6 +32,7 @@ from django_otp.plugins.otp_totp.models import TOTPDevice
 from core import throttle
 from core.http import client_ip
 from core.http import wants_json as _wants_json
+from core.middleware.mfa import mfa_disabled
 
 security_log = logging.getLogger("autoca.security")
 
@@ -118,6 +119,9 @@ def login_view(request):
     user.last_login_ip = address or None
     user.save(update_fields=["last_login_ip"])
     security_log.info("login password accepted user=%s ip=%s", user.pk, address)
+    if mfa_disabled():
+        security_log.warning("MFA_DISABLED is on: user=%s signed in without a second factor", user.pk)
+        return JsonResponse({"detail": "Signed in. Second factor disabled locally.", "mfa": None})
     return JsonResponse(
         {
             "detail": "Password accepted. A second factor is required.",

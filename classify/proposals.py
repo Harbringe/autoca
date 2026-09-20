@@ -1,12 +1,15 @@
-"""Ledgers a model proposes, and a CA's decision about each.
+"""Ledgers a model creates, and a CA's decision about each.
 
 The model may say "none of these ledgers fit; this client needs a Rent ledger".
-That becomes a PROPOSED ledger with the row placed in it as a suggestion. It
-cannot carry a journal entry and never reaches Tally until a CA accepts it,
-because a ledger name Tally does not recognise is silently created there and
-splits a year across two spellings.
+It then gets one, ACTIVE at once, and the row is booked into it. Who created a
+ledger does not matter to the books; what matters is that the entry is in the
+right one, and a ledger that waits for a CA before it can hold anything just
+turns every new head into a blocked row. The CA still sees every ledger the
+model added (``proposal_reason`` is set only on those), and can rename it to
+match the client's Tally spelling or merge it away -- ``accept`` and ``merge``
+remain for that, and for anything still PROPOSED from before this change.
 
-Three guards keep proposals from turning into a sprawl of near-duplicates:
+Three guards keep new ledgers from turning into a sprawl of near-duplicates:
 
 * a proposal whose name is close to an existing ledger *is* that ledger;
 * a proposal close to one a CA already rejected is dropped;
@@ -28,6 +31,12 @@ from classify.treatment import band_for
 SIMILARITY = 0.86
 
 _NOISE = re.compile(r"\b(a/?c|account|ledger|exp|expenses?|charges?|paid)\b")
+
+#: A pseudonym or party alias as the model sees them (``classify.pseudonymise``).
+#: A ledger named after one would be a ledger named after a person -- the one
+#: kind the model is told never to open, and the one kind that, if it slipped
+#: through, would carry a pseudonym into the client's Tally.
+_ALIAS_TOKEN = re.compile(r"\b[PV][0-9A-F]{8,}\b")
 
 
 class ProposalError(ValueError):
@@ -71,7 +80,7 @@ def resolve_proposal(
     """
     name = clean_name(name)
     group = str(group or "")
-    if len(name) < 3 or group not in PROPOSABLE_GROUPS:
+    if len(name) < 3 or group not in PROPOSABLE_GROUPS or _ALIAS_TOKEN.search(name):
         return None
 
     match = closest(name, known)
@@ -93,7 +102,7 @@ def resolve_proposal(
         name=name,
         defaults={
             "group": group,
-            "status": LedgerStatus.PROPOSED,
+            "status": LedgerStatus.ACTIVE,
             "proposal_reason": str(reason or "")[:500],
         },
     )
@@ -127,8 +136,16 @@ def accept(ledger: LedgerAccount, *, name: str | None = None, group: str | None 
 
 @db_transaction.atomic
 def merge(ledger: LedgerAccount, into: LedgerAccount) -> int:
-    """The client already has the right ledger; move the proposal's rows to it."""
-    _require_proposed(ledger)
+    """The client already has the right ledger; move this one's rows to it.
+
+    Works on a live ledger too, as long as nothing has been posted to it: a
+    ledger the model created this morning under a spelling the client's Tally
+    does not use is exactly the case.
+    """
+    from ledger.models import JournalLine
+
+    if JournalLine.objects.filter(ledger_account=ledger).exists():
+        raise ProposalError(f"{ledger.name!r} already has posted entries; rename it instead of merging.")
     if into.pk == ledger.pk or into.client_id != ledger.client_id or into.status != LedgerStatus.ACTIVE:
         raise ProposalError("Merge into one of this client's ledgers that is already in use.")
     moved = ledger.classifications.update(ledger=into)
@@ -143,7 +160,7 @@ def reject(ledger: LedgerAccount) -> int:
     released = 0
     for row in ledger.classifications.all():
         row.ledger = None
-        row.vendor = None
+        row.party = None
         row.rcm = False
         row.tds_section = ""
         row.method = ClassificationMethod.UNRESOLVED
@@ -152,7 +169,7 @@ def reject(ledger: LedgerAccount) -> int:
         row.needs_review = True
         row.save(
             update_fields=[
-                "ledger", "vendor", "rcm", "tds_section", "method", "confidence", "review_band", "needs_review",
+                "ledger", "party", "rcm", "tds_section", "method", "confidence", "review_band", "needs_review",
             ]
         )
         released += 1

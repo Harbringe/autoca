@@ -27,7 +27,7 @@ def firm():
 
 @pytest.fixture
 def client(firm):
-    return create_client(firm, "Ramesh Deshmukh", datetime.date(2025, 4, 1))
+    return create_client(firm, "Arjun Nair", datetime.date(2025, 4, 1))
 
 
 def test_ingest_creates_the_account_statement_and_every_row(client):
@@ -40,9 +40,9 @@ def test_ingest_creates_the_account_statement_and_every_row(client):
 
         account = result.bank_account
         assert account.bank_code == "AXIS"
-        assert account.account_number == "911010000004321"
-        assert account.ifsc == "UTIB0000318"
-        assert account.account_last4 == "4321"
+        assert account.account_number == "900000000000001"
+        assert account.ifsc == "UTIB0000001"
+        assert account.account_last4 == "0001"
 
         statement = result.statement
         assert statement.period_start == datetime.date(2025, 4, 1)
@@ -57,7 +57,7 @@ def test_the_ledger_name_matches_tallys_convention(client):
     with firm_context(client.firm_id):
         result = ingest_statement(client=client, data=b"%PDF-1.4 axis")
 
-        assert result.bank_account.ledger_name == "Axis Bank A/c 4321"
+        assert result.bank_account.ledger_name == "Axis Bank A/c 0001"
 
 
 def test_two_accounts_ending_alike_do_not_share_a_ledger(client):
@@ -65,10 +65,10 @@ def test_two_accounts_ending_alike_do_not_share_a_ledger(client):
     with firm_context(client.firm_id):
         first = ingest_statement(client=client, data=b"%PDF-1.4 axis").bank_account
         twin = BankAccount(firm_id=client.firm_id, client=client, bank_code="AXIS")
-        twin.set_account_number("922020000004321")
+        twin.set_account_number("922020000000001")
         twin.save()
 
-        assert twin.ledger_name == "Axis Bank A/c 922020000004321"
+        assert twin.ledger_name == "Axis Bank A/c 922020000000001"
         assert twin.ledger_name != first.ledger_name
 
 
@@ -85,7 +85,7 @@ def test_renaming_the_bank_ledger_carries_its_entries(client):
         ledger.refresh_from_db()
         assert ledger.name == "Axis Bank Current A/c"
         assert contra_ledger_for(account).pk == ledger.pk
-        assert LedgerAccount.objects.filter(client=client, name="Axis Bank A/c 4321").count() == 0
+        assert LedgerAccount.objects.filter(client=client, name="Axis Bank A/c 0001").count() == 0
 
         LedgerAccount.objects.create(firm_id=client.firm_id, client=client, name="Taken")
         with pytest.raises(LedgerRenameError):
@@ -98,7 +98,7 @@ def test_rows_keep_the_banks_own_figures(client):
 
         first = StatementTransaction.objects.order_by("row_number").first()
         assert first.value_date == datetime.date(2025, 4, 13)
-        assert first.narration == "Sweep/VO000000087559330/19000014841287"
+        assert first.narration == "Sweep/VO000000012345678/19000000000001"
         assert first.debit_paise == 250_00
         assert first.credit_paise == 0
         assert first.balance_paise == 1_23_939_43

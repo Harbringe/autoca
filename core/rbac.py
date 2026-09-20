@@ -19,38 +19,61 @@ _VIEW = {
     "transaction.view",
     "journal.view",
     "report.view",
+    "gst.view",
 }
 
-#: Preparing work: uploading, classifying, staging suggestions. Explicitly does
-#: not include ``journal.approve`` -- that is the line the whole model exists to
-#: draw, since approval is the moment an entry becomes permanent and a CA
-#: becomes personally answerable for it.
+#: Keeping the books: uploading, classifying, posting, correcting. The CA who
+#: does the work commits it. What is a senior's is *signing the books off*
+#: (``books.sign_off``) -- the moment they lock and a senior becomes answerable
+#: for them -- and that is deliberately the line, no longer "posting".
 _PREPARE = _VIEW | {
-    "client.update",
     "document.upload",
+    #: Taking back a statement uploaded by mistake, and the unsigned entries
+    #: posted from it. Signed-off books refuse regardless (``EntryLockedError``).
+    "statement.delete",
     "transaction.classify",
     "suggestion.edit",
     "ledger.manage",
-    "vendor.manage",
+    "party.manage",
+    "journal.approve",
+    "journal.correct",
+    #: Saying the books are ready for a senior to look at. Any CA who has
+    #: worked them may; deciding is not theirs (``books.sign_off``).
+    "books.request",
+    #: Uploading the register and GSTR-2B, running the match, resolving rows.
+    "gst.prepare",
 }
 
 _APPROVE = _PREPARE | {
-    "journal.approve",
-    "journal.correct",
     "period.close",
-    "audit.view",
+    #: Signing the books off, which locks them. The senior's act.
+    "books.sign_off",
+    #: Signing a GST reconciliation off. Like the books, the senior's act.
+    "gst.sign_off",
+}
+
+#: Leading a team. Every one of these is limited, for a Senior CA, to their own
+#: team and the clients they lead -- that scoping lives in teams.service.
+_LEAD = {
+    "team.view",
+    "team.assign",
+    "member.invite",
+    "member.deactivate",
 }
 
 PERMISSIONS = {
     Role.FIRM_ADMIN: _APPROVE
+    | _LEAD
     | {
         "firm.manage",
-        "member.invite",
+        "client.update",
+        "audit.view",
+        "member.manage",
         "member.remove",
         "client.create",
         "client.delete",
     },
-    Role.SENIOR_CA: _APPROVE,
+    Role.SENIOR_CA: _APPROVE | _LEAD,
     Role.STAFF: _PREPARE,
     Role.READ_ONLY: _VIEW,
 }

@@ -58,7 +58,13 @@ DEBUG = False
 ALLOWED_HOSTS = [h.strip() for h in env("DJANGO_ALLOWED_HOSTS", "").split(",") if h.strip()]
 
 INSTALLED_APPS = [
-    "django.contrib.admin",
+    # Jazzmin themes the admin and must precede it: it works by shadowing
+    # django.contrib.admin's templates, and the first app to claim a template
+    # path wins.
+    "jazzmin",
+    # Our own AdminConfig, so the admin site is the platform-owner one in
+    # core.adminsite rather than Django's default. See ADMIN_ACCESS below.
+    "core.adminsite.PlatformAdminConfig",
     "django.contrib.auth",
     "django.contrib.contenttypes",
     "django.contrib.sessions",
@@ -81,7 +87,118 @@ INSTALLED_APPS = [
     "ledger",
     "gst",
     "classify",
+    "teams",
+    # Removable add-on; see superadmin/README.md.
+    "superadmin",
 ]
+
+#: Dotted path to ``callable(request) -> bool``: may a signed-in user with no
+#: firm membership be served this request (with only the user context)? None
+#: refuses every such request. Set by the removable super admin console.
+FIRMLESS_ACCESS = "superadmin.firmless.allow_firmless"
+
+#: Dotted path to ``callable(user) -> bool``: may this signed-in staff user
+#: open the Django admin? Django itself asks only for ``is_staff``, which in a
+#: multi-tenant product would let a firm's own administrator edit rows with
+#: none of the app's guard rails in front of them. The platform owner is the
+#: only intended operator, so the answer comes from the super admin add-on.
+#: None falls back to Django's rule, which keeps the admin working if the
+#: add-on is removed.
+ADMIN_ACCESS = "superadmin.firmless.allow_admin"
+
+
+# ---------------------------------------------------------------------------
+# The admin's appearance
+#
+# Jazzmin gives the platform panel a sidebar, search and a themed shell. The
+# colours are chosen to match the product's own: navy chrome, amber accent, the
+# same palette as frontend/src/styles.css.
+#
+# One thing it does that this deployment does not want: its base template links
+# a stylesheet from fonts.googleapis.com. The admin ships under a
+# Content-Security-Policy of style-src 'self', so that request is refused by the
+# browser and the panel falls back to the system font stack -- which is what the
+# rest of the product uses anyway. Refusing it is deliberate: a CA firm's admin
+# should not announce itself to a third party on every page load.
+# ---------------------------------------------------------------------------
+
+JAZZMIN_SETTINGS = {
+    "site_title": "AutoCA platform",
+    "site_header": "AutoCA",
+    "site_brand": "AutoCA platform",
+    "welcome_sign": "Platform administration",
+    "copyright": "",
+    "site_logo": None,
+    "login_logo": None,
+    "show_ui_builder": DEBUG,
+    # One scrolling page, not tabs. A profile is meant to answer "everything
+    # about this person" at a glance, and tabs hide most of the answer.
+    "changeform_format": "single",
+    #: The firm picker, reachable from every page. Which firm is currently
+    #: selected is shown next to the page title; see templates/admin/base_site.html.
+    "topmenu_links": [
+        {"name": "Open the app", "url": "/app/", "new_window": True},
+    ],
+    "icons": {
+        "core.User": "fas fa-right-to-bracket",
+        "core.Profile": "fas fa-id-card",
+        "superadmin.PlatformFirm": "fas fa-building",
+        "superadmin.PlatformMembership": "fas fa-id-badge",
+        "superadmin.PlatformClient": "fas fa-briefcase",
+        "superadmin.PlatformAuditLog": "fas fa-clipboard-list",
+        "superadmin.PlatformJob": "fas fa-gears",
+        "otp_totp.TOTPDevice": "fas fa-mobile-screen",
+        "otp_static.StaticDevice": "fas fa-key",
+    },
+    #: Accounts and people first, then the platform's firms, then second factors.
+    "order_with_respect_to": [
+        "core",
+        "core.User",
+        "core.Profile",
+        "superadmin",
+        "superadmin.PlatformFirm",
+        "superadmin.PlatformMembership",
+        "superadmin.PlatformClient",
+        "superadmin.PlatformAuditLog",
+        "superadmin.PlatformJob",
+        "otp_totp",
+        "otp_static",
+    ],
+    "hide_apps": [],
+    "related_modal_active": False,
+}
+
+JAZZMIN_UI_TWEAKS = {
+    "navbar_small_text": False,
+    "footer_small_text": True,
+    "body_small_text": False,
+    "brand_small_text": False,
+    "brand_colour": "navbar-dark",
+    "accent": "accent-warning",
+    "navbar": "navbar-dark",
+    "no_navbar_border": True,
+    "navbar_fixed": True,
+    "layout_boxed": False,
+    "footer_fixed": False,
+    "sidebar_fixed": True,
+    "sidebar": "sidebar-dark-primary",
+    "sidebar_nav_small_text": False,
+    "sidebar_disable_expand": False,
+    "sidebar_nav_child_indent": True,
+    "sidebar_nav_compact_style": False,
+    "sidebar_nav_legacy_style": False,
+    "sidebar_nav_flat_style": False,
+    "theme": "default",
+    "button_classes": {
+        "primary": "btn-primary",
+        "secondary": "btn-outline-secondary",
+        "info": "btn-info",
+        "warning": "btn-warning",
+        "danger": "btn-danger",
+        "success": "btn-success",
+    },
+}
+
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
@@ -204,6 +321,11 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 LOGIN_URL = "/auth/login/"
+#: Where Django's own auth views land after a successful sign-in. Only the
+#: Django admin uses them -- the SPA posts to /auth/login/ and routes itself
+#: -- and Django's default, /accounts/profile/, is a URL this project does
+#: not serve. Signing in at /admin/login/ directly would 404 without this.
+LOGIN_REDIRECT_URL = "/admin/"
 OTP_TOTP_ISSUER = env("OTP_TOTP_ISSUER", "AutoCA")
 
 # Paths that answer with JSON rather than HTML. Used to decide whether a
@@ -215,12 +337,17 @@ API_PATH_PREFIXES = ("/api/",)
 # under /api/ but are documentation, not the API.
 API_DOC_PATH_PREFIXES = ("/api/docs/", "/api/redoc/")
 
+#: Local-demo escape hatch only. Honoured when DEBUG is on and never otherwise;
+#: a system check fails the process if it is set without DEBUG.
+MFA_DISABLED = False
+
 # TOTP is mandatory. These are the only paths reachable by a session that has
 # passed a password check but not yet a second factor.
 MFA_EXEMPT_PATH_PREFIXES = (
     "/auth/login/",
     "/auth/logout/",
     "/auth/mfa/",
+    "/auth/invite/",
     "/healthz",
     "/static/",
     # The application shell is static HTML with no data in it; the page drives
@@ -258,6 +385,9 @@ THROTTLE_LIMITS = {
     # TOTP codes are six digits and a window is thirty seconds. django-otp
     # throttles the device itself as well; this is the address-level backstop.
     "mfa": {"attempts": 6, "window_seconds": 10 * 60, "lockout_seconds": 15 * 60},
+    # Keyed on the invite token, not the address: a wrong password against an
+    # existing account's invite should not lock out an office behind one IP.
+    "invite": {"attempts": 8, "window_seconds": 15 * 60, "lockout_seconds": 15 * 60},
 }
 
 # How many reverse proxies stand between the internet and this process. Zero

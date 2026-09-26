@@ -126,3 +126,106 @@ def test_the_error_names_groqs_code_without_its_message():
         adapter.complete_json("s", "u")
     assert "json_validate_failed" in str(raised.value)
     assert "quoted text" not in str(raised.value)
+
+
+def _rate_limited_413() -> urllib.error.HTTPError:
+    body = io.BytesIO(json.dumps({"error": {"code": "rate_limit_exceeded", "message": "quoted"}}).encode())
+    return urllib.error.HTTPError("u", 413, "too large", {}, body)
+
+
+def test_a_413_that_is_the_minute_budget_is_waited_out_like_a_429():
+    """Groq reports a request that does not fit what is left of the minute as 413, not 429."""
+    adapter = GroqLLMAdapter(api_key="k", max_attempts=3)
+    with (
+        mock.patch("urllib.request.urlopen", side_effect=[_rate_limited_413(), _ok({"a": 1})]) as opened,
+        mock.patch("time.sleep") as slept,
+    ):
+        assert json.loads(adapter.complete_json("s", "u").text) == {"a": 1}
+    assert opened.call_count == 2
+    slept.assert_called_once_with(60.0)  # no Retry-After on a 413: wait for the minute to turn
+
+
+def test_a_413_for_any_other_reason_is_not_retried():
+    adapter = GroqLLMAdapter(api_key="k", max_attempts=3)
+    body = io.BytesIO(json.dumps({"error": {"code": "request_too_large"}}).encode())
+    too_big = urllib.error.HTTPError("u", 413, "too large", {}, body)
+    with (
+        mock.patch("urllib.request.urlopen", side_effect=[too_big]) as opened,
+        mock.patch("time.sleep"),
+        pytest.raises(LLMError) as raised,
+    ):
+        adapter.complete_json("s", "u")
+    assert opened.call_count == 1
+    assert "request_too_large" in str(raised.value)
+
+
+def test_the_next_request_waits_when_the_last_reply_said_the_budget_is_spent():
+    adapter = GroqLLMAdapter(api_key="k")
+    first = _ok({"a": 1})
+    first.headers = {"x-ratelimit-remaining-tokens": "40", "x-ratelimit-reset-tokens": "12.5s"}
+    with (
+        mock.patch("urllib.request.urlopen", side_effect=[first, _ok({"b": 2})]),
+        mock.patch("time.sleep") as slept,
+        mock.patch("time.monotonic", return_value=100.0),
+    ):
+        adapter.complete_json("s", "u")
+        slept.assert_not_called()  # nothing was known about the budget before the first reply
+        adapter.complete_json("s", "u" * 600)
+    slept.assert_called_once_with(12.5)
+
+
+def test_a_request_that_fits_the_budget_does_not_wait():
+    adapter = GroqLLMAdapter(api_key="k")
+    first = _ok({"a": 1})
+    first.headers = {"x-ratelimit-remaining-tokens": "7000", "x-ratelimit-reset-tokens": "3s"}
+    with (
+        mock.patch("urllib.request.urlopen", side_effect=[first, _ok({"b": 2})]),
+        mock.patch("time.sleep") as slept,
+    ):
+        adapter.complete_json("s", "u")
+        adapter.complete_json("s", "u")
+    slept.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("value", "seconds"),
+    [("7.66s", 7.66), ("1m2.5s", 62.5), ("450ms", 0.45), ("", 0.0), ("2h", 7200.0)],
+)
+def test_groqs_reset_durations_are_read_in_seconds(value, seconds):
+    from integrations.llm.groq import _duration
+
+    assert _duration(value) == pytest.approx(seconds)
+
+
+def _413(message: str) -> urllib.error.HTTPError:
+    body = io.BytesIO(json.dumps({"error": {"code": "rate_limit_exceeded", "message": message}}).encode())
+    return urllib.error.HTTPError("u", 413, "too large", {"retry-after": "3"}, body)
+
+
+def test_a_request_bigger_than_the_whole_minute_is_not_waited_for():
+    """Seen on the free plan: "Limit 8000, Requested 8325". It will never fit, so fail at once."""
+    adapter = GroqLLMAdapter(api_key="k", max_attempts=3)
+    too_big = _413("Request too large for model on tokens per minute (TPM): Limit 8000, Requested 8325, please reduce")
+    with (
+        mock.patch("urllib.request.urlopen", side_effect=[too_big]) as opened,
+        mock.patch("time.sleep") as slept,
+        pytest.raises(LLMError) as raised,
+    ):
+        adapter.complete_json("s", "u")
+    assert opened.call_count == 1
+    slept.assert_not_called()
+    assert "request_too_large" in str(raised.value)
+    assert "limit 8000, requested 8325" in str(raised.value)
+    assert "please reduce" not in str(raised.value), "only the counts, never Groq's prose"
+
+
+def test_a_spent_minute_that_the_request_would_fit_is_waited_for():
+    adapter = GroqLLMAdapter(api_key="k", max_attempts=3)
+    spent = _413("Rate limit reached on tokens per minute (TPM): Limit 8000, Used 6100, Requested 5200.")
+    with (
+        mock.patch("urllib.request.urlopen", side_effect=[spent, _ok({"a": 1})]) as opened,
+        mock.patch("time.sleep") as slept,
+    ):
+        adapter.complete_json("s", "u")
+    assert opened.call_count == 2
+    slept.assert_called_once_with(3.0)

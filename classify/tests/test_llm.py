@@ -330,13 +330,16 @@ def test_no_business_profile_means_no_business_key(client, classified, scripted)
 
 
 def test_a_request_the_provider_calls_too_large_is_retried_in_smaller_batches(client, classified, scripted, settings):
-    """Groq answers 413 when one request exceeds its tokens-per-minute cap. Halving fixes it."""
+    """A 413 that means the request itself is too big is fixed by halving it."""
     settings.LLM_BATCH_SIZE = 50
     original = ScriptedLLM.complete_json
 
     def too_big(self, system, user, *, max_tokens=2048):
         if len(json.loads(user)["transactions"]) > 10:
-            raise LLMError("Groq answered HTTP 413 (rate_limit_exceeded).")
+            raise LLMError(
+                "Groq answered HTTP 413 (rate_limit_exceeded: limit 8000, requested 8325); "
+                "the request is larger than the plan allows in a minute (request_too_large)."
+            )
         return original(self, system, user, max_tokens=max_tokens)
 
     scripted.script = {"*": {"ledger": "Electricity", "confidence": 0.9}}
@@ -348,3 +351,25 @@ def test_a_request_the_provider_calls_too_large_is_retried_in_smaller_batches(cl
         ScriptedLLM.complete_json = original
     assert not outcome.failed
     assert outcome.suggested == outcome.considered
+
+
+def test_a_spent_minute_budget_is_not_split_into_more_requests(client, classified, scripted, settings):
+    """A rate-limit 413 has already been waited out by the adapter. Halving would only repeat the
+    fixed part of the prompt in twice as many requests, so the run stops and rows stay for a person."""
+    settings.LLM_BATCH_SIZE = 50
+    original = ScriptedLLM.complete_json
+    asked = []
+
+    def spent(self, system, user, *, max_tokens=2048):
+        asked.append(len(json.loads(user)["transactions"]))
+        raise LLMError("Groq answered HTTP 413 (rate_limit_exceeded).")
+
+    ScriptedLLM.complete_json = spent
+    try:
+        with firm_context(client.firm_id):
+            outcome = suggest_unresolved(client)
+    finally:
+        ScriptedLLM.complete_json = original
+    assert outcome.failed
+    assert "rate_limit_exceeded" in outcome.error
+    assert len(asked) == 1

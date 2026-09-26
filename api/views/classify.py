@@ -71,7 +71,10 @@ BANDS = (ReviewBand.HIGH, ReviewBand.ADVISED, ReviewBand.JUDGEMENT)
 class LedgerAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
     """The client's chart of accounts."""
 
-    queryset = LedgerAccount.objects.annotate(row_count=Count("classifications"))
+    # Meta.ordering is dropped once annotate() adds a GROUP BY, so say it again.
+    queryset = LedgerAccount.objects.annotate(row_count=Count("classifications")).order_by(
+        "name", "pk"
+    )
     serializer_class = LedgerAccountSerializer
     required_permission = {
         "GET": "client.view",
@@ -185,8 +188,8 @@ def _model_warning(outcome) -> str:
     if not getattr(outcome, "failed", False):
         return ""
     return (
-        f"The model could not be reached, so it made no suggestions ({outcome.error}). "
-        "Rules were applied as usual, and the rest of the rows are yours to place."
+        f"The model stopped before it finished ({outcome.error}). "
+        "Rules were applied as usual, and the rows it did not reach are yours to place."
     )
 
 
@@ -448,7 +451,10 @@ class ClassificationViewSet(
         rows = TransactionClassification.objects.filter(
             firm_id=self.request.firm.pk,
             transaction__bank_account__client__in=visible_client_ids(self.request.membership),
-        ).select_related("transaction__bank_account", "ledger", "party")
+        ).select_related("transaction__bank_account", "ledger", "party").order_by(
+            # Statement order, so paging never repeats or skips a row.
+            "transaction__value_date", "transaction__row_number", "pk"
+        )
         statement = self.request.query_params.get("statement")
         if statement:
             try:

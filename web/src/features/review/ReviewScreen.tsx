@@ -83,7 +83,7 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
     onSuccess: async (job) => {
       await invalidate()
       const r = job.result as { suggested?: number; declined?: number; proposed?: number; error?: string }
-      if (r?.error) toast.warning(job.message || `The assistant could not be reached: ${r.error}`)
+      if (r?.error) toast.warning(job.message || `The assistant stopped before it finished: ${r.error}`)
       else
         toast.success(`The assistant suggested ledgers for ${plural(r?.suggested ?? 0, 'row')}`, {
           description: [r?.declined ? `${r.declined} it was unsure about` : '', r?.proposed ? `${plural(r.proposed, 'new ledger')} proposed` : '']

@@ -12,7 +12,7 @@ from classify.treatment import ReviewBand, Treatment
 from core.db.session import firm_context
 from core.models import Client
 from ledger import books, editing
-from ledger.approval import auto_post, auto_post_client, correct
+from ledger.approval import approve, auto_post, auto_post_client, correct
 from ledger.learning import learn_from_decision
 from ledger.models import ChangeAction, EntryChange, EntryMarker, JournalEntry
 from ledger.tests.test_approval import (  # noqa: F401  (fixtures and helpers)
@@ -98,6 +98,40 @@ def test_the_ai_never_parks_an_entry_in_suspense(client, statement):
         ai_places(client, BHIM, suspense)
         auto_post_client(client)
         assert posted_for(client, BHIM).count() == 0
+
+
+def test_money_that_moved_by_upi_is_never_auto_posted_as_cash(client, statement):
+    """A UPI transfer to the holder's other account once went in as "cash withdrawn" at 0.96."""
+    with firm_context(client.firm_id):
+        cash = ledger(client, "Petty Cash", LedgerGroup.CASH)
+        rows = ai_places(client, BHIM, cash, confidence=0.96)
+        TransactionClassification.objects.filter(pk__in=[r.pk for r in rows]).update(channel="UPI")
+        auto_post_client(client)
+        assert posted_for(client, BHIM).count() == 0
+
+
+def test_a_cash_withdrawal_at_the_counter_may_still_post_to_cash(client, statement):
+    with firm_context(client.firm_id):
+        cash = ledger(client, "Petty Cash", LedgerGroup.CASH)
+        rows = ai_places(client, BHIM, cash, confidence=0.96)
+        TransactionClassification.objects.filter(pk__in=[r.pk for r in rows]).update(channel="CASH")
+        auto_post_client(client)
+        assert posted_for(client, BHIM).count() == len(rows)
+
+
+def test_a_ledger_the_model_just_opened_waits_for_a_person_to_post_there_first(client, senior, statement):
+    with firm_context(client.firm_id):
+        opened = income(client, "Cashback Received")
+        opened.proposal_reason = "No existing ledger fits cashback."
+        opened.save(update_fields=["proposal_reason"])
+        rows = ai_places(client, BHIM, opened)
+
+        auto_post_client(client)
+        assert posted_for(client, BHIM).count() == 0, "a new head is not trusted on the model's word"
+
+        approve(rows[0], membership=senior)
+        auto_post_client(client)
+        assert posted_for(client, BHIM).count() == len(rows), "once a person has used it, it is a head like any other"
 
 
 def test_a_row_a_person_has_not_approved_is_not_posted_by_a_person_decision_alone(

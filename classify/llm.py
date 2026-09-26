@@ -344,9 +344,15 @@ def _rupees(paise: int) -> str:
 
 
 #: Signs the reply was cut off or malformed, or that the request was more than the provider
-#: will take at once (HTTP 413: a free-tier tokens-per-minute cap on one request), which a
-#: smaller batch usually fixes.
+#: will take at once (HTTP 413), which a smaller batch usually fixes.
 _SPLITTABLE = ("json_validate_failed", "agreed shape", "not JSON", "HTTP 413")
+#: ...except a 413 that is the per-minute budget running out. The adapter has already waited
+#: that out; halving the batch cannot help, because each half repeats the ledgers, parties and
+#: instructions -- about 5,600 tokens of a request's cost before a single row -- and two
+#: requests spend the budget faster than one. A request larger than the whole minute allows
+#: (``request_too_large``) is the opposite case: only a smaller batch will ever fit.
+_NOT_SPLITTABLE = ("rate_limit_exceeded",)
+_SPLIT_ANYWAY = ("request_too_large",)
 
 
 def _ask_splitting(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]:
@@ -354,7 +360,15 @@ def _ask_splitting(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]
     try:
         return _ask(llm, batch, chart, pseudonymiser, context)
     except LLMError as exc:
-        if len(batch) < 2 or not any(sign in str(exc) for sign in _SPLITTABLE):
+        reason = str(exc)
+        if (
+            len(batch) < 2
+            or not any(sign in reason for sign in _SPLITTABLE)
+            or (
+                any(sign in reason for sign in _NOT_SPLITTABLE)
+                and not any(sign in reason for sign in _SPLIT_ANYWAY)
+            )
+        ):
             raise
         logger.info("model reply unusable for %d rows (%s); splitting the batch", len(batch), exc)
         middle = len(batch) // 2

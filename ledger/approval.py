@@ -20,6 +20,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from classify.models import ClassificationMethod, TransactionClassification
+from classify.narration import Channel
 from core.access import can_sign_off, require_posting_rights, require_sign_off
 from core.fy import financial_year
 from core.money import format_inr
@@ -277,6 +278,11 @@ def auto_post(classification) -> JournalEntry | None:
     * the row is placed, by a rule or the model, with high confidence (0.90+);
     * the model asked no question -- a question means it was not sure;
     * the ledger is in use and is not Suspense, which is where nobody decided;
+    * the ledger is not one the model opened that no person has yet posted to --
+      a new head is exactly where a confident mistake would otherwise spread;
+    * it is not money that moved electronically landing in a cash ledger: UPI,
+      NEFT, a card and the like never pass through the cash box, so a "cash
+      withdrawal" by UPI is a transfer to another account read wrongly;
     * it is not already posted, nor the twin of a transfer already posted;
     * its date is not inside books a senior has signed off.
 
@@ -299,6 +305,8 @@ def auto_post(classification) -> JournalEntry | None:
         or ledger.group == LedgerGroup.SUSPENSE
         or ledger.status != LedgerStatus.ACTIVE
         or ledger.name == txn.bank_account.ledger_name
+        or (ledger.group == LedgerGroup.CASH and classification.channel in ELECTRONIC_CHANNELS)
+        or (ledger.proposal_reason and not _a_person_has_posted_to(ledger))
         or _live_entry_for(txn) is not None
     ):
         return None
@@ -345,6 +353,17 @@ def auto_post_client(client) -> int:
 # ---------------------------------------------------------------------------
 # internals
 # ---------------------------------------------------------------------------
+
+
+#: Ways money moves that never involve notes and coins changing hands.
+ELECTRONIC_CHANNELS = frozenset({
+    Channel.UPI, Channel.NEFT, Channel.RTGS, Channel.IMPS,
+    Channel.TRANSFER, Channel.CARD, Channel.MANDATE,
+})
+
+
+def _a_person_has_posted_to(ledger) -> bool:
+    return JournalLine.objects.filter(ledger_account=ledger, entry__approved_by__isnull=False).exists()
 
 
 def _mirror_for(classification) -> JournalEntry | None:

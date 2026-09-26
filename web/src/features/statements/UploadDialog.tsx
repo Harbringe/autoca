@@ -297,8 +297,8 @@ function Done({
           <div className="mb-1 font-medium">Where the {plural(result.rows_created, 'row')} stand now</div>
           <ul className="grid gap-0.5 text-muted-foreground">
             <li>
-              <strong className="text-foreground">{posted}</strong> posted automatically by rules the firm trusts, marked “Assistant
-              posted” in the Day Book. Check them there, and unpost any you disagree with.
+              <strong className="text-foreground">{posted}</strong> posted automatically, by the client’s rules or by the assistant
+              where it was very sure, marked “Assistant posted” in the Day Book. Check them there, and unpost any you disagree with.
             </li>
             <li>
               <strong className="text-foreground">{ready}</strong> placed in a ledger by the client’s rules or the assistant, waiting for
@@ -309,10 +309,15 @@ function Done({
             </li>
             {result.model_proposed > 0 && (
               <li>
-                The assistant also proposed {plural(result.model_proposed, 'new ledger')}; a senior CA accepts or rejects them in Masters
+                The assistant also opened {plural(result.model_proposed, 'new ledger')}, already in use. Check them in Masters, and
+                rename or merge any that do not match the client’s books
               </li>
             )}
-            {result.model_error && <li className="text-warning">The assistant could not be reached: {result.model_error}</li>}
+            {result.model_error && (
+              <li className="text-warning">
+                The assistant stopped before it finished ({result.model_error}). The rows it did not reach are left for you.
+              </li>
+            )}
           </ul>
         </div>
       )}

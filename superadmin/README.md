@@ -76,7 +76,7 @@ Other commands: `superadmin status`, `superadmin list`, `superadmin revoke <emai
 | `config/settings/base.py` | `"superadmin"` in `INSTALLED_APPS`; `FIRMLESS_ACCESS` and `ADMIN_ACCESS` |
 | `core/middleware/tenancy.py` | `_firmless_allowed()`. It is generic, and does nothing when `FIRMLESS_ACCESS` is unset |
 | `core/adminsite.py` | reads `ADMIN_ACCESS`. With it unset, Django's own `is_staff` rule applies |
-| `frontend/src/App.tsx` | sends a firmless session to `/admin/` |
+| `web/src/routes` | sends a firmless session to `/admin/` |
 | `pytest.ini` | `superadmin` in `testpaths` |
 
 `core` never imports this app. The settings above are the only connection.

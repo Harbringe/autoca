@@ -1,0 +1,5564 @@
+openapi: 3.0.3
+info:
+  title: AutoCA API
+  version: 1.0.0
+  description: |-
+    Bank statements in, approved double-entry journal entries out.
+
+    ### Two conventions worth knowing before you read anything else
+
+    **Money is always a whole number of paise**, in a field named `*_paise`. Every amount also carries a `*_display` twin, already formatted with Indian digit grouping (`Rs 6,03,490.57`). Use the integer for arithmetic and the string for rendering, and never parse the string or format the integer yourself -- a JSON number with a decimal point becomes a float in a browser, which is exactly the rounding error the backend exists to avoid.
+
+    **Nothing is final until a senior CA approves it.** Uploading a statement and classifying its rows produces *suggestions*. Only `POST /clients/{id}/approvals/` writes to the ledger, only a senior CA or firm admin may call it, and what it writes cannot afterwards be edited or deleted -- corrections are new entries that reverse and replace.
+
+    ### Slow work
+
+    Uploading a statement returns **202 Accepted** with a job. Poll `/jobs/{id}/` or subscribe to `/jobs/{id}/events/` for server-sent events.
+
+    ### Errors
+
+    Failures carry a stable `code` and a `detail` written to be read by a person -- the parser's messages name the row and the figure that broke, and they are passed through rather than replaced. `422` means the document could not be read; `409` means the request conflicts with the current state; `403` is a role boundary and is never disguised as a 404.
+paths:
+  /api/v1/audit/:
+    get:
+      operationId: audit_retrieve
+      description: GET /api/v1/audit/?user=<membership id>&client=<id>&from=YYYY-MM-DD&to=YYYY-MM-DD&failed=true
+      tags:
+      - audit
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/bank-accounts/{id}/reconciliation/:
+    get:
+      operationId: bank_accounts_reconciliation_retrieve
+      description: |-
+        Compares the computed bank-ledger balance against the statement's own closing figure. One subtraction that catches what every other check misses -- a row posted twice, a correction reversed the wrong way, an entry approved against the wrong account.
+
+        `can_close` is the one to act on: it requires both that the figures agree *and* that nothing up to that date is still unposted. A period that does not reconcile is not finished.
+      summary: Month-end balance check
+      parameters:
+      - in: query
+        name: as_of
+        schema:
+          type: string
+        description: Date to reconcile at, as YYYY-MM-DD.
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceCheck'
+          description: ''
+  /api/v1/classifications/:
+    get:
+      operationId: classifications_list
+      description: One transaction's classification, and the decision endpoint.
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedClassificationList'
+          description: ''
+  /api/v1/classifications/{id}/:
+    get:
+      operationId: classifications_retrieve
+      description: One transaction's classification, and the decision endpoint.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Classification'
+          description: ''
+  /api/v1/classifications/{id}/confirm-party/:
+    post:
+      operationId: classifications_confirm_party_create
+      description: Confirms which party this payee is, without placing the row in
+        a ledger. The spelling is remembered, so the same spelling resolves on its
+        own from now on, and every other unposted row for it is updated at once.
+      summary: Say who a row's payee is
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmPartyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ConfirmPartyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ConfirmPartyRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Classification'
+          description: ''
+  /api/v1/classifications/{id}/review/:
+    post:
+      operationId: classifications_review_create
+      description: |-
+        Records the full treatment -- ledger head, party, reverse charge, TDS -- and, unless `learn` is false, teaches a rule from it. The rule is keyed on the payee rather than the narration, so it covers that payee permanently: placing one of nine identical cashback credits places all nine.
+
+        This does **not** post anything to the ledger. It moves the row from the unresolved half of the queue to the half waiting for approval.
+      summary: Place a row in a ledger
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TreatmentRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TreatmentRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TreatmentRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlacementResult'
+          description: ''
+  /api/v1/clients/:
+    get:
+      operationId: clients_list
+      description: The firm's clients.
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: search
+        schema:
+          type: string
+        description: Filter by name, case-insensitive.
+      tags:
+      - clients
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedClientList'
+          description: ''
+    post:
+      operationId: clients_create
+      description: The firm's clients.
+      tags:
+      - clients
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ClientRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ClientRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+          description: ''
+  /api/v1/clients/{client_id}/approvals/:
+    post:
+      operationId: clients_approvals_create
+      description: |-
+        The moment a suggestion becomes a ledger entry. Any role that prepares books (staff and above) may post on the clients it is assigned to; the entry stays a working draft, changeable and logged, until a senior signs the books off. Checked server-side, not by a hidden button.
+
+        Send either an explicit list of classification ids, or a whole confidence band. `band=HIGH` is the one-click bulk approval for everything the system is sure about.
+
+        **All or nothing.** One unapprovable row fails the batch rather than leaving it half-posted, which would be worse -- the reviewer would have to work out which half.
+      summary: Approve classified rows
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproveRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ApproveRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ApproveRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedJournalEntryList'
+          description: ''
+  /api/v1/clients/{client_id}/bank-accounts/:
+    get:
+      operationId: clients_bank_accounts_list
+      description: |-
+        A client's bank accounts.
+
+        Created by uploading a statement, never by hand -- the account number comes
+        from the file. Only the Tally ledger name is editable here.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - statements
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBankAccountList'
+          description: ''
+    post:
+      operationId: clients_bank_accounts_create
+      description: |-
+        A client's bank accounts.
+
+        Created by uploading a statement, never by hand -- the account number comes
+        from the file. Only the Tally ledger name is editable here.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - statements
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BankAccountRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BankAccountRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BankAccountRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BankAccount'
+          description: ''
+  /api/v1/clients/{client_id}/bank-accounts/{id}/:
+    get:
+      operationId: clients_bank_accounts_retrieve
+      description: |-
+        A client's bank accounts.
+
+        Created by uploading a statement, never by hand -- the account number comes
+        from the file. Only the Tally ledger name is editable here.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - statements
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BankAccountDetail'
+          description: ''
+    patch:
+      operationId: clients_bank_accounts_partial_update
+      description: Renaming the Tally ledger moves the existing ledger, entries and
+        all.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - statements
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedBankAccountRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedBankAccountRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedBankAccountRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BankAccount'
+          description: ''
+  /api/v1/clients/{client_id}/bank-accounts/{id}/opening-balance/:
+    post:
+      operationId: clients_bank_accounts_opening_balance_create
+      description: |-
+        What the client's books actually started from. Pre-filled from the first statement's own opening line, but confirmed rather than assumed: a client onboarding in October has six months of history this system never saw, and starting them at that statement's opening figure misstates every balance from then on.
+
+        Month-end reconciliation is not meaningful until this is set.
+      summary: Confirm the opening balance
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - statements
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpeningBalanceRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpeningBalanceRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpeningBalanceRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BankAccountDetail'
+          description: ''
+  /api/v1/clients/{client_id}/books/:
+    get:
+      operationId: clients_books_retrieve
+      description: Where a client's books stand, and the steps that move them along.
+      summary: Where the books stand
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - books
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooksStatus'
+          description: ''
+  /api/v1/clients/{client_id}/books/mark-reviewed/:
+    post:
+      operationId: clients_books_mark_reviewed_create
+      description: Clears the 'posted by the AI' / 'changed by the AI' markers on
+        entries that are not yet signed off, once a CA has checked them.
+      summary: Mark the AI's entries as looked at
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - books
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MarkReviewedRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MarkReviewedRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MarkReviewedRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooksStatus'
+          description: ''
+  /api/v1/clients/{client_id}/books/reopen/:
+    post:
+      operationId: clients_books_reopen_create
+      description: Where a client's books stand, and the steps that move them along.
+      summary: Reopen signed-off books
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - books
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequiredNoteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RequiredNoteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RequiredNoteRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooksStatus'
+          description: ''
+  /api/v1/clients/{client_id}/books/request/:
+    post:
+      operationId: clients_books_request_create
+      description: A CA says the books are ready for a senior to look at. Refused
+        while any transaction still needs a decision or has not been posted.
+      summary: Request approval
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - books
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NoteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/NoteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/NoteRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooksStatus'
+          description: ''
+  /api/v1/clients/{client_id}/books/return/:
+    post:
+      operationId: clients_books_return_create
+      description: Where a client's books stand, and the steps that move them along.
+      summary: Return the books for changes
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - books
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RequiredNoteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RequiredNoteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RequiredNoteRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooksStatus'
+          description: ''
+  /api/v1/clients/{client_id}/books/sign-off/:
+    post:
+      operationId: clients_books_sign_off_create
+      description: Locks everything up to the date signed. Voucher numbers are made
+        contiguous first. After this the database itself refuses to change any of
+        it; a later fix is a correcting entry dated after the sign-off.
+      summary: Sign the books off
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - books
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SignOffRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SignOffRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SignOffRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooksStatus'
+          description: ''
+  /api/v1/clients/{client_id}/gst/registrations/:
+    get:
+      operationId: clients_gst_registrations_list
+      description: The GSTINs a client holds. Each is reconciled and reported separately.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - gst
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRegistrationList'
+          description: ''
+    post:
+      operationId: clients_gst_registrations_create
+      description: The GSTINs a client holds. Each is reconciled and reported separately.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - gst
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegistrationRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RegistrationRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RegistrationRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+          description: ''
+  /api/v1/clients/{client_id}/gst/runs/:
+    get:
+      operationId: clients_gst_runs_list
+      description: One GSTIN's reconciliation for one return month.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - gst
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedRunCreateList'
+          description: ''
+    post:
+      operationId: clients_gst_runs_create
+      description: One GSTIN's reconciliation for one return month.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - gst
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RunCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RunCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RunCreateRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunCreate'
+          description: ''
+  /api/v1/clients/{client_id}/gst/runs/{id}/:
+    get:
+      operationId: clients_gst_runs_retrieve
+      description: One GSTIN's reconciliation for one return month.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - gst
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunCreate'
+          description: ''
+  /api/v1/clients/{client_id}/gst/runs/{id}/decisions/:
+    post:
+      operationId: clients_gst_runs_decisions_create
+      description: One GSTIN's reconciliation for one return month.
+      summary: Record a decision about one invoice
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - gst
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DecisionRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunCreate'
+          description: ''
+  /api/v1/clients/{client_id}/gst/runs/{id}/export/:
+    get:
+      operationId: clients_gst_runs_export_retrieve
+      description: One GSTIN's reconciliation for one return month.
+      summary: Download the Excel working paper
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - gst
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
+          description: ''
+  /api/v1/clients/{client_id}/gst/runs/{id}/portal/:
+    post:
+      operationId: clients_gst_runs_portal_create
+      description: One GSTIN's reconciliation for one return month.
+      summary: Upload GSTR-2B (JSON or Excel)
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - gst
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UploadRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunCreate'
+          description: ''
+  /api/v1/clients/{client_id}/gst/runs/{id}/reconcile/:
+    post:
+      operationId: clients_gst_runs_reconcile_create
+      description: One GSTIN's reconciliation for one return month.
+      summary: Match the register against GSTR-2B
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - gst
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunCreate'
+          description: ''
+  /api/v1/clients/{client_id}/gst/runs/{id}/register/:
+    post:
+      operationId: clients_gst_runs_register_create
+      description: One GSTIN's reconciliation for one return month.
+      summary: Upload the purchase register
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - gst
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UploadRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UploadRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunCreate'
+          description: ''
+  /api/v1/clients/{client_id}/gst/runs/{id}/sign-off/:
+    post:
+      operationId: clients_gst_runs_sign_off_create
+      description: Signing a reconciliation off. The lead's or an administrator's
+        act.
+      summary: Sign the reconciliation off
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - gst
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          description: No response body
+  /api/v1/clients/{client_id}/ledgers/:
+    get:
+      operationId: clients_ledgers_list
+      description: The client's chart of accounts.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedLedgerAccountList'
+          description: ''
+    post:
+      operationId: clients_ledgers_create
+      description: The client's chart of accounts.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LedgerAccountRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LedgerAccountRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/LedgerAccountRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerAccount'
+          description: ''
+  /api/v1/clients/{client_id}/ledgers/{id}/:
+    get:
+      operationId: clients_ledgers_retrieve
+      description: The client's chart of accounts.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerAccount'
+          description: ''
+    put:
+      operationId: clients_ledgers_update
+      description: The client's chart of accounts.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LedgerAccountRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LedgerAccountRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/LedgerAccountRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerAccount'
+          description: ''
+    patch:
+      operationId: clients_ledgers_partial_update
+      description: The client's chart of accounts.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedLedgerAccountRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedLedgerAccountRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedLedgerAccountRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerAccount'
+          description: ''
+    delete:
+      operationId: clients_ledgers_destroy
+      description: The client's chart of accounts.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/clients/{client_id}/ledgers/{id}/accept/:
+    post:
+      operationId: clients_ledgers_accept_create
+      description: Optionally rename it to match Tally. Rows already suggested into
+        it stay as suggestions for review.
+      summary: Accept a proposed ledger
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AcceptProposalRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AcceptProposalRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AcceptProposalRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerAccount'
+          description: ''
+  /api/v1/clients/{client_id}/ledgers/{id}/merge/:
+    post:
+      operationId: clients_ledgers_merge_create
+      description: The client's chart of accounts.
+      summary: Merge a proposed ledger into an existing one
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MergeProposalRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MergeProposalRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MergeProposalRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/clients/{client_id}/ledgers/{id}/reject/:
+    post:
+      operationId: clients_ledgers_reject_create
+      description: Its rows return to the queue unresolved. The name is remembered
+        so it is not proposed again.
+      summary: Reject a proposed ledger
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/clients/{client_id}/parties/:
+    get:
+      operationId: clients_parties_list
+      description: |-
+        Parties the client transacts with.
+
+        Separate from ledger heads because they answer different questions: the
+        ledger says what kind of expense it was, the party says who it was with.
+        Reverse-charge and TDS defaults live here, because they are properties of
+        who you are paying rather than of the category it was booked under.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPartyList'
+          description: ''
+    post:
+      operationId: clients_parties_create
+      description: |-
+        Parties the client transacts with.
+
+        Separate from ledger heads because they answer different questions: the
+        ledger says what kind of expense it was, the party says who it was with.
+        Reverse-charge and TDS defaults live here, because they are properties of
+        who you are paying rather than of the category it was booked under.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PartyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PartyRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Party'
+          description: ''
+  /api/v1/clients/{client_id}/parties/{id}/:
+    get:
+      operationId: clients_parties_retrieve
+      description: |-
+        Parties the client transacts with.
+
+        Separate from ledger heads because they answer different questions: the
+        ledger says what kind of expense it was, the party says who it was with.
+        Reverse-charge and TDS defaults live here, because they are properties of
+        who you are paying rather than of the category it was booked under.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Party'
+          description: ''
+    put:
+      operationId: clients_parties_update
+      description: |-
+        Parties the client transacts with.
+
+        Separate from ledger heads because they answer different questions: the
+        ledger says what kind of expense it was, the party says who it was with.
+        Reverse-charge and TDS defaults live here, because they are properties of
+        who you are paying rather than of the category it was booked under.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PartyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PartyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PartyRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Party'
+          description: ''
+    patch:
+      operationId: clients_parties_partial_update
+      description: |-
+        Parties the client transacts with.
+
+        Separate from ledger heads because they answer different questions: the
+        ledger says what kind of expense it was, the party says who it was with.
+        Reverse-charge and TDS defaults live here, because they are properties of
+        who you are paying rather than of the category it was booked under.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedPartyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedPartyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedPartyRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Party'
+          description: ''
+    delete:
+      operationId: clients_parties_destroy
+      description: |-
+        Parties the client transacts with.
+
+        Separate from ledger heads because they answer different questions: the
+        ledger says what kind of expense it was, the party says who it was with.
+        Reverse-charge and TDS defaults live here, because they are properties of
+        who you are paying rather than of the category it was booked under.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/clients/{client_id}/reports/balance-sheet/:
+    get:
+      operationId: clients_reports_balance_sheet_retrieve
+      description: |-
+        Trial Balance, P&L and Balance Sheet.
+
+        Every one states the year it covers, how many entries are behind it, and how
+        many rows are still unposted. A report over incomplete books is not wrong,
+        but handing one to a client without knowing that is.
+      summary: Balance sheet
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: 'Financial year by its starting year: 2025 means FY2025-26.'
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BalanceSheet'
+          description: ''
+  /api/v1/clients/{client_id}/reports/profit-and-loss/:
+    get:
+      operationId: clients_reports_profit_and_loss_retrieve
+      description: |-
+        Trial Balance, P&L and Balance Sheet.
+
+        Every one states the year it covers, how many entries are behind it, and how
+        many rows are still unposted. A report over incomplete books is not wrong,
+        but handing one to a client without knowing that is.
+      summary: Profit and loss
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: 'Financial year by its starting year: 2025 means FY2025-26.'
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProfitAndLoss'
+          description: ''
+  /api/v1/clients/{client_id}/reports/trial-balance/:
+    get:
+      operationId: clients_reports_trial_balance_retrieve
+      description: |-
+        Trial Balance, P&L and Balance Sheet.
+
+        Every one states the year it covers, how many entries are behind it, and how
+        many rows are still unposted. A report over incomplete books is not wrong,
+        but handing one to a client without knowing that is.
+      summary: Trial balance
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: 'Financial year by its starting year: 2025 means FY2025-26.'
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrialBalance'
+          description: ''
+  /api/v1/clients/{client_id}/review-queue/:
+    get:
+      operationId: clients_review_queue_list
+      description: |-
+        Everything still to be dealt with, surest first.
+
+        "Still to be dealt with" means **not yet posted to the ledger** -- not "not
+        yet looked at". A row a person has placed but nobody has approved is not
+        finished work, and a queue that hid it is how a month closes short.
+      summary: The review queue
+      parameters:
+      - in: query
+        name: band
+        schema:
+          type: string
+          enum:
+          - ADVISED
+          - HIGH
+          - JUDGEMENT
+        description: HIGH is bulk-approvable. ADVISED is suggested but worth a look.
+          JUDGEMENT has no suggestion and needs a person.
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: stage
+        schema:
+          type: string
+          enum:
+          - pending_approval
+          - unresolved
+        description: '`unresolved` is the half with no ledger yet; `pending_approval`
+          is the half waiting on a senior CA. Omit for both.'
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedClassificationList'
+          description: ''
+  /api/v1/clients/{client_id}/review-queue/recategorize/:
+    post:
+      operationId: clients_review_queue_recategorize_create
+      description: |-
+        Asks the model again about every row that is **not posted** and was **not placed by a person** -- rule placements, earlier model suggestions and unresolved rows alike. Pass `statement` to limit it to one statement.
+
+        Where the model agrees with a rule, the rule's placement stands (`confirmed`). Where it disagrees, the row becomes a model suggestion in the ADVISED band, so a person sees the disagreement before it can be posted (`suggested`). Where it declines, nothing changes but the rationale (`declined`). Posted entries are immutable and never touched. Returns **202** with a job.
+      summary: Re-categorize with the model
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RecategorizeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RecategorizeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RecategorizeRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+          description: ''
+  /api/v1/clients/{client_id}/review-queue/suggest/:
+    post:
+      operationId: clients_review_queue_suggest_create
+      description: |-
+        Runs the model tier over the rows no rule could place. Each row the model is confident about becomes a *suggestion* in the ADVISED band -- never HIGH, so never bulk-approvable -- with a one-line rationale. Rows it is not confident about stay unresolved, with the rationale attached. Returns **202** with a job; the result carries `suggested`, `declined` and `error` (empty unless the provider failed).
+
+        Nothing identifying leaves the server: narrations are masked, people are pseudonymised, known parties are aliased. Requires `transaction.classify`.
+      summary: Ask the model about every unresolved row
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+          description: ''
+  /api/v1/clients/{client_id}/review-queue/summary/:
+    get:
+      operationId: clients_review_queue_summary_retrieve
+      description: 'Split by how much thought each row needs. The ordering is the
+        feature: it turns an hour of checking every row into minutes of checking the
+        ones that need it.'
+      summary: How much work is waiting
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewSummary'
+          description: ''
+  /api/v1/clients/{client_id}/rules/:
+    get:
+      operationId: clients_rules_list
+      description: |-
+        Rules that place transactions automatically.
+
+        Mostly written by the system: every decision a reviewer makes mints one,
+        keyed on the payee rather than the narration so it covers that payee
+        permanently. Rules can also be created here by hand, which outranks anything
+        learned.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedClassificationRuleList'
+          description: ''
+    post:
+      operationId: clients_rules_create
+      description: |-
+        Rules that place transactions automatically.
+
+        Mostly written by the system: every decision a reviewer makes mints one,
+        keyed on the payee rather than the narration so it covers that payee
+        permanently. Rules can also be created here by hand, which outranks anything
+        learned.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClassificationRuleRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ClassificationRuleRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ClassificationRuleRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassificationRule'
+          description: ''
+  /api/v1/clients/{client_id}/rules/{id}/:
+    get:
+      operationId: clients_rules_retrieve
+      description: |-
+        Rules that place transactions automatically.
+
+        Mostly written by the system: every decision a reviewer makes mints one,
+        keyed on the payee rather than the narration so it covers that payee
+        permanently. Rules can also be created here by hand, which outranks anything
+        learned.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassificationRule'
+          description: ''
+    put:
+      operationId: clients_rules_update
+      description: |-
+        Rules that place transactions automatically.
+
+        Mostly written by the system: every decision a reviewer makes mints one,
+        keyed on the payee rather than the narration so it covers that payee
+        permanently. Rules can also be created here by hand, which outranks anything
+        learned.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClassificationRuleRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ClassificationRuleRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ClassificationRuleRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassificationRule'
+          description: ''
+    patch:
+      operationId: clients_rules_partial_update
+      description: |-
+        Rules that place transactions automatically.
+
+        Mostly written by the system: every decision a reviewer makes mints one,
+        keyed on the payee rather than the narration so it covers that payee
+        permanently. Rules can also be created here by hand, which outranks anything
+        learned.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedClassificationRuleRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedClassificationRuleRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedClassificationRuleRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClassificationRule'
+          description: ''
+    delete:
+      operationId: clients_rules_destroy
+      description: |-
+        Rules that place transactions automatically.
+
+        Mostly written by the system: every decision a reviewer makes mints one,
+        keyed on the payee rather than the narration so it covers that payee
+        permanently. Rules can also be created here by hand, which outranks anything
+        learned.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/clients/{client_id}/statements/:
+    get:
+      operationId: clients_statements_list
+      description: Statements on file for a client.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - statements
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedStatementList'
+          description: ''
+  /api/v1/clients/{client_id}/statements/{id}/:
+    get:
+      operationId: clients_statements_retrieve
+      description: Statements on file for a client.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - statements
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Statement'
+          description: ''
+    delete:
+      operationId: clients_statements_destroy
+      description: Removes the statement, its rows, the file, and every entry posted
+        from it that is not yet signed off (each is kept in the change log). Refused
+        with `entry_locked` if any of them is inside signed-off books. Rules and party
+        names learned meanwhile are kept. Returns what was removed.
+      summary: Remove a statement uploaded by mistake
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - statements
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+  /api/v1/clients/{client_id}/statements/{id}/transactions/:
+    get:
+      operationId: clients_statements_transactions_list
+      description: Exactly as the bank printed them. Nothing here says what a transaction
+        *means* -- that is a classification, and it points at these rows rather than
+        changing them.
+      summary: The rows read out of a statement
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - in: query
+        name: page_size
+        schema:
+          type: integer
+        description: Up to 500. Defaults to 50.
+      tags:
+      - statements
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedStatementTransactionList'
+          description: ''
+  /api/v1/clients/{client_id}/statements/upload/:
+    post:
+      operationId: clients_statements_upload_create
+      description: |-
+        Accepts the PDF and returns **202 Accepted** with a job. Poll `/api/v1/jobs/{id}/` or subscribe to its events.
+
+        The bank is not asked for and cannot be supplied: it is read from the file. The statement itself is the authority on which account it belongs to, and a dropdown is one more way to file one against the wrong account.
+
+        On success the job result carries `statement`, `rows_created`, `rows_already_present`, `needs_opening_confirmation` and the outcome of the first classification pass. Re-uploading the same file returns the original statement rather than a duplicate.
+
+        Failures that are about the *file* rather than the request come back on the job with a code: `no_text_layer` (a scan -- OCR is not wired), `unsupported_bank`, `balance_chain_broken`, `statement_period_missing`.
+      summary: Upload a statement
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - statements
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StatementUploadRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StatementUploadRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+          description: ''
+  /api/v1/clients/{id}/:
+    get:
+      operationId: clients_retrieve
+      description: The firm's clients.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - clients
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+          description: ''
+    put:
+      operationId: clients_update
+      description: The firm's clients.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - clients
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ClientRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ClientRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ClientRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+          description: ''
+    patch:
+      operationId: clients_partial_update
+      description: The firm's clients.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - clients
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedClientRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedClientRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedClientRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Client'
+          description: ''
+    delete:
+      operationId: clients_destroy
+      description: The firm's clients.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - clients
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/firm/:
+    get:
+      operationId: firm_retrieve
+      tags:
+      - firm
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: firm_partial_update
+      tags:
+      - firm
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/firm/owner/:
+    post:
+      operationId: firm_owner_create
+      tags:
+      - firm
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/jobs/:
+    get:
+      operationId: jobs_list
+      description: |-
+        Progress on work the API did not block for.
+
+        Every endpoint that starts slow work answers 202 with one of these. Poll it,
+        or subscribe to ``events`` for the same thing pushed.
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - jobs
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedJobList'
+          description: ''
+  /api/v1/jobs/{id}/:
+    get:
+      operationId: jobs_retrieve
+      description: |-
+        Progress on work the API did not block for.
+
+        Every endpoint that starts slow work answers 202 with one of these. Poll it,
+        or subscribe to ``events`` for the same thing pushed.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - jobs
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
+          description: ''
+  /api/v1/jobs/{id}/events/:
+    get:
+      operationId: jobs_events_retrieve
+      description: |-
+        Server-sent events. Each message is a JSON job object; the stream closes once the job reaches a terminal state.
+
+        Work currently runs inline, so a job is already finished by the time its id is returned and this stream will usually emit one message and close. The contract is here so that moving execution onto a worker changes nothing a client can see.
+      summary: Follow a job as it progresses
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - jobs
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/journal-entries/:
+    get:
+      operationId: journal_entries_list
+      description: |-
+        The permanent record.
+
+        Read-only over HTTP, and read-only in PostgreSQL too -- the journal tables
+        carry no UPDATE or DELETE grant and triggers that raise. Entries are created
+        by approval, never by a POST to a collection: there is a permission to check
+        and a voucher number to allocate under a lock.
+      parameters:
+      - in: query
+        name: client
+        schema:
+          type: string
+        description: Filter to one client.
+      - in: query
+        name: live
+        schema:
+          type: string
+          enum:
+          - 'true'
+        description: Only entries that have not been corrected. A superseded entry
+          stays in the record permanently, so it is included by default.
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedJournalEntryList'
+          description: ''
+  /api/v1/journal-entries/{id}/:
+    get:
+      operationId: journal_entries_retrieve
+      description: |-
+        The permanent record.
+
+        Read-only over HTTP, and read-only in PostgreSQL too -- the journal tables
+        carry no UPDATE or DELETE grant and triggers that raise. Entries are created
+        by approval, never by a POST to a collection: there is a permission to check
+        and a voucher number to allocate under a lock.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JournalEntry'
+          description: ''
+  /api/v1/journal-entries/{id}/changes/:
+    get:
+      operationId: journal_entries_changes_list
+      description: Every change made to the entry while it was a working draft, oldest
+        first.
+      summary: What this entry used to be
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EntryChange'
+          description: ''
+  /api/v1/journal-entries/{id}/correct/:
+    post:
+      operationId: journal_entries_correct_create
+      description: |-
+        The original is not edited -- it cannot be. A correction is a new entry carrying a reversal of the original's lines plus the corrected ones, linked back to it. The original stays visible, which is what company law expects, and the two together net to the corrected position so the trial balance is right at every point in the chain.
+
+        Requires `journal.correct` (staff and above, on their assigned clients). Once the entry is inside signed-off books only the client's lead or a firm administrator may adjust it; anyone else is told it is locked (409 `entry_locked`).
+      summary: Correct a posted entry
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CorrectionRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CorrectionRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CorrectionRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JournalEntry'
+          description: ''
+  /api/v1/journal-entries/{id}/remove/:
+    post:
+      operationId: journal_entries_remove_create
+      description: Only while the entry's period is not signed off. The transaction
+        it came from goes back to the queue, and the entry is kept in the change log.
+      summary: Remove an entry from the working books
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RemoveEntryRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RemoveEntryRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RemoveEntryRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/me/:
+    get:
+      operationId: me_retrieve
+      description: The permission list lets a client hide what it must not offer.
+        That is presentation only -- every permission is checked again server-side,
+        because a hidden button is not a permission system.
+      summary: The current session
+      tags:
+      - session
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Me'
+          description: ''
+  /api/v1/statements/{id}/tally-export/:
+    get:
+      operationId: statements_tally_export_retrieve
+      description: |-
+        Only what has been **approved**. A classification is a suggestion, and an export that quietly included one would put work nobody signed off into a client's books.
+
+        Each voucher carries a stable `REMOTEID`, so re-exporting after a correction updates in Tally rather than duplicating. Superseded entries are left out: their correction carries both the reversal and the corrected position, so including them would double-count.
+      summary: Export approved entries as Tally XML
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyExport'
+          description: ''
+  /api/v1/team/clients/:
+    get:
+      operationId: team_clients_retrieve
+      tags:
+      - team
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/team/clients/{id}/lead/:
+    put:
+      operationId: team_clients_lead_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/team/clients/{id}/team/:
+    post:
+      operationId: team_clients_team_create
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+    delete:
+      operationId: team_clients_team_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/team/clients/{id}/team/{member_id}/:
+    post:
+      operationId: team_clients_team_create_2
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: member_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+    delete:
+      operationId: team_clients_team_destroy_2
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: member_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/team/events/:
+    get:
+      operationId: team_events_retrieve
+      tags:
+      - team
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/team/invites/:
+    get:
+      operationId: team_invites_retrieve
+      tags:
+      - team
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/team/invites/{id}/:
+    delete:
+      operationId: team_invites_destroy
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/team/members/:
+    get:
+      operationId: team_members_retrieve
+      tags:
+      - team
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+    post:
+      operationId: team_members_create
+      tags:
+      - team
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/team/members/{id}/:
+    get:
+      operationId: team_members_retrieve_2
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+    patch:
+      operationId: team_members_partial_update
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/team/members/{id}/work/:
+    get:
+      operationId: team_members_work_retrieve
+      description: One person's work. Anyone may see their own; leads and admins their
+        team's.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          description: No response body
+  /api/v1/transactions/:
+    get:
+      operationId: transactions_list
+      description: Statement rows across every statement, for lookups by id.
+      parameters:
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - statements
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedStatementTransactionList'
+          description: ''
+  /api/v1/transactions/{id}/:
+    get:
+      operationId: transactions_retrieve
+      description: Statement rows across every statement, for lookups by id.
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - statements
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatementTransaction'
+          description: ''
+components:
+  schemas:
+    AcceptProposalRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Rename to match the client's Tally company exactly.
+          maxLength: 255
+        group:
+          $ref: '#/components/schemas/GroupEnum'
+    ApproveRequest:
+      type: object
+      description: |-
+        Post reviewed rows to the immutable journal.
+
+        Either an explicit list of classification ids, or a whole confidence band --
+        the latter is the one-click bulk approval the review screen offers for
+        everything the system is sure about.
+      properties:
+        classifications:
+          type: array
+          items:
+            type: string
+            format: uuid
+        band:
+          $ref: '#/components/schemas/BandEnum'
+    BalanceCheck:
+      type: object
+      description: |-
+        Month end: does the ledger agree with the bank?
+
+        The check that catches what every other one misses -- a row posted twice, a
+        correction reversed the wrong way, an entry approved against the wrong
+        account -- in one subtraction.
+      properties:
+        as_of:
+          type: string
+          format: date
+        ledger_balance_paise:
+          type: integer
+          description: What the client's books say.
+        statement_balance_paise:
+          type: integer
+          description: What the bank's own statement says.
+        difference_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        matches:
+          type: boolean
+        can_close:
+          type: boolean
+          description: Reconciles *and* nothing up to that date is still unposted.
+        unapproved_count:
+          type: integer
+        explanation:
+          type: string
+          readOnly: true
+        ledger_balance_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        statement_balance_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        difference_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - as_of
+      - can_close
+      - difference_display
+      - difference_paise
+      - explanation
+      - ledger_balance_display
+      - ledger_balance_paise
+      - matches
+      - statement_balance_display
+      - statement_balance_paise
+      - unapproved_count
+    BalanceSheet:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        assets:
+          type: array
+          items:
+            $ref: '#/components/schemas/LedgerBalance'
+        liabilities:
+          type: array
+          items:
+            $ref: '#/components/schemas/LedgerBalance'
+        total_assets_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        total_liabilities_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        total_liabilities_and_profit_paise:
+          type: integer
+          description: Liabilities plus the year's profit (or minus its loss). Equals
+            total assets when the sheet balances.
+        net_profit_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        suspense_paise:
+          type: integer
+          description: Anything unanswered. A balance sheet with a suspense figure
+            has a question on it.
+        balances:
+          type: boolean
+        footer:
+          $ref: '#/components/schemas/ReportFooter'
+        total_assets_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        total_liabilities_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        total_liabilities_and_profit_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        net_profit_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        suspense_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - assets
+      - balances
+      - footer
+      - liabilities
+      - net_profit_display
+      - net_profit_paise
+      - suspense_display
+      - suspense_paise
+      - total_assets_display
+      - total_assets_paise
+      - total_liabilities_and_profit_display
+      - total_liabilities_and_profit_paise
+      - total_liabilities_display
+      - total_liabilities_paise
+    BandEnum:
+      enum:
+      - HIGH
+      - ADVISED
+      - JUDGEMENT
+      type: string
+      description: |-
+        * `HIGH` - HIGH
+        * `ADVISED` - ADVISED
+        * `JUDGEMENT` - JUDGEMENT
+    BankAccount:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        label:
+          type: string
+          readOnly: true
+        client:
+          type: string
+          format: uuid
+          readOnly: true
+        bank_code:
+          type: string
+          readOnly: true
+          description: Parser identifier, e.g. AXIS.
+        account_last4:
+          type: string
+          readOnly: true
+        ifsc:
+          type: string
+          readOnly: true
+        ledger_name:
+          type: string
+          maxLength: 255
+        opening_balance_paise:
+          type: integer
+          readOnly: true
+          nullable: true
+        opening_as_of:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        has_opening_balance:
+          type: boolean
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        opening_balance_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - account_last4
+      - bank_code
+      - client
+      - created_at
+      - has_opening_balance
+      - id
+      - ifsc
+      - is_active
+      - label
+      - opening_as_of
+      - opening_balance_display
+      - opening_balance_paise
+    BankAccountDetail:
+      type: object
+      description: As above, plus the decrypted identifiers. One account at a time.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        label:
+          type: string
+          readOnly: true
+        client:
+          type: string
+          format: uuid
+          readOnly: true
+        bank_code:
+          type: string
+          readOnly: true
+          description: Parser identifier, e.g. AXIS.
+        account_last4:
+          type: string
+          readOnly: true
+        ifsc:
+          type: string
+          readOnly: true
+        ledger_name:
+          type: string
+          maxLength: 255
+        opening_balance_paise:
+          type: integer
+          readOnly: true
+          nullable: true
+        opening_as_of:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        has_opening_balance:
+          type: boolean
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        account_number:
+          type: string
+          readOnly: true
+        account_holder:
+          type: string
+          readOnly: true
+        opening_balance_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - account_holder
+      - account_last4
+      - account_number
+      - bank_code
+      - client
+      - created_at
+      - has_opening_balance
+      - id
+      - ifsc
+      - is_active
+      - label
+      - opening_as_of
+      - opening_balance_display
+      - opening_balance_paise
+    BankAccountRequest:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        ledger_name:
+          type: string
+          maxLength: 255
+    BlankEnum:
+      enum:
+      - ''
+    BooksEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        action:
+          allOf:
+          - $ref: '#/components/schemas/BooksEventActionEnum'
+          readOnly: true
+        action_display:
+          type: string
+          readOnly: true
+        through_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        note:
+          type: string
+          readOnly: true
+        actor_email:
+          type: string
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - action
+      - action_display
+      - actor_email
+      - created_at
+      - id
+      - note
+      - through_date
+    BooksEventActionEnum:
+      enum:
+      - REQUESTED
+      - RETURNED
+      - SIGNED_OFF
+      - REOPENED
+      type: string
+      description: |-
+        * `REQUESTED` - Approval requested
+        * `RETURNED` - Returned for changes
+        * `SIGNED_OFF` - Signed off
+        * `REOPENED` - Reopened
+    BooksStatus:
+      type: object
+      properties:
+        signed_off_through:
+          type: string
+          format: date
+          nullable: true
+        review_pending:
+          type: boolean
+        requested_by:
+          type: string
+        requested_at:
+          type: string
+          format: date-time
+          nullable: true
+        returned_note:
+          type: string
+        waiting:
+          type: integer
+          description: Rows still needing a decision or a posting.
+        ai_posted:
+          type: integer
+          description: Entries the AI posted that nobody has yet looked at.
+        ai_revised:
+          type: integer
+          description: Entries the AI changed after a correction, unlooked-at.
+        can_request:
+          type: boolean
+        can_sign_off:
+          type: boolean
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/BooksEvent'
+      required:
+      - ai_posted
+      - ai_revised
+      - can_request
+      - can_sign_off
+      - history
+      - requested_at
+      - requested_by
+      - returned_note
+      - review_pending
+      - signed_off_through
+      - waiting
+    Classification:
+      type: object
+      description: A row awaiting a decision, with everything needed to make it.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        transaction:
+          allOf:
+          - $ref: '#/components/schemas/StatementTransaction'
+          readOnly: true
+        ledger:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        ledger_name:
+          type: string
+          readOnly: true
+          nullable: true
+        ledger_status:
+          type: string
+          readOnly: true
+          nullable: true
+        ledger_group:
+          type: string
+          readOnly: true
+          nullable: true
+        ledger_group_display:
+          type: string
+          readOnly: true
+          nullable: true
+        ledger_opened_by_model:
+          type: boolean
+          readOnly: true
+        voucher_type:
+          type: string
+          nullable: true
+          readOnly: true
+        entry_legs:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+          description: |-
+            Both sides of the entry this row makes, as a voucher shows them.
+
+            Every transaction touches two accounts: the bank, and whatever the
+            money was for. Money out debits the other ledger and credits the bank;
+            money in is the reverse. ``ledger`` is null while the row is unplaced,
+            and the leg is still listed so the entry is visibly incomplete rather
+            than looking like a one-sided one.
+          readOnly: true
+        book_narration:
+          type: string
+          readOnly: true
+        open_question:
+          type: string
+          readOnly: true
+        party:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        party_name:
+          type: string
+          readOnly: true
+          nullable: true
+        party_resolution:
+          allOf:
+          - $ref: '#/components/schemas/PartyResolutionEnum'
+          readOnly: true
+        party_candidates:
+          readOnly: true
+        rcm:
+          type: boolean
+          readOnly: true
+        tds_section:
+          allOf:
+          - $ref: '#/components/schemas/TdsSectionEnum'
+          readOnly: true
+        method:
+          allOf:
+          - $ref: '#/components/schemas/MethodEnum'
+          readOnly: true
+        method_display:
+          type: string
+          readOnly: true
+        rationale:
+          type: string
+          readOnly: true
+          description: Why the model suggested what it did, in one sentence a reviewer
+            can check.
+        confidence:
+          type: number
+          format: double
+          readOnly: true
+        review_band:
+          allOf:
+          - $ref: '#/components/schemas/ReviewBandEnum'
+          readOnly: true
+        needs_review:
+          type: boolean
+          readOnly: true
+        channel:
+          type: string
+          readOnly: true
+        counterparty:
+          type: string
+          readOnly: true
+        is_self_transfer:
+          type: boolean
+          readOnly: true
+        is_posted:
+          type: boolean
+          readOnly: true
+        ai_revised:
+          type: boolean
+          readOnly: true
+        reviewed_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - ai_revised
+      - book_narration
+      - channel
+      - confidence
+      - counterparty
+      - entry_legs
+      - id
+      - is_posted
+      - is_self_transfer
+      - ledger
+      - ledger_group
+      - ledger_group_display
+      - ledger_name
+      - ledger_opened_by_model
+      - ledger_status
+      - method
+      - method_display
+      - needs_review
+      - open_question
+      - party
+      - party_candidates
+      - party_name
+      - party_resolution
+      - rationale
+      - rcm
+      - review_band
+      - reviewed_at
+      - tds_section
+      - transaction
+      - voucher_type
+    ClassificationRule:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        client:
+          type: string
+          format: uuid
+          readOnly: true
+        ledger:
+          type: string
+          format: uuid
+        ledger_name:
+          type: string
+          readOnly: true
+        party:
+          type: string
+          format: uuid
+          nullable: true
+        rcm:
+          type: boolean
+        tds_section:
+          oneOf:
+          - $ref: '#/components/schemas/TdsSectionEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        match_type:
+          $ref: '#/components/schemas/MatchTypeEnum'
+        pattern:
+          type: string
+          maxLength: 255
+        direction:
+          $ref: '#/components/schemas/ClassificationRuleDirectionEnum'
+        priority:
+          type: integer
+          maximum: 2147483647
+          minimum: -2147483648
+        confidence:
+          type: number
+          format: double
+        source:
+          allOf:
+          - $ref: '#/components/schemas/SourceEnum'
+          readOnly: true
+        is_active:
+          type: boolean
+        hit_count:
+          type: integer
+          readOnly: true
+        last_hit_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - client
+      - created_at
+      - hit_count
+      - id
+      - last_hit_at
+      - ledger
+      - ledger_name
+      - pattern
+      - source
+    ClassificationRuleDirectionEnum:
+      enum:
+      - ANY
+      - DEBIT
+      - CREDIT
+      type: string
+      description: |-
+        * `ANY` - Either
+        * `DEBIT` - Money out
+        * `CREDIT` - Money in
+    ClassificationRuleRequest:
+      type: object
+      properties:
+        ledger:
+          type: string
+          format: uuid
+        party:
+          type: string
+          format: uuid
+          nullable: true
+        rcm:
+          type: boolean
+        tds_section:
+          oneOf:
+          - $ref: '#/components/schemas/TdsSectionEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        match_type:
+          $ref: '#/components/schemas/MatchTypeEnum'
+        pattern:
+          type: string
+          minLength: 1
+          maxLength: 255
+        direction:
+          $ref: '#/components/schemas/ClassificationRuleDirectionEnum'
+        priority:
+          type: integer
+          maximum: 2147483647
+          minimum: -2147483648
+        confidence:
+          type: number
+          format: double
+        is_active:
+          type: boolean
+      required:
+      - ledger
+      - pattern
+    Client:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 255
+        fy_start:
+          type: string
+          format: date
+          description: First day of the client's financial year, normally 1 April.
+        business_profile:
+          type: string
+          description: What the client's business does, in a few sentences. Shown
+            to the model that suggests ledgers.
+          maxLength: 2000
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        lead:
+          type: object
+          additionalProperties: {}
+          nullable: true
+          readOnly: true
+        can_sign_off:
+          type: boolean
+          readOnly: true
+        can_post:
+          type: boolean
+          readOnly: true
+      required:
+      - can_post
+      - can_sign_off
+      - created_at
+      - fy_start
+      - id
+      - lead
+      - name
+    ClientRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        fy_start:
+          type: string
+          format: date
+          description: First day of the client's financial year, normally 1 April.
+        business_profile:
+          type: string
+          description: What the client's business does, in a few sentences. Shown
+            to the model that suggests ledgers.
+          maxLength: 2000
+      required:
+      - fy_start
+      - name
+    ConfirmPartyRequest:
+      type: object
+      properties:
+        party:
+          type: string
+          format: uuid
+          description: The party this payee is.
+      required:
+      - party
+    CorrectionRequest:
+      type: object
+      description: |-
+        Correct a posted entry.
+
+        Until the books are signed off this changes the entry itself, keeping what it
+        was in the change log. After sign-off it is a new entry that reverses the
+        original's lines and carries the corrected ones, linked back to it. Either
+        way the original is never silently lost.
+      properties:
+        treatment:
+          $ref: '#/components/schemas/TreatmentRequest'
+        narration:
+          type: string
+          description: Defaults to the original entry's narration.
+      required:
+      - treatment
+    DecisionKindEnum:
+      enum:
+      - accept_match
+      - claim_itc
+      - disallow_itc
+      - defer
+      - note
+      - sign_off
+      type: string
+      description: |-
+        * `accept_match` - Accept as a match
+        * `claim_itc` - Claim the credit
+        * `disallow_itc` - Disallow the credit
+        * `defer` - Defer to a later month
+        * `note` - Note
+        * `sign_off` - Signed off the run
+    DecisionRequest:
+      type: object
+      properties:
+        match:
+          type: string
+          format: uuid
+        kind:
+          $ref: '#/components/schemas/DecisionKindEnum'
+        note:
+          type: string
+          default: ''
+          maxLength: 2000
+      required:
+      - kind
+      - match
+    Document:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/DocumentKindEnum'
+          readOnly: true
+        original_filename:
+          type: string
+          readOnly: true
+        sha256:
+          type: string
+          readOnly: true
+        byte_size:
+          type: integer
+          readOnly: true
+        page_count:
+          type: integer
+          readOnly: true
+        pipeline_tier:
+          allOf:
+          - $ref: '#/components/schemas/PipelineTierEnum'
+          readOnly: true
+        status:
+          allOf:
+          - $ref: '#/components/schemas/DocumentStatusEnum'
+          readOnly: true
+        failure_reason:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - byte_size
+      - created_at
+      - failure_reason
+      - id
+      - kind
+      - original_filename
+      - page_count
+      - pipeline_tier
+      - sha256
+      - status
+    DocumentKindEnum:
+      enum:
+      - BANK_STATEMENT
+      - PURCHASE_INVOICE
+      - SALES_INVOICE
+      - GSTR2B
+      - REGISTER
+      - TALLY_EXPORT
+      - OTHER
+      type: string
+      description: |-
+        * `BANK_STATEMENT` - Bank statement
+        * `PURCHASE_INVOICE` - Purchase invoice
+        * `SALES_INVOICE` - Sales invoice
+        * `GSTR2B` - GSTR-2B extract
+        * `REGISTER` - Purchase or sales register
+        * `TALLY_EXPORT` - Tally export
+        * `OTHER` - Other
+    DocumentStatusEnum:
+      enum:
+      - RECEIVED
+      - PARSED
+      - FAILED
+      type: string
+      description: |-
+        * `RECEIVED` - Received
+        * `PARSED` - Parsed
+        * `FAILED` - Could not be read
+    EntryChange:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        action:
+          allOf:
+          - $ref: '#/components/schemas/EntryChangeActionEnum'
+          readOnly: true
+        action_display:
+          type: string
+          readOnly: true
+        voucher_type:
+          type: string
+          readOnly: true
+        entry_no:
+          type: integer
+          readOnly: true
+        entry_date:
+          type: string
+          format: date
+          readOnly: true
+        before:
+          readOnly: true
+        after:
+          readOnly: true
+        note:
+          type: string
+          readOnly: true
+        actor_email:
+          type: string
+          readOnly: true
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - action
+      - action_display
+      - actor_email
+      - after
+      - before
+      - created_at
+      - entry_date
+      - entry_no
+      - id
+      - note
+      - voucher_type
+    EntryChangeActionEnum:
+      enum:
+      - EDITED
+      - REMOVED
+      - AI_REVISED
+      - RENUMBERED
+      type: string
+      description: |-
+        * `EDITED` - Ledger changed
+        * `REMOVED` - Entry removed
+        * `AI_REVISED` - Revised by the AI after a correction
+        * `RENUMBERED` - Voucher renumbered at sign-off
+    Firm:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        is_active:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - is_active
+      - name
+    GroupEnum:
+      enum:
+      - BANK
+      - CASH
+      - DEBTOR
+      - CREDITOR
+      - INDIRECT_EXPENSE
+      - DIRECT_EXPENSE
+      - INDIRECT_INCOME
+      - DIRECT_INCOME
+      - DUTIES_AND_TAXES
+      - LOAN
+      - INVESTMENT
+      - CAPITAL
+      - SUSPENSE
+      type: string
+      description: |-
+        * `BANK` - Bank Accounts
+        * `CASH` - Cash-in-Hand
+        * `DEBTOR` - Sundry Debtors
+        * `CREDITOR` - Sundry Creditors
+        * `INDIRECT_EXPENSE` - Indirect Expenses
+        * `DIRECT_EXPENSE` - Direct Expenses
+        * `INDIRECT_INCOME` - Indirect Incomes
+        * `DIRECT_INCOME` - Direct Incomes
+        * `DUTIES_AND_TAXES` - Duties & Taxes
+        * `LOAN` - Loans (Liability)
+        * `INVESTMENT` - Investments
+        * `CAPITAL` - Capital Account
+        * `SUSPENSE` - Suspense A/c
+    Job:
+      type: object
+      description: |-
+        What a 202 hands back, and what polling returns.
+
+        ``result`` is whatever the work produced -- its shape depends on ``kind``
+        and is documented on the endpoint that starts the job.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        kind:
+          type: string
+          readOnly: true
+          description: e.g. statement.ingest
+        status:
+          allOf:
+          - $ref: '#/components/schemas/JobStatusEnum'
+          readOnly: true
+        progress:
+          type: integer
+          readOnly: true
+        message:
+          type: string
+          readOnly: true
+        result:
+          readOnly: true
+        error:
+          type: string
+          readOnly: true
+        error_code:
+          type: string
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        started_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        finished_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+      required:
+      - created_at
+      - error
+      - error_code
+      - finished_at
+      - id
+      - kind
+      - message
+      - progress
+      - result
+      - started_at
+      - status
+    JobStatusEnum:
+      enum:
+      - PENDING
+      - RUNNING
+      - SUCCEEDED
+      - FAILED
+      type: string
+      description: |-
+        * `PENDING` - Queued
+        * `RUNNING` - Running
+        * `SUCCEEDED` - Succeeded
+        * `FAILED` - Failed
+    JournalEntry:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        entry_no:
+          type: integer
+          readOnly: true
+        voucher_type:
+          allOf:
+          - $ref: '#/components/schemas/VoucherTypeEnum'
+          readOnly: true
+        entry_date:
+          type: string
+          format: date
+          readOnly: true
+        financial_year:
+          type: integer
+          readOnly: true
+        fy_label:
+          type: string
+          readOnly: true
+        narration:
+          type: string
+          readOnly: true
+        total_paise:
+          type: integer
+          readOnly: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/JournalLine'
+          readOnly: true
+        source_transaction:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        supersedes:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        superseded_by:
+          type: string
+          format: uuid
+          nullable: true
+          readOnly: true
+        is_superseded:
+          type: boolean
+          readOnly: true
+        approved_by:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        approved_by_email:
+          type: string
+          readOnly: true
+          nullable: true
+        approved_at:
+          type: string
+          format: date-time
+          readOnly: true
+        marker:
+          readOnly: true
+          oneOf:
+          - $ref: '#/components/schemas/JournalEntryMarkerEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        marker_display:
+          type: string
+          readOnly: true
+        is_locked:
+          type: boolean
+          readOnly: true
+        total_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - approved_at
+      - approved_by
+      - approved_by_email
+      - entry_date
+      - entry_no
+      - financial_year
+      - fy_label
+      - id
+      - is_locked
+      - is_superseded
+      - lines
+      - marker
+      - marker_display
+      - narration
+      - source_transaction
+      - superseded_by
+      - supersedes
+      - total_display
+      - total_paise
+      - voucher_type
+    JournalEntryMarkerEnum:
+      enum:
+      - AI_POSTED
+      - AI_REVISED
+      type: string
+      description: |-
+        * `` - No marker
+        * `AI_POSTED` - Posted by the AI
+        * `AI_REVISED` - Changed by the AI after a correction
+    JournalLine:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        ledger_account:
+          type: string
+          format: uuid
+          readOnly: true
+        ledger_name:
+          type: string
+          readOnly: true
+        party:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        party_name:
+          type: string
+          readOnly: true
+          nullable: true
+        direction:
+          allOf:
+          - $ref: '#/components/schemas/JournalLineDirectionEnum'
+          readOnly: true
+        amount_paise:
+          type: integer
+          readOnly: true
+        rcm:
+          type: boolean
+          readOnly: true
+        tds_section:
+          type: string
+          readOnly: true
+        amount_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - amount_display
+      - amount_paise
+      - direction
+      - id
+      - ledger_account
+      - ledger_name
+      - party
+      - party_name
+      - rcm
+      - tds_section
+    JournalLineDirectionEnum:
+      enum:
+      - DR
+      - CR
+      type: string
+      description: |-
+        * `DR` - Debit
+        * `CR` - Credit
+    LedgerAccount:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          description: Must match the ledger name in the client's Tally company exactly.
+            Tally creates an unrecognised name rather than rejecting it, so a near-miss
+            silently splits a year across two ledgers.
+          maxLength: 255
+        group:
+          $ref: '#/components/schemas/GroupEnum'
+        is_bank_or_cash:
+          type: boolean
+          readOnly: true
+        is_active:
+          type: boolean
+        status:
+          allOf:
+          - $ref: '#/components/schemas/LedgerAccountStatusEnum'
+          readOnly: true
+        proposal_reason:
+          type: string
+          readOnly: true
+        row_count:
+          type: integer
+          readOnly: true
+          default: 0
+          description: Classifications currently placed in this ledger.
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - is_bank_or_cash
+      - name
+      - proposal_reason
+      - row_count
+      - status
+    LedgerAccountRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Must match the ledger name in the client's Tally company exactly.
+            Tally creates an unrecognised name rather than rejecting it, so a near-miss
+            silently splits a year across two ledgers.
+          maxLength: 255
+        group:
+          $ref: '#/components/schemas/GroupEnum'
+        is_active:
+          type: boolean
+      required:
+      - name
+    LedgerAccountStatusEnum:
+      enum:
+      - ACTIVE
+      - PROPOSED
+      - REJECTED
+      type: string
+      description: |-
+        * `ACTIVE` - In use
+        * `PROPOSED` - Proposed, awaiting a CA
+        * `REJECTED` - Rejected by a CA
+    LedgerBalance:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        name:
+          type: string
+        group:
+          type: string
+        opening_paise:
+          type: integer
+          description: Balance before the year. Debits positive.
+        debit_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        credit_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        closing_debit_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        closing_credit_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        opening_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        debit_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        credit_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        closing_debit_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        closing_credit_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - closing_credit_display
+      - closing_credit_paise
+      - closing_debit_display
+      - closing_debit_paise
+      - credit_display
+      - credit_paise
+      - debit_display
+      - debit_paise
+      - group
+      - name
+      - opening_display
+      - opening_paise
+    MarkReviewedMarkerEnum:
+      enum:
+      - AI_POSTED
+      - AI_REVISED
+      type: string
+      description: |-
+        * `AI_POSTED` - AI_POSTED
+        * `AI_REVISED` - AI_REVISED
+    MarkReviewedRequest:
+      type: object
+      properties:
+        marker:
+          allOf:
+          - $ref: '#/components/schemas/MarkReviewedMarkerEnum'
+          description: |-
+            Clear only this kind of marker. Omit to clear both.
+
+            * `AI_POSTED` - AI_POSTED
+            * `AI_REVISED` - AI_REVISED
+    MatchTypeEnum:
+      enum:
+      - PARTY_EQUALS
+      - PARTY_CONTAINS
+      - NARRATION_CONTAINS
+      - CHANNEL_IS
+      - REGEX
+      type: string
+      description: |-
+        * `PARTY_EQUALS` - Counterparty is exactly
+        * `PARTY_CONTAINS` - Counterparty contains
+        * `NARRATION_CONTAINS` - Narration contains
+        * `CHANNEL_IS` - Channel is
+        * `REGEX` - Narration matches regular expression
+    Me:
+      type: object
+      description: |-
+        The session, the firm it is bound to, and the permissions it carries.
+
+        The permission list is sent so a client can hide what it must not offer.
+        That is presentation only -- every one of them is checked again server-side,
+        because a hidden button is not a permission system.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        email:
+          type: string
+          format: email
+          readOnly: true
+        full_name:
+          type: string
+          readOnly: true
+        firm:
+          allOf:
+          - $ref: '#/components/schemas/Firm'
+          readOnly: true
+          nullable: true
+        membership_id:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        role:
+          type: string
+          readOnly: true
+          nullable: true
+        role_display:
+          type: string
+          readOnly: true
+          nullable: true
+        is_owner:
+          type: boolean
+          readOnly: true
+        permissions:
+          type: array
+          items:
+            type: string
+          readOnly: true
+      required:
+      - email
+      - firm
+      - full_name
+      - id
+      - is_owner
+      - membership_id
+      - permissions
+      - role
+      - role_display
+    MergeProposalRequest:
+      type: object
+      properties:
+        into:
+          type: string
+          format: uuid
+          description: An existing, in-use ledger of the same client.
+      required:
+      - into
+    MethodEnum:
+      enum:
+      - RULE
+      - UNRESOLVED
+      - REVIEWED
+      - LLM
+      type: string
+      description: |-
+        * `RULE` - Matched a rule
+        * `UNRESOLVED` - Awaiting review
+        * `REVIEWED` - Set by a person
+        * `LLM` - Suggested by a language model
+    NoteRequest:
+      type: object
+      properties:
+        note:
+          type: string
+          default: ''
+          maxLength: 1000
+    OpeningBalanceRequest:
+      type: object
+      description: |-
+        Confirming what the client's books actually started from.
+
+        Deliberately an explicit act rather than something inferred. A client
+        onboarding in October has six months of history this system never saw, and
+        starting them at the October statement's opening line misstates every
+        balance from then on.
+      properties:
+        opening_balance_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        opening_as_of:
+          type: string
+          format: date
+          description: The date that balance was true. Normally the first day of the
+            period.
+      required:
+      - opening_as_of
+      - opening_balance_paise
+    PaginatedBankAccountList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/BankAccount'
+    PaginatedClassificationList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Classification'
+    PaginatedClassificationRuleList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ClassificationRule'
+    PaginatedClientList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Client'
+    PaginatedJobList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Job'
+    PaginatedJournalEntryList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/JournalEntry'
+    PaginatedLedgerAccountList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/LedgerAccount'
+    PaginatedPartyList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Party'
+    PaginatedRegistrationList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Registration'
+    PaginatedRunCreateList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunCreate'
+    PaginatedStatementList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Statement'
+    PaginatedStatementTransactionList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatementTransaction'
+    Party:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        canonical_name:
+          type: string
+          maxLength: 255
+        alias_token:
+          type: string
+          readOnly: true
+        gstin:
+          type: string
+          description: Stored encrypted, with a keyed index so GST reconciliation
+            can join on it.
+        rcm_default:
+          type: boolean
+        tds_section:
+          oneOf:
+          - $ref: '#/components/schemas/TdsSectionEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        is_active:
+          type: boolean
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - alias_token
+      - canonical_name
+      - created_at
+      - id
+    PartyRequest:
+      type: object
+      properties:
+        canonical_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        gstin:
+          type: string
+          description: Stored encrypted, with a keyed index so GST reconciliation
+            can join on it.
+        rcm_default:
+          type: boolean
+        tds_section:
+          oneOf:
+          - $ref: '#/components/schemas/TdsSectionEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        is_active:
+          type: boolean
+      required:
+      - canonical_name
+    PartyResolutionEnum:
+      enum:
+      - AUTO
+      - CANDIDATE
+      - NEW
+      - CONFIRMED
+      type: string
+      description: |-
+        * `AUTO` - Recognised from a fact -- an account number or GSTIN
+        * `CANDIDATE` - Looks similar to a known party -- needs confirming
+        * `NEW` - No known party looks like this
+        * `CONFIRMED` - A person has confirmed which party this is
+    PatchedBankAccountRequest:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        ledger_name:
+          type: string
+          maxLength: 255
+    PatchedClassificationRuleRequest:
+      type: object
+      properties:
+        ledger:
+          type: string
+          format: uuid
+        party:
+          type: string
+          format: uuid
+          nullable: true
+        rcm:
+          type: boolean
+        tds_section:
+          oneOf:
+          - $ref: '#/components/schemas/TdsSectionEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        match_type:
+          $ref: '#/components/schemas/MatchTypeEnum'
+        pattern:
+          type: string
+          minLength: 1
+          maxLength: 255
+        direction:
+          $ref: '#/components/schemas/ClassificationRuleDirectionEnum'
+        priority:
+          type: integer
+          maximum: 2147483647
+          minimum: -2147483648
+        confidence:
+          type: number
+          format: double
+        is_active:
+          type: boolean
+    PatchedClientRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        fy_start:
+          type: string
+          format: date
+          description: First day of the client's financial year, normally 1 April.
+        business_profile:
+          type: string
+          description: What the client's business does, in a few sentences. Shown
+            to the model that suggests ledgers.
+          maxLength: 2000
+    PatchedLedgerAccountRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: Must match the ledger name in the client's Tally company exactly.
+            Tally creates an unrecognised name rather than rejecting it, so a near-miss
+            silently splits a year across two ledgers.
+          maxLength: 255
+        group:
+          $ref: '#/components/schemas/GroupEnum'
+        is_active:
+          type: boolean
+    PatchedPartyRequest:
+      type: object
+      properties:
+        canonical_name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        gstin:
+          type: string
+          description: Stored encrypted, with a keyed index so GST reconciliation
+            can join on it.
+        rcm_default:
+          type: boolean
+        tds_section:
+          oneOf:
+          - $ref: '#/components/schemas/TdsSectionEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        is_active:
+          type: boolean
+    PipelineTierEnum:
+      enum:
+      - UNKNOWN
+      - TEXT_LAYER
+      - OCR
+      - MANUAL
+      type: string
+      description: |-
+        * `UNKNOWN` - Not yet routed
+        * `TEXT_LAYER` - Born-digital text layer
+        * `OCR` - Optical character recognition
+        * `MANUAL` - Keyed in by hand
+    PlacementResult:
+      type: object
+      description: What changed when a row was placed.
+      properties:
+        classification:
+          allOf:
+          - $ref: '#/components/schemas/Classification'
+          readOnly: true
+        rule_learned:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        also_placed:
+          type: integer
+          readOnly: true
+          description: How many other queued rows the rule learned from this decision
+            placed.
+        also_revised:
+          type: integer
+          readOnly: true
+          description: How many entries or rows the AI had placed itself that the
+            new rule moved. Never includes anything a person decided.
+        auto_posted:
+          type: integer
+          readOnly: true
+          description: How many rows became certain enough to be posted automatically.
+      required:
+      - also_placed
+      - also_revised
+      - auto_posted
+      - classification
+      - rule_learned
+    ProfitAndLoss:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        income:
+          type: array
+          items:
+            $ref: '#/components/schemas/LedgerBalance'
+        expenses:
+          type: array
+          items:
+            $ref: '#/components/schemas/LedgerBalance'
+        total_income_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        total_expenses_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        net_profit_paise:
+          type: integer
+          description: Positive is a profit, negative a loss.
+        footer:
+          $ref: '#/components/schemas/ReportFooter'
+        total_income_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        total_expenses_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        net_profit_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - expenses
+      - footer
+      - income
+      - net_profit_display
+      - net_profit_paise
+      - total_expenses_display
+      - total_expenses_paise
+      - total_income_display
+      - total_income_paise
+    RecategorizeRequest:
+      type: object
+      properties:
+        statement:
+          type: string
+          format: uuid
+          nullable: true
+    Registration:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        gstin:
+          type: string
+          maxLength: 15
+        state_code:
+          type: string
+          readOnly: true
+        registration_type:
+          allOf:
+          - $ref: '#/components/schemas/RegistrationTypeEnum'
+          default: regular
+      required:
+      - gstin
+      - id
+      - state_code
+    RegistrationRequest:
+      type: object
+      properties:
+        gstin:
+          type: string
+          minLength: 1
+          maxLength: 15
+        registration_type:
+          allOf:
+          - $ref: '#/components/schemas/RegistrationTypeEnum'
+          default: regular
+      required:
+      - gstin
+    RegistrationTypeEnum:
+      enum:
+      - regular
+      - composition
+      - other
+      type: string
+      description: |-
+        * `regular` - Regular
+        * `composition` - Composition
+        * `other` - Other
+    RemoveEntryRequest:
+      type: object
+      properties:
+        note:
+          type: string
+          default: ''
+          description: Why it is being removed. Kept in the change log.
+          maxLength: 500
+    ReportFooter:
+      type: object
+      description: |-
+        What a reader needs in order to trust, or distrust, the figures above.
+
+        ``is_complete`` is false whenever anything is still unposted, and the
+        caption says so in words. A report over incomplete books is not wrong, but
+        handing one to a client without knowing that is.
+      properties:
+        client_name:
+          type: string
+        financial_year:
+          type: integer
+        fy_label:
+          type: string
+        period_start:
+          type: string
+          format: date
+        period_end:
+          type: string
+          format: date
+        entry_count:
+          type: integer
+        pending_review:
+          type: integer
+        is_complete:
+          type: boolean
+        generated_at:
+          type: string
+          format: date-time
+        caption:
+          type: string
+          readOnly: true
+      required:
+      - caption
+      - client_name
+      - entry_count
+      - financial_year
+      - fy_label
+      - generated_at
+      - is_complete
+      - pending_review
+      - period_end
+      - period_start
+    RequiredNoteRequest:
+      type: object
+      properties:
+        note:
+          type: string
+          minLength: 1
+          description: Why -- shown to whoever reads the history.
+          maxLength: 1000
+      required:
+      - note
+    ReviewBandEnum:
+      enum:
+      - HIGH
+      - ADVISED
+      - JUDGEMENT
+      type: string
+      description: |-
+        * `HIGH` - High confidence -- bulk approvable
+        * `ADVISED` - Review advised
+        * `JUDGEMENT` - Needs human judgement
+    ReviewSummary:
+      type: object
+      description: |-
+        How much work is waiting, split by how much thought each row needs.
+
+        The ordering is the feature: it is what turns an hour of checking every row
+        into minutes of checking the ones that need it.
+      properties:
+        high:
+          type: integer
+          description: High confidence. Eligible for bulk approval.
+        advised:
+          type: integer
+          description: Suggested, but worth a look.
+        judgement:
+          type: integer
+          description: No suggestion. Needs a person.
+        total:
+          type: integer
+        bulk_approvable:
+          type: integer
+        unresolved:
+          type: integer
+          description: Of the total, how many have no ledger yet.
+        pending_approval:
+          type: integer
+          description: Of the total, how many have a ledger and await a senior CA.
+      required:
+      - advised
+      - bulk_approvable
+      - high
+      - judgement
+      - pending_approval
+      - total
+      - unresolved
+    RunCreate:
+      type: object
+      properties:
+        registration:
+          type: string
+          format: uuid
+        period:
+          type: string
+          description: Return month, e.g. 2026-08.
+          pattern: ^\d{4}-(0[1-9]|1[0-2])$
+      required:
+      - period
+      - registration
+    RunCreateRequest:
+      type: object
+      properties:
+        registration:
+          type: string
+          format: uuid
+        period:
+          type: string
+          minLength: 1
+          description: Return month, e.g. 2026-08.
+          pattern: ^\d{4}-(0[1-9]|1[0-2])$
+      required:
+      - period
+      - registration
+    SignOffRequest:
+      type: object
+      properties:
+        through:
+          type: string
+          format: date
+          description: Lock everything dated on or before this. Defaults to the latest
+            entry.
+        note:
+          type: string
+          default: ''
+          maxLength: 1000
+    SourceEnum:
+      enum:
+      - SEED
+      - LEARNED
+      - MANUAL
+      type: string
+      description: |-
+        * `SEED` - Built in
+        * `LEARNED` - Learned from a review
+        * `MANUAL` - Written by hand
+    Statement:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        bank_account:
+          type: string
+          format: uuid
+          readOnly: true
+        bank_account_label:
+          type: string
+          readOnly: true
+        document:
+          allOf:
+          - $ref: '#/components/schemas/Document'
+          readOnly: true
+        period_start:
+          type: string
+          format: date
+          readOnly: true
+        period_end:
+          type: string
+          format: date
+          readOnly: true
+        opening_balance_paise:
+          type: integer
+          readOnly: true
+        closing_balance_paise:
+          type: integer
+          readOnly: true
+        total_debit_paise:
+          type: integer
+          readOnly: true
+        total_credit_paise:
+          type: integer
+          readOnly: true
+        transaction_count:
+          type: integer
+          readOnly: true
+        parser:
+          type: string
+          readOnly: true
+        parser_version:
+          type: integer
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        opening_balance_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        closing_balance_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        total_debit_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        total_credit_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - bank_account
+      - bank_account_label
+      - closing_balance_display
+      - closing_balance_paise
+      - created_at
+      - document
+      - id
+      - opening_balance_display
+      - opening_balance_paise
+      - parser
+      - parser_version
+      - period_end
+      - period_start
+      - total_credit_display
+      - total_credit_paise
+      - total_debit_display
+      - total_debit_paise
+      - transaction_count
+    StatementTransaction:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        statement:
+          type: string
+          format: uuid
+          readOnly: true
+        bank_account:
+          type: string
+          format: uuid
+          readOnly: true
+        row_number:
+          type: integer
+          readOnly: true
+          description: 1-based position within the statement.
+        value_date:
+          type: string
+          format: date
+          readOnly: true
+        narration:
+          type: string
+          readOnly: true
+          description: The bank's particulars, line wrapping removed.
+        cheque_number:
+          type: string
+          readOnly: true
+        branch_code:
+          type: string
+          readOnly: true
+        debit_paise:
+          type: integer
+          readOnly: true
+        credit_paise:
+          type: integer
+          readOnly: true
+        balance_paise:
+          type: integer
+          readOnly: true
+        amount_paise:
+          type: integer
+          readOnly: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        is_debit:
+          type: boolean
+          readOnly: true
+        debit_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        credit_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        balance_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        amount_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - amount_display
+      - amount_paise
+      - balance_display
+      - balance_paise
+      - bank_account
+      - branch_code
+      - cheque_number
+      - credit_display
+      - credit_paise
+      - debit_display
+      - debit_paise
+      - id
+      - is_debit
+      - narration
+      - row_number
+      - statement
+      - value_date
+    StatementUploadRequest:
+      type: object
+      description: |-
+        A statement PDF, for a client.
+
+        The bank is not asked for and cannot be supplied. It is read from the file:
+        a dropdown is one more way to file a statement against the wrong account,
+        and the statement itself is the authority on which account it belongs to.
+      properties:
+        file:
+          type: string
+          format: binary
+          description: The statement PDF, as uploaded by the client.
+        allow_gap:
+          type: boolean
+          default: false
+          description: Accept a statement that does not continue from the last one
+            on file. A gap means a missing period, so this defaults to refusing; set
+            it only when the earlier period genuinely is not available.
+      required:
+      - file
+    TallyExport:
+      type: object
+      description: |-
+        A Tally Prime import document, and what was left out of it.
+
+        ``unapproved`` is not an error. A firm exporting nine tenths of a statement
+        while three rows wait on a client's answer is a normal Tuesday -- but an
+        export that quietly included them would not be.
+      properties:
+        xml:
+          type: string
+        voucher_count:
+          type: integer
+        ledger_count:
+          type: integer
+        unapproved:
+          type: integer
+          description: Rows classified but not approved, and therefore not exported.
+      required:
+      - ledger_count
+      - unapproved
+      - voucher_count
+      - xml
+    TdsSectionEnum:
+      enum:
+      - '192'
+      - 194A
+      - 194C
+      - 194H
+      - 194I
+      - 194J
+      - 194Q
+      type: string
+      description: |-
+        * `192` - 192 -- Salary
+        * `194A` - 194A -- Interest other than securities
+        * `194C` - 194C -- Payment to contractors
+        * `194H` - 194H -- Commission or brokerage
+        * `194I` - 194I -- Rent
+        * `194J` - 194J -- Professional or technical fees
+        * `194Q` - 194Q -- Purchase of goods
+    TreatmentRequest:
+      type: object
+      description: |-
+        One complete accounting decision: where it goes, who it was with, and its tax.
+
+        All four together, because they are decided together and learned together.
+        A rule that remembered the ledger and forgot the reverse-charge flag would
+        look like it worked until a return was prepared from incomplete books.
+      properties:
+        ledger:
+          type: string
+          format: uuid
+          description: Ledger account id.
+        party:
+          type: string
+          format: uuid
+          nullable: true
+          description: Party id, where there is an identifiable one.
+        rcm:
+          type: boolean
+          default: false
+          description: 'Reverse charge: the client pays the GST rather than the party.'
+        tds_section:
+          default: ''
+          description: |-
+            TDS section, if the payment type crosses its threshold.
+
+            * `192` - 192 -- Salary
+            * `194A` - 194A -- Interest other than securities
+            * `194C` - 194C -- Payment to contractors
+            * `194H` - 194H -- Commission or brokerage
+            * `194I` - 194I -- Rent
+            * `194J` - 194J -- Professional or technical fees
+            * `194Q` - 194Q -- Purchase of goods
+          oneOf:
+          - $ref: '#/components/schemas/TdsSectionEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        learn:
+          type: boolean
+          default: true
+          description: Teach a rule from this decision so the same payee is placed
+            automatically from now on. Set false for a genuine one-off.
+      required:
+      - ledger
+    TrialBalance:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/LedgerBalance'
+        total_debit_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        total_credit_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        balances:
+          type: boolean
+          description: False means something reached the books without going through
+            a voucher.
+        footer:
+          $ref: '#/components/schemas/ReportFooter'
+        total_debit_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        total_credit_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - balances
+      - footer
+      - rows
+      - total_credit_display
+      - total_credit_paise
+      - total_debit_display
+      - total_debit_paise
+    UploadRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+        mapping:
+          type: string
+          description: 'Optional JSON mapping a field to a header, e.g. {"gstin":
+            "Vendor GST"}.'
+      required:
+      - file
+    VoucherTypeEnum:
+      enum:
+      - Payment
+      - Receipt
+      - Contra
+      - Journal
+      type: string
+      description: |-
+        * `Payment` - Payment
+        * `Receipt` - Receipt
+        * `Contra` - Contra
+        * `Journal` - Journal
+  securitySchemes:
+    cookieAuth:
+      type: apiKey
+      in: cookie
+      name: sessionid
+tags:
+- name: session
+  description: Who is signed in and what they may do.
+- name: clients
+  description: The firm's clients.
+- name: statements
+  description: Uploading statements and reading their rows.
+- name: review
+  description: The review queue and the decisions made against it.
+- name: ledger
+  description: Approval, the permanent journal, and corrections.
+- name: reports
+  description: Trial balance, P&L, balance sheet, reconciliation.
+- name: jobs
+  description: Progress on work the API did not block for.

@@ -32,6 +32,7 @@ from ledger.approval import (
     voucher_type_for,
 )
 from ledger.models import Direction, JournalEntry, JournalLine, VoucherType
+from ledger import editing
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("fixture_adapters")]
 
@@ -482,7 +483,8 @@ def test_staff_can_correct_a_draft_entry_but_not_signed_off_books(
     assert corrected.pk == original.pk
 
     sign_off_through(client, original)
-    with pytest.raises(PermissionDenied):
+    # Not a permission problem so much as a fact about the entry: it is inside signed-off books.
+    with pytest.raises(editing.EntryLockedError, match="signed off through"):
         correct(original, membership=staff, treatment=Treatment(ledger=ledger(client, "Staff Welfare")))
 
 

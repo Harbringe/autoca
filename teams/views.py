@@ -205,7 +205,7 @@ class MembersView(TeamView):
             manager=manager,
         )
         return Response(
-            {**_invite(record), "link": f"/app/invite/{link}"},
+            {**_invite(record), "link": f"{settings.FRONTEND_URL}/invite/{link}"},
             status=201,
         )
 

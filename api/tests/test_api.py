@@ -153,6 +153,9 @@ def test_uploading_a_statement_returns_202_with_a_job(api, client_record):
     assert body["status"] == "SUCCEEDED"
     assert body["result"]["rows_created"] == 54
     assert body["result"]["needs_opening_confirmation"] is True
+    stand = body["result"]
+    # Where the rows ended up adds up to the rows read, which is what the upload screen shows.
+    assert stand["rows_posted"] + stand["rows_ready_to_post"] + stand["rows_need_ledger"] == 54
 
 
 def test_an_unreadable_file_fails_the_job_rather_than_the_request(api, client_record, settings):

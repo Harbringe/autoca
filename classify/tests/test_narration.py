@@ -178,3 +178,47 @@ def test_an_unrecognised_narration_degrades_rather_than_guessing():
     assert not result.is_recognised
     assert result.raw == "SOMETHING ENTIRELY NEW 12345"
     assert result.match_key == "SOMETHINGENTIRELYNEW12345"
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "GST PAYMENT CPIN 25040012345678",
+        "IB/GSTN/CPIN 25071200123456",
+        "CBDT TAX PAYMENT ITNS 280",
+        "OLTAS CHALLAN 281 TDS",
+    ],
+)
+def test_a_tax_paid_through_the_bank_is_a_tax_payment_not_a_bank_charge(raw):
+    """A GST challan once read as a fee, and a seed rule posted it to Bank Charges unseen."""
+    assert analyse(raw).channel == Channel.TAX
+
+
+@pytest.mark.parametrize("raw", ["GST ON CHARGES", "SMS ALERT CHARGES QTR", "ANNUAL FEE DEBIT CARD"])
+def test_the_banks_own_charges_are_still_fees(raw):
+    assert analyse(raw).channel == Channel.FEE
+
+
+@pytest.mark.parametrize(
+    "raw, channel, payee",
+    [
+        ("NEFT CR-HDFC0001234-ORBIT RETAIL PVT LTD-INV 1042", Channel.NEFT, "ORBIT RETAIL PVT LTD"),
+        ("NEFT DR-SBIN0004321-SUNRISE PACKAGING CO-PO 77", Channel.NEFT, "SUNRISE PACKAGING CO"),
+        ("RTGS CR-ICIC0000456-LOTUS DISTRIBUTORS LLP", Channel.RTGS, "LOTUS DISTRIBUTORS LLP"),
+        ("UPI/410123456789/Payment to BigBasket", Channel.UPI, "BigBasket"),
+        ("UPI/501234567890/SOME HOLDER/Payment to ZEPTO MARKETPLACE", Channel.UPI, "ZEPTO MARKETPLACE"),
+        ("UPI-SWIGGY-9876543210", Channel.UPI, "SWIGGY"),
+        ("ACH D- LIC OF INDIA", Channel.MANDATE, "LIC OF INDIA"),
+        ("NACH DR-TATA CAPITAL-EMI 12", Channel.MANDATE, "TATA CAPITAL"),
+        ("CHQ DEP-000412-CLEARING-MEHTA HARDWARE", Channel.CHEQUE, "MEHTA HARDWARE"),
+    ],
+)
+def test_other_banks_formats_still_name_the_payee(raw, channel, payee):
+    """Without a payee nothing can be learned: "Remember this" did nothing for these."""
+    facts = analyse(raw)
+    assert facts.channel == channel
+    assert facts.counterparty == payee
+
+
+def test_a_monthly_mandate_keeps_one_payee_whatever_the_instalment():
+    assert analyse("NACH DR-TATA CAPITAL-EMI 12").match_key == analyse("NACH DR-TATA CAPITAL-EMI 13").match_key

@@ -19,10 +19,9 @@ CSRF_COOKIE_SECURE = False
 
 INTERNAL_IPS = ["127.0.0.1"]
 
-# `npm run dev` serves the shell from 5173 and proxies the API here. Its POSTs
+# `npm run dev` (web/) serves the app from 5173 and proxies the API here. Its POSTs
 # arrive with an Origin of the dev server, which CSRF must accept in development.
-CSRF_TRUSTED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+CSRF_TRUSTED_ORIGINS = sorted({"http://localhost:5173", "http://127.0.0.1:5173", FRONTEND_URL})  # noqa: F405
 
-# Serve the freshly built bundle without collectstatic.
 WHITENOISE_USE_FINDERS = True
 WHITENOISE_AUTOREFRESH = True

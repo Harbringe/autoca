@@ -50,8 +50,17 @@ def remove_statement(statement, *, actor, note: str = "") -> dict:
 
     why = note or "Removed with the statement it came from."
     try:
-        for entry in entries:
-            editing.remove_entry(entry, actor=actor, note=why)
+        # A correction points at the entry it replaced, and the database will not let an entry
+        # go while something points at it. So the corrections go first, then what they replaced.
+        remaining = list(entries)
+        while remaining:
+            ready = [e for e in remaining if not any(o.supersedes_id == e.pk for o in remaining)]
+            if not ready:
+                raise StatementRemovalError("These entries correct one another in a loop and cannot be removed.")
+            for entry in ready:
+                editing.remove_entry(entry, actor=actor, note=why)
+            done = {e.pk for e in ready}
+            remaining = [e for e in remaining if e.pk not in done]
         document = statement.document
         storage_key = document.storage_key
         bank_account = statement.bank_account

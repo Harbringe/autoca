@@ -40,6 +40,7 @@ ERROR_CODES = {
     "ColumnInferenceError": "columns_not_inferred",
     "StatementParseError": "statement_unreadable",
     "StatementContinuityError": "statement_period_missing",
+    "StatementElsewhereError": "statement_elsewhere",
     "AlreadyPostedError": "already_posted",
     "NotApprovableError": "not_approvable",
     "NoStatementError": "no_statement_for_date",
@@ -106,7 +107,10 @@ def run_job(
     job.status = JobStatus.SUCCEEDED
     job.progress = 100
     job.result = result if isinstance(result, dict) else {"value": result}
-    job.message = message or "done"
+    # Work that finished but could not do all of what was asked (the model was unreachable,
+    # say) still succeeded, and says so here, where a person looking at the job will see it.
+    warning = result.get("warning") if isinstance(result, dict) else None
+    job.message = warning or message or "done"
     job.finished_at = timezone.now()
     job.save(update_fields=["status", "progress", "result", "message", "finished_at"])
     return JobResult(job=job)
@@ -157,7 +161,7 @@ def expected_exceptions() -> tuple[type[Exception], ...]:
     """
     from django.core.exceptions import PermissionDenied
 
-    from banking.ingest import StatementContinuityError
+    from banking.ingest import StatementContinuityError, StatementElsewhereError
     from banking.parsers.base import (
         BalanceChainError,
         NoTextLayerError,
@@ -180,6 +184,7 @@ def expected_exceptions() -> tuple[type[Exception], ...]:
         # subclasses this one.
         PdfExtractionError,
         StatementContinuityError,
+        StatementElsewhereError,
         NotApprovableError,
         AlreadyPostedError,
         NoStatementError,

@@ -131,7 +131,29 @@ def _ingest(*, client, data, filename, user, allow_gap) -> dict:
         "model_proposed": model.proposed,
         "model_error": model.error,
         "auto_posted": auto_posted,
+        # Where this statement's own rows stand now, after rules, the model and auto-posting.
+        # The three always add up to the rows in the statement; the counters above are the
+        # steps' own tallies, which overlap and are not for showing a person.
+        **_where_rows_stand(result.statement),
     }
+
+
+def _where_rows_stand(statement) -> dict:
+    from classify.models import TransactionClassification
+
+    rows = TransactionClassification.objects.filter(transaction__statement=statement).prefetch_related(
+        "transaction__journal_entries"
+    )
+    posted = ready = unplaced = 0
+    for row in rows:
+        live = row.mirrored_entry_id or any(not e.is_superseded for e in row.transaction.journal_entries.all())
+        if live:
+            posted += 1
+        elif row.ledger_id:
+            ready += 1
+        else:
+            unplaced += 1
+    return {"rows_posted": posted, "rows_ready_to_post": ready, "rows_need_ledger": unplaced}
 
 
 def _unresolved_in(statement):

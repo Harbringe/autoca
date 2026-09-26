@@ -37,6 +37,24 @@ def check_mfa_not_disabled_outside_debug(app_configs, **kwargs):
 
 
 @register()
+def check_frontend_url_is_not_local_in_production(app_configs, **kwargs):
+    """An invitation that links to localhost is a dead link for everyone but its sender."""
+    if not settings.IS_PRODUCTION:
+        return []
+    host = settings.FRONTEND_URL.split("://", 1)[-1].split("/", 1)[0].split(":", 1)[0]
+    if host in {"localhost", "127.0.0.1", "[::1]"}:
+        return [
+            Warning(
+                f"FRONTEND_URL is {settings.FRONTEND_URL}, a local address. Invitation links "
+                "and the trusted CSRF origin are built from it; set it to where the web "
+                "application is actually served.",
+                id="core.W016",
+            )
+        ]
+    return []
+
+
+@register()
 def check_middleware_order(app_configs, **kwargs):
     """The ordering constraints documented in each middleware, enforced."""
     errors = []

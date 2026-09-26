@@ -371,3 +371,21 @@ def test_a_second_sign_off_and_reopen_restores_the_first_date(client, staff, sen
         books.reopen(client, senior, note="One more look")
 
         assert books.status(client).signed_off_through == first_date
+
+
+def test_sign_off_does_not_slow_down_with_the_number_of_entries(client, staff, senior, posted):
+    """A year of statements is hundreds of entries; sign-off is one request a person waits on.
+
+    Renumbering once ran a group over again for every entry in it, so a 264-entry year took
+    minutes and the request timed out while the sign-off quietly completed behind it. The
+    number of statements must not depend on how many entries there are.
+    """
+    from django.test.utils import CaptureQueriesContext
+
+    with firm_context(client.firm_id):
+        count = entries(client).count()
+        assert count >= 10, "the fixture should have enough entries for this to mean something"
+        books.request_review(client, staff)
+        with CaptureQueriesContext(connection) as queries:
+            books.sign_off(client, senior)
+        assert len(queries) < 60, f"{len(queries)} statements for {count} entries"

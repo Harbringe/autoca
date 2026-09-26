@@ -1,13 +1,13 @@
 """Authentication and session endpoints.
 
-The frontend is a React SPA on Vercel, so the primary contract here is JSON.
+The web application is a separate static deployment, so the primary contract here is JSON.
 Session cookies (not JWTs) with CSRF enforced: a stolen JWT is valid until it
 expires and cannot be revoked, a poor trade for a product holding client
 financial records.
 
 The two MFA endpoints additionally render a minimal HTML page for GET / form
 POST, so the Django admin is usable in a browser during development. The real,
-styled MFA screens belong to the SPA; these are the bare minimum to not leave a
+styled MFA screens belong to the web application; these are the bare minimum to not leave a
 browser session stranded at a JSON blob.
 """
 
@@ -68,6 +68,11 @@ def _qr_svg(data: str) -> str:
 @ensure_csrf_cookie
 def csrf(request):
     return JsonResponse({"csrfToken": get_token(request)})
+
+
+@require_GET
+def to_frontend(request):
+    return redirect(settings.FRONTEND_URL)
 
 
 @require_GET

@@ -6,9 +6,15 @@ hardening is on from the first deploy.
 """
 
 from .base import *  # noqa: F401,F403
-from .base import env, env_bool
+from .base import env, env_bool, env_required
 
 DEBUG = False
+IS_PRODUCTION = True
+
+# No default in production: invitation links and the trusted CSRF origin are built
+# from this, and a silent fallback to localhost would send every invitee to a
+# dead link.
+FRONTEND_URL = env_required("FRONTEND_URL").rstrip("/")
 
 SECURE_SSL_REDIRECT = env_bool("SECURE_SSL_REDIRECT", True)
 SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
@@ -36,9 +42,9 @@ REST_FRAMEWORK = {
     "DEFAULT_RENDERER_CLASSES": ["rest_framework.renderers.JSONRenderer"],
 }
 
-CSRF_TRUSTED_ORIGINS = [
-    o.strip() for o in env("CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()
-]
+CSRF_TRUSTED_ORIGINS = sorted(
+    {o.strip() for o in env("CSRF_TRUSTED_ORIGINS", "").split(",") if o.strip()} | {FRONTEND_URL}
+)
 
 # In a deployed environment the app role and the owner role MUST be distinct.
 # core.checks turns this into a hard system check failure rather than a comment.

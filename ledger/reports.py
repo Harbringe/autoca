@@ -78,7 +78,7 @@ class ReportFooter:
     def caption(self) -> str:
         line = (
             f"{self.client_name} · FY {self.fy_label} · {self.entry_count} entries · "
-            f"generated {self.generated_at:%d-%m-%Y %H:%M}"
+            f"generated {timezone.localtime(self.generated_at):%d-%m-%Y %H:%M}"
         )
         if self.is_complete:
             return line

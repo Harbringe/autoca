@@ -1,7 +1,7 @@
 """URL routing.
 
-The REST API lives under ``/api/v1/`` and is the only interface a frontend
-uses. The session endpoints above it are shared: the API authenticates with the
+The REST API lives under ``/api/v1/`` and is the only interface the web
+application (web/, a separate deployment) uses. The session endpoints above it are shared: the API authenticates with the
 same session cookie, so signing in is one flow rather than two.
 
 ``/api/docs/`` is Swagger UI over the generated OpenAPI schema. It sits behind
@@ -10,22 +10,19 @@ firm-scoped table and is not something to publish.
 """
 
 from django.contrib import admin
-from django.urls import include, path, re_path
-from django.views.generic import RedirectView
+from django.urls import include, path
 from drf_spectacular.views import (
     SpectacularAPIView,
     SpectacularRedocView,
     SpectacularSwaggerView,
 )
 
-from core import spa, views
+from core import views
 from teams.views import accept_invite
 
 urlpatterns = [
-    path("", RedirectView.as_view(url="/app/", permanent=False)),
-    # The application shell. Every route under /app/ is the same HTML; the
-    # router in the browser decides what it shows. See core/spa.py.
-    re_path(r"^app(?:/.*)?$", spa.index, name="app"),
+    # The web application is a separate deployment; see FRONTEND_URL.
+    path("", views.to_frontend, name="frontend"),
     path("healthz", views.healthz, name="healthz"),
     path("auth/csrf/", views.csrf, name="csrf"),
     path("auth/login/", views.login_view, name="login"),

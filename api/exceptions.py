@@ -49,6 +49,7 @@ DOMAIN_ERRORS = {
     "MoneyError": (status.HTTP_400_BAD_REQUEST, "bad_amount"),
     # The request conflicts with where things currently stand.
     "StatementContinuityError": (status.HTTP_409_CONFLICT, "statement_period_missing"),
+    "StatementElsewhereError": (status.HTTP_409_CONFLICT, "statement_elsewhere"),
     "AlreadyPostedError": (status.HTTP_409_CONFLICT, "already_posted"),
     "NotApprovableError": (status.HTTP_409_CONFLICT, "not_approvable"),
     "ProposalError": (status.HTTP_409_CONFLICT, "proposal_conflict"),

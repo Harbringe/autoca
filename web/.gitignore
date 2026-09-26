@@ -1,0 +1,11 @@
+node_modules
+dist
+*.local
+src/routeTree.gen.ts.bak
+qa/screenshots
+test-results
+playwright-report
+qa/.qa-firm
+qa/private
+qa/samples
+.tanstack

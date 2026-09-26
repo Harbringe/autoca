@@ -1,0 +1,17 @@
+import { createFileRoute } from '@tanstack/react-router'
+import { ReportsScreen, type ReportTab } from '@/features/reports/ReportsScreen'
+
+const TABS: ReportTab[] = ['tb', 'pl', 'bs', 'recon']
+
+export const Route = createFileRoute('/_app/clients/$clientId/reports')({
+  validateSearch: (search: Record<string, unknown>): { report?: ReportTab } => ({
+    report: TABS.includes(search.report as ReportTab) ? (search.report as ReportTab) : undefined,
+  }),
+  component: Screen,
+})
+
+function Screen() {
+  const { clientId } = Route.useParams()
+  const { report } = Route.useSearch()
+  return <ReportsScreen clientId={clientId} report={report ?? 'tb'} />
+}

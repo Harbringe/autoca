@@ -20,7 +20,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from classify.models import ClassificationMethod, TransactionClassification
-from core.access import require_posting_rights, require_sign_off
+from core.access import can_sign_off, require_posting_rights, require_sign_off
 from core.fy import financial_year
 from core.money import format_inr
 from core.rbac import require_permission
@@ -192,7 +192,9 @@ def approve_many(classifications, *, membership) -> list[ApprovalResult]:
 
 
 @transaction.atomic
-def correct(entry: JournalEntry, *, membership, treatment, narration: str | None = None, note: str = ""):
+def correct(
+    entry: JournalEntry, *, membership, treatment, narration: str | None = None, note: str = "", learn: bool = True
+):
     """Correct a posted entry.
 
     While the books are still a working draft this simply *changes the entry*:
@@ -212,17 +214,28 @@ def correct(entry: JournalEntry, *, membership, treatment, narration: str | None
     if not editing.is_locked(entry):
         from ledger.learning import learn_after_correction
 
+        require_not_own_bank_ledger(entry, treatment.ledger)
+
         revised = editing.revise_in_place(
             entry, treatment, actor=membership.user, narration=narration, note=note
         )
-        # The correction is a lesson about the payee: learn it, and apply it to
-        # the similar entries the AI placed on its own.
-        learn_after_correction(revised, treatment, membership.user)
+        # A correction is usually a lesson about the payee: learn it, and apply it to
+        # the similar entries the AI placed on its own. `learn=False` means "this entry
+        # only" -- a refund, a one-off -- and then nothing else is touched.
+        if learn:
+            learn_after_correction(revised, treatment, membership.user)
         return revised
 
     # Books a senior has signed are the senior's to amend: a correction here is
-    # an adjustment in the open period against signed figures.
-    require_sign_off(membership, entry.client)
+    # an adjustment in the open period against signed figures. Anyone else is told
+    # the entry is locked, which is the fact that matters to them.
+    if not can_sign_off(membership, entry.client):
+        raise editing.EntryLockedError(
+            f"This entry is inside books signed off through "
+            f"{editing.locked_through(entry.client_id):%d-%m-%Y}. Only the client's senior CA "
+            f"or a firm administrator can adjust it; ask them."
+        )
+    require_not_own_bank_ledger(entry, treatment.ledger)
 
     if entry.is_superseded:
         raise NotApprovableError(
@@ -383,6 +396,35 @@ def _require_ledger_in_use(ledger) -> None:
         )
 
 
+def require_not_own_bank_ledger(entry_or_classification, ledger) -> None:
+    """The other side of a bank entry cannot be the bank account it came off.
+
+    Both legs would land on the same ledger and the entry would move no money. The review
+    endpoint refuses this; every path that changes an entry's treatment must too.
+    """
+    from django.core.exceptions import ValidationError
+
+    txn = getattr(entry_or_classification, "source_transaction", None) or entry_or_classification.transaction
+    if ledger.name == txn.bank_account.ledger_name:
+        raise ValidationError(
+            "This is the bank account the transaction came from. Choose the other side of the entry."
+        )
+
+
+def reversal_lines(entry, original) -> list[JournalLine]:
+    """Every line of ``original`` the other way round, so the two net to nothing."""
+    return [
+        JournalLine.build(
+            entry=entry,
+            ledger_account=line.ledger_account,
+            party=line.party,
+            direction=Direction.CREDIT if line.is_debit else Direction.DEBIT,
+            amount_paise=line.amount_paise,
+        )
+        for line in original.lines.all()
+    ]
+
+
 def _write_entry(
     classification, *, voucher_type, narration, approved_by, supersedes=None, reversal_of=None,
     entry_date=None, marker=EntryMarker.NONE,
@@ -411,18 +453,7 @@ def _write_entry(
     if reversal_of is not None:
         # Reverse every line of the entry being corrected, so the two together
         # net to nothing and only the new treatment stands.
-        for line in reversal_of.lines.all():
-            lines.append(
-                JournalLine.build(
-                    entry=entry,
-                    ledger_account=line.ledger_account,
-                    party=line.party,
-                    direction=(
-                        Direction.CREDIT if line.is_debit else Direction.DEBIT
-                    ),
-                    amount_paise=line.amount_paise,
-                )
-            )
+        lines.extend(reversal_lines(entry, reversal_of))
 
     lines.extend(_double_entry(entry, classification))
     JournalLine.objects.bulk_create(lines)

@@ -42,7 +42,7 @@ column is which and proves the inference against the statement's own running
 balance, so a format nobody anticipated either reads correctly or is refused.
 A dedicated parser (Axis has one) is an optimisation, not a prerequisite.
 
-There is a web application over all of it (`frontend/`, served at `/app/`):
+There is a web application over all of it (`web/`, a separate static build):
 sign in with a second factor, upload, review with the queue sorted by
 confidence, place rows, approve, correct, read the reports, check month end,
 download the Tally file. And there is a model tier behind the rules: rows no
@@ -77,18 +77,18 @@ python manage.py check --deploy --database default
 python manage.py rls_status
 ```
 
-Build the web application once (Node 24), then run the server:
+The backend serves the API and the platform admin; the web application
+(`web/`, Node 24) is its own project. Run both:
 
 ```bash
-cd frontend && npm ci && npm run build && cd ..
 python manage.py bootstrap_admin --email you@firm.test --firm "Your Firm" --demo
 python manage.py runserver
-# open http://127.0.0.1:8000/app/  -- sign in, scan the QR, you're in
+cd web && npm ci && npm run dev
+# open http://localhost:5173  -- sign in, scan the QR, you're in
 ```
 
-For frontend work, `npm run dev` in `frontend/` serves the app at
-`http://localhost:5173/app/` with the API proxied to the Django server,
-so the session cookie and CSRF flow are the real ones.
+The dev server proxies `/api` and `/auth` to Django, so the browser only ever
+talks to one origin and the session cookie and CSRF flow are the real ones.
 
 ### With Docker
 
@@ -96,7 +96,7 @@ so the session cookie and CSRF flow are the real ones.
 cp .env.example .env.compose        # fill in the secrets; set POSTGRES_PASSWORD,
                                     # AUTOCA_OWNER_PASSWORD, AUTOCA_WEB_PASSWORD too
 docker compose up --build
-# http://localhost:8080/app/
+# API and admin at http://localhost:8080 ; the web application is deployed separately (see web/README.md)
 ```
 
 That is the whole topology the architecture asks for: nginx in front, one web
@@ -238,7 +238,7 @@ core/            tenancy, users, RBAC, audit, crypto call sites
   db/            RLS policy generation, session context, introspection
   middleware/    mfa -> tenancy -> audit, in that order
 api/              REST API and the generated OpenAPI schema
-frontend/        the web application (React + Vite), built into frontend/dist
+web/             the web application (React + Vite), a separate deployment
 deploy/          nginx config and the compose role bootstrap
 integrations/    every external service, behind an adapter interface
 documents/       every uploaded file, whatever kind, in one registry

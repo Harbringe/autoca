@@ -55,6 +55,33 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
             }
         }
 
+    def validate_name(self, value: str) -> str:
+        from classify.models import LedgerStatus
+
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Give the ledger a name.")
+        client = getattr(self.context.get("view"), "client", None)
+        if client is None:
+            return value
+        # Tally keeps one ledger per name whatever the case, so "salary received" beside
+        # "Salary Received" would split a year across two. The database's own uniqueness is
+        # case-sensitive, so this is where that is refused.
+        clash = LedgerAccount.objects.filter(client=client, name__iexact=value)
+        if self.instance is not None:
+            clash = clash.exclude(pk=self.instance.pk)
+        else:
+            # A rejected or merely proposed ledger of this name is revived by creating it
+            # (see LedgerAccountViewSet.perform_create), which is not a clash.
+            clash = clash.filter(status=LedgerStatus.ACTIVE)
+        existing = clash.first()
+        if existing is not None:
+            raise serializers.ValidationError(
+                f'This client already has a ledger called "{existing.name}". Tally treats names that differ '
+                "only in capital letters as the same ledger."
+            )
+        return value
+
 
 class PartySerializer(serializers.ModelSerializer):
     gstin = serializers.CharField(
@@ -76,6 +103,20 @@ class PartySerializer(serializers.ModelSerializer):
             "created_at",
         ]
         read_only_fields = ["id", "alias_token", "created_at"]
+
+    def validate_canonical_name(self, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise serializers.ValidationError("Give the party a name.")
+        client = getattr(self.context.get("view"), "client", None)
+        if client is not None:
+            clash = Party.objects.filter(client=client, canonical_name__iexact=value)
+            if self.instance is not None:
+                clash = clash.exclude(pk=self.instance.pk)
+            existing = clash.first()
+            if existing is not None:
+                raise serializers.ValidationError(f'This client already has a party called "{existing.canonical_name}".')
+        return value
 
     def validate_gstin(self, value):
         value = (value or "").strip().upper()

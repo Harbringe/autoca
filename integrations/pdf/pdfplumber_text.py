@@ -52,6 +52,9 @@ class PdfPlumberAdapter(PdfTextAdapter):
         except PdfExtractionError:
             raise
         except Exception as exc:  # noqa: BLE001 -- pdfminer raises a wide variety
-            raise PdfExtractionError(f"Could not extract this PDF: {exc}") from exc
+            raise PdfExtractionError(
+                "This PDF could not be read; it may be damaged or cut off. "
+                f"Download it from the bank again and retry. ({type(exc).__name__}: {exc})"
+            ) from exc
 
         return PdfDocument(engine="pdfplumber", page_count=page_count, pages=pages)

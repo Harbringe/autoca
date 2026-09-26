@@ -1,0 +1,146 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+ * The product's palette: ink-navy chrome, one amber accent, and quiet neutrals.
+ * Books are read for hours, so the surfaces are low-contrast and the figures
+ * are the only thing that gets full-strength ink. Amber is for the single thing
+ * on a screen that wants attention; red and green are reserved for meaning
+ * (a difference that does not tally, a figure that does).
+ */
+:root {
+  --background: #f6f7f9;
+  --foreground: #101828;
+  --card: #ffffff;
+  --card-foreground: #101828;
+  --popover: #ffffff;
+  --popover-foreground: #101828;
+  --primary: #14213d;
+  --primary-foreground: #ffffff;
+  --secondary: #eceff4;
+  --secondary-foreground: #14213d;
+  --muted: #eef0f4;
+  --muted-foreground: #566072;
+  --accent: #fca311;
+  --accent-foreground: #14213d;
+  --hover: #eef1f6;
+  --border: #dfe3ea;
+  --input: #cfd5df;
+  --ring: #3b5b9d;
+  --destructive: #b42318;
+  --destructive-foreground: #ffffff;
+  --success: #17724a;
+  --warning: #a15c07;
+  --info: #2c5aa0;
+  --sidebar: #14213d;
+  --sidebar-foreground: #dbe2f0;
+  --sidebar-muted: #8f9db8;
+  --sidebar-active: #22335a;
+  --radius: 0.5rem;
+  --row-h: 2.5rem;
+}
+
+.dark {
+  --background: #0c1220;
+  --foreground: #e7eaf1;
+  --card: #121a2c;
+  --card-foreground: #e7eaf1;
+  --popover: #121a2c;
+  --popover-foreground: #e7eaf1;
+  --primary: #fca311;
+  --primary-foreground: #14213d;
+  --secondary: #1b2640;
+  --secondary-foreground: #e7eaf1;
+  --muted: #182238;
+  --muted-foreground: #97a3b8;
+  --accent: #fca311;
+  --accent-foreground: #14213d;
+  --hover: #1a2540;
+  --border: #243049;
+  --input: #2f3c58;
+  --ring: #6f8fd6;
+  --destructive: #f0837a;
+  --destructive-foreground: #14213d;
+  --success: #4cc38a;
+  --warning: #f0b45b;
+  --info: #7fa6e8;
+  --sidebar: #0a0f1c;
+  --sidebar-foreground: #dbe2f0;
+  --sidebar-muted: #7f8ca6;
+  --sidebar-active: #18233d;
+}
+
+:root[data-density='compact'] {
+  --row-h: 1.875rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-hover: var(--hover);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-muted: var(--sidebar-muted);
+  --color-sidebar-active: var(--sidebar-active);
+  --radius-sm: calc(var(--radius) - 3px);
+  --radius-md: var(--radius);
+  --radius-lg: calc(var(--radius) + 2px);
+  --font-sans: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground font-sans text-[14px] antialiased;
+    font-feature-settings: 'cv11', 'ss01';
+  }
+  /* Every figure lines up in a column, whatever the digits. */
+  .num,
+  table {
+    font-variant-numeric: tabular-nums;
+  }
+  :focus-visible {
+    @apply outline-2 outline-offset-2 outline-ring;
+  }
+}
+
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff;
+    color: #000;
+  }
+}

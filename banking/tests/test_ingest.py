@@ -117,6 +117,18 @@ def test_the_same_file_twice_is_the_same_statement(client):
         assert StatementTransaction.objects.count() == 54
 
 
+def test_the_same_file_for_a_different_client_is_refused_not_passed_off_as_imported(client, firm):
+    """Once returned "already imported" with the other client's statement: a hidden mistake, and a leak."""
+    from banking.ingest import StatementElsewhereError
+
+    other = create_client(firm, "Someone Else", datetime.date(2025, 4, 1))
+    with firm_context(client.firm_id):
+        ingest_statement(client=client, data=b"%PDF-1.4 axis", filename="axis.pdf")
+        with pytest.raises(StatementElsewhereError, match="another client"):
+            ingest_statement(client=other, data=b"%PDF-1.4 axis", filename="axis.pdf")
+        assert not Statement.objects.filter(bank_account__client=other).exists()
+
+
 def test_an_overlapping_period_does_not_double_up_the_rows(client):
     """A client sends Apr-Sep in October and Apr-Mar in April. Every year.
 

@@ -133,6 +133,7 @@ def revise_in_place(
     entry = JournalEntry.objects.select_for_update().get(pk=entry.pk)
     require_editable(entry)
     approval._require_ledger_in_use(treatment.ledger)
+    approval.require_not_own_bank_ledger(entry, treatment.ledger)
 
     classification = entry.source_transaction.classification
     before = snapshot(entry)
@@ -163,7 +164,13 @@ def revise_in_place(
         changed += ["entry_no", "voucher_type"]
 
     entry.lines.all().delete()
-    JournalLine.objects.bulk_create(approval._double_entry(entry, classification))
+    lines = approval._double_entry(entry, classification)
+    if entry.supersedes_id:
+        # This entry is itself a correction: it carries the reversal of the entry it replaced
+        # as well as the new treatment. Rewriting it must keep the reversal, or the original
+        # -- still in the books -- is counted a second time.
+        lines = approval.reversal_lines(entry, entry.supersedes) + lines
+    JournalLine.objects.bulk_create(lines)
 
     if narration is not None:
         entry.narration = narration

@@ -666,6 +666,11 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
         self.confidence = confidence
         self.review_band = band_for(confidence)
         self.needs_review = confidence < 1.0
+        if method != ClassificationMethod.LLM:
+            # A narration the model wrote describes the ledger the model chose. Once a rule or a
+            # person has decided differently it would describe an entry that no longer exists
+            # ("cash withdrawn" on a transfer between banks), so the plain one is used instead.
+            self.book_narration = ""
         if user is not None:
             self.reviewed_by = user
         return self
@@ -685,6 +690,7 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
         self.save(
             update_fields=[
                 "ai_revised",
+                "book_narration",
                 "ledger",
                 "party",
                 "rcm",

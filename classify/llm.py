@@ -343,8 +343,10 @@ def _rupees(paise: int) -> str:
 # ---------------------------------------------------------------------------
 
 
-#: Signs the reply was cut off or malformed, which a smaller batch usually fixes.
-_SPLITTABLE = ("json_validate_failed", "agreed shape", "not JSON")
+#: Signs the reply was cut off or malformed, or that the request was more than the provider
+#: will take at once (HTTP 413: a free-tier tokens-per-minute cap on one request), which a
+#: smaller batch usually fixes.
+_SPLITTABLE = ("json_validate_failed", "agreed shape", "not JSON", "HTTP 413")
 
 
 def _ask_splitting(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]:

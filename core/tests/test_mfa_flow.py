@@ -127,6 +127,16 @@ def test_json_contract_still_works_for_the_spa(member):
     assert verified.json()["detail"] == "Verified."
 
 
+def test_a_password_only_session_can_still_fetch_a_csrf_token(member):
+    """Signing in rotates the token, and the page needs the new one to post its second factor."""
+    http = HttpClient()
+    _login(http)
+
+    response = http.get("/auth/csrf/")
+    assert response.status_code == 200
+    assert response.json()["csrfToken"]
+
+
 def test_open_redirect_is_refused(member):
     http = HttpClient()
     _login(http)

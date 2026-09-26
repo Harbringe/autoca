@@ -60,7 +60,7 @@ class NotReadyError(BooksError):
     def __init__(self, waiting: int):
         self.waiting = waiting
         super().__init__(
-            f"{waiting} transaction{'s' if waiting != 1 else ''} still need a decision. "
+            f"{waiting} transaction{'s' if waiting != 1 else ''} still {'needs' if waiting == 1 else 'need'} a decision. "
             f"Approval can be requested once every row is placed and posted."
         )
 
@@ -201,7 +201,10 @@ def _renumber(client, actor, *, after: datetime.date | None) -> int:
     scope = entries if after is None else entries.filter(entry_date__gt=after)
     changed = 0
 
-    for (year, voucher_type) in scope.values_list("financial_year", "voucher_type").distinct():
+    # order_by() matters: JournalEntry's default ordering would otherwise join the DISTINCT,
+    # returning one pair per entry rather than one per voucher type, and every group would be
+    # renumbered once per entry in it -- minutes, for a year of bank statements.
+    for (year, voucher_type) in scope.order_by().values_list("financial_year", "voucher_type").distinct():
         floor = 0
         if after is not None:
             floor = max(
@@ -214,22 +217,33 @@ def _renumber(client, actor, *, after: datetime.date | None) -> int:
             scope.filter(financial_year=year, voucher_type=voucher_type)
             .order_by("entry_date", "created_at", "id")
         )
-        # Park everything out of the way first; see _PARK_OFFSET.
-        for entry in group:
-            JournalEntry.objects.filter(pk=entry.pk).update(entry_no=entry.entry_no + _PARK_OFFSET)
-        for offset, entry in enumerate(group, start=1):
-            number = floor + offset
-            JournalEntry.objects.filter(pk=entry.pk).update(entry_no=number)
-            if number != entry.entry_no:
-                changed += 1
-                EntryChange.objects.create(
-                    firm_id=client.firm_id, client=client, entry_id=entry.pk,
-                    voucher_type=voucher_type, entry_no=number, entry_date=entry.entry_date,
-                    action=ChangeAction.RENUMBERED,
-                    before={"entry_no": entry.entry_no}, after={"entry_no": number},
-                    note="Renumbered at sign-off so voucher numbers are contiguous.",
-                    actor=actor,
-                )
+        moves = [(entry, floor + offset) for offset, entry in enumerate(group, start=1) if floor + offset != entry.entry_no]
+
+        if moves:
+            # Only entries whose number changes are touched. They are parked out of the way
+            # first (see _PARK_OFFSET) so two entries never briefly share a number, then
+            # given their final ones -- two statements each, not two per entry.
+            parked = []
+            for entry, _ in moves:
+                parked.append(JournalEntry(pk=entry.pk, entry_no=entry.entry_no + _PARK_OFFSET))
+            JournalEntry.objects.bulk_update(parked, ["entry_no"], batch_size=500)
+            final = [JournalEntry(pk=entry.pk, entry_no=number) for entry, number in moves]
+            JournalEntry.objects.bulk_update(final, ["entry_no"], batch_size=500)
+            EntryChange.objects.bulk_create(
+                [
+                    EntryChange(
+                        firm_id=client.firm_id, client=client, entry_id=entry.pk,
+                        voucher_type=voucher_type, entry_no=number, entry_date=entry.entry_date,
+                        action=ChangeAction.RENUMBERED,
+                        before={"entry_no": entry.entry_no}, after={"entry_no": number},
+                        note="Renumbered at sign-off so voucher numbers are contiguous.",
+                        actor=actor,
+                    )
+                    for entry, number in moves
+                ],
+                batch_size=500,
+            )
+            changed += len(moves)
         VoucherSequence.objects.filter(
             firm_id=client.firm_id, client=client, financial_year=year, voucher_type=voucher_type
         ).update(next_number=floor + len(group) + 1)

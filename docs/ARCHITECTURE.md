@@ -448,10 +448,15 @@ client per financial year per voucher type. `MAX(entry_no) + 1` lets two
 concurrent approvals read the same maximum and allocate the same number, and a
 duplicated voucher number is what an audit opens with.
 
-**Who may approve** is a professional boundary, not a UI preference. A CA is
-personally answerable for what is filed, so `journal.approve` belongs to
-`SENIOR_CA` and `FIRM_ADMIN` only, checked server-side in `ledger/approval.py`.
-Hiding a button is not enforcement.
+**Who may post, and who signs.** Posting is the preparer's act: every role above
+read-only holds `journal.approve` and `journal.correct` (see `core/rbac.py`), so
+staff post and correct their own work on the clients they are assigned to. What
+is a senior's is the *sign-off* -- `books.sign_off`, and with it returning,
+reopening, adjusting signed-off entries and deciding ledger proposals -- and that
+is limited to the client's lead or a firm administrator (`core/access.py`).
+Posted entries are not permanent until that sign-off, and each change before it
+is kept in the change log. All of it is checked server-side; hiding a button is
+not enforcement.
 
 ---
 
@@ -631,17 +636,18 @@ terms do not commit to zero retention, which is acceptable exactly because
 nothing identifying is sent. Moving to in-country inference is `LLM_BACKEND`
 and one new file.
 
-## The application shell
+## The web application
 
-`frontend/` is a React SPA built by Vite into `frontend/dist`. Hashed assets are
-served by WhiteNoise under `/static/app/`; `core/spa.py` serves `index.html` for
-every route under `/app/`, and the router in the browser takes it from there.
+`web/` is a React SPA built by Vite into static files and deployed on its own
+(a static host with a rewrite of `/api/` and `/auth/` to this server, so the
+browser stays on one origin). The backend serves none of it: `FRONTEND_URL`
+tells the backend where it lives, for the redirect from `/`, invitation links,
+and the CSRF trusted origin a proxy needs. It is written to move into Tauri
+without a rewrite; see `web/README.md`.
 
-The shell is exempt from the MFA gate because it carries no data: a session with
-only a password may load the page, and the page then drives the second factor
-itself through the JSON endpoints -- the provisioning URI is drawn as a QR code
-client-side. Everything the page *shows* comes from `/api/`, which is exempt
-from nothing. Authentication is the session cookie; there is no token in
+The page drives the second factor itself through the JSON endpoints -- the
+provisioning URI is drawn as a QR code client-side. Everything the page *shows*
+comes from `/api/`, which is exempt from nothing. Authentication is the session cookie; there is no token in
 JavaScript to steal, and every mutating call carries the CSRF header.
 
 The permission list from `/api/v1/me/` decides what the screens *offer*. It

@@ -87,7 +87,7 @@ class LedgerAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
         existing = LedgerAccount.objects.filter(
             firm_id=self.request.firm.pk,
             client=self.client,
-            name=serializer.validated_data["name"],
+            name__iexact=serializer.validated_data["name"],
         ).exclude(status=LedgerStatus.ACTIVE).first()
         self._record(ActivityKind.LEDGER_CREATED)
         if existing is None:
@@ -108,7 +108,9 @@ class LedgerAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
         if not has_permission(request.membership, "journal.approve"):
             raise PermissionDenied("Accepting or rejecting a proposed ledger is for a Senior CA or firm admin.")
         if not can_sign_off(request.membership, self.client):
-            raise PermissionDenied(sign_off_refusal(self.client))
+            raise PermissionDenied(
+                f"Only {self.client.name}'s lead or a firm administrator can decide its proposed ledgers."
+            )
         return self.get_object()
 
     @extend_schema(
@@ -176,6 +178,30 @@ class PartyViewSet(ClientScopedMixin, FirmScopedViewSet):
         "PATCH": "party.manage",
         "DELETE": "party.manage",
     }
+
+
+def _model_warning(outcome) -> str:
+    """What to tell a person when the model could not do its part. Empty when it could."""
+    if not getattr(outcome, "failed", False):
+        return ""
+    return (
+        f"The model could not be reached, so it made no suggestions ({outcome.error}). "
+        "Rules were applied as usual, and the rest of the rows are yours to place."
+    )
+
+
+def _refuse_if_posted(classification) -> None:
+    """A posted row's entry is the record; changing the row would leave the two disagreeing."""
+    from ledger.approval import AlreadyPostedError
+
+    posted = classification.mirrored_entry_id or any(
+        not entry.is_superseded for entry in classification.transaction.journal_entries.all()
+    )
+    if posted:
+        raise AlreadyPostedError(
+            "This row is already posted, so its ledger and party are part of a journal entry. "
+            "To change it, correct the entry from the Day Book."
+        )
 
 
 @extend_schema(tags=["review"])
@@ -297,6 +323,7 @@ class ReviewQueueViewSet(
                 "declined": outcome.declined,
                 "proposed": outcome.proposed,
                 "error": outcome.error,
+                "warning": _model_warning(outcome),
             }
 
         outcome = run_job(
@@ -356,6 +383,7 @@ class ReviewQueueViewSet(
                 "declined": outcome.declined,
                 "proposed": outcome.proposed,
                 "error": outcome.error,
+                "warning": _model_warning(outcome),
             }
 
         scope = f"statement {statement.pk}" if statement else "all unposted rows"
@@ -443,6 +471,7 @@ class ClassificationViewSet(
     @action(detail=True, methods=["post"], url_path="confirm-party")
     def confirm_party(self, request, pk=None):
         classification = self.get_object()
+        _refuse_if_posted(classification)
         payload = ConfirmPartySerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         client = classification.transaction.bank_account.client
@@ -470,6 +499,7 @@ class ClassificationViewSet(
     @action(detail=True, methods=["post"])
     def review(self, request, pk=None):
         classification = self.get_object()
+        _refuse_if_posted(classification)
         payload = TreatmentSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         data = payload.validated_data

@@ -327,3 +327,24 @@ def test_no_business_profile_means_no_business_key(client, classified, scripted)
     with firm_context(client.firm_id):
         suggest_unresolved(client)
     assert "business" not in scripted.prompts[0]
+
+
+def test_a_request_the_provider_calls_too_large_is_retried_in_smaller_batches(client, classified, scripted, settings):
+    """Groq answers 413 when one request exceeds its tokens-per-minute cap. Halving fixes it."""
+    settings.LLM_BATCH_SIZE = 50
+    original = ScriptedLLM.complete_json
+
+    def too_big(self, system, user, *, max_tokens=2048):
+        if len(json.loads(user)["transactions"]) > 10:
+            raise LLMError("Groq answered HTTP 413 (rate_limit_exceeded).")
+        return original(self, system, user, max_tokens=max_tokens)
+
+    scripted.script = {"*": {"ledger": "Electricity", "confidence": 0.9}}
+    ScriptedLLM.complete_json = too_big
+    try:
+        with firm_context(client.firm_id):
+            outcome = suggest_unresolved(client)
+    finally:
+        ScriptedLLM.complete_json = original
+    assert not outcome.failed
+    assert outcome.suggested == outcome.considered

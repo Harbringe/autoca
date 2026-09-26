@@ -83,3 +83,30 @@ def _role(role):
     m.role = role
     m.is_active = True
     return m
+
+
+def test_a_statement_whose_entries_were_corrected_after_sign_off_can_still_be_removed(client, senior, staff, statement):
+    """A correction points at the entry it replaced; removal has to take the correction first."""
+    from classify.treatment import Treatment
+    from ledger.approval import correct
+
+    with firm_context(client.firm_id):
+        ai_places(client, BHIM, income(client, "Cashback Received"))
+        auto_post_client(client)
+        original = JournalEntry.objects.filter(client=client).order_by("entry_date").first()
+        Client.objects.filter(pk=client.pk).update(signed_off_through=original.entry_date)
+        replacement = income(client, "Other Income")
+        correction = correct(original, membership=senior, treatment=Treatment(ledger=replacement))
+        assert correction.supersedes_id == original.pk
+        # The books are reopened: nothing is locked, but the correction still points at the original.
+        from django.db import connection
+
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT set_config('app.allow_reopen', 'on', true)")  # what books.reopen does
+        Client.objects.filter(pk=client.pk).update(signed_off_through=None)
+        total = JournalEntry.objects.filter(client=client).count()
+
+        removed = remove_statement(statement, actor=staff.user)
+
+        assert removed["entries"] == total
+        assert JournalEntry.objects.filter(client=client).count() == 0

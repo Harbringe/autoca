@@ -161,6 +161,7 @@ def test_sign_off_is_enforced_below_the_view(posted):
     from django.core.exceptions import PermissionDenied
 
     from ledger.approval import correct
+    from ledger.editing import EntryLockedError
 
     firm = posted.firm
     lead = member(firm, Role.SENIOR_CA, "the-lead@example.test")
@@ -172,7 +173,7 @@ def test_sign_off_is_enforced_below_the_view(posted):
         # Until sign-off the entry is a draft any CA may change; once signed, only
         # the lead (or a firm admin) may adjust it.
         type(posted).objects.filter(pk=posted.pk).update(signed_off_through=entry.entry_date)
-        with pytest.raises(PermissionDenied):
+        with pytest.raises(EntryLockedError):
             correct(entry, membership=other, treatment=None)
 
 

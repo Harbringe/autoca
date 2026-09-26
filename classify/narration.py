@@ -59,6 +59,8 @@ class Channel:
     TAX = "TAX"
     #: Demand draft, PPF, and other branch instruments.
     INSTRUMENT = "INSTRUMENT"
+    #: An ACH / NACH mandate: a debit or credit the payee's bank collects under a standing authority.
+    MANDATE = "MANDATE"
     FEE = "FEE"
     UNKNOWN = "UNKNOWN"
 
@@ -208,6 +210,40 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
         Channel.CHEQUE,
         re.compile(r"^Clg/(?P<counterparty>[^/]*)(?:/(?P<counterparty_bank>.*))?", re.I),
     ),
+    # --- Formats from other banks. The ones above came from one real statement; these are the
+    # --- shapes the other large Indian banks print, so a payee is found whichever bank it is.
+    # NEFT CR-HDFC0001234-ORBIT RETAIL PVT LTD-INV 1042   (also RTGS, IMPS; CR/DR optional)
+    *[
+        (
+            channel,
+            re.compile(
+                rf"^{channel}\s*(?:CR|DR)?\s*-\s*(?P<counterparty_bank>[A-Z]{{4}}0[A-Z0-9]{{6}})\s*-\s*"
+                r"(?P<counterparty>[^-]+?)\s*(?:-\s*(?P<remark>.*))?$",
+                re.I,
+            ),
+        )
+        for channel in (Channel.NEFT, Channel.RTGS, Channel.IMPS)
+    ],
+    # UPI/410123456789/Payment to BigBasket   ·   UPI/5012.../HOLDER NAME/Payment from ABC
+    (
+        Channel.UPI,
+        re.compile(
+            r"^UPI/(?P<reference>[^/]*)/(?:[^/]*/)*?(?:PAYMENT|PAID|PAY)\s+(?:TO|FROM)\s+(?P<counterparty>[^/]+?)\s*/?$",
+            re.I,
+        ),
+    ),
+    # UPI-SWIGGY-9876543210 · UPI-RAMESH KUMAR-ramesh@okicici-...
+    (Channel.UPI, re.compile(r"^UPI-(?P<counterparty>[^-]+?)\s*-\s*(?P<reference>.*)$", re.I)),
+    # ACH D- LIC OF INDIA · NACH DR-TATA CAPITAL-EMI · ACH C- DIVIDEND XYZ LTD
+    (Channel.MANDATE, re.compile(r"^N?ACH\s*(?:D|C|DR|CR)?\s*-\s*(?P<counterparty>[^-]+?)\s*(?:-\s*(?P<remark>.*))?$", re.I)),
+    # CHQ DEP-000412-CLEARING-MEHTA HARDWARE · CHQ DEP/000412/MEHTA HARDWARE
+    (
+        Channel.CHEQUE,
+        re.compile(
+            r"^CHQ\s*DEP[-/\s]+(?P<instrument>\d+)?[-/\s]*(?:CLEARING[-/\s]+|CLG[-/\s]+)?(?P<counterparty>.+)$",
+            re.I,
+        ),
+    ),
     # DD ISSUED/DIBG/Medical officer of Health, CMC, N
     (
         Channel.INSTRUMENT,
@@ -219,6 +255,17 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
         re.compile(r"^(?P<counterparty>IPPF|PPF|RD|TD)/(?P<reference>[^/]*)", re.I),
     ),
     (Channel.CASH, re.compile(r"^(?P<counterparty>CWDR|ATM-CASH|CASH\s+DEP)", re.I)),
+    # A tax paid through the bank -- a GST challan (CPIN), income tax or TDS through CBDT/OLTAS --
+    # is a payment against a liability, never a bank charge. It has to be recognised before
+    # the FEE line below, which matches "GST" for the bank's own "GST on charges" rows and
+    # would otherwise send a GST payment to Bank Charges, where a seed rule posts it unseen.
+    (
+        Channel.TAX,
+        re.compile(
+            r"^(?P<counterparty>.*(?:\bCPIN\b|GST\s*(?:PAYMENT|PMT|CHALLAN)|GSTN|CBDT|OLTAS|TAX\s*PAYMENT|TDS\s*PAYMENT|CHALLAN).*)$",
+            re.I,
+        ),
+    ),
     (Channel.FEE, re.compile(r"^(?P<counterparty>.*(?:CHARGES?|CHRG|FEE|GST)\b.*)$", re.I)),
 ]
 

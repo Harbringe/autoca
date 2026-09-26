@@ -106,7 +106,7 @@ class JournalEntryViewSet(
             "ones, linked back to it. The original stays visible, which is what "
             "company law expects, and the two together net to the corrected "
             "position so the trial balance is right at every point in the chain.\n\n"
-            "Requires `journal.correct`: senior CA or firm admin."
+            "Requires `journal.correct` (staff and above, on their assigned clients). Once the entry is inside signed-off books only the client's lead or a firm administrator may adjust it; anyone else is told it is locked (409 `entry_locked`)."
         ),
         request=CorrectionSerializer,
         responses={201: JournalEntrySerializer},
@@ -140,6 +140,7 @@ class JournalEntryViewSet(
                 tds_section=treatment_data.get("tds_section", ""),
             ),
             narration=payload.validated_data.get("narration") or None,
+            learn=treatment_data.get("learn", True),
         )
         return Response(
             JournalEntrySerializer(corrected).data, status=status.HTTP_201_CREATED
@@ -188,10 +189,10 @@ class ApprovalView(viewsets.GenericViewSet):
     @extend_schema(
         summary="Approve classified rows",
         description=(
-            "The moment a suggestion becomes a permanent ledger entry. Restricted "
-            "to senior CA and firm admin, server-side -- a CA is personally "
-            "answerable for what is filed, so this is a professional boundary "
-            "rather than a hidden button.\n\n"
+            "The moment a suggestion becomes a ledger entry. Any role that prepares "
+            "books (staff and above) may post on the clients it is assigned to; the "
+            "entry stays a working draft, changeable and logged, until a senior signs "
+            "the books off. Checked server-side, not by a hidden button.\n\n"
             "Send either an explicit list of classification ids, or a whole "
             "confidence band. `band=HIGH` is the one-click bulk approval for "
             "everything the system is sure about.\n\n"
@@ -221,8 +222,8 @@ class ApprovalView(viewsets.GenericViewSet):
                 raise serializers.ValidationError(
                     {
                         "classifications": (
-                            f"{len(missing)} of these are not awaiting approval -- "
-                            f"already posted, or not yet placed in a ledger."
+                            f"{len(missing)} of these {'is' if len(missing) == 1 else 'are'} not awaiting "
+                            f"approval -- already posted, or not yet placed in a ledger."
                         )
                     }
                 )
@@ -257,6 +258,10 @@ class ReportView(viewsets.GenericViewSet):
                 raise serializers.ValidationError(
                     {"fy": "Give the financial year by its starting year, e.g. 2025 for FY2025-26."}
                 ) from exc
+            if not 2000 <= year <= 2100:
+                raise serializers.ValidationError(
+                    {"fy": "Give the financial year by its starting year, e.g. 2025 for FY2025-26."}
+                )
         else:
             year = financial_year(datetime.date.today())
         return client, year

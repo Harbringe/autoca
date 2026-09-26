@@ -67,7 +67,7 @@ def test_a_senior_ca_invites_staff_onto_their_own_team(lead):
         f"{TEAM}/members/", {"email": "New.Person@Example.test", "role": Role.STAFF}, format="json"
     )
     assert response.status_code == 201, response.content
-    token = response.json()["link"].removeprefix("/app/invite/")
+    token = response.json()["link"].rsplit("/invite/", 1)[1]
 
     described = HttpClient().get("/auth/invite/", {"token": token}).json()
     assert described["email"] == "new.person@example.test"
@@ -98,6 +98,12 @@ def test_a_senior_ca_cannot_invite_a_senior_ca(lead):
     assert response.status_code == 403
 
 
+def test_an_invitation_links_to_the_web_application(admin, settings):
+    settings.FRONTEND_URL = "https://app.example.test"
+    response = sign_in(admin.user).post(f"{TEAM}/members/", {"email": "x@example.test"}, format="json")
+    assert response.json()["link"].startswith("https://app.example.test/invite/")
+
+
 def test_staff_cannot_invite(firm, lead):
     staff = _on_team(firm, lead, "s@example.test")
     response = sign_in(staff.user).post(f"{TEAM}/members/", {"email": "x@example.test"}, format="json")
@@ -108,7 +114,7 @@ def test_an_invite_never_sets_an_existing_accounts_password(firm, admin):
     existing = User.objects.create_user(email="known@example.test", password="the-real-password-1")
     token = sign_in(admin.user).post(
         f"{TEAM}/members/", {"email": "known@example.test", "role": Role.READ_ONLY}, format="json"
-    ).json()["link"].removeprefix("/app/invite/")
+    ).json()["link"].rsplit("/invite/", 1)[1]
 
     _, wrong = _accept(token, password="an-attackers-password-9")
     assert wrong.status_code == 401
@@ -122,7 +128,7 @@ def test_an_invite_never_sets_an_existing_accounts_password(firm, admin):
 def test_expired_revoked_and_forged_invites_are_refused(firm, admin):
     http = sign_in(admin.user)
     body = http.post(f"{TEAM}/members/", {"email": "late@example.test"}, format="json").json()
-    token = body["link"].removeprefix("/app/invite/")
+    token = body["link"].rsplit("/invite/", 1)[1]
 
     with firm_context(firm.pk):
         Invite.objects.filter(pk=body["id"]).update(expires_at=timezone.now() - datetime.timedelta(minutes=1))
@@ -130,7 +136,7 @@ def test_expired_revoked_and_forged_invites_are_refused(firm, admin):
 
     body = http.post(f"{TEAM}/members/", {"email": "late@example.test"}, format="json").json()
     assert http.delete(f"{TEAM}/invites/{body['id']}/").status_code == 204
-    assert _accept(body["link"].removeprefix("/app/invite/"), password=PASSWORD)[1].status_code == 410
+    assert _accept(body["link"].rsplit("/invite/", 1)[1], password=PASSWORD)[1].status_code == 410
 
     forged = f"{uuid.uuid4()}.{token.split('.', 1)[1]}"
     assert _accept(forged, password=PASSWORD)[1].status_code == 404

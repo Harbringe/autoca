@@ -55,6 +55,16 @@ def env_required(key):
 
 SECRET_KEY = env_required("DJANGO_SECRET_KEY")
 DEBUG = False
+#: Where the web application is served. Used for the redirect from /, the
+#: admin's "Open the app" link, and the links inside invitations. Its origin is
+#: also a trusted CSRF origin: a proxy in front of this server forwards the
+#: browser's Origin (the app) but rewrites Host, and Django refuses the pair
+#: unless the origin is named.
+FRONTEND_URL = env("FRONTEND_URL", "http://localhost:5173").rstrip("/")
+
+#: True only under config.settings.prod. Deploy checks that make no sense on a laptop key off it.
+IS_PRODUCTION = False
+
 ALLOWED_HOSTS = [h.strip() for h in env("DJANGO_ALLOWED_HOSTS", "").split(",") if h.strip()]
 
 INSTALLED_APPS = [
@@ -112,7 +122,7 @@ ADMIN_ACCESS = "superadmin.firmless.allow_admin"
 #
 # Jazzmin gives the platform panel a sidebar, search and a themed shell. The
 # colours are chosen to match the product's own: navy chrome, amber accent, the
-# same palette as frontend/src/styles.css.
+# same palette as the web application (web/src/styles).
 #
 # One thing it does that this deployment does not want: its base template links
 # a stylesheet from fonts.googleapis.com. The admin ships under a
@@ -137,7 +147,7 @@ JAZZMIN_SETTINGS = {
     #: The firm picker, reachable from every page. Which firm is currently
     #: selected is shown next to the page title; see templates/admin/base_site.html.
     "topmenu_links": [
-        {"name": "Open the app", "url": "/app/", "new_window": True},
+        {"name": "Open the app", "url": FRONTEND_URL, "new_window": True},
     ],
     "icons": {
         "core.User": "fas fa-right-to-bracket",
@@ -344,16 +354,15 @@ MFA_DISABLED = False
 # TOTP is mandatory. These are the only paths reachable by a session that has
 # passed a password check but not yet a second factor.
 MFA_EXEMPT_PATH_PREFIXES = (
+    # Only a token. Signing in rotates it, and the page needs the new one to
+    # post its second factor; without this the request is sent to the enrolment page.
+    "/auth/csrf/",
     "/auth/login/",
     "/auth/logout/",
     "/auth/mfa/",
     "/auth/invite/",
     "/healthz",
     "/static/",
-    # The application shell is static HTML with no data in it; the page drives
-    # the second factor itself. Everything it shows comes from /api/, which is
-    # not exempt. See core/spa.py.
-    "/app",
 )
 
 SESSION_COOKIE_HTTPONLY = True
@@ -632,15 +641,10 @@ STORAGES = {
     "staticfiles": {"BACKEND": "whitenoise.storage.CompressedManifestStaticFilesStorage"},
 }
 
-# The built frontend. Vite writes hashed assets here; they are served under
-# /static/app/ by WhiteNoise, and index.html by core.spa.
-FRONTEND_DIST = Path(env("FRONTEND_DIST", str(BASE_DIR / "frontend" / "dist")))
-# Unprefixed on purpose: Vite already writes the assets under app/assets/. A
-# ("app", dir) prefix breaks lookups on Windows; see frontend/vite.config.ts.
-STATICFILES_DIRS = [FRONTEND_DIST] if FRONTEND_DIST.exists() else []
-# Vite's asset names already carry a content hash, and some bundlers emit
-# references the manifest storage cannot resolve. Missing references should
-# not fail collectstatic.
+# This project serves the API and the platform admin, not the web application.
+# The application (web/) is a separate static build, hosted apart from this
+# server and reaching it through a same-origin proxy of /api/ and /auth/.
+# WhiteNoise here serves only the admin's own static files.
 WHITENOISE_MANIFEST_STRICT = False
 
 # ---------------------------------------------------------------------------

@@ -296,6 +296,13 @@ def learn_rule_from(classification, treatment, user=None) -> ClassificationRule 
     inventing a rule that will misfire.
     """
     treatment = _coerce_treatment(treatment)
+    if treatment.ledger is not None and treatment.ledger.is_bank_or_cash:
+        # A movement between the client's own accounts names the account holder, not the other
+        # account. A rule keyed on that name cannot tell which of the client's accounts a later
+        # transfer went to, and would post it to the wrong bank without asking. Each such
+        # transfer is a decision of its own.
+        return None
+
     facts = _facts_for(classification)
     if not facts.counterparty:
         return None

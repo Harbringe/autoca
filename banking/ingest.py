@@ -66,6 +66,10 @@ class IngestResult:
         return self.statement.bank_account
 
 
+class StatementElsewhereError(RuntimeError):
+    """The file was uploaded before, for a different client."""
+
+
 def ingest_statement(
     *,
     client: Client,
@@ -81,6 +85,14 @@ def ingest_statement(
     existing = Document.objects.filter(firm_id=client.firm_id, sha256=digest).first()
     if existing is not None and hasattr(existing, "statement"):
         statement = existing.statement
+        if statement.bank_account.client_id != client.pk:
+            # The same file under a second client is a mistake, not a repeat. Saying "already
+            # imported" would hide it -- and hand back a statement from books the uploader may
+            # not be allowed to see -- so it is refused, without naming the other client.
+            raise StatementElsewhereError(
+                "This exact file is already on file for another client of the firm. Check you have "
+                "the right client open, or the right file."
+            )
         return IngestResult(
             statement=statement,
             document=existing,
@@ -189,8 +201,8 @@ def _check_continuity(account: BankAccount, parsed: ParsedStatement, *, allow_ga
         f"last statement for {account} closed at "
         f"{format_inr(previous.closing_balance_paise)} on "
         f"{previous.period_end:%d-%m-%Y}. A statement period is missing between the "
-        f"two. Upload it first, or pass allow_gap=True to record the break "
-        f"deliberately."
+        f"two. Upload the missing statement first, or import this one anyway to record "
+        f"the gap deliberately."
     )
 
 

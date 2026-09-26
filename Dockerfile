@@ -1,14 +1,5 @@
-# Two stages: build the frontend with Node, run the application with Python.
-# The image that ships carries no Node, no compiler, and no source tree it does
-# not need.
-
-# --- frontend ---------------------------------------------------------------
-FROM node:24-alpine AS frontend
-WORKDIR /build
-COPY frontend/package.json frontend/package-lock.json ./
-RUN npm ci --no-audit --no-fund
-COPY frontend/ ./
-RUN npm run build
+# The API and the platform admin. The web application (web/) is a separate
+# static build, deployed on its own; nothing of it is in this image.
 
 # --- application --------------------------------------------------------------
 FROM python:3.13-slim AS app
@@ -26,11 +17,10 @@ COPY requirements/ requirements/
 RUN pip install -r requirements/base.txt
 
 COPY --chown=autoca:autoca . .
-COPY --from=frontend --chown=autoca:autoca /build/dist frontend/dist
 
-# collectstatic needs settings to import, which needs a SECRET_KEY and a
+# collectstatic (the admin's own files) needs settings to import, which needs a SECRET_KEY and a
 # DATABASE_URL to parse; neither is used at build time.
-RUN DJANGO_SECRET_KEY=build-only DATABASE_URL=postgresql://x:x@localhost/x \
+RUN DJANGO_SECRET_KEY=build-only FRONTEND_URL=https://build.invalid DATABASE_URL=postgresql://x:x@localhost/x \
     python manage.py collectstatic --noinput
 
 USER autoca

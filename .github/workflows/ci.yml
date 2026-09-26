@@ -85,6 +85,11 @@ jobs:
       - name: Migrations are complete and applied cleanly
         run: python manage.py makemigrations --check --dry-run
 
+      - name: The web application's API schema is current
+        run: |
+          python manage.py spectacular --file web/openapi.yaml
+          git diff --exit-code web/openapi.yaml
+
       - name: Tenant isolation suite
         run: pytest core/tests/test_rls_isolation.py -v
 
@@ -97,29 +102,31 @@ jobs:
       - name: Known-vulnerability audit of Python dependencies
         run: pip install pip-audit && pip-audit -r requirements/base.txt
 
-  frontend:
-    name: Frontend builds and type-checks
+  web:
+    name: Web application type-checks, tests and builds
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: frontend
+        working-directory: web
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          cache-dependency-path: web/package-lock.json
       - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
       - run: npm run lint
+      - run: npm test
       - run: npm run build
-      - name: Known-vulnerability audit of frontend dependencies
+      - name: Known-vulnerability audit of web dependencies
         run: npm audit --audit-level=high --omit=dev
 
   image:
     name: Container image builds
     runs-on: ubuntu-latest
-    needs: [test, frontend]
+    needs: [test]
     steps:
       - uses: actions/checkout@v4
       - run: docker build -t autoca:ci .

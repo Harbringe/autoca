@@ -214,6 +214,13 @@ def mfa_verify(request):
     if not request.user.is_authenticated:
         return redirect(f"{settings.LOGIN_URL}?next={request.get_full_path()}")
 
+    # A code can be used once, so a form submitted twice (a double click, a browser resend) fails
+    # the second time. The first already passed; show where it led, not an error.
+    if request.user.is_verified():
+        if _wants_json(request) and request.method == "POST":
+            return JsonResponse({"detail": "Verified."})
+        return redirect(_safe_next(request))
+
     device = (
         TOTPDevice.objects.filter(user=request.user, confirmed=True).first()
         or TOTPDevice.objects.filter(user=request.user, confirmed=False).order_by("id").first()

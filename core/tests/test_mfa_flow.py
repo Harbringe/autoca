@@ -88,6 +88,20 @@ def test_verify_page_challenges_an_enrolled_device(member):
     assert http.get("/api/me/").status_code == 200
 
 
+def test_submitting_the_same_code_twice_still_lands_on_the_destination(member):
+    device = TOTPDevice.objects.create(user=member, name="default", confirmed=True)
+    http = HttpClient()
+    _login(http)
+    code = _code(device)
+
+    first = http.post("/auth/mfa/verify/?next=/admin/", {"token": code})
+    second = http.post("/auth/mfa/verify/?next=/admin/", {"token": code})
+
+    assert first.status_code == 302
+    assert second.status_code == 302
+    assert second["Location"] == "/admin/"
+
+
 def test_setup_get_redirects_to_verify_when_already_enrolled(member):
     TOTPDevice.objects.create(user=member, name="default", confirmed=True)
     http = HttpClient()

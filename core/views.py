@@ -19,7 +19,8 @@ import json
 import logging
 
 from django.conf import settings
-from django.contrib.auth import authenticate, login, logout
+from django.contrib.auth import authenticate, get_user_model, login, logout
+from django.db import transaction
 from django.http import JsonResponse
 from django.middleware.csrf import get_token
 from django.shortcuts import redirect, render
@@ -173,9 +174,14 @@ def mfa_setup(request):
         # Already enrolled -- the challenge page is the right place.
         return redirect(f"/auth/mfa/verify/?next={_safe_next(request)}")
 
-    device = TOTPDevice.objects.filter(user=request.user, confirmed=False).first()
-    if device is None:
-        device = TOTPDevice.objects.create(user=request.user, name="default", confirmed=False)
+    # The page and the browser's favicon request are both sent here on a first visit. Locking the
+    # user row makes the second wait for the first, so only one device is ever created and the QR
+    # shown is the one the code is checked against.
+    with transaction.atomic():
+        get_user_model().objects.select_for_update().filter(pk=request.user.pk).first()
+        device = TOTPDevice.objects.filter(user=request.user, confirmed=False).order_by("id").first()
+        if device is None:
+            device = TOTPDevice.objects.create(user=request.user, name="default", confirmed=False)
 
     error = None
     if request.method == "POST":
@@ -210,7 +216,7 @@ def mfa_verify(request):
 
     device = (
         TOTPDevice.objects.filter(user=request.user, confirmed=True).first()
-        or TOTPDevice.objects.filter(user=request.user, confirmed=False).first()
+        or TOTPDevice.objects.filter(user=request.user, confirmed=False).order_by("id").first()
     )
 
     if _wants_json(request) and request.method == "POST":

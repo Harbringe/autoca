@@ -24,6 +24,7 @@ ALLOWED_PREFIXES = (
     "/api/v1/me/",
     "/auth/logout/",
     "/auth/csrf/",
+    "/auth/mfa/",
 )
 
 

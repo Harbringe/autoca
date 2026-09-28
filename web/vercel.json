@@ -1,0 +1,8 @@
+{
+  "rewrites": [
+    { "source": "/api/:path*",  "destination": "https://autoca-juie.onrender.com/api/:path*" },
+    { "source": "/auth/:path*", "destination": "https://autoca-juie.onrender.com/auth/:path*" },
+    { "source": "/healthz",     "destination": "https://autoca-juie.onrender.com/healthz" },
+    { "source": "/(.*)",        "destination": "/index.html" }
+  ]
+}

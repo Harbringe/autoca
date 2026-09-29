@@ -1,0 +1,10 @@
+import { signedIn, shot, visibleText } from '../lib/session.mjs'
+const { page, problems, close } = await signedIn('senior')
+await page.goto('http://127.0.0.1:5173/clients/591f73c7-35a5-42cf-9998-b5fc55ca1799')
+await page.getByRole('link', { name: 'Day Book' }).click()
+await page.waitForTimeout(800)
+console.log('url', page.url())
+await shot(page, 'sca-r1-daybook-screen2')
+console.log(await visibleText(page))
+console.log('problems', problems)
+await close()

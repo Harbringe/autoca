@@ -226,6 +226,8 @@ export interface paths {
          * @description What the client's books actually started from. Pre-filled from the first statement's own opening line, but confirmed rather than assumed: a client onboarding in October has six months of history this system never saw, and starting them at that statement's opening figure misstates every balance from then on.
          *
          *     Month-end reconciliation is not meaningful until this is set.
+         *
+         *     Once the client's books are signed off on or after the opening date, a change is refused with 409 `entry_locked`; the client's senior CA or a firm administrator must reopen the books first.
          */
         post: operations["clients_bank_accounts_opening_balance_create"];
         delete?: never;
@@ -346,6 +348,8 @@ export interface paths {
         /**
          * Sign the books off
          * @description Locks everything up to the date signed. Voucher numbers are made contiguous first. After this the database itself refuses to change any of it; a later fix is a correcting entry dated after the sign-off.
+         *
+         *     Refused with 409 `ai_entries_unchecked` while any entry dated on or before the sign-off date is still marked as posted or changed by the assistant: a person checks them and uses `mark-reviewed` first. Unknown fields are refused with 400, so a misspelt `through` cannot sign off more than asked.
          */
         post: operations["clients_books_sign_off_create"];
         delete?: never;
@@ -834,7 +838,7 @@ export interface paths {
         put?: never;
         /**
          * Ask the model about every unresolved row
-         * @description Runs the model tier over the rows no rule could place. Each row the model is confident about becomes a *suggestion* in the ADVISED band -- never HIGH, so never bulk-approvable -- with a one-line rationale. Rows it is not confident about stay unresolved, with the rationale attached. Returns **202** with a job; the result carries `suggested`, `declined` and `error` (empty unless the provider failed).
+         * @description Runs the model tier over the rows no rule could place. Each row the model is confident about becomes a *suggestion* with a one-line rationale; its confidence sets the band, and a very confident one may be posted automatically (marked, and changeable until sign-off). Rows it is not confident about stay unresolved, with the rationale attached. Returns **202** with a job; the result carries `suggested`, `declined` and `error` (empty unless the provider failed).
          *
          *     Nothing identifying leaves the server: narrations are masked, people are pseudonymised, known parties are aliased. Requires `transaction.classify`.
          */
@@ -2407,6 +2411,8 @@ export interface components {
             readonly classification: components["schemas"]["Classification"];
             /** Format: uuid */
             readonly rule_learned: string | null;
+            /** @description True when this decision wrote a new rule, false when it reused or updated one. */
+            readonly rule_created: boolean;
             /** @description How many other queued rows the rule learned from this decision placed. */
             readonly also_placed: number;
             /** @description How many entries or rows the AI had placed itself that the new rule moved. Never includes anything a person decided. */

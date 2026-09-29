@@ -28,7 +28,7 @@ from classify.models import (
     RuleSource,
     TransactionClassification,
 )
-from classify.narration import Channel, normalise
+from classify.narration import Channel, analyse, normalise
 from classify.seeds import seed_client
 from core.db.session import firm_context
 from core.provisioning import create_client, create_firm
@@ -126,6 +126,42 @@ def test_the_learned_rule_keys_on_the_payee_not_the_narration(client, statement)
     assert rule.pattern == normalise("ZERODHA BROKING LIMIT")
     assert rule.source == RuleSource.LEARNED
     assert "100000000001" not in rule.pattern
+
+
+def test_a_learned_rule_takes_the_direction_of_the_row_it_came_from(client, statement):
+    """"Future receipts from X" must not also catch payments to X."""
+    classify_statement(statement)
+    cashback = ledger(client, "Bhim Cash Back", LedgerGroup.INDIRECT_INCOME)
+    row = queued_for(client, "NPCI BHIM")
+
+    _, rule = review(row, cashback)
+
+    assert rule.direction == (Direction.DEBIT if row.transaction.is_debit else Direction.CREDIT)
+    assert rule.just_created is True
+    facts = analyse(row.transaction.narration)
+    assert rule.matches(facts, row.transaction.is_debit)
+    assert not rule.matches(facts, not row.transaction.is_debit)
+
+
+def test_a_new_directional_rule_outranks_an_older_either_direction_rule_for_the_same_payee(client, statement):
+    """A person's correction must not lose a tie to a rule learned before rules had a direction."""
+    from classify.engine import first_matching_rule
+
+    classify_statement(statement)
+    old_target = ledger(client, "Old Target", LedgerGroup.INDIRECT_INCOME)
+    corrected = ledger(client, "Corrected Target", LedgerGroup.INDIRECT_INCOME)
+    row = queued_for(client, "NPCI BHIM")
+    ClassificationRule.objects.create(
+        firm_id=client.firm_id, client=client, ledger=old_target,
+        match_type=MatchType.PARTY_EQUALS, pattern=normalise(row.counterparty),
+        direction=Direction.ANY, source=RuleSource.LEARNED, priority=LEARNED_PRIORITY,
+    )
+
+    review(row, corrected)
+
+    facts = analyse(row.transaction.narration)
+    winner = first_matching_rule(facts, row.transaction.is_debit, rules_for(client))
+    assert winner.ledger_id == corrected.pk
 
 
 def test_a_learned_rule_carries_forward_to_the_next_statement(client, statement):

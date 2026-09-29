@@ -43,6 +43,7 @@ export function ClientOverview({ clientId }: { clientId: string }) {
   const pending = summary.data?.pending_approval ?? 0
   const b = books.data
   const hasStatements = statementCount > 0
+  const unchecked = b ? b.ai_posted + b.ai_revised : 0
   // Posted since the last sign-off and not yet sent: the review steps are open again.
   const unsigned = b ? unsignedThrough(b, latest ?? null) : null
   const link = (to: string, label: string, search?: Record<string, string>) => (
@@ -88,15 +89,20 @@ export function ClientOverview({ clientId }: { clientId: string }) {
     },
     {
       title: 'Post to the Day Book',
-      done: hasStatements && unresolved === 0 && pending === 0,
+      done: hasStatements && unresolved === 0 && pending === 0 && unchecked === 0,
       status: !hasStatements
         ? 'Placed transactions become journal entries once posted.'
         : pending
           ? `${plural(pending, 'transaction')} placed and ready to post${summary.data?.bulk_approvable ? `, ${summary.data.bulk_approvable} of them high-confidence` : ''}.`
           : unresolved
             ? 'Nothing ready to post yet.'
-            : 'Everything is posted.',
-      action: pending > 0 && link('/clients/$clientId/review', 'Post', { stage: 'pending_approval' }),
+            : unchecked
+              ? `${plural(unchecked, 'entry', 'entries')} posted by the assistant, not yet checked. Look at them in the Day Book and mark them as checked; the books cannot be signed off until then.`
+              : 'Everything is posted and checked.',
+      action:
+        pending > 0
+          ? link('/clients/$clientId/review', 'Post', { stage: 'pending_approval' })
+          : unchecked > 0 && link('/clients/$clientId/daybook', 'Check them'),
     },
     {
       title: 'Send for review',
@@ -170,7 +176,7 @@ export function ClientOverview({ clientId }: { clientId: string }) {
           <Card className="p-4 text-sm">
             <div className="font-medium">Assistant entries to check</div>
             <p className="text-muted-foreground">
-              {plural(b.ai_posted + b.ai_revised, 'entry', 'entries')} were posted or changed by rules without a person looking. They are
+              {plural(b.ai_posted + b.ai_revised, 'entry', 'entries')} were posted or changed by the assistant without a person looking. Sign-off is refused until they are checked. They are
               marked in the Day Book.
             </p>
             <div className="mt-2">{link('/clients/$clientId/daybook', 'Open Day Book')}</div>

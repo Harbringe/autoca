@@ -200,7 +200,10 @@ class BankAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
             "assumed: a client onboarding in October has six months of history "
             "this system never saw, and starting them at that statement's opening "
             "figure misstates every balance from then on.\n\n"
-            "Month-end reconciliation is not meaningful until this is set."
+            "Month-end reconciliation is not meaningful until this is set.\n\n"
+            "Once the client's books are signed off on or after the opening date, a "
+            "change is refused with 409 `entry_locked`; the client's senior CA or a "
+            "firm administrator must reopen the books first."
         ),
         request=OpeningBalanceSerializer,
         responses={200: BankAccountDetailSerializer},

@@ -175,7 +175,7 @@ function Ledgers({ clientId }: { clientId: string }) {
                     <td className={`${tbl.td} text-right`}>
                       {manage && group !== 'BANK' && (
                         <span className="flex justify-end gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => setEditing(l)}>
+                          <Button size="sm" variant="ghost" onClick={() => setEditing(l)} aria-label={`Edit ${l.name}`}>
                             Edit
                           </Button>
                           {l.row_count === 0 && (
@@ -389,7 +389,7 @@ function Parties({ clientId }: { clientId: string }) {
                   <td className={tbl.td}>{p.rcm_default ? 'Yes' : '—'}</td>
                   <td className={`${tbl.td} text-right`}>
                     {can('party.manage') && (
-                      <Button size="sm" variant="ghost" onClick={() => setEditing(p)}>
+                      <Button size="sm" variant="ghost" onClick={() => setEditing(p)} aria-label={`Edit ${p.canonical_name}`}>
                         Edit
                       </Button>
                     )}
@@ -547,11 +547,11 @@ function Rules({ clientId }: { clientId: string }) {
                 <td className={tbl.tdNum}>{r.hit_count}</td>
                 <td className={`${tbl.td} num`}>{r.last_hit_at ? formatDate(r.last_hit_at.slice(0, 10)) : '—'}</td>
                 <td className={tbl.td}>
-                  <Checkbox aria-label="Active" checked={!!r.is_active} disabled={!manage} onChange={() => void toggle(r)} />
+                  <Checkbox aria-label={`Active: ${MATCH_LABEL[r.match_type ?? ''] ?? r.match_type} ${r.pattern}, ${DIRECTION_LABEL[r.direction ?? 'ANY']}, to ${r.ledger_name}`} checked={!!r.is_active} disabled={!manage} onChange={() => void toggle(r)} />
                 </td>
                 <td className={`${tbl.td} text-right`}>
                   {manage && r.source !== 'SEED' && (
-                    <Button size="sm" variant="ghost" onClick={() => void remove(r)} aria-label="Delete rule">
+                    <Button size="sm" variant="ghost" onClick={() => void remove(r)} aria-label={`Delete rule: ${MATCH_LABEL[r.match_type ?? ''] ?? r.match_type} ${r.pattern} to ${r.ledger_name}`}>
                       <Trash2 />
                     </Button>
                   )}

@@ -415,7 +415,7 @@ class ApproveSerializer(serializers.Serializer):
     def validate(self, attrs):
         if bool(attrs.get("classifications")) == bool(attrs.get("band")):
             raise serializers.ValidationError(
-                "Send either a list of classifications or a band, and not both."
+                "Send exactly one of classifications or band."
             )
         return attrs
 
@@ -425,6 +425,10 @@ class PlacementResultSerializer(serializers.Serializer):
 
     classification = ClassificationSerializer(read_only=True)
     rule_learned = serializers.UUIDField(read_only=True, allow_null=True)
+    rule_created = serializers.BooleanField(
+        read_only=True,
+        help_text="True when this decision wrote a new rule, false when it reused or updated one.",
+    )
     also_placed = serializers.IntegerField(
         read_only=True,
         help_text="How many other queued rows the rule learned from this decision placed.",

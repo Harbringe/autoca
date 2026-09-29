@@ -30,6 +30,19 @@ class PdfPlumberAdapter(PdfTextAdapter):
     def __init__(self, **_ignored):
         pass
 
+    def page_count(self, data: bytes) -> int:
+        if not data:
+            raise PdfExtractionError("Empty file: nothing to extract.")
+        try:
+            with pdfplumber.open(io.BytesIO(data)) as pdf:
+                return len(pdf.pages)
+        except PDFSyntaxError as exc:
+            raise PdfExtractionError(f"Not a readable PDF: {exc}") from exc
+        except Exception as exc:  # noqa: BLE001 -- pdfminer raises a wide variety
+            raise PdfExtractionError(
+                f"This PDF could not be read ({type(exc).__name__})."
+            ) from exc
+
     def extract(self, data: bytes) -> PdfDocument:
         if not data:
             raise PdfExtractionError("Empty file: nothing to extract.")

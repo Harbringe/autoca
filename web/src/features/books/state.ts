@@ -50,3 +50,42 @@ export function unsignedThrough(status: Pick<BooksStatus, 'signed_off_through'>,
   if (status.signed_off_through && status.signed_off_through >= latestStatementEnd) return null
   return latestStatementEnd
 }
+
+export interface SignOffEntry {
+  entry_date: string
+  marker: string
+  lines: { direction: 'DR' | 'CR'; amount_paise: number }[]
+}
+
+export interface SignOffPreview {
+  vouchers: number
+  drPaise: number
+  crPaise: number
+  /** Assistant-posted or -changed entries on or before the date, not yet checked. */
+  unchecked: number
+}
+
+/** The latest entry date, or null when there are no entries. */
+export function latestEntryDate(entries: Pick<SignOffEntry, 'entry_date'>[]): string | null {
+  return entries.reduce<string | null>((max, e) => (!max || e.entry_date > max ? e.entry_date : max), null)
+}
+
+/**
+ * What signing off through `date` locks: entries after the previous lock and up to the date, with
+ * their debit and credit totals; and how many entries up to the date still carry an assistant marker
+ * (the server refuses the sign-off while any do, whatever their date within that range).
+ */
+export function signOffPreview(entries: SignOffEntry[], date: string, previousLock: string | null): SignOffPreview {
+  const p: SignOffPreview = { vouchers: 0, drPaise: 0, crPaise: 0, unchecked: 0 }
+  for (const e of entries) {
+    if (e.entry_date > date) continue
+    if (e.marker) p.unchecked += 1
+    if (previousLock && e.entry_date <= previousLock) continue
+    p.vouchers += 1
+    for (const l of e.lines) {
+      if (l.direction === 'DR') p.drPaise += l.amount_paise
+      else p.crPaise += l.amount_paise
+    }
+  }
+  return p
+}

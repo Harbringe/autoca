@@ -104,3 +104,13 @@ def test_real_statements_extract_and_parse(sample):
 
     statement = parse_statement(document)
     assert len(statement) > 0
+
+
+def test_page_count_reads_the_page_tree_without_extracting():
+    from api.tests.test_hardening import _blank_pdf
+
+    assert PdfPlumberAdapter().page_count(_blank_pdf(7)) == 7
+    with pytest.raises(PdfExtractionError):
+        PdfPlumberAdapter().page_count(b"")
+    with pytest.raises(PdfExtractionError):
+        PdfPlumberAdapter().page_count(b"%PDF-1.4 not really")

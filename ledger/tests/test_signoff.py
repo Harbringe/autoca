@@ -389,3 +389,44 @@ def test_sign_off_does_not_slow_down_with_the_number_of_entries(client, staff, s
         with CaptureQueriesContext(connection) as queries:
             books.sign_off(client, senior)
         assert len(queries) < 60, f"{len(queries)} statements for {count} entries"
+
+
+# ---------------------------------------------------------------------------
+# Entries the assistant posted must be checked by a person first
+# ---------------------------------------------------------------------------
+
+
+def test_sign_off_is_refused_while_assistant_entries_are_unchecked(client, staff, senior, posted):
+    from ledger.models import EntryMarker
+
+    with firm_context(client.firm_id):
+        first, second = list(entries(client)[:2])
+        JournalEntry.objects.filter(pk__in=[first.pk, second.pk]).update(marker=EntryMarker.AI_POSTED)
+        books.request_review(client, staff)
+
+        with pytest.raises(books.AiEntriesUncheckedError) as raised:
+            books.sign_off(client, senior)
+        assert raised.value.count == 2
+        assert "2 entries" in str(raised.value)
+        assert client.__class__.objects.get(pk=client.pk).signed_off_through is None
+
+        JournalEntry.objects.filter(pk__in=[first.pk, second.pk]).update(marker=EntryMarker.NONE)
+        books.sign_off(client, senior)
+        assert client.__class__.objects.get(pk=client.pk).signed_off_through is not None
+
+
+def test_a_marker_after_the_sign_off_date_does_not_block(client, staff, senior, posted):
+    from ledger.models import EntryMarker
+
+    with firm_context(client.firm_id):
+        ordered = list(entries(client))
+        first, last = ordered[0], ordered[-1]
+        assert first.entry_date < last.entry_date
+        JournalEntry.objects.filter(pk=last.pk).update(marker=EntryMarker.AI_REVISED)
+        books.request_review(client, staff)
+
+        books.sign_off(client, senior, through=first.entry_date)
+
+        books.request_review(client, staff)
+        with pytest.raises(books.AiEntriesUncheckedError):
+            books.sign_off(client, senior)

@@ -94,7 +94,22 @@ def test_an_unposted_period_does_not_reconcile_and_says_why(client, account, sen
     assert not check.matches
     assert check.unapproved_count == 54
     assert not check.can_close
-    assert "awaiting approval" in check.explain() or "not been approved" in check.explain()
+    assert "not posted" in check.explain() or "not been posted" in check.explain()
+    assert "approved" not in check.explain()
+
+
+def test_a_break_with_everything_posted_and_no_opening_balance_names_the_opening_balance(client, senior):
+    with firm_context(client.firm_id):
+        result = ingest_fixture_statement(client)
+        seed_client(client)
+        classify_statement(result.statement)
+        approve_everything(client, senior)
+
+        check = check_balance(result.bank_account, datetime.date(2026, 6, 3))
+
+        assert not check.matches and check.unapproved_count == 0
+        assert "opening balance has not been confirmed" in check.explain()
+        assert "real break" not in check.explain()
 
 
 def test_the_difference_is_reported_in_rupees(client, account, senior):

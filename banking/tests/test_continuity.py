@@ -143,3 +143,36 @@ def test_a_continuing_statement_passes(client):
 
         assert again.is_new
         assert again.rows_created == 0  # every row was already known
+
+
+def test_the_opening_balance_is_frozen_by_a_sign_off_that_covers_its_date(client):
+    from core.models import Client
+    from ledger.editing import EntryLockedError
+
+    with firm_context(client.firm_id):
+        account = ingest_fixture_statement(client).bank_account
+        opening = datetime.date(2025, 4, 1)
+        confirm_opening_balance(account, balance_paise=1_24_189_43, as_of=opening)
+
+        Client.objects.filter(pk=client.pk).update(signed_off_through=datetime.date(2025, 4, 30))
+        with pytest.raises(EntryLockedError, match="30-04-2025"):
+            confirm_opening_balance(account, balance_paise=9_00_000_00, as_of=opening)
+        with pytest.raises(EntryLockedError):
+            confirm_opening_balance(account, balance_paise=1_24_189_43, as_of=datetime.date(2025, 4, 2))
+        account.refresh_from_db()
+        assert account.opening_balance_paise == 1_24_189_43
+
+        # The figure already on file is not a change.
+        confirm_opening_balance(account, balance_paise=1_24_189_43, as_of=opening)
+
+
+def test_a_sign_off_before_the_opening_date_does_not_freeze_it(client):
+    from core.models import Client
+
+    with firm_context(client.firm_id):
+        account = ingest_fixture_statement(client).bank_account
+        Client.objects.filter(pk=client.pk).update(signed_off_through=datetime.date(2025, 3, 31))
+
+        confirm_opening_balance(account, balance_paise=5_00, as_of=datetime.date(2025, 4, 1))
+        account.refresh_from_db()
+        assert account.opening_balance_paise == 5_00

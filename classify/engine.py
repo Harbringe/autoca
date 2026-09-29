@@ -127,11 +127,12 @@ def rules_for(client) -> list[ClassificationRule]:
     * higher priority beats lower.
     * a longer pattern beats a shorter one, because it is the more specific
       claim about the same text.
+    * for the same pattern, one that names a direction beats one that does not.
     """
     candidates = ClassificationRule.objects.filter(
         client=client, is_active=True
     ).select_related("ledger", "party")
-    return sorted(candidates, key=lambda rule: (rule.priority, len(rule.pattern)), reverse=True)
+    return sorted(candidates, key=lambda rule: (rule.priority, len(rule.pattern), rule.direction != Direction.ANY), reverse=True)
 
 
 def first_matching_rule(facts: NarrationFacts, is_debit: bool, rules) -> ClassificationRule | None:
@@ -292,6 +293,9 @@ def learn_rule_from(classification, treatment, user=None) -> ClassificationRule 
     grow one row per transaction and never converge. The counterparty is the
     part that repeats.
 
+    The rule takes the row's direction, so "future receipts from X" does not also
+    catch payments to X. Rules already learned as either-direction are left alone.
+
     Returns None when there is nothing generalisable to learn, rather than
     inventing a rule that will misfire.
     """
@@ -317,7 +321,7 @@ def learn_rule_from(classification, treatment, user=None) -> ClassificationRule 
         client=client,
         match_type=MatchType.PARTY_EQUALS,
         pattern=pattern,
-        direction=Direction.ANY,
+        direction=Direction.DEBIT if classification.transaction.is_debit else Direction.CREDIT,
         defaults={
             **treatment.as_fields(),
             "source": RuleSource.LEARNED,
@@ -335,6 +339,8 @@ def learn_rule_from(classification, treatment, user=None) -> ClassificationRule 
             setattr(rule, field, value)
         rule.is_active = True
         rule.save(update_fields=["ledger", "party", "rcm", "tds_section", "is_active"])
+    # Read by the API to say whether this decision wrote a new rule (so it can be undone).
+    rule.just_created = created
     return rule
 
 

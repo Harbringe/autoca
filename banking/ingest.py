@@ -169,7 +169,25 @@ def confirm_opening_balance(account: BankAccount, *, balance_paise: int, as_of) 
     onboarding in October has six months this system never saw, and starting
     them at the October statement's opening figure quietly misstates every
     balance from then on.
+
+    Once the client's books are signed off through a date on or after the
+    opening's date, the figure is part of what was signed and cannot change
+    quietly: the Trial Balance would move under a signature.
     """
+    from ledger import editing
+
+    through = editing.locked_through(account.client_id)
+    if through is not None:
+        same = (
+            account.opening_balance_paise == int(balance_paise) and account.opening_as_of == as_of
+        )
+        dates = [d for d in (as_of, account.opening_as_of) if d is not None]
+        if not same and any(d <= through for d in dates):
+            raise editing.EntryLockedError(
+                f"This client's books are signed off through {through:%d-%m-%Y}, which covers "
+                f"the opening balance date, so the opening balance can no longer be changed. "
+                f"Only the client's senior CA or a firm administrator can reopen the books."
+            )
     account.opening_balance_paise = int(balance_paise)
     account.opening_as_of = as_of
     account.save(update_fields=["opening_balance_paise", "opening_as_of"])

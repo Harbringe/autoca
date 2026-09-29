@@ -387,10 +387,12 @@ CACHES = {
     )
 }
 
-# attempts within window_seconds -> locked out for lockout_seconds. Keyed on
-# the address and on the account separately; see core/throttle.py.
+# attempts within window_seconds -> locked out for lockout_seconds. Login is keyed on
+# the account only for now (interim, Rule 11); mfa on address and user; see core/throttle.py.
 THROTTLE_LIMITS = {
-    "login": {"attempts": 10, "window_seconds": 15 * 60, "lockout_seconds": 15 * 60},
+    # Interim (ARCHITECTURE Rule 11): keyed on the account only, and a short lock, until the
+    # client address can be trusted; see login_view.
+    "login": {"attempts": 10, "window_seconds": 15 * 60, "lockout_seconds": 5 * 60},
     # TOTP codes are six digits and a window is thirty seconds. django-otp
     # throttles the device itself as well; this is the address-level backstop.
     "mfa": {"attempts": 6, "window_seconds": 10 * 60, "lockout_seconds": 15 * 60},
@@ -407,6 +409,9 @@ TRUSTED_PROXY_COUNT = int(env("TRUSTED_PROXY_COUNT", "0"))
 # request body, not a target; the upload serializer applies a tighter one to
 # the file itself and checks that it is a PDF before reading it.
 MAX_STATEMENT_UPLOAD_BYTES = 25 * 1024 * 1024
+# Extraction cost grows with pages, not bytes: a 300 KB file with two thousand
+# blank pages held a request for over two minutes. Checked before any extraction.
+MAX_STATEMENT_PAGES = int(env("MAX_STATEMENT_PAGES", "300"))
 DATA_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
 DATA_UPLOAD_MAX_NUMBER_FILES = 5
@@ -576,12 +581,15 @@ SPECTACULAR_SETTINGS = {
         "integer yourself -- a JSON number with a decimal point becomes a float "
         "in a browser, which is exactly the rounding error the backend exists to "
         "avoid.\n\n"
-        "**Nothing is final until a senior CA approves it.** Uploading a statement "
-        "and classifying its rows produces *suggestions*. Only "
-        "`POST /clients/{id}/approvals/` writes to the ledger, only a senior CA "
-        "or firm admin may call it, and what it writes cannot afterwards be "
-        "edited or deleted -- corrections are new entries that reverse and "
-        "replace.\n\n"
+        "**Nothing is final until a senior CA signs the books off.** Uploading a "
+        "statement and classifying its rows produces *suggestions*. Rows reach the "
+        "books in two ways: a person posts them (`POST /clients/{id}/approvals/`), "
+        "or the assistant posts high-confidence rows automatically. Those entries "
+        "carry a marker (posted by the assistant) and stay changeable until "
+        "sign-off. Sign-off is refused while any such entry on or before the "
+        "sign-off date is unchecked; a person checks them and marks them "
+        "reviewed. Once signed off, entries cannot be edited or deleted -- "
+        "corrections are new entries that reverse and replace.\n\n"
         "### Slow work\n\n"
         "Uploading a statement returns **202 Accepted** with a job. Poll "
         "`/jobs/{id}/` or subscribe to `/jobs/{id}/events/` for server-sent "

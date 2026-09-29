@@ -196,21 +196,41 @@ def _rupees(paise: int) -> float:
     return paise / 100
 
 
+def _safe_cell(value):
+    """A cell value that Excel will show and never evaluate.
+
+    Supplier names and invoice numbers are typed by other people; a leading
+    ``= + - @``, tab or carriage return makes a spreadsheet run them as a
+    formula. Characters outside XML 1.0 make the workbook unwritable.
+    """
+    if not isinstance(value, str):
+        return value
+    from openpyxl.cell.cell import ILLEGAL_CHARACTERS_RE
+
+    value = ILLEGAL_CHARACTERS_RE.sub("", value)
+    if value[:1] in ("=", "+", "-", "@", "\t", "\r"):
+        value = "'" + value
+    return value
+
+
 def working_paper(run: ReconRun) -> bytes:
     """The workbook a CA files behind the return."""
     from openpyxl import Workbook
     from openpyxl.styles import Font
+
+    def _append(sheet, row):
+        sheet.append([_safe_cell(v) for v in row])
 
     report = run_report(run)
     wb = Workbook()
     ws = wb.active
     ws.title = "Summary"
     bold = Font(bold=True)
-    ws.append([f"GST reconciliation -- {run.client.name}"])
+    _append(ws, [f"GST reconciliation -- {run.client.name}"])
     ws["A1"].font = Font(bold=True, size=13)
-    ws.append([f"GSTIN {report['registration']['gstin']}", f"Return period {run.period_start:%B %Y}"])
-    ws.append(["Status", "Signed off" if run.status == "signed_off" else "DRAFT -- not signed off"])
-    ws.append([])
+    _append(ws, [f"GSTIN {report['registration']['gstin']}", f"Return period {run.period_start:%B %Y}"])
+    _append(ws, ["Status", "Signed off" if run.status == "signed_off" else "DRAFT -- not signed off"])
+    _append(ws, [])
     s = report["summary"]
     for label, key in [
         ("Eligible ITC", "eligible_paise"),
@@ -219,30 +239,30 @@ def working_paper(run: ReconRun) -> bytes:
         ("Reverse-charge tax payable", "rcm_liability_paise"),
         ("In GSTR-2B but not booked", "unclaimed_in_2b_paise"),
     ]:
-        ws.append([label, _rupees(s[key])])
-    ws.append([])
-    ws.append(["Group", "Invoices"])
+        _append(ws, [label, _rupees(s[key])])
+    _append(ws, [])
+    _append(ws, ["Group", "Invoices"])
     for c in ws[ws.max_row]:
         c.font = bold
     for g in report["groups"]:
-        ws.append([g["title"], g["count"]])
+        _append(ws, [g["title"], g["count"]])
     ws.column_dimensions["A"].width = 44
     ws.column_dimensions["B"].width = 22
 
     t = wb.create_sheet("GSTR-3B Table 4")
-    t.append(["Indicative -- verify against your ledgers before filing."])
-    t.append(["Table", "Description", "IGST", "CGST", "SGST", "Cess"])
+    _append(t, ["Indicative -- verify against your ledgers before filing."])
+    _append(t, ["Table", "Description", "IGST", "CGST", "SGST", "Cess"])
     for c in t[2]:
         c.font = bold
     for line in report["gstr3b"]:
-        t.append([line["code"], line["label"]] + [_rupees(line[h]) for h in TAX_HEADS])
+        _append(t, [line["code"], line["label"]] + [_rupees(line[h]) for h in TAX_HEADS])
     t.column_dimensions["B"].width = 66
 
     heads = ["Supplier GSTIN", "Supplier", "Invoice no", "Date", "Books taxable", "Books tax",
              "2B taxable", "2B tax", "Eligible ITC", "Cause", "Action", "Decision"]
     for g in report["groups"]:
         sheet = wb.create_sheet(g["title"][:31].replace("/", "-"))
-        sheet.append(heads)
+        _append(sheet, heads)
         for c in sheet[1]:
             c.font = bold
         for r in g["rows"]:
@@ -254,7 +274,7 @@ def working_paper(run: ReconRun) -> bytes:
                     x["igst_paise"] + x["cgst_paise"] + x["sgst_paise"] + x["cess_paise"]
                 )
 
-            sheet.append([
+            _append(sheet, [
                 ref["gstin"], ref["supplier_name"], ref["invoice_no"], ref["invoice_date"],
                 None if b is None else _rupees(b["taxable_paise"]), tax(b),
                 None if p is None else _rupees(p["taxable_paise"]), tax(p),

@@ -9,16 +9,16 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, Outlet, useNavigate } from '@tanstack/react-router'
 import { Lock, Upload } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { booksStatus, clientDetail, reviewSummary, statements } from '@/api/queries/clients'
+import { booksStatus, clientDetail, reviewSummary } from '@/api/queries/clients'
 import { ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { BOOKS_STATE_HINT, BOOKS_STATE_LABEL, BOOKS_STATE_TONE, booksState, lockLabel } from '@/features/books/state'
 import { UploadProvider, useUpload } from '@/features/statements/UploadDialog'
-import { financialYearOf, fyLabel } from '@/lib/format'
+import { fyLabel } from '@/lib/format'
 import { useHotkey } from '@/lib/hotkeys'
-import { usePreferences } from '@/lib/preferences'
+import { useFy } from '@/features/shell/useFy'
 import { useSession } from '@/session/session'
 
 type Tab = {
@@ -30,6 +30,7 @@ type Tab = {
     | '/clients/$clientId/reports'
     | '/clients/$clientId/books'
     | '/clients/$clientId/masters'
+    | '/clients/$clientId/team'
   label: string
   key: string
   count?: number
@@ -51,12 +52,8 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
   const client = useQuery(clientDetail(clientId))
   const summary = useQuery({ ...reviewSummary(clientId), enabled: can('transaction.view') })
   const books = useQuery({ ...booksStatus(clientId), enabled: can('report.view') })
-  const stmts = useQuery({ ...statements(clientId), enabled: can('document.view') })
-  const { fy, setFy } = usePreferences()
-  // The financial years this client's statements fall in. If the year chosen at the top is not
-  // one of them, every report and the Day Book would look empty with no reason given.
-  const years = [...new Set((stmts.data?.results ?? []).flatMap((s) => [financialYearOf(s.period_start), financialYearOf(s.period_end)]))].sort()
-  const latestYear = years[years.length - 1]
+  const { fy, setFy, explicit, ready, dataYears } = useFy()
+  const latestYear = dataYears[dataYears.length - 1]
 
   const go = (to: Tab['to']) => () => void navigate({ to, params: { clientId } })
   useHotkey('u', 'Upload a bank statement', () => can('document.upload') && upload.open(), 'This client')
@@ -66,6 +63,7 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
   useHotkey('g d', 'Day Book', go('/clients/$clientId/daybook'), 'Go to')
   useHotkey('g p', 'Reports', go('/clients/$clientId/reports'), 'Go to')
   useHotkey('g b', 'Books & sign-off', go('/clients/$clientId/books'), 'Go to')
+  useHotkey('g e', 'Team and client details', () => (can('team.view') || can('client.update')) && go('/clients/$clientId/team')(), 'Go to')
   useHotkey('g m', 'Masters (ledgers, parties, rules)', go('/clients/$clientId/masters'), 'Go to')
 
   if (client.isPending) return <Spinner label="Opening client…" />
@@ -82,6 +80,7 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
     { to: '/clients/$clientId/reports', label: 'Reports', key: 'p' },
     { to: '/clients/$clientId/books', label: 'Books & sign-off', key: 'b' },
     { to: '/clients/$clientId/masters', label: 'Masters', key: 'm' },
+    ...(can('team.view') || can('client.update') ? [{ to: '/clients/$clientId/team', label: 'Team', key: 'e' } as Tab] : []),
   ]
 
   return (
@@ -121,18 +120,16 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
         ))}
       </nav>
 
-      {latestYear !== undefined && !years.includes(fy) && (
-        <div className="no-print flex flex-wrap items-center justify-between gap-2 rounded-md border border-info/40 bg-info/8 px-4 py-2.5 text-sm">
-          <span>
-            You are looking at FY {fyLabel(fy)}, but this client’s statements are in FY {years.map(fyLabel).join(', FY ')}.
-          </span>
-          <Button size="sm" variant="outline" onClick={() => setFy(latestYear)}>
+      {explicit && latestYear !== undefined && !dataYears.includes(fy) && (
+        <p className="no-print -mt-2 text-[13px] text-muted-foreground">
+          No statements or vouchers in FY {fyLabel(fy)}; this client’s data is in FY {dataYears.map(fyLabel).join(', FY ')}.{' '}
+          <button type="button" className="font-medium text-primary underline underline-offset-2 dark:text-accent" onClick={() => setFy(latestYear)}>
             Show FY {fyLabel(latestYear)}
-          </Button>
-        </div>
+          </button>
+        </p>
       )}
 
-      <Outlet />
+      {ready ? <Outlet /> : <Spinner label="Finding this client’s latest year…" />}
     </div>
   )
 }

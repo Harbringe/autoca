@@ -565,14 +565,17 @@ Everything RLS and the append-only ledger guarantee is about data already in
 the system. The edges -- the login form, the upload endpoint, the headers on
 every response -- guard against what never should get that far.
 
-**Lockouts are counted per address and per account**, in the cache, and checked
-before a password is hashed (`core/throttle.py`). Two keys because each closes
-the gap the other leaves: rotating addresses is caught on the account, spraying
-accounts is caught on the address. A correct password after nine wrong ones is
-still refused for the window; a lockout that a right guess resets is not a
-lockout. A locked-out caller cannot tell a real account from an invented one.
-Multi-process deployments must share the cache (`CACHE_URL`), and
-`check --deploy` says so.
+**Lockouts are counted in the cache and checked before a password is hashed**
+(`core/throttle.py`). *Interim, until R1-09:* the login form is keyed on the
+account alone, at 10 failures in 15 minutes, locked for 5 minutes. The address
+key is not enforced, because behind the Vercel proxy the address is not yet
+trustworthy and one shared address would refuse every user at once; it returns
+as an address-based rule once `TRUSTED_PROXY_COUNT` has been measured. The
+account lock is short because a correct password does not reset it, so anyone
+can hold a known account out for that long, and MFA still stands after the
+password. A locked-out caller cannot tell a real account from an invented one.
+The MFA and invite throttles are unchanged. Multi-process deployments must
+share the cache (`CACHE_URL`), and `check --deploy` says so.
 
 **An upload is a PDF of a plausible size, or it is refused at the serializer.**
 The filename and declared content type are the caller's; the signature bytes
@@ -617,9 +620,13 @@ two numbers.
 
 It only sees pseudonymised rows (`classify/pseudonymise.py`): the narration
 masked by `core.masking`; known vendors as their alias token; people as stable
-pseudonyms; the account holder never; amounts as bands; and the client's ledger
-names. Business names are sent, because "GODAVARI RESTAURANT" is the signal and
-a company is not a person -- and `LLM_SHARE_BUSINESS_NAMES=0` turns even that
+pseudonyms (a name is a person unless it carries a business marker word, and
+every occurrence of it is replaced, remark included); UPI addresses masked; no
+free text at all when no counterparty can be found; the account holder never;
+amounts exact; and the client's ledger names. What the model writes is turned
+back into names locally before it is stored, and a narration that still holds a
+token is dropped for the template one. Business names are sent, because
+"GODAVARI RESTAURANT" is the signal and a company is not a person -- and `LLM_SHARE_BUSINESS_NAMES=0` turns even that
 off for a firm that wants only aliases. The model answers with a ledger *name*,
 validated against the list it was given; an invented one is discarded.
 

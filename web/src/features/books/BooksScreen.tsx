@@ -18,11 +18,10 @@ import { ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { DateInput } from '@/components/ui/date-input'
-import { Field } from '@/components/ui/field'
 import { Spinner } from '@/components/ui/spinner'
-import { formatDate, formatDateTime, parseDate, plural } from '@/lib/format'
+import { formatDate, formatDateTime, plural } from '@/lib/format'
 import { useSession } from '@/session/session'
+import { SignOffDialog } from './SignOffDialog'
 import { BOOKS_STATE_HINT, BOOKS_STATE_LABEL, BOOKS_STATE_TONE, booksState } from './state'
 
 type Action = 'request' | 'return' | 'sign-off' | 'reopen' | 'mark-reviewed' | null
@@ -33,7 +32,6 @@ export function BooksScreen({ clientId }: { clientId: string }) {
   const books = useQuery(booksStatus(clientId))
   const invalidate = useInvalidateClient(clientId)
   const [action, setAction] = useState<Action>(null)
-  const [through, setThrough] = useState('')
 
   if (books.isPending) return <Spinner />
   if (books.error) return <ErrorState error={books.error} retry={() => void books.refetch()} />
@@ -41,6 +39,7 @@ export function BooksScreen({ clientId }: { clientId: string }) {
   const state = booksState(b)
   const mayAct = can('books.request')
   const senior = can('books.sign_off') && b.can_sign_off
+  const unchecked = b.ai_posted + b.ai_revised
 
   async function send(path: string, body: object, message: string) {
     await raw.post<BooksStatus>(`${V1}/clients/${clientId}/books/${path}/`, body)
@@ -65,12 +64,23 @@ export function BooksScreen({ clientId }: { clientId: string }) {
           <dl className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-1.5 text-sm">
             <dt>Transactions still waiting for a decision or posting</dt>
             <dd className="num text-right font-medium">{b.waiting}</dd>
-            <dt>Entries posted by rules that nobody has checked</dt>
+            <dt>Entries posted by the assistant that nobody has checked</dt>
             <dd className="num text-right font-medium">{b.ai_posted}</dd>
             <dt>Entries the assistant changed after a correction</dt>
             <dd className="num text-right font-medium">{b.ai_revised}</dd>
           </dl>
 
+          {unchecked > 0 && (
+            <div className="rounded-md border border-warning/50 bg-warning/10 p-3 text-sm" role="status">
+              <div className="font-medium">
+                {plural(unchecked, 'entry', 'entries')} posted by the assistant, not yet checked
+              </div>
+              <p className="text-muted-foreground">
+                Next step: look at {unchecked === 1 ? 'it' : 'them'} in the Day Book, then mark {unchecked === 1 ? 'it' : 'them'} as checked. The books
+                cannot be signed off until then.
+              </p>
+            </div>
+          )}
           {state === 'returned' && b.returned_note && (
             <div className="rounded-md border border-destructive/40 bg-destructive/8 p-3 text-sm">
               <div className="font-medium">Returned by {b.history.find((h) => h.action === 'RETURNED')?.actor_email ?? 'the reviewer'}</div>
@@ -92,7 +102,7 @@ export function BooksScreen({ clientId }: { clientId: string }) {
             )}
             {senior && b.review_pending && (
               <>
-                <Button onClick={() => setAction('sign-off')}>
+                <Button onClick={() => setAction('sign-off')} title={unchecked > 0 ? 'Assistant entries must be checked first' : undefined}>
                   <CheckCircle2 /> Sign off the books
                 </Button>
                 <Button variant="outline" onClick={() => setAction('return')}>
@@ -105,7 +115,7 @@ export function BooksScreen({ clientId }: { clientId: string }) {
                 <RotateCcw /> Reopen
               </Button>
             )}
-            {mayAct && can('journal.correct') && client.data?.can_post && b.ai_posted + b.ai_revised > 0 && (
+            {mayAct && can('journal.correct') && client.data?.can_post && unchecked > 0 && (
               <>
                 <Button variant="ghost" onClick={() => setAction('mark-reviewed')}>
                   Mark assistant entries as checked
@@ -197,29 +207,7 @@ export function BooksScreen({ clientId }: { clientId: string }) {
       >
         <p>The preparer sees your note and sends them again when done.</p>
       </Confirm>
-      <Confirm
-        open={action === 'sign-off'}
-        onOpenChange={(o) => {
-          if (!o) setAction(null)
-        }}
-        title="Sign off the books?"
-        confirmLabel="Sign off"
-        note="optional"
-        onConfirm={async (note) => {
-          const date = through ? parseDate(through) : undefined
-          if (through && !date) throw new Error('Enter the date as DD-MM-YYYY, or leave it empty for the latest entry.')
-          await send('sign-off', { note, ...(date ? { through: date } : {}) }, 'Books signed off')
-          setThrough('')
-        }}
-      >
-        <p>
-          Entries up to the date below are <strong>locked</strong>: they can no longer be changed or removed, only adjusted by a correcting
-          entry after that date. Voucher numbers are renumbered so they run without gaps, per voucher type and year.
-        </p>
-        <Field label="Sign off through" hint="Leave empty to sign off through the latest entry.">
-          {(p) => <DateInput {...p} value={through} onChange={(e) => setThrough(e.target.value)} />}
-        </Field>
-      </Confirm>
+      <SignOffDialog clientId={clientId} books={b} open={action === 'sign-off'} onOpenChange={(o) => !o && setAction(null)} />
       <Confirm
         open={action === 'reopen'}
         onOpenChange={(o) => !o && setAction(null)}

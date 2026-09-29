@@ -66,7 +66,7 @@ class BalanceCheck:
             return (
                 f"{self.bank_account} reconciles at {self.as_of:%d-%m-%Y}, but "
                 f"{self.unapproved_count} transaction(s) up to that date are still "
-                f"awaiting approval. The period is not finished."
+                f"not posted. The period is not finished."
             )
         return (
             f"{self.bank_account} does not reconcile at {self.as_of:%d-%m-%Y}. The books "
@@ -75,9 +75,15 @@ class BalanceCheck:
             f"{format_inr(self.difference_paise)}. "
             + (
                 f"{self.unapproved_count} transaction(s) up to that date have not been "
-                f"approved, which is the likeliest cause."
+                f"posted, which is the likeliest cause."
                 if self.unapproved_count
-                else "Everything up to that date is approved, so this is a real break."
+                else (
+                    "The bank account's opening balance has not been confirmed, which is "
+                    "the likeliest cause: the books start from nothing, not from the "
+                    "balance the bank had."
+                    if not self.bank_account.has_opening_balance
+                    else "Everything up to that date is posted, so this is a real break."
+                )
             )
         )
 

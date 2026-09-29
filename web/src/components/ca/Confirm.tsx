@@ -22,6 +22,8 @@ export interface ConfirmProps {
   note?: 'optional' | 'required'
   noteLabel?: string
   onConfirm: (note: string) => Promise<unknown>
+  /** Refuse to continue, and say why (shown above the buttons). */
+  blockedReason?: ReactNode
 }
 
 export function Confirm({
@@ -34,6 +36,7 @@ export function Confirm({
   note,
   noteLabel,
   onConfirm,
+  blockedReason,
 }: ConfirmProps) {
   const [text, setText] = useState('')
   const [busy, setBusy] = useState(false)
@@ -53,7 +56,7 @@ export function Confirm({
     }
   }
 
-  const blocked = note === 'required' && !text.trim()
+  const blocked = (note === 'required' && !text.trim()) || !!blockedReason
 
   return (
     <Dialog open={open} onOpenChange={(next) => !busy && onOpenChange(next)}>
@@ -67,6 +70,7 @@ export function Confirm({
             {(props) => <Textarea {...props} autoFocus value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} />}
           </Field>
         )}
+        {blockedReason && <div className="rounded-md border border-warning/50 bg-warning/10 p-3 text-sm">{blockedReason}</div>}
         {error && (
           <p role="alert" className="text-sm text-destructive">
             {error}

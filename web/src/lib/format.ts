@@ -43,6 +43,34 @@ export function formatDrCr(net: number, options: Omit<MoneyOptions, 'sign'> = {}
   return `${formatPaise(Math.abs(net), { ...options, sign: false })} ${net > 0 ? 'Dr' : 'Cr'}`
 }
 
+/** A figure with the currency sign, commas and spaces taken off, so "₹48,000.00" and "48000.00" compare equal. */
+export const plainAmount = (text: string): string => text.replace(/[₹,\s]/g, '')
+
+/** A statement's total: plain on its natural side, and `Cr`/`Dr` written out if it has gone the other way. */
+export function sideTotal(paise: number, natural: 'Dr' | 'Cr'): string {
+  return paise >= 0 ? formatPaise(paise) : `${formatPaise(-paise, { sign: false })} ${natural === 'Dr' ? 'Cr' : 'Dr'}`
+}
+
+export type StatementKind = 'asset' | 'expense' | 'liability' | 'income'
+
+/**
+ * A ledger's closing balance as a line of a horizontal statement. On its natural side (a debit for
+ * assets and expenses, a credit for liabilities and income) it is the plain amount. On the other side
+ * it is written the way a ledger writes it, `₹x Cr` or `₹x Dr`; the one exception is a debit balance
+ * among the liabilities, which keeps Tally's "(-)". Uses the displays the server formatted.
+ */
+export function closingLine(
+  r: { closing_debit_paise: number; closing_credit_paise: number; closing_debit_display: string | null; closing_credit_display: string | null },
+  kind: StatementKind,
+): string | null {
+  const debitNatural = kind === 'asset' || kind === 'expense'
+  const natural = debitNatural ? r.closing_debit_paise : r.closing_credit_paise
+  if (natural) return debitNatural ? r.closing_debit_display : r.closing_credit_display
+  if (debitNatural) return r.closing_credit_paise ? `${r.closing_credit_display} Cr` : null
+  if (!r.closing_debit_paise) return null
+  return kind === 'liability' ? `(-) ${r.closing_debit_display}` : `${r.closing_debit_display} Dr`
+}
+
 /**
  * Rupees typed by a person -> paise. Accepts "1,23,456.5", "₹ 500", "500.00".
  * Returns null for anything that is not an amount, including more than two

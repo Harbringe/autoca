@@ -60,7 +60,7 @@ interface SessionValue {
   can: (permission: string) => boolean
   /** Re-read who is signed in, and where in the sign-in sequence they are. */
   refresh: () => Promise<void>
-  signIn: (email: string, password: string) => Promise<LoginResponse>
+  signIn: (email: string, password: string, signal?: AbortSignal) => Promise<LoginResponse>
   signOut: () => Promise<void>
 }
 
@@ -84,8 +84,8 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   }, [refresh])
 
   const signIn = useCallback(
-    async (email: string, password: string) => {
-      const result = await raw.post<LoginResponse>('/auth/login/', { email, password })
+    async (email: string, password: string, signal?: AbortSignal) => {
+      const result = await raw.post<LoginResponse>('/auth/login/', { email, password }, signal)
       resetCsrf() // signing in rotates the token
       await refresh()
       return result

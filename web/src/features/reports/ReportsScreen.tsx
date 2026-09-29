@@ -12,7 +12,7 @@ import { AlertTriangle, CheckCircle2, Printer } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
 import { balanceSheet, profitAndLoss, reconciliation, trialBalance } from '@/api/queries/books'
 import { bankAccounts, statements } from '@/api/queries/clients'
-import type { LedgerBalance, ReportFooter } from '@/api/types'
+import type { BankAccount, LedgerBalance, ReportFooter } from '@/api/types'
 import { GROUP_LABEL } from '@/api/types'
 import { Money } from '@/components/ca/Money'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
@@ -21,8 +21,8 @@ import { Card } from '@/components/ui/card'
 import { Select, tbl } from '@/components/ui/controls'
 import { DateInput } from '@/components/ui/date-input'
 import { Spinner } from '@/components/ui/spinner'
-import { asAt, formatDate, formatDateTime, formatPaise, fyLabel, parseDate } from '@/lib/format'
-import { usePreferences } from '@/lib/preferences'
+import { asAt, closingLine, formatDate, formatDateTime, formatDrCr, formatPaise, fyLabel, parseDate, plural, sideTotal } from '@/lib/format'
+import { useFy } from '@/features/shell/useFy'
 import { cn } from '@/lib/utils'
 
 export type ReportTab = 'tb' | 'pl' | 'bs' | 'recon'
@@ -35,7 +35,7 @@ const TABS: { tab: ReportTab; label: string }[] = [
 ]
 
 export function ReportsScreen({ clientId, report }: { clientId: string; report: ReportTab }) {
-  const { fy } = usePreferences()
+  const { fy } = useFy()
   return (
     <div className="grid gap-4">
       <div className="no-print flex flex-wrap items-center justify-between gap-3">
@@ -45,7 +45,7 @@ export function ReportsScreen({ clientId, report }: { clientId: string; report: 
               key={t.tab}
               to="/clients/$clientId/reports"
               params={{ clientId }}
-              search={{ report: t.tab }}
+              search={(prev) => ({ ...prev, report: t.tab })}
               className={cn('rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground', report === t.tab && 'bg-card text-foreground shadow-xs')}
             >
               {t.label}
@@ -66,8 +66,39 @@ export function ReportsScreen({ clientId, report }: { clientId: string; report: 
   )
 }
 
-/** The heading every printed report carries, and the warning when the figures are not final. */
-function ReportFrame({ title, footer, children, period }: { title: string; footer: ReportFooter; children: ReactNode; period?: string }) {
+/** Bank accounts whose opening balance nobody has confirmed: the books start short by that amount. */
+function useUnconfirmedOpenings(clientId: string): BankAccount[] {
+  const accounts = useQuery(bankAccounts(clientId))
+  return (accounts.data?.results ?? []).filter((a) => a.is_active && !a.has_opening_balance)
+}
+
+function OpeningLink({ clientId }: { clientId: string }) {
+  return (
+    <Link to="/clients/$clientId/statements" params={{ clientId }} className="font-medium underline underline-offset-2">
+      Confirm the opening balance
+    </Link>
+  )
+}
+
+/**
+ * The heading every printed report carries, and the warning when the figures are not final: rows
+ * still waiting, or a bank account whose opening balance has not been confirmed.
+ */
+function ReportFrame({
+  clientId,
+  title,
+  footer,
+  children,
+  period,
+}: {
+  clientId: string
+  title: string
+  footer: ReportFooter
+  children: ReactNode
+  period?: string
+}) {
+  const unconfirmed = useUnconfirmedOpenings(clientId)
+  const provisional = isProvisional(footer, unconfirmed)
   return (
     <Card className="p-5 print:border-0 print:p-0 print:shadow-none">
       <div className="mb-4 text-center">
@@ -77,23 +108,39 @@ function ReportFrame({ title, footer, children, period }: { title: string; foote
           {period ?? `for the year ${formatDate(footer.period_start)} to ${formatDate(footer.period_end)} (FY ${footer.fy_label})`}
         </div>
       </div>
-      {!footer.is_complete && (
+      {provisional && (
         <div className="mb-4 flex gap-2 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
-          <span>
-            <strong>Provisional.</strong> {footer.pending_review} transaction{footer.pending_review === 1 ? '' : 's'} in this period{' '}
-            {footer.pending_review === 1 ? 'is' : 'are'} not yet posted, so these figures will change.
-          </span>
+          <div className="grid gap-1">
+            <span>
+              <strong>Provisional.</strong>
+              {!footer.is_complete && (
+                <>
+                  {' '}
+                  {plural(footer.pending_review, 'transaction')} in this period {footer.pending_review === 1 ? 'is' : 'are'} classified but not
+                  yet posted, so {footer.pending_review === 1 ? 'it is' : 'they are'} not in these figures.
+                </>
+              )}
+            </span>
+            {unconfirmed.length > 0 && (
+              <span>
+                Opening balance not confirmed for {unconfirmed.map((a) => a.label).join(', ')}: the bank ledger starts without it and shows
+                short. <OpeningLink clientId={clientId} />.
+              </span>
+            )}
+          </div>
         </div>
       )}
       {children}
-      <div className="mt-4 flex justify-between gap-4 border-t pt-2 text-xs text-muted-foreground">
-        <span>{footer.caption || `${footer.entry_count} entries`}</span>
-        <span>Generated {formatDateTime(footer.generated_at)}</span>
+      <div className="mt-4 border-t pt-2 text-xs text-muted-foreground">
+        {footer.client_name} · FY {footer.fy_label} · {plural(footer.entry_count, 'entry', 'entries')} · generated{' '}
+        {formatDateTime(footer.generated_at).replace(', ', ' ')}
       </div>
     </Card>
   )
 }
+
+const isProvisional = (footer: ReportFooter, unconfirmed: BankAccount[]) => !footer.is_complete || unconfirmed.length > 0
 
 function reportState<T>(q: { data?: T; isPending: boolean; error: unknown; refetch: () => unknown }) {
   if (q.isPending) return { node: <Spinner label="Preparing the report…" /> }
@@ -107,8 +154,10 @@ function TrialBalanceReport({ clientId, fy }: { clientId: string; fy: number }) 
   const tb = r.data
   if (tb.rows.length === 0) return <NothingYet clientId={clientId} fy={fy} />
   const diff = tb.total_debit_paise - tb.total_credit_paise
+  // Whole paise, added as integers; the Grand Total row carries every column, as Tally's does.
+  const sum = (pick: (row: LedgerBalance) => number) => tb.rows.reduce((total, row) => total + pick(row), 0)
   return (
-    <ReportFrame title="Trial Balance" footer={tb.footer} period={asAt(fy)}>
+    <ReportFrame clientId={clientId} title="Trial Balance" footer={tb.footer} period={asAt(fy)}>
       {!tb.balances && (
         <div className="mb-4 flex gap-2 rounded-md border border-destructive/50 bg-destructive/8 p-3 text-sm">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
@@ -136,8 +185,8 @@ function TrialBalanceReport({ clientId, fy }: { clientId: string; fy: number }) 
                 <td className={tbl.td}>{row.name}</td>
                 <td className={`${tbl.td} text-muted-foreground`}>{GROUP_LABEL[row.group ?? ''] ?? row.group}</td>
                 <td className={tbl.tdNum}><Money muted display={drCr(row.opening_paise)} /></td>
-                <td className={tbl.tdNum}><Money muted display={row.debit_display} /></td>
-                <td className={tbl.tdNum}><Money muted display={row.credit_display} /></td>
+                <td className={tbl.tdNum}><Money display={row.debit_paise ? row.debit_display : ''} /></td>
+                <td className={tbl.tdNum}><Money display={row.credit_paise ? row.credit_display : ''} /></td>
                 <td className={tbl.tdNum}><Money muted display={row.closing_debit_paise ? row.closing_debit_display : ''} /></td>
                 <td className={tbl.tdNum}><Money muted display={row.closing_credit_paise ? row.closing_credit_display : ''} /></td>
               </tr>
@@ -145,10 +194,13 @@ function TrialBalanceReport({ clientId, fy }: { clientId: string; fy: number }) 
           </tbody>
           <tfoot className={tbl.foot}>
             <tr>
-              <td className={tbl.td} colSpan={5}>
+              <td className={tbl.td} colSpan={2}>
                 Grand Total
-                {tb.balances && <CheckCircle2 className="ml-2 inline size-4 text-success" aria-label="Tallies" />}
+                <TallyMark clientId={clientId} footer={tb.footer} balances={tb.balances} />
               </td>
+              <td className={tbl.tdNum}>{drCr(sum((row) => row.opening_paise)) || formatPaise(0)}</td>
+              <td className={tbl.tdNum}>{formatPaise(sum((row) => row.debit_paise))}</td>
+              <td className={tbl.tdNum}>{formatPaise(sum((row) => row.credit_paise))}</td>
               <td className={tbl.tdNum}>{tb.total_debit_display}</td>
               <td className={tbl.tdNum}>{tb.total_credit_display}</td>
             </tr>
@@ -157,6 +209,13 @@ function TrialBalanceReport({ clientId, fy }: { clientId: string; fy: number }) 
       </div>
     </ReportFrame>
   )
+}
+
+/** The green tick means "tallies and final". While the banner is up the figures are not final, so it says so instead. */
+function TallyMark({ clientId, footer, balances }: { clientId: string; footer: ReportFooter; balances: boolean }) {
+  const unconfirmed = useUnconfirmedOpenings(clientId)
+  if (isProvisional(footer, unconfirmed)) return <span className="ml-2 rounded-full bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning">Provisional</span>
+  return balances ? <CheckCircle2 className="ml-2 inline size-4 text-success" aria-label="Tallies" /> : null
 }
 
 /** An opening balance written with its side, as ledgers show it. Debits are positive. */
@@ -194,9 +253,6 @@ function Side({ heading, rows, total, rowsTo, amount }: { heading: string; rows:
   )
 }
 
-const closing = (r: LedgerBalance, side: 'dr' | 'cr') =>
-  side === 'dr' ? (r.closing_debit_paise ? r.closing_debit_display : r.closing_credit_paise ? `(-) ${r.closing_credit_display}` : null) : r.closing_credit_paise ? r.closing_credit_display : r.closing_debit_paise ? `(-) ${r.closing_debit_display}` : null
-
 function ProfitAndLossReport({ clientId, fy }: { clientId: string; fy: number }) {
   const r = reportState(useQuery(profitAndLoss(clientId, fy)))
   if (!r.data) return r.node
@@ -204,14 +260,14 @@ function ProfitAndLossReport({ clientId, fy }: { clientId: string; fy: number })
   if (!pl.income.length && !pl.expenses.length) return <NothingYet clientId={clientId} fy={fy} />
   const profit = pl.net_profit_paise >= 0
   const net = formatPaise(Math.abs(pl.net_profit_paise))
-  const left: [string, string | null][] = pl.expenses.map((e) => [e.name, closing(e, 'dr')])
-  const right: [string, string | null][] = pl.income.map((i) => [i.name, closing(i, 'cr')])
+  const left: [string, string | null][] = pl.expenses.map((e) => [e.name, closingLine(e, 'expense')])
+  const right: [string, string | null][] = pl.income.map((i) => [i.name, closingLine(i, 'income')])
   if (profit) left.push(['Net Profit (carried to Capital)', net])
   else right.push(['Net Loss (carried to Capital)', net])
   const total = formatPaise(Math.max(pl.total_income_paise, pl.total_expenses_paise))
   const rowsTo = Math.max(left.length, right.length)
   return (
-    <ReportFrame title="Profit & Loss A/c" footer={pl.footer}>
+    <ReportFrame clientId={clientId} title="Profit & Loss A/c" footer={pl.footer}>
       <div className="grid gap-4 md:grid-cols-2 md:gap-0 md:divide-x">
         <Side heading="Dr · Expenses" amount="Amount" rows={left} rowsTo={rowsTo} total={total} />
         <Side heading="Cr · Income" amount="Amount" rows={right} rowsTo={rowsTo} total={total} />
@@ -228,18 +284,18 @@ function BalanceSheetReport({ clientId, fy }: { clientId: string; fy: number }) 
   if (!r.data) return r.node
   const bs = r.data
   if (!bs.assets.length && !bs.liabilities.length) return <NothingYet clientId={clientId} fy={fy} />
-  const liabilities: [string, string | null][] = bs.liabilities.map((l) => [l.name, closing(l, 'cr')])
+  const liabilities: [string, string | null][] = bs.liabilities.map((l) => [l.name, closingLine(l, 'liability')])
   liabilities.push([bs.net_profit_paise >= 0 ? 'Add: Net Profit for the year' : 'Less: Net Loss for the year', formatPaise(Math.abs(bs.net_profit_paise))])
-  const assets: [string, string | null][] = bs.assets.map((a) => [a.name, closing(a, 'dr')])
+  const assets: [string, string | null][] = bs.assets.map((a) => [a.name, closingLine(a, 'asset')])
   const rowsTo = Math.max(liabilities.length, assets.length)
   return (
-    <ReportFrame title="Balance Sheet" footer={bs.footer} period={asAt(fy)}>
+    <ReportFrame clientId={clientId} title="Balance Sheet" footer={bs.footer} period={asAt(fy)}>
       {!bs.balances && (
         <div className="mb-4 flex gap-2 rounded-md border border-destructive/50 bg-destructive/8 p-3 text-sm">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
           <span>
-            <strong>The Balance Sheet does not balance.</strong> Liabilities and profit are {bs.total_liabilities_and_profit_display}; assets
-            are {bs.total_assets_display}.
+            <strong>The Balance Sheet does not balance.</strong> Liabilities and profit are {sideTotal(bs.total_liabilities_and_profit_paise, 'Cr')};
+            assets are {sideTotal(bs.total_assets_paise, 'Dr')}.
           </span>
         </div>
       )}
@@ -249,8 +305,8 @@ function BalanceSheetReport({ clientId, fy }: { clientId: string; fy: number }) 
         </div>
       )}
       <div className="grid gap-4 md:grid-cols-2 md:gap-0 md:divide-x">
-        <Side heading="Liabilities" amount="Amount" rows={liabilities} rowsTo={rowsTo} total={bs.total_liabilities_and_profit_display} />
-        <Side heading="Assets" amount="Amount" rows={assets} rowsTo={rowsTo} total={bs.total_assets_display} />
+        <Side heading="Liabilities" amount="Amount" rows={liabilities} rowsTo={rowsTo} total={sideTotal(bs.total_liabilities_and_profit_paise, 'Cr')} />
+        <Side heading="Assets" amount="Amount" rows={assets} rowsTo={rowsTo} total={sideTotal(bs.total_assets_paise, 'Dr')} />
       </div>
     </ReportFrame>
   )
@@ -284,6 +340,7 @@ function Reconciliation({ clientId }: { clientId: string }) {
   }, [latest, asOfText])
   const asOf = parseDate(asOfText)
   const check = useQuery({ ...reconciliation(clientId, account?.id ?? '', asOf ?? ''), enabled: !!account && !!asOf })
+  const openingUnconfirmed = !!account && !account.has_opening_balance
 
   if (accounts.isPending) return <Spinner />
   if (!list.length) return <EmptyState title="No bank accounts yet">Upload a statement first.</EmptyState>
@@ -316,17 +373,31 @@ function Reconciliation({ clientId }: { clientId: string }) {
         <ErrorState error={check.error} />
       ) : (
         <div className="grid gap-3">
+          {openingUnconfirmed && (
+            <div className="flex gap-2 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm">
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+              <span>
+                <strong>Opening balance not confirmed.</strong> The books start without this account’s opening balance, so they will differ from the
+                statement by that amount. <OpeningLink clientId={clientId} />.
+              </span>
+            </div>
+          )}
           <dl className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-1.5 text-sm">
             <dt>Balance as per books</dt>
-            <dd className="num text-right font-medium">{check.data.ledger_balance_display}</dd>
+            <dd className="num text-right font-medium">{formatDrCr(check.data.ledger_balance_paise)}</dd>
             <dt>Balance as per bank statement</dt>
-            <dd className="num text-right font-medium">{check.data.statement_balance_display}</dd>
+            <dd className="num text-right font-medium">{formatDrCr(check.data.statement_balance_paise)}</dd>
             <dt className="border-t pt-1.5 font-medium">Difference</dt>
             <dd className={cn('num border-t pt-1.5 text-right font-semibold', check.data.matches ? 'text-success' : 'text-destructive')}>
-              {check.data.difference_display}
+              {check.data.matches ? formatPaise(0) : formatPaise(Math.abs(check.data.difference_paise))}
+              {!check.data.matches && (
+                <span className="block text-xs font-normal text-muted-foreground">
+                  books are {check.data.difference_paise < 0 ? 'lower' : 'higher'} than the statement
+                </span>
+              )}
             </dd>
           </dl>
-          <div
+          {openingUnconfirmed && !check.data.matches ? null : <div
             className={cn(
               'flex gap-2 rounded-md p-3 text-sm',
               check.data.matches ? 'border border-success/40 bg-success/8' : 'border border-warning/50 bg-warning/10',
@@ -334,7 +405,7 @@ function Reconciliation({ clientId }: { clientId: string }) {
           >
             {check.data.matches ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" /> : <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />}
             <span>{check.data.explanation}</span>
-          </div>
+          </div>}
           {check.data.unapproved_count > 0 && (
             <p className="text-sm text-muted-foreground">
               {check.data.unapproved_count} transaction{check.data.unapproved_count === 1 ? '' : 's'} up to this date {check.data.unapproved_count === 1 ? 'is' : 'are'} not posted.{' '}

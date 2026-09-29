@@ -19,6 +19,7 @@ from rest_framework.exceptions import NotFound
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
+from api.pagination import DefaultPagination
 from api.permissions import HasFirmPermission
 from core.access import get_visible_client
 from gst import report, services
@@ -95,12 +96,14 @@ class RegistrationViewSet(viewsets.GenericViewSet):
 
     serializer_class = RegistrationSerializer
     permission_classes = [HasFirmPermission]
+    pagination_class = DefaultPagination
     required_permission = {"GET": "gst.view", "POST": "gst.prepare"}
 
     def list(self, request, client_id=None):
         client = get_visible_client(request, client_id)
         regs = GstRegistration.objects.filter(client=client, is_active=True)
-        return Response([_registration_data(r) for r in regs])
+        page = self.paginate_queryset(regs)
+        return self.get_paginated_response([_registration_data(r) for r in page])
 
     def create(self, request, client_id=None):
         client = get_visible_client(request, client_id)

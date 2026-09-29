@@ -1,6 +1,7 @@
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
+import { useSession } from '@/session/session'
 import { useForm } from 'react-hook-form'
 import { toast } from 'sonner'
 import { z } from 'zod'
@@ -31,6 +32,7 @@ const defaults = (): Values => ({
 
 export function NewClientDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
   const navigate = useNavigate()
+  const { can } = useSession()
   const create = useCreateClient()
   const [confirmingDiscard, setConfirmingDiscard] = useState(false)
   const form = useForm<Values>({ resolver: zodResolver(schema), defaultValues: defaults() })
@@ -63,7 +65,9 @@ export function NewClientDialog({ open, onOpenChange }: { open: boolean; onOpenC
       })
       toast.success(`${client.name} added`)
       close()
-      await navigate({ to: '/clients/$clientId', params: { clientId: client.id } })
+      // An administrator is taken to the team page to name the client's Senior CA, who signs off its books.
+      if (can('member.manage')) await navigate({ to: '/clients/$clientId/team', params: { clientId: client.id }, search: { new: true } })
+      else await navigate({ to: '/clients/$clientId', params: { clientId: client.id } })
     } catch (error) {
       if (isApiError(error) && Object.keys(error.fields).length) {
         for (const [name, messages] of Object.entries(error.fields)) {

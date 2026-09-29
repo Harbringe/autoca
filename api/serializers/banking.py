@@ -15,6 +15,8 @@ from rest_framework import serializers
 from api.fields import MoneySerializerMixin, PaiseField
 from banking.models import BankAccount, Statement, StatementTransaction
 from documents.models import Document
+from integrations.pdf.base import PdfExtractionError
+from integrations.registry import get_pdf
 
 
 class DocumentSerializer(serializers.ModelSerializer):
@@ -175,6 +177,22 @@ class StatementUploadSerializer(serializers.Serializer):
         if head != b"%PDF-":
             raise serializers.ValidationError(
                 "This is not a PDF. Only born-digital PDF statements can be read at present."
+            )
+        # Extraction is the expensive step and its cost grows with the page count, so
+        # the count is read first, cheaply. An unreadable file is left for ingest to
+        # report in its own words.
+        ceiling = settings.MAX_STATEMENT_PAGES
+        try:
+            pages = get_pdf().page_count(upload.read())
+        except PdfExtractionError:
+            pages = 0
+        finally:
+            upload.seek(0)
+        if pages > ceiling:
+            raise serializers.ValidationError(
+                f"This PDF has {pages} pages; the limit is {ceiling}. A bank statement is "
+                f"a few pages a month, so this is probably not one statement. Split it, or "
+                f"upload one statement at a time."
             )
         return upload
 

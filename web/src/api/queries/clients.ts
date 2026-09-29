@@ -72,3 +72,12 @@ export function useCreateClient() {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: clientKeys.all }),
   })
 }
+
+export function useUpdateClient(id: string) {
+  const invalidate = useInvalidateClient(id)
+  return useMutation({
+    mutationFn: async (body: components['schemas']['PatchedClientRequest']) =>
+      data(await api.PATCH('/api/v1/clients/{id}/', { params: { path: { id } }, body })) as unknown as Client,
+    onSuccess: invalidate,
+  })
+}

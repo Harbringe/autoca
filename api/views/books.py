@@ -35,6 +35,15 @@ class SignOffSerializer(serializers.Serializer):
     )
     note = serializers.CharField(required=False, allow_blank=True, default="", max_length=1000)
 
+    def to_internal_value(self, data):
+        # A misspelt date must not fall back to "through the latest entry" and lock more than asked.
+        unknown = sorted(set(data) - set(self.fields))
+        if unknown:
+            raise serializers.ValidationError(
+                {name: "Not a field this request accepts. Send `through` and `note`." for name in unknown}
+            )
+        return super().to_internal_value(data)
+
 
 class MarkReviewedSerializer(serializers.Serializer):
     marker = serializers.ChoiceField(
@@ -151,7 +160,11 @@ class BooksView(viewsets.GenericViewSet):
         description=(
             "Locks everything up to the date signed. Voucher numbers are made "
             "contiguous first. After this the database itself refuses to change "
-            "any of it; a later fix is a correcting entry dated after the sign-off."
+            "any of it; a later fix is a correcting entry dated after the sign-off.\n\n"
+            "Refused with 409 `ai_entries_unchecked` while any entry dated on or before "
+            "the sign-off date is still marked as posted or changed by the assistant: a "
+            "person checks them and uses `mark-reviewed` first. Unknown fields are "
+            "refused with 400, so a misspelt `through` cannot sign off more than asked."
         ),
         request=SignOffSerializer,
         responses={200: BooksStatusSerializer},

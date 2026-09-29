@@ -1,0 +1,33 @@
+import { login, brief } from '../lib/api.mjs'
+import { readFileSync } from 'node:fs'
+const ids = JSON.parse(readFileSync(process.env.TEMP + '/sec-ids.json'))
+const B = ids.Beta, A = ids.Alpha
+const show = (l, r) => console.log(l.padEnd(52), r.status, (JSON.stringify(r.body)||'').slice(0,170))
+const s = await login('staff'), se = await login('senior'), rd = await login('reader'), ad = await login('admin')
+// staff posts on Alpha (assigned) -- positive control -> creates an Alpha JE
+const acls = await ad.get('/api/v1/classifications/', { statement: ids.Alpha_st, page_size: 40 })
+const pick = acls.body.results.find(c => c.ledger && !c.is_posted)
+show('staff approve on Alpha (assigned, control)', await s.post(`/api/v1/clients/${A}/approvals/`, { classifications: [pick.id] }))
+show('staff sign-off Alpha', await s.post(`/api/v1/clients/${A}/books/sign-off/`, {}))
+show('staff reopen Alpha', await s.post(`/api/v1/clients/${A}/books/reopen/`, {note:'x'}))
+show('staff return Alpha', await s.post(`/api/v1/clients/${A}/books/return/`, {note:'x'}))
+show('reader sign-off Alpha', await rd.post(`/api/v1/clients/${A}/books/sign-off/`, {}))
+show('reader approve Alpha', await rd.post(`/api/v1/clients/${A}/approvals/`, { band:'HIGH' }))
+show('reader request Alpha', await rd.post(`/api/v1/clients/${A}/books/request/`, {}))
+show('senior sign-off Beta (member, not lead)', await se.post(`/api/v1/clients/${B}/books/sign-off/`, {}))
+show('senior reopen Beta (member)', await se.post(`/api/v1/clients/${B}/books/reopen/`, {note:'x'}))
+show('senior gst sign-off Beta fake run', await se.post(`/api/v1/clients/${B}/gst/runs/00000000-0000-4000-8000-000000000001/sign-off/`, {}))
+show('senior books Beta (GET status)', await se.get(`/api/v1/clients/${B}/books/`))
+show('senior correct Beta JE (member)', await se.post(`/api/v1/journal-entries/${ids.Beta_je}/correct/`, { treatment: { ledger: ids.Beta_ledgers[0].id, rcm: false } }))
+// cross-client in one firm: Alpha's ledger into Beta's classification / correction (admin sees both)
+const alpha_led = ids.Alpha_ledgers[0].id
+const bc = ids.Beta_cls.find(c => !c.posted)
+show('admin review Beta cls with ALPHA ledger', await ad.post(`/api/v1/classifications/${bc.id}/review/`, { ledger: alpha_led, rcm:false, learn:false }))
+show('admin correct Beta JE with ALPHA ledger', await ad.post(`/api/v1/journal-entries/${ids.Beta_je}/correct/`, { treatment: { ledger: alpha_led, rcm:false } }))
+show('admin approve Beta with ALPHA cls id', await ad.post(`/api/v1/clients/${B}/approvals/`, { classifications: [pick.id] }))
+show('admin GET Alpha ledger under Beta path', await ad.get(`/api/v1/clients/${B}/ledgers/${alpha_led}/`))
+show('admin GET Alpha statement under Beta path', await ad.get(`/api/v1/clients/${B}/statements/${ids.Alpha_st}/`))
+show('admin GET Alpha stmt tally-export', await ad.get(`/api/v1/statements/${ids.Alpha_st}/tally-export/`))
+show('admin PATCH Alpha ba under Beta path', await ad.patch(`/api/v1/clients/${B}/bank-accounts/${ids.Alpha_ba}/`, {ledger_name:'QA SEC x'}))
+show('admin GET books Beta', await ad.get(`/api/v1/clients/${B}/books/`))
+console.log('errors', s.serverErrors().length, se.serverErrors().length, ad.serverErrors().length)

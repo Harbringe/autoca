@@ -6,15 +6,15 @@
 // books. The queue is on the left, the decision on the right, and the keyboard moves through
 // it as fast as a CA reads: J/K to move, L for the ledger, Enter to place, P to post.
 
-import { useMutation, useQuery } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { AlertTriangle, Bot, CheckCheck, Sparkles } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Bot, CheckCheck, Search, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
 import { messageOf } from '@/api/errors'
 import { waitForJob } from '@/api/jobs'
-import { ledgers as ledgersQuery, parties as partiesQuery, reviewQueue, type Stage } from '@/api/queries/books'
+import { ledgers as ledgersQuery, parties as partiesQuery, reviewQueue, rules as rulesQuery, type Stage } from '@/api/queries/books'
 import { bankAccounts, clientDetail, reviewSummary, useInvalidateClient, V1 } from '@/api/queries/clients'
 import { TDS_SECTIONS, type Classification, type Job, type JournalEntry, type PlacementResult } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
@@ -24,12 +24,14 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox, Select } from '@/components/ui/controls'
+import { Input } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
 import { Spinner } from '@/components/ui/spinner'
-import { formatDate, plural } from '@/lib/format'
+import { formatDate, formatPaise, plainAmount, plural } from '@/lib/format'
 import { useHotkey } from '@/lib/hotkeys'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
+import { summariseBulk, type BulkSummary } from './bulkPost'
 import { LedgerPicker, usableLedgers } from './LedgerPicker'
 
 const STAGES: { stage: Stage; label: string; hint: string }[] = [
@@ -42,6 +44,21 @@ const BAND_LABEL: Record<string, { label: string; tone: 'success' | 'info' | 'wa
   HIGH: { label: 'High', tone: 'success' },
   ADVISED: { label: 'Check', tone: 'info' },
   JUDGEMENT: { label: 'Decide', tone: 'warning' },
+}
+
+// A small coloured dot says how sure the assistant is; nothing at all means high confidence.
+const DOT: Record<string, { className: string; title: string }> = {
+  ADVISED: { className: 'bg-warning', title: 'Check: the assistant is fairly sure, but a person should look' },
+  JUDGEMENT: { className: 'bg-destructive', title: 'Decide: the assistant is unsure, this needs your judgement' },
+}
+
+type SortKey = 'date' | 'amount'
+type Sort = { key: SortKey; dir: 'asc' | 'desc' } | null
+
+/** What a row is called to a screen reader, so "select" says which row. */
+function rowName(r: Classification): string {
+  const narration = r.counterparty || r.transaction.narration
+  return `${formatDate(r.transaction.value_date)} ${r.transaction.amount_display} ${narration.length > 60 ? `${narration.slice(0, 60)}…` : narration}`
 }
 
 export function ReviewScreen({ clientId, stage: asked }: { clientId: string; stage?: Stage }) {
@@ -59,12 +76,37 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [ticked, setTicked] = useState<Set<string>>(new Set())
   const [confirmHigh, setConfirmHigh] = useState(false)
+  // Frozen when the dialog opens: the live count drops to 0 the moment the posting succeeds.
+  const [bulk, setBulk] = useState<{ count: number; summary: BulkSummary | null }>({ count: 0, summary: null })
   const [confirmTicked, setConfirmTicked] = useState(false)
+  const [text, setText] = useState('')
+  const [sort, setSort] = useState<Sort>(null)
+  const tableRef = useRef<HTMLTableElement>(null)
 
-  const rows = useMemo(
-    () => (queue.data ?? []).filter((r) => !band || r.review_band === band),
-    [queue.data, band],
-  )
+  const rows = useMemo(() => {
+    const q = text.trim().toLowerCase()
+    const qa = plainAmount(q)
+    const kept = (queue.data ?? [])
+      .filter((r) => !band || r.review_band === band)
+      .filter(
+        (r) =>
+          !q ||
+          r.transaction.narration.toLowerCase().includes(q) ||
+          (r.counterparty ?? '').toLowerCase().includes(q) ||
+          (r.ledger_name ?? '').toLowerCase().includes(q) ||
+          (qa !== '' && plainAmount(r.transaction.amount_display ?? '').includes(qa)),
+      )
+    if (!sort) return kept
+    const sign = sort.dir === 'asc' ? 1 : -1
+    // Array.sort is stable, so equal dates or amounts keep the order the statement had.
+    return [...kept].sort((a, b) =>
+      sort.key === 'date'
+        ? sign * a.transaction.value_date.localeCompare(b.transaction.value_date)
+        : sign * (a.transaction.amount_paise - b.transaction.amount_paise),
+    )
+  }, [queue.data, band, text, sort])
+  const toggleSort = (key: SortKey) =>
+    setSort((s) => (s?.key !== key ? { key, dir: 'asc' } : s.dir === 'asc' ? { key, dir: 'desc' } : null))
   const index = Math.max(0, rows.findIndex((r) => r.id === selectedId))
   const selected = rows[index] ?? null
   // Keep a row selected: the first one on arrival, and the one now in the same place after a row leaves.
@@ -105,15 +147,18 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
     const next = rows[Math.min(Math.max(index + delta, 0), rows.length - 1)]
     if (next) {
       setSelectedId(next.id)
-      document.getElementById(`row-${next.id}`)?.scrollIntoView({ block: 'nearest' })
+      const el = document.getElementById(`row-${next.id}`)
+      // The table is one Tab stop; when the person is in it, focus travels with the selection.
+      if (el && tableRef.current?.contains(document.activeElement)) el.focus({ preventScroll: true })
+      el?.scrollIntoView({ block: 'nearest' })
     }
   }
   useHotkey('j', 'Next row', () => move(1), 'Review')
   useHotkey('arrowdown', 'Next row', () => move(1), 'Review')
   useHotkey('k', 'Previous row', () => move(-1), 'Review')
   useHotkey('arrowup', 'Previous row', () => move(-1), 'Review')
-  useHotkey('x', 'Tick the row for posting', () => {
-    if (!selected) return
+  useHotkey('x', 'Tick the current row for posting', () => {
+    if (!selected || !canPost || stage === 'unresolved' || !postable(selected)) return
     setTicked((t) => {
       const next = new Set(t)
       if (next.has(selected.id)) next.delete(selected.id)
@@ -123,6 +168,13 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
   }, 'Review')
 
   const highCount = summary.data?.bulk_approvable ?? 0
+  // The rows the band would post, for the confirmation's breakdown. The "Ready to post" list is the one that holds them.
+  const ready = useQuery({ ...reviewQueue(clientId, 'pending_approval'), enabled: canPost && highCount > 0 })
+  function askBulk() {
+    const detail = ready.data ? summariseBulk(ready.data) : null
+    setBulk({ count: highCount, summary: detail && detail.count === highCount ? detail : null })
+    setConfirmHigh(true)
+  }
   const bankLedgerOf = (row: Classification) => accounts.data?.results.find((a) => a.id === row.transaction.bank_account)?.ledger_name
 
   return (
@@ -160,7 +212,7 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
             </Button>
           )}
           {canPost && highCount > 0 && (
-            <Button variant={tickedRows.length ? 'outline' : 'primary'} onClick={() => setConfirmHigh(true)}>
+            <Button variant={tickedRows.length ? 'outline' : 'primary'} onClick={askBulk}>
               <CheckCheck /> Post all high-confidence ({highCount})
             </Button>
           )}
@@ -200,13 +252,31 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
         </div>
       )}
 
+      {!queue.isPending && !queue.error && (queue.data?.length ?? 0) > 0 && (
+        <div className="relative max-w-sm">
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Input
+            type="search"
+            aria-label="Search the queue by narration, payee, ledger or amount"
+            placeholder="Search narration, payee, ledger, amount"
+            className="pl-8"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+          />
+        </div>
+      )}
+
       {queue.isPending ? (
         <Spinner label="Loading the queue…" />
       ) : queue.error ? (
         <ErrorState error={queue.error} retry={() => void queue.refetch()} />
       ) : rows.length === 0 ? (
-        <EmptyState title={stage === 'unresolved' ? 'Every transaction has a ledger' : 'Nothing is waiting here'}>
-          {stage === 'unresolved' && (summary.data?.pending_approval ?? 0) > 0 ? (
+        <EmptyState title={text.trim() ? `Nothing matches “${text.trim()}”` : stage === 'unresolved' ? 'Every transaction has a ledger' : 'Nothing is waiting here'}>
+          {text.trim() ? (
+            <button type="button" className="underline" onClick={() => setText('')}>
+              Clear the search
+            </button>
+          ) : stage === 'unresolved' && (summary.data?.pending_approval ?? 0) > 0 ? (
             <>
               {plural(summary.data!.pending_approval, 'row')} placed and ready to post.{' '}
               <Link to="/clients/$clientId/review" params={{ clientId }} search={{ stage: 'pending_approval' }} className="underline">
@@ -221,7 +291,7 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
       ) : (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,1fr)]">
           <Card className="max-h-[70vh] overflow-auto">
-            <table className="w-full text-left text-sm">
+            <table ref={tableRef} className="w-full text-left text-sm">
               <thead className="sticky top-0 z-10 border-b bg-muted text-[13px] text-muted-foreground">
                 <tr>
                   {canPost && stage !== 'unresolved' && (
@@ -233,11 +303,11 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
                       />
                     </th>
                   )}
-                  <th className="px-3 py-2 font-medium">Date</th>
+                  <SortTh label="Date" sortKey="date" sort={sort} onSort={toggleSort} className="px-3" />
                   <th className="px-3 py-2 font-medium">Narration</th>
-                  <th className="px-3 py-2 text-right font-medium">Withdrawal</th>
-                  <th className="px-3 py-2 text-right font-medium">Deposit</th>
-                  <th className="px-3 py-2 font-medium">Ledger</th>
+                  <SortTh label="Withdrawal" sortKey="amount" sort={sort} onSort={toggleSort} className="w-px px-2 text-right" right />
+                  <th className="w-px px-2 py-2 text-right font-medium">Deposit</th>
+                  <th className="w-40 px-3 py-2 font-medium">Ledger</th>
                 </tr>
               </thead>
               <tbody>
@@ -246,14 +316,30 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
                     key={r.id}
                     id={`row-${r.id}`}
                     onClick={() => setSelectedId(r.id)}
+                    onFocus={(e) => e.target === e.currentTarget && setSelectedId(r.id)}
+                    onKeyDown={(e) => {
+                      // Space ticks the row from the row itself; typing in a control inside it is left alone.
+                      if (e.key === ' ' && e.target === e.currentTarget && canPost && stage !== 'unresolved' && postable(r)) {
+                        e.preventDefault()
+                        setTicked((t) => {
+                          const n = new Set(t)
+                          if (n.has(r.id)) n.delete(r.id)
+                          else n.add(r.id)
+                          return n
+                        })
+                      }
+                    }}
+                    // One Tab stop for the whole table: only the selected row can be tabbed to.
+                    tabIndex={r.id === selected?.id ? 0 : -1}
                     aria-selected={r.id === selected?.id}
-                    className={cn('h-(--row-h) cursor-pointer border-b', r.id === selected?.id ? 'bg-accent/15' : 'hover:bg-hover')}
+                    className={cn('min-h-(--row-h) cursor-pointer border-b align-top focus-visible:outline-offset-[-2px]', r.id === selected?.id ? 'bg-accent/15' : 'hover:bg-hover')}
                   >
                     {canPost && stage !== 'unresolved' && (
-                      <td className="px-3" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-3 pt-2.5" onClick={(e) => e.stopPropagation()}>
                         {postable(r) && (
                           <Checkbox
-                            aria-label="Tick for posting"
+                            aria-label={`Select ${rowName(r)}`}
+                            tabIndex={-1}
                             checked={ticked.has(r.id)}
                             onChange={(e) =>
                               setTicked((t) => {
@@ -267,18 +353,26 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
                         )}
                       </td>
                     )}
-                    <td className="num whitespace-nowrap px-3">{formatDate(r.transaction.value_date)}</td>
-                    <td className="max-w-52 truncate px-3" title={r.transaction.narration}>
-                      {r.counterparty || r.transaction.narration}
+                    <td className="num whitespace-nowrap px-3 py-2">{formatDate(r.transaction.value_date)}</td>
+                    <td className="min-w-48 px-3 py-2" title={r.transaction.narration}>
+                      {r.counterparty && <div className="truncate font-medium">{r.counterparty}</div>}
+                      <div className={cn('break-words', r.counterparty ? 'line-clamp-1 text-[13px] text-muted-foreground' : 'line-clamp-2')}>
+                        {r.transaction.narration}
+                      </div>
                     </td>
-                    <td className="num whitespace-nowrap px-3 text-right">{r.transaction.is_debit ? r.transaction.amount_display : ''}</td>
-                    <td className="num whitespace-nowrap px-3 text-right">{!r.transaction.is_debit ? r.transaction.amount_display : ''}</td>
-                    <td className="max-w-44 px-3">
+                    <td className="num whitespace-nowrap px-2 py-2 text-right">{r.transaction.is_debit ? r.transaction.amount_display : ''}</td>
+                    <td className="num whitespace-nowrap px-2 py-2 text-right">{!r.transaction.is_debit ? r.transaction.amount_display : ''}</td>
+                    <td className="px-3 py-2">
                       {r.ledger_name ? (
                         <span className="flex items-center gap-1.5">
-                          <span className="truncate">{r.ledger_name}</span>
-                          {BAND_LABEL[r.review_band] && r.method !== 'REVIEWED' && (
-                            <Badge tone={BAND_LABEL[r.review_band]!.tone}>{BAND_LABEL[r.review_band]!.label}</Badge>
+                          <span className="truncate" title={r.ledger_name}>{r.ledger_name}</span>
+                          {DOT[r.review_band] && r.method !== 'REVIEWED' && (
+                            <span
+                              role="img"
+                              aria-label={DOT[r.review_band]!.title}
+                              title={DOT[r.review_band]!.title}
+                              className={cn('size-2 shrink-0 rounded-full', DOT[r.review_band]!.className)}
+                            />
                           )}
                         </span>
                       ) : (
@@ -307,13 +401,39 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
       <Confirm
         open={confirmHigh}
         onOpenChange={setConfirmHigh}
-        title={`Post ${plural(highCount, 'high-confidence row')}?`}
-        confirmLabel={`Post ${highCount}`}
+        title={`Post ${plural(bulk.count, 'high-confidence row')}?`}
+        confirmLabel={`Post ${bulk.count}`}
         onConfirm={() => post({ band: 'HIGH' })}
       >
+        {bulk.summary ? (
+          <>
+            <p>
+              {[
+                bulk.summary.byRule ? `${plural(bulk.summary.byRule, 'row')} placed by the client’s rules` : '',
+                bulk.summary.byModel ? `${plural(bulk.summary.byModel, 'row')} placed by the language model` : '',
+                bulk.summary.byPerson ? `${plural(bulk.summary.byPerson, 'row')} placed by a person` : '',
+              ]
+                .filter(Boolean)
+                .join(', ')}
+              .
+            </p>
+            <p className="num">
+              {[
+                bulk.summary.paidOut ? `${plural(bulk.summary.paidOut, 'payment')} out, ${formatPaise(bulk.summary.paidOutPaise)}` : '',
+                bulk.summary.received ? `${plural(bulk.summary.received, 'receipt')} in, ${formatPaise(bulk.summary.receivedPaise)}` : '',
+              ]
+                .filter(Boolean)
+                .join(' · ')}
+            </p>
+            {bulk.summary.byModel > 0 && (
+              <p>Rows placed by the language model are guesses from the narration. Look at them first if you have not.</p>
+            )}
+          </>
+        ) : (
+          <p>Placed with high confidence by the client’s rules or the language model.</p>
+        )}
         <p>
-          These were placed by the client’s rules with high confidence. Each becomes a journal entry in the Day Book. Until the books are
-          signed off you can still correct or remove any of them.
+          Each becomes a journal entry in the Day Book. Until the books are signed off you can still correct or remove any of them.
         </p>
       </Confirm>
       <Confirm
@@ -326,6 +446,38 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
         <p>Each becomes a journal entry in the Day Book, in the ledger shown. All are posted together, or none.</p>
       </Confirm>
     </div>
+  )
+}
+
+function SortTh({
+  label,
+  sortKey,
+  sort,
+  onSort,
+  className,
+  right,
+}: {
+  label: string
+  sortKey: SortKey
+  sort: Sort
+  onSort: (key: SortKey) => void
+  className?: string
+  right?: boolean
+}) {
+  const on = sort?.key === sortKey
+  const Icon = !on ? ArrowUpDown : sort.dir === 'asc' ? ArrowUp : ArrowDown
+  return (
+    <th className={cn('py-2 font-medium', className)} aria-sort={on ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
+      <button
+        type="button"
+        onClick={() => onSort(sortKey)}
+        className={cn('inline-flex items-center gap-1 rounded-sm hover:text-foreground', right && 'flex-row-reverse')}
+        title={sortKey === 'amount' ? 'Sort by amount (withdrawals and deposits together)' : `Sort by ${label.toLowerCase()}`}
+      >
+        {label}
+        <Icon className={cn('size-3', !on && 'opacity-50')} aria-hidden />
+      </button>
+    </th>
   )
 }
 
@@ -346,6 +498,7 @@ function Decision({
   const { can } = useSession()
   const parties = useQuery(partiesQuery(clientId))
   const invalidate = useInvalidateClient(clientId)
+  const queryClient = useQueryClient()
   const ledgerInput = useRef<HTMLInputElement>(null)
   const suggested = ledgers.some((l) => l.id === row.ledger) ? row.ledger : null
   const [ledger, setLedger] = useState<string | null>(suggested)
@@ -356,6 +509,7 @@ function Decision({
   const [busy, setBusy] = useState(false)
   const t = row.transaction
   const canPlace = can('transaction.classify')
+  const mayUndoRule = can('suggestion.edit')
   const unchanged = ledger === row.ledger && (party || null) === (row.party ?? null) && tds === (row.tds_section ?? '') && rcm === row.rcm
   const alreadyPlacedByPerson = row.method === 'REVIEWED' && unchanged
 
@@ -371,13 +525,34 @@ function Decision({
         learn,
       })
       await invalidate()
+      const placedIn = result.classification.ledger_name
+      const ruleId = learn ? result.rule_learned : null
+      // Undo deletes the rule and nothing else, so it is offered only when the rule is all this decision did.
+      const created = !!ruleId && result.rule_created && mayUndoRule && !result.also_placed && !result.also_revised && !result.auto_posted
       const extra = [
-        learn && result.rule_learned ? `Remembered for ${row.counterparty}` : '',
-        learn && !result.rule_learned ? 'Nothing was remembered: no payee could be read' : '',
+        ruleId ? `Rule saved: ${row.counterparty} to ${placedIn}` : '',
+        learn && !ruleId ? 'Nothing was remembered: no payee could be read' : '',
         result.also_placed ? `${plural(result.also_placed, 'other row')} from the same payee placed too` : '',
         result.auto_posted ? `${result.auto_posted} posted automatically` : '',
       ].filter(Boolean)
-      toast.success(`Placed in ${result.classification.ledger_name}`, { description: extra.join(' · ') || undefined })
+      toast.success(`Placed in ${placedIn}`, {
+        description: extra.join(' · ') || undefined,
+        // Undo removes the rule only; rows it already placed stay where they are.
+        ...(created && ruleId
+          ? {
+              duration: 10_000,
+              action: {
+                label: 'Undo',
+                onClick: () =>
+                  void raw
+                    .delete(`${V1}/clients/${clientId}/rules/${ruleId}/`)
+                    .then(() => queryClient.invalidateQueries({ queryKey: rulesQuery(clientId).queryKey }))
+                    .then(() => toast.info('Rule removed', { description: 'Rows already placed stay where they are.' }))
+                    .catch((e: unknown) => toast.error(messageOf(e))),
+              },
+            }
+          : {}),
+      })
       onDone()
     } catch (e) {
       toast.error(messageOf(e))
@@ -486,6 +661,21 @@ function Decision({
             suggestedGroup={t.is_debit ? 'INDIRECT_EXPENSE' : 'INDIRECT_INCOME'}
           />
 
+          {row.counterparty && !row.is_self_transfer ? (
+            <Checkbox
+              className="-mt-1.5 items-start [&>input]:mt-0.5"
+              label={`Also place future ${t.is_debit ? 'payments to' : 'receipts from'} ${row.counterparty} in ${chosenLedger?.name ?? 'the ledger you choose'}`}
+              checked={learn}
+              onChange={(e) => setLearn(e.target.checked)}
+            />
+          ) : (
+            <p className="-mt-1.5 text-xs text-muted-foreground">
+              {row.is_self_transfer
+                ? 'A transfer between the client’s own accounts is decided each time, so nothing is remembered.'
+                : 'The payee could not be read from this narration, so this decision applies to this row only. Add a rule in Masters if it repeats.'}
+            </p>
+          )}
+
           <div className="grid gap-1.5">
             <label className="text-[13px] font-medium" htmlFor={`party-${row.id}`}>
               Party (who it was paid to or received from)
@@ -522,20 +712,6 @@ function Decision({
               <Checkbox label="Reverse charge (RCM)" checked={rcm} onChange={(e) => setRcm(e.target.checked)} />
             </div>
           </div>
-
-          {row.counterparty && !row.is_self_transfer ? (
-            <Checkbox
-              label={`Remember this for every payment ${t.is_debit ? 'to' : 'from'} ${row.counterparty}`}
-              checked={learn}
-              onChange={(e) => setLearn(e.target.checked)}
-            />
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              {row.is_self_transfer
-                ? 'A transfer between the client’s own accounts is decided each time, so nothing is remembered.'
-                : 'The payee could not be read from this narration, so this decision applies to this row only. Add a rule in Masters if it repeats.'}
-            </p>
-          )}
 
           <div className="flex flex-wrap justify-end gap-2">
             {!alreadyPlacedByPerson && (

@@ -243,6 +243,10 @@ def test_signed_off_entries_are_not_rewritten_by_a_later_lesson(client, staff, s
             review(row, Treatment(ledger=misc), learn=False)
         approve_many(list(review_queue(client)), membership=senior)
         books.request_review(client, staff)
+        with pytest.raises(books.AiEntriesUncheckedError):
+            books.sign_off(client, senior, through=first.entry_date)
+        # A person checks the assistant's entries, as sign-off requires.
+        JournalEntry.objects.filter(client=client).update(marker=EntryMarker.NONE)
         books.sign_off(client, senior, through=first.entry_date)
 
         correct(last, membership=senior, treatment=Treatment(ledger=right))

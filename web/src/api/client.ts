@@ -125,7 +125,7 @@ async function json<T>(response: Response): Promise<T> {
   return (text ? JSON.parse(text) : undefined) as T
 }
 
-function withBody(method: string, path: string, body?: unknown): Request {
+function withBody(method: string, path: string, body?: unknown, signal?: AbortSignal): Request {
   const headers = new Headers({ Accept: 'application/json' })
   let payload: BodyInit | undefined
   if (body instanceof FormData) {
@@ -134,13 +134,13 @@ function withBody(method: string, path: string, body?: unknown): Request {
     headers.set('Content-Type', 'application/json')
     payload = JSON.stringify(body)
   }
-  return new Request(url(path), { method, headers, body: payload, credentials: 'include' })
+  return new Request(url(path), { method, headers, body: payload, credentials: 'include', signal })
 }
 
 export const raw = {
   get: async <T>(path: string, query?: Query) =>
     json<T>(await apiFetch(new Request(url(path, query), { headers: { Accept: 'application/json' }, credentials: 'include' }))),
-  post: async <T>(path: string, body?: unknown) => json<T>(await apiFetch(withBody('POST', path, body))),
+  post: async <T>(path: string, body?: unknown, signal?: AbortSignal) => json<T>(await apiFetch(withBody('POST', path, body, signal))),
   put: async <T>(path: string, body?: unknown) => json<T>(await apiFetch(withBody('PUT', path, body))),
   patch: async <T>(path: string, body?: unknown) => json<T>(await apiFetch(withBody('PATCH', path, body))),
   delete: async <T = void>(path: string) => json<T>(await apiFetch(withBody('DELETE', path))),

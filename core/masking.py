@@ -20,7 +20,7 @@ What is masked, and why each is regex-detectable with high reliability:
 * **Phone numbers** -- ten digits starting 6-9, optionally ``+91`` prefixed.
 * **Card numbers** -- 13 to 19 digits with optional separators, and the
   ``XX 1234`` / ``400000****0000`` shapes banks print.
-* **Email addresses.**
+* **Email addresses**, and UPI addresses (``name@handle``).
 
 Order matters: the wider pattern first, so a GSTIN is replaced whole rather than
 having its embedded PAN replaced first and the rest left as noise. Each match is
@@ -42,6 +42,8 @@ from dataclasses import dataclass, field
 #: Applied in this order. Each entry is (placeholder, pattern).
 PATTERNS: tuple[tuple[str, re.Pattern], ...] = (
     ("<EMAIL>", re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")),
+    # A UPI address, name@handle: an e-mail shape with no dotted domain.
+    ("<UPI_ID>", re.compile(r"(?<![\w.%+-])[A-Za-z0-9._-]{2,}@[A-Za-z][A-Za-z0-9]{1,}\b")),
     # 22AAAAA0000A1Z5 -- state code, PAN, entity number, Z, check character.
     ("<GSTIN>", re.compile(r"\b\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]\b")),
     ("<PAN>", re.compile(r"\b[A-Z]{3}[ABCFGHLJPT][A-Z]\d{4}[A-Z]\b")),

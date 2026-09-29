@@ -27,7 +27,7 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { LedgerPicker, usableLedgers } from '@/features/review/LedgerPicker'
 import { formatDate, formatDateTime, formatPaise, fyLabel, plural } from '@/lib/format'
-import { usePreferences } from '@/lib/preferences'
+import { useFy } from '@/features/shell/useFy'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { isAssistantEntry, unpostEntry, useUnpostMany } from './unpost'
@@ -42,7 +42,7 @@ function particulars(entry: JournalEntry, bankNames: Set<string>) {
 }
 
 export function DayBookScreen({ clientId }: { clientId: string }) {
-  const { fy } = usePreferences()
+  const { fy } = useFy()
   const { can } = useSession()
   const client = useQuery(clientDetail(clientId))
   const unpostMany = useUnpostMany(clientId)

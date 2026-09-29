@@ -136,6 +136,15 @@ class PdfTextAdapter(abc.ABC):
         the caller decides whether to route to OCR.
         """
 
+    def page_count(self, data: bytes) -> int:
+        """How many pages ``data`` has, without extracting any of them.
+
+        This default extracts, so a backend that can count more cheaply should
+        override it. Callers use it to refuse an oversized document before
+        paying for extraction.
+        """
+        return self.extract(data).page_count
+
     @property
     def name(self) -> str:
         return type(self).__name__

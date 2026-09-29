@@ -1,0 +1,15 @@
+import { signedIn, shot, visibleText, WEB } from '../lib/session.mjs'
+const { page, close } = await signedIn('admin', { width: 1440, height: 900 })
+await page.goto(`${WEB}/clients`)
+await page.waitForLoadState('networkidle')
+await page.keyboard.press('Control+k')
+await page.waitForTimeout(400)
+await page.keyboard.type('upload')
+await page.waitForTimeout(400)
+console.log(await shot(page, 'r1-ux-palette-upload-search'))
+console.log((await visibleText(page)).slice(0,600))
+// escape test
+await page.keyboard.press('Escape')
+await page.waitForTimeout(300)
+console.log('after escape, palette visible:', await page.locator('text=Search clients or type a command').count())
+await close()

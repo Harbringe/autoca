@@ -38,7 +38,7 @@ export function Checkbox({ label, className, ...props }: ComponentProps<'input'>
 
 /** Table classes, so every grid in the app lines up the same way. */
 export const tbl = {
-  wrap: 'overflow-x-auto rounded-lg border bg-card',
+  wrap: 'relative overflow-x-auto rounded-lg border bg-card',
   table: 'w-full text-left text-sm',
   head: 'border-b bg-muted/50 text-[13px] text-muted-foreground',
   th: 'px-3 py-2 font-medium whitespace-nowrap',

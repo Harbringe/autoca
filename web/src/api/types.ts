@@ -228,7 +228,8 @@ export interface TeamEvent {
   id: string
   kind: string
   kind_display: string
-  detail: string
+  /** A snapshot of the names at the time: actor, member, client, from, to, email, role ... */
+  detail: Record<string, unknown>
   member_id: string | null
   client_id: string | null
   at: string

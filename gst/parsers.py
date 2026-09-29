@@ -53,7 +53,7 @@ def _paise(value, where: str) -> int:
         if isinstance(value, float):
             value = Decimal(repr(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
         return to_paise(value)
-    except (MoneyError, InvalidOperation) as exc:
+    except (MoneyError, InvalidOperation, TypeError, ValueError) as exc:
         raise GstParseError(f"{where}: {exc}") from exc
 
 
@@ -88,19 +88,21 @@ def _truthy(value) -> bool:
 def parse_gstr2b_json(data: bytes) -> ParsedPortal:
     try:
         doc = json.loads(data.decode("utf-8-sig"), parse_float=Decimal)
-    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
-        raise GstParseError(f"Not a JSON file: {exc}") from exc
+    except (UnicodeDecodeError, json.JSONDecodeError, RecursionError) as exc:
+        raise GstParseError(f"Not a JSON file: {exc.__class__.__name__}") from exc
     body = doc.get("data") if isinstance(doc, dict) else None
     if not isinstance(body, dict) or "docdata" not in body:
         raise GstParseError("This does not look like a GSTR-2B download (no data.docdata).")
+    if not isinstance(body["docdata"], dict):
+        raise GstParseError("GSTR-2B: data.docdata should be an object of sections.")
 
-    period = body.get("rtnprd") or ""
+    period = body.get("rtnprd")
     period_start = None
-    if re.fullmatch(r"\d{6}", period):
+    if isinstance(period, str) and re.fullmatch(r"\d{6}", period) and 1 <= int(period[:2]) <= 12:
         period_start = datetime.date(int(period[2:]), int(period[:2]), 1)
 
     invoices: list[Invoice] = []
-    docdata = body["docdata"]
+    docdata = _Sections(body["docdata"])
     # b2b and b2ba hold invoices; cdnr and cdnra hold credit (C) and debit (D)
     # notes, told apart by "typ". The "a" sections are amendments, and carry the
     # number they replace as oinum / ontnum.
@@ -110,8 +112,8 @@ def parse_gstr2b_json(data: bytes) -> ParsedPortal:
         ("cdnr", "nt", "ntnum", ""),
         ("cdnra", "nt", "ntnum", "ontnum"),
     ):
-        for supplier in docdata.get(section_key) or []:
-            for doc_ in supplier.get(list_key) or []:
+        for supplier in docdata.objects(section_key):
+            for doc_ in _objects(supplier.get(list_key), f"{section_key}.{list_key}"):
                 is_note = list_key == "nt"
                 section = Section.B2B
                 if is_note:
@@ -121,14 +123,14 @@ def parse_gstr2b_json(data: bytes) -> ParsedPortal:
                         supplier, doc_, number_key, section, len(invoices) + 1, original_key
                     )
                 )
-    for supplier in docdata.get("isd") or []:
-        for doc_ in supplier.get("doclist") or supplier.get("inv") or []:
+    for supplier in docdata.objects("isd"):
+        for doc_ in _objects(supplier.get("doclist") or supplier.get("inv"), "isd.doclist"):
             invoices.append(
                 _portal_invoice(
                     supplier, doc_, "docnum", Section.ISD, len(invoices) + 1, "", date_key="docdt"
                 )
             )
-    for n, doc_ in enumerate(docdata.get("impg") or [], start=len(invoices) + 1):
+    for n, doc_ in enumerate(docdata.objects("impg"), start=len(invoices) + 1):
         invoices.append(
             Invoice(
                 ref=f"2b:{n}",
@@ -145,8 +147,25 @@ def parse_gstr2b_json(data: bytes) -> ParsedPortal:
         )
 
     return ParsedPortal(
-        gstin=normalise_gstin(body.get("gstin", "")), period_start=period_start, invoices=invoices
+        gstin=normalise_gstin(str(body.get("gstin") or "")), period_start=period_start, invoices=invoices
     )
+
+
+def _objects(value, where: str) -> list[dict]:
+    """``value`` as a list of JSON objects, or a plain refusal. Absent is empty."""
+    if value is None or value == []:
+        return []
+    if not isinstance(value, list) or not all(isinstance(v, dict) for v in value):
+        raise GstParseError(f"GSTR-2B: {where} should be a list of objects.")
+    return value
+
+
+class _Sections:
+    def __init__(self, docdata: dict):
+        self._docdata = docdata
+
+    def objects(self, key: str) -> list[dict]:
+        return _objects(self._docdata.get(key), key)
 
 
 def _portal_invoice(
@@ -161,14 +180,14 @@ def _portal_invoice(
 ) -> Invoice:
     where = f"GSTR-2B entry {n}"
     # The portal reports amounts either on the document or itemised; support both.
-    src = doc.get("items") or [doc]
+    src = _objects(doc.get("items"), f"{where} items") or [doc]
     total = dict.fromkeys(("txval", "igst", "cgst", "sgst", "cess"), 0)
     for item in src:
         for k in total:
             total[k] += _paise(item.get(k), f"{where} {k}")
     return Invoice(
         ref=f"2b:{n}",
-        gstin=normalise_gstin(supplier.get("ctin", "")),
+        gstin=normalise_gstin(str(supplier.get("ctin") or "")),
         invoice_no=str(doc.get(number_key, "")).strip(),
         invoice_date=_date(doc.get(date_key), where),
         taxable_paise=total["txval"],
@@ -304,6 +323,10 @@ def parse_register(
     Finds the header row as the first row that names an invoice-number column,
     since exports put titles and company names above it.
     """
+    if mapping is not None and not (
+        isinstance(mapping, dict) and all(isinstance(k, str) and isinstance(v, str) for k, v in mapping.items())
+    ):
+        raise GstParseError("The column mapping should be an object of field names to header names.")
     rows = _read_table(data, filename)
     header_at = None
     for i, row in enumerate(rows[:30]):

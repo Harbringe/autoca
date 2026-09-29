@@ -6,7 +6,6 @@
 // and the app has to look right without it.
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
-import { financialYearOf } from './format'
 
 export type Theme = 'light' | 'dark' | 'system'
 export type Density = 'comfortable' | 'compact'
@@ -30,14 +29,24 @@ function prefersDark(): boolean {
   return typeof matchMedia === 'function' && matchMedia('(prefers-color-scheme: dark)').matches
 }
 
+function readFyMap(): Record<string, number> {
+  try {
+    const parsed: unknown = JSON.parse(read('autoca.fyByClient') ?? '{}')
+    if (!parsed || typeof parsed !== 'object') return {}
+    return Object.fromEntries(Object.entries(parsed).filter(([, v]) => Number.isInteger(v)))
+  } catch {
+    return {}
+  }
+}
+
 interface Preferences {
   theme: Theme
   setTheme: (theme: Theme) => void
   density: Density
   setDensity: (density: Density) => void
-  /** The financial year on screen, by the year it starts in (2025 is FY 2025-26). */
-  fy: number
-  setFy: (fy: number) => void
+  /** The financial year each client was last deliberately set to, by the year it starts in (2025 is FY 2025-26). */
+  fyByClient: Record<string, number>
+  setClientFy: (clientId: string, fy: number) => void
 }
 
 const Ctx = createContext<Preferences | null>(null)
@@ -45,7 +54,7 @@ const Ctx = createContext<Preferences | null>(null)
 export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => (read('autoca.theme') as Theme) || 'system')
   const [density, setDensityState] = useState<Density>(() => (read('autoca.density') as Density) || 'comfortable')
-  const [fy, setFyState] = useState<number>(() => Number(read('autoca.fy')) || financialYearOf(new Date()))
+  const [fyByClient, setFyByClient] = useState<Record<string, number>>(readFyMap)
 
   useEffect(() => {
     const dark = theme === 'dark' || (theme === 'system' && prefersDark())
@@ -64,14 +73,18 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setDensityState(next)
     write('autoca.density', next)
   }, [])
-  const setFy = useCallback((next: number) => {
-    setFyState(next)
-    write('autoca.fy', String(next))
+  const setClientFy = useCallback((clientId: string, next: number) => {
+    setFyByClient((prev) => {
+      if (prev[clientId] === next) return prev
+      const map = { ...prev, [clientId]: next }
+      write('autoca.fyByClient', JSON.stringify(map))
+      return map
+    })
   }, [])
 
   const value = useMemo(
-    () => ({ theme, setTheme, density, setDensity, fy, setFy }),
-    [theme, setTheme, density, setDensity, fy, setFy],
+    () => ({ theme, setTheme, density, setDensity, fyByClient, setClientFy }),
+    [theme, setTheme, density, setDensity, fyByClient, setClientFy],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

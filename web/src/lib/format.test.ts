@@ -1,5 +1,8 @@
 import {
   asAt,
+  closingLine,
+  plainAmount,
+  sideTotal,
   financialYearOf,
   formatDate,
   formatDateLong,
@@ -98,5 +101,39 @@ describe('parseDate', () => {
     expect(parseDate('13-13-2025')).toBeNull()
     expect(parseDate('2025-04-01')).toBeNull()
     expect(parseDate('')).toBeNull()
+  })
+})
+
+describe('statement balances', () => {
+  const ledger = (dr: number, cr: number) => ({
+    closing_debit_paise: dr,
+    closing_credit_paise: cr,
+    closing_debit_display: dr ? formatPaise(dr) : null,
+    closing_credit_display: cr ? formatPaise(cr) : null,
+  })
+  it('writes a balance on its natural side as the plain amount', () => {
+    expect(closingLine(ledger(2075370, 0), 'asset')).toBe('₹20,753.70')
+    expect(closingLine(ledger(0, 500000), 'liability')).toBe('₹5,000.00')
+  })
+  it('writes a contrary balance with its side, keeping (-) only for a debit among liabilities', () => {
+    expect(closingLine(ledger(0, 2075370), 'asset')).toBe('₹20,753.70 Cr')
+    expect(closingLine(ledger(0, 100), 'expense')).toBe('₹1.00 Cr')
+    expect(closingLine(ledger(1142000, 0), 'liability')).toBe('(-) ₹11,420.00')
+    expect(closingLine(ledger(1142000, 0), 'income')).toBe('₹11,420.00 Dr')
+  })
+  it('has nothing to write for a ledger with no closing balance', () => {
+    expect(closingLine(ledger(0, 0), 'asset')).toBeNull()
+  })
+  it('totals plainly, and names the side when a total has gone the other way', () => {
+    expect(sideTotal(1075370, 'Dr')).toBe('₹10,753.70')
+    expect(sideTotal(-1075370, 'Dr')).toBe('₹10,753.70 Cr')
+    expect(sideTotal(-1075370, 'Cr')).toBe('₹10,753.70 Dr')
+  })
+})
+
+describe('plainAmount', () => {
+  it('lets an amount be searched however it is typed', () => {
+    expect(plainAmount('₹48,000.00')).toBe('48000.00')
+    expect(plainAmount('48 000')).toBe('48000')
   })
 })

@@ -14,6 +14,10 @@ Under a single process the in-memory cache is enough; a deployment with more
 than one web process points ``CACHE_URL`` at Redis so they share the count,
 and ``core.checks`` says so if it is not.
 
+The login form is at present keyed on the account alone: behind the shared proxy
+the address is not yet trustworthy (R1-09), and one address refusing on its own
+would lock every user behind it. Rule 11 in ARCHITECTURE.md says why.
+
 Failures are recorded, successes are not cleared. A correct password following
 nine wrong ones from the same address is more likely the tenth guess than a
 forgetful owner, and a lockout that a correct guess resets is not a lockout.

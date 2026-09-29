@@ -1,0 +1,15 @@
+import { signedIn, WEB, SHOTS } from '../lib/session.mjs'
+const { page, close, problems } = await signedIn('admin')
+const CID='052ec4a5-272c-412e-a36e-06ca5540cf54'
+await page.goto(`${WEB}/clients/${CID}/statements`); await page.getByText('Statements on file').waitFor()
+console.log(await page.locator('main').getByRole('button').evaluateAll(els=>els.map(e=>[e.innerText.trim(),e.getAttribute('aria-label'),e.getAttribute('title')])))
+await page.getByRole('button',{name:'Confirm opening'}).click(); await page.waitForTimeout(600)
+await page.screenshot({ path: SHOTS + '/r1-ux-ob-dialog.png' })
+console.log(await page.locator('[role=dialog]').innerText())
+const amt = page.getByRole('textbox',{name:'Opening balance (₹)'})
+console.log('val', await amt.inputValue(), await amt.getAttribute('inputmode'), await amt.getAttribute('type'))
+await amt.fill('abc'); await page.keyboard.press('Tab'); console.log('abc ->', await amt.inputValue())
+await amt.fill('1,25,000.50'); await page.keyboard.press('Tab'); console.log('lakh ->', await amt.inputValue())
+await page.screenshot({ path: SHOTS + '/r1-ux-ob-abc.png' })
+console.log((await page.locator('[role=dialog]').innerText()).slice(-300))
+await close()

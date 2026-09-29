@@ -58,6 +58,7 @@ DOMAIN_ERRORS = {
     "TeamError": (status.HTTP_409_CONFLICT, "team_rule"),
     # The books' review workflow, and the lock that follows sign-off.
     "NotReadyError": (status.HTTP_409_CONFLICT, "books_not_ready"),
+    "AiEntriesUncheckedError": (status.HTTP_409_CONFLICT, "ai_entries_unchecked"),
     "NothingRequestedError": (status.HTTP_409_CONFLICT, "nothing_requested"),
     "BooksError": (status.HTTP_409_CONFLICT, "books_state"),
     "EntryLockedError": (status.HTTP_409_CONFLICT, "entry_locked"),

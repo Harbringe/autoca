@@ -72,17 +72,25 @@ def test_the_lockout_follows_the_account_across_addresses(settings):
     assert response.status_code == 429
 
 
-def test_the_lockout_also_follows_the_address_across_accounts(settings):
-    """Password spraying: one address, many accounts."""
+def test_one_address_failing_on_many_accounts_is_not_locked_out_for_now(settings):
+    """Interim (R1-40): the address is not trustworthy behind the shared proxy, so it must
+    not refuse on its own; one address would otherwise lock every user behind it."""
     settings.THROTTLE_LIMITS = {
         **settings.THROTTLE_LIMITS,
         "login": {"attempts": 2, "window_seconds": 600, "lockout_seconds": 600},
     }
+    create_user("c@example.com", PASSWORD)
     http = HttpClient(REMOTE_ADDR="10.9.9.9")
-    _login(http, "a@example.com", "wrong")
-    _login(http, "b@example.com", "wrong")
+    for name in ("a", "b", "d", "e"):
+        assert _login(http, f"{name}@example.com", "wrong").status_code == 401
 
-    assert _login(http, "c@example.com", "wrong").status_code == 429
+    assert _login(http, "c@example.com", PASSWORD).status_code == 200
+
+
+def test_the_account_lock_lasts_five_minutes_after_ten_failures(settings):
+    limit = settings.THROTTLE_LIMITS["login"]
+    assert limit["attempts"] == 10
+    assert limit["lockout_seconds"] == 5 * 60
 
 
 def test_a_locked_out_caller_is_not_told_whether_the_account_exists(settings):
@@ -90,10 +98,12 @@ def test_a_locked_out_caller_is_not_told_whether_the_account_exists(settings):
         **settings.THROTTLE_LIMITS,
         "login": {"attempts": 1, "window_seconds": 600, "lockout_seconds": 600},
     }
+    create_user("real@example.com", PASSWORD)
     http = HttpClient()
+    _login(http, "real@example.com", "wrong")
     _login(http, "nobody@example.com", "wrong")
-    real = _login(http, "nobody@example.com", "wrong")
-    unknown = _login(http, "other@example.com", "wrong")
+    real = _login(http, "real@example.com", "wrong")
+    unknown = _login(http, "nobody@example.com", "wrong")
     assert real.status_code == unknown.status_code == 429
     assert real.json() == unknown.json()
 

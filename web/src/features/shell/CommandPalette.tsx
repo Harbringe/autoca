@@ -7,7 +7,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams } from '@tanstack/react-router'
 import { Command } from 'cmdk'
-import { BookOpen, Building2, FileText, ListChecks, Moon, PanelTop, Scale, Sun, Upload, Users } from 'lucide-react'
+import { Activity, BookOpen, Building2, FileText, ListChecks, Moon, PanelTop, Scale, Sun, Upload, UserCog, Users } from 'lucide-react'
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { clientsList } from '@/api/queries/clients'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
@@ -99,12 +99,24 @@ function PaletteBody({ search, setSearch, close }: { search: string; setSearch: 
           { value: 'c-pl', label: 'Profit & Loss A/c', group: 'This client', icon: <FileText />, run: go(() => void navigate({ to: '/clients/$clientId/reports', params: { clientId }, search: { report: 'pl' } })) },
           { value: 'c-bs', label: 'Balance Sheet', group: 'This client', icon: <FileText />, run: go(() => void navigate({ to: '/clients/$clientId/reports', params: { clientId }, search: { report: 'bs' } })) },
           { value: 'c-books', label: 'Books & sign-off', group: 'This client', icon: <ListChecks />, run: go(() => void navigate({ to: '/clients/$clientId/books', params: { clientId } })) },
+          ...(can('team.view') || can('client.update')
+            ? ([{ value: 'c-team', label: 'Team & details', group: 'This client', icon: <Users />, run: go(() => void navigate({ to: '/clients/$clientId/team', params: { clientId } })) }] satisfies Item[])
+            : []),
           { value: 'c-ledgers', label: 'Ledgers (chart of accounts)', group: 'This client', icon: <BookOpen />, run: go(() => void navigate({ to: '/clients/$clientId/masters', params: { clientId }, search: { tab: 'ledgers' } })) },
         ] satisfies Item[])
       : []
     return [
       ...here,
       { value: 'go-clients', label: 'All clients', group: 'Go to', icon: <Users />, run: go(() => void navigate({ to: '/clients' })) },
+      ...(can('client.view')
+        ? ([{ value: 'go-work', label: can('team.view') ? 'Work & performance' : 'My work', group: 'Go to', icon: <Activity />, run: go(() => void navigate({ to: '/work' })) }] satisfies Item[])
+        : []),
+      ...(can('team.view')
+        ? ([{ value: 'go-team', label: 'Team & roles', group: 'Go to', icon: <UserCog />, run: go(() => void navigate({ to: '/team' })) }] satisfies Item[])
+        : []),
+      ...(can('firm.manage')
+        ? ([{ value: 'go-firm', label: 'Firm settings', group: 'Go to', icon: <Building2 />, run: go(() => void navigate({ to: '/firm' })) }] satisfies Item[])
+        : []),
       {
         value: 'toggle-theme',
         label: theme === 'dark' ? 'Switch to light theme' : 'Switch to dark theme',
@@ -121,7 +133,7 @@ function PaletteBody({ search, setSearch, close }: { search: string; setSearch: 
       },
       { value: 'sign-out', label: 'Sign out', group: 'Account', run: go(() => void signOut()) },
     ]
-  }, [close, navigate, theme, setTheme, density, setDensity, signOut, clientId])
+  }, [close, navigate, theme, setTheme, density, setDensity, signOut, clientId, can])
 
   // Commands narrow by what is typed (the search box is live; the client list follows after a pause).
   const typed = search.trim().toLowerCase()

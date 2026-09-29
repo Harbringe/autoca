@@ -19,6 +19,7 @@ from api.permissions import IsFirmMember
 from api.serializers.core import ClientSerializer, JobSerializer, MeSerializer
 from api.views.base import FirmScopedViewSet
 from core.access import visible_clients
+from core.db.session import firm_context
 from core.models import Client, Job, JobStatus, Role
 
 
@@ -125,7 +126,8 @@ class JobViewSet(mixins.RetrieveModelMixin, mixins.ListModelMixin, viewsets.Gene
     def events(self, request, pk=None):
         job = get_object_or_404(self.get_queryset(), pk=pk)
         response = StreamingHttpResponse(
-            _job_events(self.get_queryset(), job.pk), content_type="text/event-stream"
+            _job_events(self.get_queryset(), job.pk, request.firm.pk),
+            content_type="text/event-stream",
         )
         # nginx buffers proxied responses by default, which would hold every
         # message until the stream closed and make this pointless.
@@ -134,18 +136,24 @@ class JobViewSet(mixins.RetrieveModelMixin, mixins.ListModelMixin, viewsets.Gene
         return response
 
 
-def _job_events(queryset, job_id, *, poll_seconds: float = 0.5, timeout_seconds: float = 30.0):
+def _job_events(queryset, job_id, firm_id, *, poll_seconds: float = 0.5, timeout_seconds: float = 30.0):
     """Yield the job until it finishes, then stop.
 
     Bounded by a timeout so a wedged job cannot hold a worker thread open
     forever; a client that hits the timeout reconnects or falls back to polling.
+
+    A streamed body is produced after the request's transaction has closed, and
+    the tenant setting went with it. Each poll therefore opens its own firm
+    context, and releases it before the sleep so no transaction is held idle.
     """
     deadline = time.monotonic() + timeout_seconds
     while True:
-        job = queryset.filter(pk=job_id).first()
+        with firm_context(firm_id):
+            job = queryset.filter(pk=job_id).first()
+            message = None if job is None else json.dumps(JobSerializer(job).data, default=str)
         if job is None:
             return
-        yield f"data: {json.dumps(JobSerializer(job).data, default=str)}\n\n"
+        yield f"data: {message}\n\n"
         if job.status in JobStatus.terminal() or time.monotonic() > deadline:
             return
         time.sleep(poll_seconds)

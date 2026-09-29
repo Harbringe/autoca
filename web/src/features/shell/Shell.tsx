@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
-import { Link, Outlet, useNavigate, useParams } from '@tanstack/react-router'
-import { ChevronsUpDown, Keyboard, LogOut, Menu, Monitor, Moon, Rows3, Sun, Users } from 'lucide-react'
+import { Link, Outlet, useNavigate, useParams, useRouterState } from '@tanstack/react-router'
+import { Building2, ChevronsUpDown, Keyboard, LogOut, Menu, Monitor, Moon, Rows3, Sun, UserCog, Users, Activity } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { clientDetail } from '@/api/queries/clients'
 import { Button } from '@/components/ui/button'
@@ -19,20 +19,45 @@ import { Brand } from '@/features/auth/AuthLayout'
 import { fyLabel, financialYearOf } from '@/lib/format'
 import { useHotkey } from '@/lib/hotkeys'
 import { usePreferences, type Density, type Theme } from '@/lib/preferences'
+import { usePageTitle } from '@/lib/title'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { usePalette } from './CommandPalette'
 import { ShortcutSheet } from './ShortcutSheet'
+import { useFy } from './useFy'
 
 interface NavItem {
-  to: '/clients'
+  to: '/clients' | '/team' | '/work' | '/firm'
   label: string
   icon: ReactNode
   /** Shown only to people holding this permission. */
   permission?: string
 }
 
-const NAV: NavItem[] = [{ to: '/clients', label: 'Clients', icon: <Users />, permission: 'client.view' }]
+const NAV: NavItem[] = [
+  { to: '/clients', label: 'Clients', icon: <Users />, permission: 'client.view' },
+  { to: '/work', label: 'Work', icon: <Activity />, permission: 'client.view' },
+  { to: '/team', label: 'Team & roles', icon: <UserCog />, permission: 'team.view' },
+  { to: '/firm', label: 'Firm settings', icon: <Building2 />, permission: 'firm.manage' },
+]
+
+const CLIENT_TAB_TITLE: Record<string, string> = {
+  statements: 'Statements',
+  review: 'Review',
+  daybook: 'Day Book',
+  reports: 'Reports',
+  books: 'Books & sign-off',
+  masters: 'Masters',
+  team: 'Team & details',
+}
+
+/** The browser tab names the screen. Screens outside a client set their own title. */
+function useClientPageTitle() {
+  const path = useRouterState({ select: (s) => s.location.pathname })
+  const parts = path.split('/').filter(Boolean)
+  const title = parts[0] !== 'clients' ? undefined : parts.length === 1 ? 'Clients' : parts.length === 2 ? 'Overview' : (CLIENT_TAB_TITLE[parts[2]!] ?? undefined)
+  usePageTitle(title)
+}
 
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { can, me } = useSession()
@@ -88,11 +113,12 @@ function ClientSwitcher() {
 
 /** The financial year in view. April to March; the year is named by the year it starts in. */
 function FySelect() {
-  const { fy, setFy } = usePreferences()
+  const { clientId, fy, setFy, dataYears } = useFy()
+  // The year applies to one client's books, so it only shows inside a client.
+  if (!clientId) return null
   const now = financialYearOf(new Date())
   // A year that has not begun has no books to show, so the list starts at the current one.
-  const years = Array.from({ length: 8 }, (_, i) => now - i)
-  if (!years.includes(fy)) years.push(fy)
+  const years = new Set([...Array.from({ length: 8 }, (_, i) => now - i), ...dataYears, fy])
   return (
     <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
       <span className="hidden sm:inline">Financial year</span>
@@ -102,7 +128,7 @@ function FySelect() {
         onChange={(e) => setFy(Number(e.target.value))}
         className="h-9 rounded-md border border-input bg-card px-2.5 text-sm font-medium text-foreground"
       >
-        {years
+        {[...years]
           .sort((a, b) => b - a)
           .map((year) => (
             <option key={year} value={year}>
@@ -166,7 +192,12 @@ export function Shell() {
   const navigate = useNavigate()
 
   useHotkey('?', 'Show keyboard shortcuts', () => setShortcutsOpen(true))
+  const { can } = useSession()
+  useClientPageTitle()
   useHotkey('g c', 'Go to clients', () => void navigate({ to: '/clients' }), 'Go to')
+  useHotkey('g w', 'Go to work', () => can('client.view') && void navigate({ to: '/work' }), 'Go to')
+  useHotkey('g t', 'Go to team & roles', () => can('team.view') && void navigate({ to: '/team' }), 'Go to')
+  useHotkey('g f', 'Go to firm settings', () => can('firm.manage') && void navigate({ to: '/firm' }), 'Go to')
   useHotkey('escape', 'Close a panel or dialog', () => setMenuOpen(false))
 
   return (

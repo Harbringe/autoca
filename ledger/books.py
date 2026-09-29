@@ -39,6 +39,7 @@ from ledger.models import (
     BooksEvent,
     ChangeAction,
     EntryChange,
+    EntryMarker,
     JournalEntry,
     VoucherSequence,
 )
@@ -62,6 +63,19 @@ class NotReadyError(BooksError):
         super().__init__(
             f"{waiting} transaction{'s' if waiting != 1 else ''} still {'needs' if waiting == 1 else 'need'} a decision. "
             f"Approval can be requested once every row is placed and posted."
+        )
+
+
+class AiEntriesUncheckedError(BooksError):
+    """Entries the assistant posted or changed have not been looked at by a person."""
+
+    def __init__(self, count: int):
+        self.count = count
+        super().__init__(
+            f"{count} entr{'y' if count == 1 else 'ies'} the assistant posted or changed "
+            f"{'has' if count == 1 else 'have'} not been checked by a person. "
+            f"Check {'it' if count == 1 else 'them'}, then mark {'it' if count == 1 else 'them'} as "
+            f"checked, before signing off."
         )
 
 
@@ -182,6 +196,15 @@ def sign_off(client, membership, *, through: datetime.date | None = None, note: 
         # once the period locks -- the database would refuse -- so it has to be
         # dealt with first, not left behind the lock.
         raise NotReadyError(waiting)
+
+    unchecked = JournalEntry.objects.filter(
+        firm_id=client.firm_id, client=client, entry_date__lte=through
+    ).exclude(marker=EntryMarker.NONE)
+    if previous is not None:
+        # Markers on entries an earlier sign-off already locked can no longer be cleared.
+        unchecked = unchecked.filter(entry_date__gt=previous)
+    if unchecked.exists():
+        raise AiEntriesUncheckedError(unchecked.count())
 
     _renumber(client, membership.user, after=previous)
     Client.objects.filter(pk=client.pk).update(signed_off_through=through)

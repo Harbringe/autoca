@@ -11,6 +11,9 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as AppFirmRouteImport } from './routes/_app/firm'
+import { Route as AppTeamRouteImport } from './routes/_app/team'
+import { Route as AppWorkRouteImport } from './routes/_app/work'
 import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as AppClientsIndexRouteImport } from './routes/_app/clients/index'
 import { Route as AppClientsClientIdRouteRouteImport } from './routes/_app/clients/$clientId/route'
@@ -21,6 +24,7 @@ import { Route as AppClientsClientIdMastersRouteImport } from './routes/_app/cli
 import { Route as AppClientsClientIdReportsRouteImport } from './routes/_app/clients/$clientId/reports'
 import { Route as AppClientsClientIdReviewRouteImport } from './routes/_app/clients/$clientId/review'
 import { Route as AppClientsClientIdStatementsRouteImport } from './routes/_app/clients/$clientId/statements'
+import { Route as AppClientsClientIdTeamRouteImport } from './routes/_app/clients/$clientId/team'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -30,6 +34,21 @@ const IndexRoute = IndexRouteImport.update({
 const AppRoute = AppRouteImport.update({
   id: '/_app',
   getParentRoute: () => rootRouteImport,
+} as any)
+const AppFirmRoute = AppFirmRouteImport.update({
+  id: '/firm',
+  path: '/firm',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppTeamRoute = AppTeamRouteImport.update({
+  id: '/team',
+  path: '/team',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppWorkRoute = AppWorkRouteImport.update({
+  id: '/work',
+  path: '/work',
+  getParentRoute: () => AppRoute,
 } as any)
 const InviteTokenRoute = InviteTokenRouteImport.update({
   id: '/invite/$token',
@@ -86,9 +105,17 @@ const AppClientsClientIdStatementsRoute =
     path: '/statements',
     getParentRoute: () => AppClientsClientIdRouteRoute,
   } as any)
+const AppClientsClientIdTeamRoute = AppClientsClientIdTeamRouteImport.update({
+  id: '/team',
+  path: '/team',
+  getParentRoute: () => AppClientsClientIdRouteRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/firm': typeof AppFirmRoute
+  '/team': typeof AppTeamRoute
+  '/work': typeof AppWorkRoute
   '/invite/$token': typeof InviteTokenRoute
   '/clients/$clientId': typeof AppClientsClientIdRouteRouteWithChildren
   '/clients/': typeof AppClientsIndexRoute
@@ -98,10 +125,14 @@ export interface FileRoutesByFullPath {
   '/clients/$clientId/reports': typeof AppClientsClientIdReportsRoute
   '/clients/$clientId/review': typeof AppClientsClientIdReviewRoute
   '/clients/$clientId/statements': typeof AppClientsClientIdStatementsRoute
+  '/clients/$clientId/team': typeof AppClientsClientIdTeamRoute
   '/clients/$clientId/': typeof AppClientsClientIdIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/firm': typeof AppFirmRoute
+  '/team': typeof AppTeamRoute
+  '/work': typeof AppWorkRoute
   '/invite/$token': typeof InviteTokenRoute
   '/clients': typeof AppClientsIndexRoute
   '/clients/$clientId/books': typeof AppClientsClientIdBooksRoute
@@ -110,12 +141,16 @@ export interface FileRoutesByTo {
   '/clients/$clientId/reports': typeof AppClientsClientIdReportsRoute
   '/clients/$clientId/review': typeof AppClientsClientIdReviewRoute
   '/clients/$clientId/statements': typeof AppClientsClientIdStatementsRoute
+  '/clients/$clientId/team': typeof AppClientsClientIdTeamRoute
   '/clients/$clientId': typeof AppClientsClientIdIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
+  '/_app/firm': typeof AppFirmRoute
+  '/_app/team': typeof AppTeamRoute
+  '/_app/work': typeof AppWorkRoute
   '/invite/$token': typeof InviteTokenRoute
   '/_app/clients/$clientId': typeof AppClientsClientIdRouteRouteWithChildren
   '/_app/clients/': typeof AppClientsIndexRoute
@@ -125,12 +160,16 @@ export interface FileRoutesById {
   '/_app/clients/$clientId/reports': typeof AppClientsClientIdReportsRoute
   '/_app/clients/$clientId/review': typeof AppClientsClientIdReviewRoute
   '/_app/clients/$clientId/statements': typeof AppClientsClientIdStatementsRoute
+  '/_app/clients/$clientId/team': typeof AppClientsClientIdTeamRoute
   '/_app/clients/$clientId/': typeof AppClientsClientIdIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/firm'
+    | '/team'
+    | '/work'
     | '/invite/$token'
     | '/clients/$clientId'
     | '/clients/'
@@ -140,10 +179,14 @@ export interface FileRouteTypes {
     | '/clients/$clientId/reports'
     | '/clients/$clientId/review'
     | '/clients/$clientId/statements'
+    | '/clients/$clientId/team'
     | '/clients/$clientId/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/firm'
+    | '/team'
+    | '/work'
     | '/invite/$token'
     | '/clients'
     | '/clients/$clientId/books'
@@ -152,11 +195,15 @@ export interface FileRouteTypes {
     | '/clients/$clientId/reports'
     | '/clients/$clientId/review'
     | '/clients/$clientId/statements'
+    | '/clients/$clientId/team'
     | '/clients/$clientId'
   id:
     | '__root__'
     | '/'
     | '/_app'
+    | '/_app/firm'
+    | '/_app/team'
+    | '/_app/work'
     | '/invite/$token'
     | '/_app/clients/$clientId'
     | '/_app/clients/'
@@ -166,6 +213,7 @@ export interface FileRouteTypes {
     | '/_app/clients/$clientId/reports'
     | '/_app/clients/$clientId/review'
     | '/_app/clients/$clientId/statements'
+    | '/_app/clients/$clientId/team'
     | '/_app/clients/$clientId/'
   fileRoutesById: FileRoutesById
 }
@@ -190,6 +238,27 @@ declare module '@tanstack/react-router' {
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
+    }
+    '/_app/firm': {
+      id: '/_app/firm'
+      path: '/firm'
+      fullPath: '/firm'
+      preLoaderRoute: typeof AppFirmRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/team': {
+      id: '/_app/team'
+      path: '/team'
+      fullPath: '/team'
+      preLoaderRoute: typeof AppTeamRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/work': {
+      id: '/_app/work'
+      path: '/work'
+      fullPath: '/work'
+      preLoaderRoute: typeof AppWorkRouteImport
+      parentRoute: typeof AppRoute
     }
     '/invite/$token': {
       id: '/invite/$token'
@@ -261,6 +330,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppClientsClientIdStatementsRouteImport
       parentRoute: typeof AppClientsClientIdRouteRoute
     }
+    '/_app/clients/$clientId/team': {
+      id: '/_app/clients/$clientId/team'
+      path: '/team'
+      fullPath: '/clients/$clientId/team'
+      preLoaderRoute: typeof AppClientsClientIdTeamRouteImport
+      parentRoute: typeof AppClientsClientIdRouteRoute
+    }
   }
 }
 
@@ -271,6 +347,7 @@ interface AppClientsClientIdRouteRouteChildren {
   AppClientsClientIdReportsRoute: typeof AppClientsClientIdReportsRoute
   AppClientsClientIdReviewRoute: typeof AppClientsClientIdReviewRoute
   AppClientsClientIdStatementsRoute: typeof AppClientsClientIdStatementsRoute
+  AppClientsClientIdTeamRoute: typeof AppClientsClientIdTeamRoute
   AppClientsClientIdIndexRoute: typeof AppClientsClientIdIndexRoute
 }
 
@@ -282,6 +359,7 @@ const AppClientsClientIdRouteRouteChildren: AppClientsClientIdRouteRouteChildren
     AppClientsClientIdReportsRoute: AppClientsClientIdReportsRoute,
     AppClientsClientIdReviewRoute: AppClientsClientIdReviewRoute,
     AppClientsClientIdStatementsRoute: AppClientsClientIdStatementsRoute,
+    AppClientsClientIdTeamRoute: AppClientsClientIdTeamRoute,
     AppClientsClientIdIndexRoute: AppClientsClientIdIndexRoute,
   }
 
@@ -291,11 +369,17 @@ const AppClientsClientIdRouteRouteWithChildren =
   )
 
 interface AppRouteChildren {
+  AppFirmRoute: typeof AppFirmRoute
+  AppTeamRoute: typeof AppTeamRoute
+  AppWorkRoute: typeof AppWorkRoute
   AppClientsClientIdRouteRoute: typeof AppClientsClientIdRouteRouteWithChildren
   AppClientsIndexRoute: typeof AppClientsIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppFirmRoute: AppFirmRoute,
+  AppTeamRoute: AppTeamRoute,
+  AppWorkRoute: AppWorkRoute,
   AppClientsClientIdRouteRoute: AppClientsClientIdRouteRouteWithChildren,
   AppClientsIndexRoute: AppClientsIndexRoute,
 }

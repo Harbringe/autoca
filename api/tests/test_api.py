@@ -260,6 +260,7 @@ def test_placing_a_row_teaches_a_rule_and_places_its_siblings(api, client_record
     assert response.status_code == 200
     assert body["classification"]["ledger_name"] == "Bhim Cash Back"
     assert body["rule_learned"] is not None
+    assert body["rule_created"] is True
     assert body["also_placed"] == 8
 
 
@@ -415,7 +416,7 @@ def test_reconciliation_explains_a_break(api, client_record, statement):
     assert body["matches"] is False
     assert body["can_close"] is False
     assert body["statement_balance_display"] == "₹6,03,490.57"
-    assert "not been approved" in body["explanation"]
+    assert "not been posted" in body["explanation"]
 
 
 def test_reconciling_a_date_no_statement_covers_is_a_404(api, client_record, statement):
@@ -455,6 +456,26 @@ def test_confirming_an_opening_balance(api, client_record, statement):
     assert response.status_code == 200
     assert response.json()["has_opening_balance"] is True
     assert response.json()["opening_balance_display"] == "₹1,24,189.43"
+
+
+def test_the_opening_balance_cannot_change_once_the_books_are_signed_off(api, client_record, statement):
+    account = statement.bank_account
+    url = f"{V1}/clients/{client_record.pk}/bank-accounts/{account.pk}/opening-balance/"
+    first = {"opening_balance_paise": 1_24_189_43, "opening_as_of": "2025-04-01"}
+    assert api.post(url, first, format="json").status_code == 200
+
+    type(client_record).objects.filter(pk=client_record.pk).update(
+        signed_off_through=datetime.date(2025, 4, 30)
+    )
+    refused = api.post(url, {**first, "opening_balance_paise": 5_00_000_00}, format="json")
+
+    assert refused.status_code == 409
+    assert refused.json()["code"] == "entry_locked"
+    assert "30-04-2025" in refused.json()["detail"] and "reopen" in refused.json()["detail"]
+    account.refresh_from_db()
+    assert account.opening_balance_paise == 1_24_189_43
+    # Confirming the figure that already stands changes nothing, so it is not refused.
+    assert api.post(url, first, format="json").status_code == 200
 
 
 def test_the_account_detail_shows_the_number_but_the_list_does_not(api, client_record, statement):
@@ -668,3 +689,53 @@ def test_a_statement_in_signed_off_books_cannot_be_removed(
     assert response.status_code == 409
     assert response.json()["code"] == "entry_locked"
     assert Statement.objects.filter(pk=statement.pk).exists()
+
+
+def test_job_events_stream_survives_the_request_transaction_closing(api, client_record):
+    """The body is produced after the middleware's transaction has ended.
+
+    In a real request the tenant setting is transaction-local, so by the time
+    the stream is consumed it is gone. The test's own transaction keeps it
+    alive, so it is cleared here to stand in for that.
+    """
+    from django.core.files.uploadedfile import SimpleUploadedFile
+
+    from core.db.session import _apply, get_current_firm_id
+
+    upload = SimpleUploadedFile("axis.pdf", b"%PDF-1.4 axis", content_type="application/pdf")
+    job_id = api.post(
+        f"{V1}/clients/{client_record.pk}/statements/upload/", {"file": upload}, format="multipart"
+    ).json()["id"]
+
+    response = api.get(f"{V1}/jobs/{job_id}/events/")
+    _apply("", "default")
+    assert get_current_firm_id() is None
+    body = b"".join(response.streaming_content).decode()
+
+    assert json.loads(body.removeprefix("data: ").strip())["status"] == "SUCCEEDED"
+    assert get_current_firm_id() is None  # the stream did not leave a context behind
+
+
+@pytest.mark.parametrize("body", [{}, {"band": ReviewBand.HIGH, "classifications": ["6b3a1c0e-0000-4000-8000-000000000000"]}])
+def test_approvals_need_exactly_one_of_classifications_or_band(api, client_record, statement, body):
+    response = api.post(f"{V1}/clients/{client_record.pk}/approvals/", body, format="json")
+
+    assert response.status_code == 400
+    assert response.json()["fields"]["non_field_errors"] == ["Send exactly one of classifications or band."]
+
+
+def test_sign_off_refuses_an_unknown_field_instead_of_signing_off_everything(api, client_record):
+    response = api.post(
+        f"{V1}/clients/{client_record.pk}/books/sign-off/",
+        {"through_date": "2026-01-31"},
+        format="json",
+    )
+
+    assert response.status_code == 400
+    assert "through_date" in response.json()["fields"]
+
+
+def test_the_ai_entries_refusal_has_its_own_stable_code():
+    from api.exceptions import DOMAIN_ERRORS
+
+    assert DOMAIN_ERRORS["AiEntriesUncheckedError"][1] == "ai_entries_unchecked"

@@ -1,0 +1,10 @@
+import { signedIn, shot, visibleText, WEB } from '../lib/session.mjs'
+const { page, problems, close } = await signedIn('admin', { width: 1440, height: 900 })
+await page.goto(`${WEB}/clients`)
+await page.waitForLoadState('networkidle')
+await page.keyboard.press('Control+k')
+await page.waitForTimeout(600)
+console.log(await shot(page, 'r1-ux-palette'))
+console.log((await visibleText(page)).slice(0,1000))
+console.log('PROBLEMS:', problems.join('\n')||'none')
+await close()

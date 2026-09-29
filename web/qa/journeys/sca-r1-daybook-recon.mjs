@@ -1,0 +1,18 @@
+import { signedIn, shot, visibleText, apiJson } from '../lib/session.mjs'
+const { page, problems, close } = await signedIn('senior')
+await page.goto('http://127.0.0.1:5173/clients/591f73c7-35a5-42cf-9998-b5fc55ca1799/reports')
+await page.getByText('Show FY 2025-26').click()
+await page.waitForTimeout(500)
+await page.getByRole('link', { name: 'Bank Reconciliation' }).click()
+await page.waitForTimeout(800)
+await shot(page, 'sca-r1-recon-screen')
+console.log('--- RECON ---')
+console.log(await visibleText(page))
+
+await page.goto('http://127.0.0.1:5173/clients/591f73c7-35a5-42cf-9998-b5fc55ca1799/day-book')
+await page.waitForTimeout(800)
+await shot(page, 'sca-r1-daybook-screen')
+console.log('--- DAYBOOK ---')
+console.log(await visibleText(page))
+console.log('problems', problems)
+await close()

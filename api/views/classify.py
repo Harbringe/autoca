@@ -300,8 +300,9 @@ class ReviewQueueViewSet(
         summary="Ask the model about every unresolved row",
         description=(
             "Runs the model tier over the rows no rule could place. Each row the "
-            "model is confident about becomes a *suggestion* in the ADVISED band -- "
-            "never HIGH, so never bulk-approvable -- with a one-line rationale. Rows "
+            "model is confident about becomes a *suggestion* with a one-line "
+            "rationale; its confidence sets the band, and a very confident one may be "
+            "posted automatically (marked, and changeable until sign-off). Rows "
             "it is not confident about stay unresolved, with the rationale attached. "
             "Returns **202** with a job; the result carries `suggested`, `declined` "
             "and `error` (empty unless the provider failed).\n\n"
@@ -558,6 +559,7 @@ class ClassificationViewSet(
                 {
                     "classification": updated,
                     "rule_learned": rule.pk if rule else None,
+                    "rule_created": bool(rule and getattr(rule, "just_created", False)),
                     "also_placed": also_placed,
                     "also_revised": revised,
                     "auto_posted": auto_posted,

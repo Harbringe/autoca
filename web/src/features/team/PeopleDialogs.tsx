@@ -7,7 +7,7 @@ import { useState, type FormEvent } from 'react'
 import { Copy } from 'lucide-react'
 import { toast } from 'sonner'
 import { messageOf } from '@/api/errors'
-import { useInvitePerson, useUpdateMember, type InviteCreated } from '@/api/queries/team'
+import { useInvitePerson, useUpdateMember, type InviteCreated, type MemberPatch } from '@/api/queries/team'
 import type { Member, MembersResponse, Person, Role } from '@/api/types'
 import { ROLE_LABEL } from '@/api/types'
 import { Button } from '@/components/ui/button'
@@ -16,11 +16,11 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { formatDate } from '@/lib/format'
-import { isTeamRole, memberPatch } from '@/lib/team'
+import { isTeamRole } from '@/lib/team'
 
 const ROLE_HINT: Record<Role, string> = {
-  FIRM_ADMIN: 'Sees every client and manages the firm.',
-  SENIOR_CA: 'Reviews and signs off the books of the clients they lead.',
+  FIRM_ADMIN: 'Sees the firm, manages its teams and reports to the owner.',
+  SENIOR_CA: 'Leads a staff team, reviews books and reports to an administrator.',
   STAFF: 'Prepares the books: uploads statements, places rows, posts entries.',
   READ_ONLY: 'Can look at the books, and change nothing.',
 }
@@ -80,8 +80,11 @@ export function InviteDialog({
   const [manager, setManager] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<InviteCreated | null>(null)
-  // A Senior CA's invitations always go to their own team; only an administrator chooses.
-  const chooseTeam = info.can.manage && isTeamRole(role)
+  // An administrator chooses the next-level manager; a Senior CA's team is assigned server-side.
+  const managerRoles: Role[] = role === 'SENIOR_CA' ? ['FIRM_ADMIN'] : isTeamRole(role) ? ['SENIOR_CA'] : []
+  const managerChoices = info.leads.filter((person) => managerRoles.includes(person.role))
+  const chooseTeam = info.can.manage && managerRoles.length > 0
+  const missingManager = chooseTeam && (!manager || !managerChoices.some((person) => person.id === manager))
 
   function close(next: boolean) {
     if (invite.isPending) return
@@ -155,7 +158,13 @@ export function InviteDialog({
             <Field label="Name (optional)">{(p) => <Input {...p} autoComplete="off" value={name} onChange={(e) => setName(e.target.value)} />}</Field>
             <Field label="Role" hint={ROLE_HINT[role]}>
               {(p) => (
-                <Select {...p} value={role} onChange={(e) => setRole(e.target.value as Role)}>
+                <Select {...p} value={role} onChange={(e) => {
+                  const next = e.target.value as Role
+                  setRole(next)
+                  const nextRoles: Role[] = next === 'SENIOR_CA' ? ['FIRM_ADMIN'] : isTeamRole(next) ? ['SENIOR_CA'] : []
+                  const nextParents = info.leads.filter((person) => nextRoles.includes(person.role))
+                  if (!nextParents.some((person) => person.id === manager)) setManager(nextParents[0]?.id ?? '')
+                }}>
                   {roles.map((r) => (
                     <option key={r} value={r}>
                       {ROLE_LABEL[r]}
@@ -165,17 +174,18 @@ export function InviteDialog({
               )}
             </Field>
             {chooseTeam && (
-              <Field label="Team of" hint="The Senior CA they report to. You can change it later.">
-                {(p) => <LeadSelect {...p} value={manager} onChange={setManager} leads={info.leads} none="No team yet" />}
+              <Field label="Reports to" hint={role === 'SENIOR_CA' ? 'Senior CAs report to an administrator.' : 'Staff and Read-only members report to a Senior CA.'}>
+                {(p) => <LeadSelect {...p} value={manager} onChange={setManager} leads={managerChoices} none="Not assigned yet" />}
               </Field>
             )}
+            {chooseTeam && managerChoices.length === 0 && <p className="text-sm text-warning">No active manager is available at the next level. Invite a Senior CA first for staff roles.</p>}
             {!info.can.manage && <p className="text-[13px] text-muted-foreground">They will join your team.</p>}
             <ErrorLine message={error} />
             <DialogFooter>
               <Button variant="ghost" onClick={() => close(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={invite.isPending}>
+              <Button type="submit" disabled={invite.isPending || missingManager}>
                 {invite.isPending ? 'Creating…' : 'Create invitation'}
               </Button>
             </DialogFooter>
@@ -207,16 +217,30 @@ export function EditMemberDialog({
 
 function EditForm({ member, info, onClose }: { member: Member; info: MembersResponse; onClose: () => void }) {
   const update = useUpdateMember()
-  const roles = info.can.invite_roles.includes(member.role) ? info.can.invite_roles : [member.role, ...info.can.invite_roles]
+  const roles = member.can.manage_role
+    ? (info.can.role_options.includes(member.role) ? info.can.role_options : [member.role, ...info.can.role_options])
+    : [member.role]
   const [role, setRole] = useState<Role>(member.role)
   const [manager, setManager] = useState(member.manager?.id ?? '')
   const [scopeAll, setScopeAll] = useState(member.scope_all_clients)
   const [keep, setKeep] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const patch = memberPatch(member, { role, manager: manager || null, scopeAll, keepAssignments: keep })
+  const patch: MemberPatch = {}
+  if (member.can.manage_role && role !== member.role) patch.role = role
+  if (info.can.manage) {
+    const hiddenOwnerParentUnchanged = !!member.manager?.is_owner && !member.manager.id && !manager
+    if (role !== 'FIRM_ADMIN' && manager !== (member.manager?.id ?? '') && !hiddenOwnerParentUnchanged && (manager || member.manager?.id)) {
+      patch.manager = manager || null
+      if (member.manager && keep) patch.keep_client_assignments = true
+    }
+    if (role !== 'FIRM_ADMIN' && scopeAll !== member.scope_all_clients) patch.scope_all_clients = scopeAll
+  }
   const changed = Object.keys(patch).filter((k) => k !== 'keep_client_assignments').length > 0
   const movingTeam = 'manager' in patch && !!member.manager
+  const parentRoles: Role[] = role === 'SENIOR_CA' ? ['FIRM_ADMIN'] : isTeamRole(role) ? ['SENIOR_CA'] : []
+  const parents = info.leads.filter((person) => parentRoles.includes(person.role))
+  const missingRequiredParent = role !== member.role && role !== 'FIRM_ADMIN' && parents.length === 0
 
   async function submit(e: FormEvent) {
     e.preventDefault()
@@ -239,7 +263,16 @@ function EditForm({ member, info, onClose }: { member: Member; info: MembersResp
       <form onSubmit={submit} className="grid gap-4" noValidate>
         <Field label="Role" hint={ROLE_HINT[role]}>
           {(p) => (
-            <Select {...p} autoFocus value={role} onChange={(e) => setRole(e.target.value as Role)}>
+            <Select {...p} autoFocus value={role} disabled={!member.can.manage_role} onChange={(e) => {
+              const next = e.target.value as Role
+              setRole(next)
+              if (member.role === 'FIRM_ADMIN' && next !== 'FIRM_ADMIN') setScopeAll(false)
+              if (info.can.manage && next !== 'FIRM_ADMIN') {
+                const nextParentRole = next === 'SENIOR_CA' ? 'FIRM_ADMIN' : 'SENIOR_CA'
+                const candidates = info.leads.filter((person) => person.role === nextParentRole)
+                if (!candidates.some((person) => person.id === manager)) setManager(candidates[0]?.id ?? '')
+              }
+            }}>
               {roles.map((r) => (
                 <option key={r} value={r}>
                   {ROLE_LABEL[r]}
@@ -248,11 +281,12 @@ function EditForm({ member, info, onClose }: { member: Member; info: MembersResp
             </Select>
           )}
         </Field>
-        {isTeamRole(role) && (
-          <Field label="Team of" hint="The Senior CA they report to.">
-            {(p) => <LeadSelect {...p} value={manager} onChange={setManager} leads={info.leads} exclude={member.id} none="No team" />}
+        {info.can.manage && role !== 'FIRM_ADMIN' && (
+          <Field label="Reports to" hint={role === 'SENIOR_CA' ? 'Senior CAs report to an administrator.' : 'Staff and Read-only members report to a Senior CA.'}>
+            {(p) => <LeadSelect {...p} value={manager} onChange={setManager} leads={parents} exclude={member.id} none="Not assigned yet" />}
           </Field>
         )}
+        {missingRequiredParent && <p className="text-sm text-warning">No active manager is available at the next level. Add a manager before changing this role.</p>}
         {movingTeam && (
           <Checkbox
             label="Keep them on the clients they are already assigned to"
@@ -260,7 +294,7 @@ function EditForm({ member, info, onClose }: { member: Member; info: MembersResp
             onChange={(e) => setKeep(e.target.checked)}
           />
         )}
-        {role !== 'FIRM_ADMIN' && (
+        {info.can.manage && role !== 'FIRM_ADMIN' && (
           <Checkbox label="Can open every client, not only assigned ones" checked={scopeAll} onChange={(e) => setScopeAll(e.target.checked)} />
         )}
         <ErrorLine message={error} />
@@ -268,7 +302,7 @@ function EditForm({ member, info, onClose }: { member: Member; info: MembersResp
           <Button variant="ghost" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit" disabled={!changed || update.isPending}>
+          <Button type="submit" disabled={!changed || missingRequiredParent || update.isPending}>
             {update.isPending ? 'Saving…' : 'Save changes'}
           </Button>
         </DialogFooter>

@@ -1,23 +1,62 @@
+// The shell: a module sidebar, a top bar that says whose books you are in, and the page.
+//
+// The sidebar mirrors the product's map (Overview, Workflow, Accounting, Assurance, Intelligence,
+// Management). Modules that are not built are real links to a "Coming soon" page, marked with a
+// "Soon" chip. The active module is derived from the address. Under 1024px the sidebar is a drawer.
+
 import { useQuery } from '@tanstack/react-query'
-import { Link, Outlet, useNavigate, useParams, useRouterState } from '@tanstack/react-router'
-import { Building2, ChevronsUpDown, Keyboard, LogOut, Menu, Monitor, Moon, Rows3, Sun, UserCog, Users, Activity } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
-import { clientDetail } from '@/api/queries/clients'
+import { Link, Outlet, useNavigate, useParams, useRouterState, useSearch } from '@tanstack/react-router'
+import {
+  Activity,
+  BarChart3,
+  Bell,
+  BookOpen,
+  Building2,
+  CalendarCheck,
+  Calculator,
+  ChevronsUpDown,
+  Columns3,
+  FileSpreadsheet,
+  FolderOpen,
+  Keyboard,
+  Landmark,
+  LayoutDashboard,
+  LogOut,
+  Menu,
+  Monitor,
+  Moon,
+  Rows3,
+  Search,
+  Settings,
+  ShieldCheck,
+  Sparkles,
+  Sun,
+  TrendingUp,
+  Users,
+  EyeOff,
+} from 'lucide-react'
+import { Dialog as Drawer } from 'radix-ui'
+import { useEffect, useState, type ReactNode } from 'react'
+import { clientDetail, reviewSummary } from '@/api/queries/clients'
+import { teamClients } from '@/api/queries/team'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-  DropdownMenuItem,
 } from '@/components/ui/dropdown-menu'
 import { Kbd } from '@/components/ui/kbd'
 import { Brand } from '@/features/auth/AuthLayout'
 import { fyLabel, financialYearOf } from '@/lib/format'
+import { parseFy } from '@/lib/fy'
 import { useHotkey } from '@/lib/hotkeys'
+import { FIRM_LANDING, MODULE_CLIENT_SCREEN, moduleOf, type ModuleId } from '@/lib/modules'
 import { usePreferences, type Density, type Theme } from '@/lib/preferences'
 import { usePageTitle } from '@/lib/title'
 import { cn } from '@/lib/utils'
@@ -26,28 +65,74 @@ import { usePalette } from './CommandPalette'
 import { ShortcutSheet } from './ShortcutSheet'
 import { useFy } from './useFy'
 
-interface NavItem {
-  to: '/clients' | '/team' | '/work' | '/firm'
+interface NavEntry {
+  id: ModuleId
   label: string
   icon: ReactNode
   /** Shown only to people holding this permission. */
   permission?: string
+  /** No screen yet: the link goes to /soon/<id>. */
+  soon?: boolean
 }
 
-const NAV: NavItem[] = [
-  { to: '/clients', label: 'Clients', icon: <Users />, permission: 'client.view' },
-  { to: '/work', label: 'Work', icon: <Activity />, permission: 'client.view' },
-  { to: '/team', label: 'Team & roles', icon: <UserCog />, permission: 'team.view' },
-  { to: '/firm', label: 'Firm settings', icon: <Building2 />, permission: 'firm.manage' },
+const GROUPS: { label: string; items: NavEntry[] }[] = [
+  {
+    label: 'Overview',
+    items: [
+      { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard />, permission: 'client.view' },
+      { id: 'clients', label: 'Clients', icon: <Users />, permission: 'client.view' },
+    ],
+  },
+  {
+    label: 'Workflow',
+    items: [
+      { id: 'pipeline', label: 'Work pipeline', icon: <Columns3 />, permission: 'client.view' },
+      { id: 'documents', label: 'Documents', icon: <FolderOpen />, soon: true },
+    ],
+  },
+  {
+    label: 'Accounting',
+    items: [
+      { id: 'bookkeeping', label: 'Bookkeeping', icon: <BookOpen />, permission: 'report.view' },
+      { id: 'bank', label: 'Bank statements', icon: <Landmark />, permission: 'transaction.view' },
+      // GST has a complete API and gets its screens in wave 6; until then it is a "Soon" page.
+      { id: 'gst', label: 'GST reconciliation', icon: <FileSpreadsheet />, soon: true },
+      { id: 'taxation', label: 'Taxation / ITR', icon: <Calculator />, soon: true },
+    ],
+  },
+  {
+    label: 'Assurance',
+    items: [
+      { id: 'audit', label: 'Audit', icon: <ShieldCheck />, soon: true },
+      { id: 'compliance', label: 'Compliance', icon: <CalendarCheck />, soon: true },
+    ],
+  },
+  {
+    label: 'Intelligence',
+    items: [
+      { id: 'reports', label: 'Reports', icon: <BarChart3 />, permission: 'report.view' },
+      { id: 'ai', label: 'AI assistant', icon: <Sparkles />, soon: true },
+      { id: 'analytics', label: 'Firm analytics', icon: <TrendingUp />, soon: true },
+    ],
+  },
+  {
+    label: 'Management',
+    items: [
+      { id: 'staff', label: 'Staff performance', icon: <Activity />, permission: 'client.view' },
+      { id: 'notifications', label: 'Notifications', icon: <Bell />, soon: true },
+      { id: 'settings', label: 'Settings', icon: <Settings /> },
+    ],
+  },
 ]
 
-const CLIENT_TAB_TITLE: Record<string, string> = {
+const SCREEN_TITLE: Record<string, string> = {
   statements: 'Statements',
   review: 'Review',
   daybook: 'Day Book',
+  ledgers: 'Ledgers',
   reports: 'Reports',
   books: 'Books & sign-off',
-  masters: 'Masters',
+  masters: 'Parties & rules',
   team: 'Team & details',
 }
 
@@ -55,94 +140,213 @@ const CLIENT_TAB_TITLE: Record<string, string> = {
 function useClientPageTitle() {
   const path = useRouterState({ select: (s) => s.location.pathname })
   const parts = path.split('/').filter(Boolean)
-  const title = parts[0] !== 'clients' ? undefined : parts.length === 1 ? 'Clients' : parts.length === 2 ? 'Overview' : (CLIENT_TAB_TITLE[parts[2]!] ?? undefined)
+  const title = parts[0] !== 'clients' ? undefined : parts.length === 1 ? 'Clients' : parts.length === 2 ? 'Overview' : (SCREEN_TITLE[parts[2]!] ?? undefined)
   usePageTitle(title)
+}
+
+/** The small champagne chip on the dark sidebar: "Soon", or a real count. */
+const chip = 'ml-auto rounded-sm bg-[#2a2413] px-1.5 text-xs font-medium text-[#dcc488]'
+
+function useSidebarCount(): number | undefined {
+  const { can } = useSession()
+  const { clientId } = useParams({ strict: false }) as { clientId?: string }
+  const one = useQuery({ ...reviewSummary(clientId ?? ''), enabled: !!clientId && can('transaction.view') })
+  // The firm total comes from the team endpoint, which only people who manage the team may read.
+  const firm = useQuery({ ...teamClients(), enabled: !clientId && can('team.view') })
+  if (clientId) return one.data?.total
+  if (!firm.data) return undefined
+  return firm.data.results.reduce((sum, c) => sum + c.unresolved + c.pending_approval, 0)
 }
 
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { can, me } = useSession()
+  const { hideSoon } = usePreferences()
+  const path = useRouterState({ select: (s) => s.location.pathname })
+  const active = moduleOf(path)
+  const { clientId } = useParams({ strict: false }) as { clientId?: string }
+  const bankCount = useSidebarCount()
+
+  const hrefFor = (entry: NavEntry): string => {
+    if (entry.soon) return `/soon/${entry.id}`
+    if (entry.id === 'settings') return `/${settingsHome(can)}`
+    const screen = MODULE_CLIENT_SCREEN[entry.id]
+    if (clientId && screen) return `/clients/${clientId}/${screen}`
+    return FIRM_LANDING[entry.id] ?? `/${entry.id}`
+  }
+
+  const initials = (me?.full_name || me?.email || '?')
+    .split(/[\s@.]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join('')
+
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-      <div className="px-4 py-4 text-white">
+      <div className="px-4 py-3.5 text-white">
         <Brand />
       </div>
-      <nav aria-label="Main" className="grid gap-0.5 px-2">
-        {NAV.filter((item) => !item.permission || can(item.permission)).map((item) => (
-          <Link
-            key={item.to}
-            to={item.to}
-            onClick={onNavigate}
-            className="flex items-center gap-2.5 rounded-md px-3 py-2 text-sm font-medium text-sidebar-foreground/85 hover:bg-sidebar-active hover:text-white data-[status=active]:bg-sidebar-active data-[status=active]:text-white [&_svg]:size-4"
-            activeProps={{ 'data-status': 'active' }}
-          >
-            {item.icon}
-            {item.label}
-          </Link>
-        ))}
+      <nav aria-label="Main" className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+        {GROUPS.map((group) => {
+          const items = group.items.filter((item) => {
+            if (item.permission && !can(item.permission)) return false
+            if (item.id === 'settings' && !can('team.view') && !can('firm.manage')) return false
+            if (item.soon && hideSoon) return false
+            return true
+          })
+          if (items.length === 0) return null
+          return (
+            <div key={group.label} className="pt-2.5">
+              <div className="px-3 pb-1 text-xs font-medium text-sidebar-muted">{group.label}</div>
+              <ul className="grid gap-0.5">
+                {items.map((item) => {
+                  const isActive = active === item.id
+                  return (
+                    <li key={item.id}>
+                      <Link
+                        to={hrefFor(item) as never}
+                        onClick={onNavigate}
+                        aria-current={isActive ? 'page' : undefined}
+                        className={cn(
+                          'relative flex h-9 items-center gap-2.5 rounded-md px-3 text-sm font-medium hover:bg-white/5 hover:text-white [&_svg]:size-4 [&_svg]:shrink-0',
+                          item.soon ? 'text-sidebar-muted' : 'text-sidebar-foreground',
+                          isActive && 'bg-sidebar-active text-white before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-sidebar-bar',
+                        )}
+                      >
+                        {item.icon}
+                        <span className="truncate">{item.label}</span>
+                        {item.soon ? (
+                          <span className={chip}>Soon</span>
+                        ) : item.id === 'bank' && bankCount ? (
+                          <span className={cn(chip, 'num')} title={clientId ? 'Rows waiting for this client' : 'Rows waiting across the firm'}>
+                            {bankCount}
+                          </span>
+                        ) : null}
+                      </Link>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          )
+        })}
       </nav>
-      <div className="mt-auto border-t border-white/10 px-4 py-3 text-xs text-sidebar-muted">
-        <div className="truncate font-medium text-sidebar-foreground">{me?.firm?.name}</div>
-        <div className="truncate">{me?.role_display}</div>
+      <div className="flex items-center gap-2.5 border-t border-white/10 px-4 py-3 text-xs text-sidebar-muted">
+        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-white/10 text-[13px] font-semibold text-sidebar-foreground" aria-hidden>
+          {initials}
+        </span>
+        <div className="min-w-0">
+          <div className="truncate text-[13px] font-medium text-sidebar-foreground">{me?.full_name || me?.email}</div>
+          <div className="truncate">{me?.role_display}</div>
+        </div>
       </div>
     </div>
   )
 }
 
-function ClientSwitcher() {
-  const { clientId } = useParams({ strict: false })
+function settingsHome(can: (permission: string) => boolean): string {
+  return can('team.view') ? 'settings/team' : 'settings/firm'
+}
+
+/** Who's books these are. Opens the palette, which lists clients (and "All clients") as you type. */
+function ClientPicker() {
+  const { clientId } = useParams({ strict: false }) as { clientId?: string }
   const palette = usePalette()
   const client = useQuery({ ...clientDetail(clientId ?? ''), enabled: !!clientId })
+  const label = clientId ? (client.data?.name ?? '…') : 'All clients'
   return (
     <Button
-      variant="outline"
-      className="min-w-0 flex-1 justify-between md:min-w-52 md:max-w-72 md:flex-none"
+      variant="secondary"
+      className="min-w-0 flex-1 justify-between gap-2 px-3 sm:flex-none sm:min-w-52 sm:max-w-72"
       onClick={() => palette.open()}
-      aria-label="Switch client"
+      aria-label={`Client: ${label}. Change client`}
+      aria-haspopup="dialog"
     >
-      <span className="truncate">{clientId ? (client.data?.name ?? '…') : 'Select a client'}</span>
+      <span className="flex min-w-0 items-center gap-2">
+        <Building2 className="text-muted-foreground" aria-hidden />
+        <span className="truncate">{label}</span>
+      </span>
       <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
-        <span className="hidden items-center gap-1.5 md:flex">
+        <span className="hidden items-center gap-1 xl:flex">
           <Kbd>Alt</Kbd>
           <Kbd>C</Kbd>
         </span>
-        <ChevronsUpDown className="!size-3.5" />
+        <ChevronsUpDown className="!size-3.5" aria-hidden />
       </span>
     </Button>
   )
 }
 
-/** The financial year in view. April to March; the year is named by the year it starts in. */
+/** Modules where the financial year in view means something. */
+const FY_MODULES: ModuleId[] = ['dashboard', 'clients', 'pipeline', 'bookkeeping', 'bank', 'gst', 'reports']
+
+/**
+ * The financial year in view (April to March, named by the year it starts in). Inside a client it is
+ * that client's remembered year, written to `?fy=`. Under All clients it is a firm-level year, also
+ * carried in `?fy=`, and picking a client afterwards keeps it.
+ */
 function FySelect() {
-  const { clientId, fy, setFy, dataYears } = useFy()
-  // The year applies to one client's books, so it only shows inside a client.
-  if (!clientId) return null
+  const path = useRouterState({ select: (s) => s.location.pathname })
+  const { clientId, fy: clientFy, setFy: setClientFy, dataYears } = useFy()
+  const search = useSearch({ strict: false }) as { fy?: unknown }
+  const navigate = useNavigate()
+  const module = moduleOf(path)
+  if (!module || !FY_MODULES.includes(module)) return null
+
   const now = financialYearOf(new Date())
+  const fy = clientId ? clientFy : (parseFy(search.fy) ?? now)
+  const setFy = clientId
+    ? setClientFy
+    : (next: number) => void navigate({ to: '.', search: ((prev: Record<string, unknown>) => ({ ...prev, fy: next })) as never, replace: true })
   // A year that has not begun has no books to show, so the list starts at the current one.
   const years = new Set([...Array.from({ length: 8 }, (_, i) => now - i), ...dataYears, fy])
   return (
-    <label className="flex items-center gap-2 text-[13px] text-muted-foreground">
-      <span className="hidden sm:inline">Financial year</span>
-      <select
-        aria-label="Financial year"
-        value={fy}
-        onChange={(e) => setFy(Number(e.target.value))}
-        className="h-9 rounded-md border border-input bg-card px-2.5 text-sm font-medium text-foreground"
-      >
-        {[...years]
-          .sort((a, b) => b - a)
-          .map((year) => (
-            <option key={year} value={year}>
-              FY {fyLabel(year)}
-            </option>
-          ))}
-      </select>
-    </label>
+    <select
+      aria-label="Financial year"
+      value={fy}
+      onChange={(e) => setFy(Number(e.target.value))}
+      className="h-9 shrink-0 rounded-md border border-input bg-card px-2.5 text-sm font-medium text-foreground"
+    >
+      {[...years]
+        .sort((a, b) => b - a)
+        .map((year) => (
+          <option key={year} value={year}>
+            FY {fyLabel(year)}
+          </option>
+        ))}
+    </select>
   )
+}
+
+function PaletteTrigger() {
+  const palette = usePalette()
+  return (
+    <button
+      type="button"
+      onClick={() => palette.open()}
+      className="hidden h-9 min-w-0 max-w-sm flex-1 items-center gap-2 rounded-md border border-input bg-card px-3 text-sm text-faint hover:bg-hover lg:flex"
+    >
+      <Search className="size-4 shrink-0" aria-hidden />
+      <span className="truncate">Search or jump</span>
+      <span className="ml-auto flex shrink-0 items-center gap-1">
+        <Kbd>Ctrl</Kbd>
+        <Kbd>K</Kbd>
+      </span>
+    </button>
+  )
+}
+
+/**
+ * Where the assistant's live state will show ("Assistant reading 14 rows" / "paused, 32 s"),
+ * linking to Review. The queue API is not ready, so it renders nothing yet.
+ */
+function AssistantIndicator() {
+  return null
 }
 
 function UserMenu({ onShortcuts }: { onShortcuts: () => void }) {
   const { me, signOut } = useSession()
-  const { theme, setTheme, density, setDensity } = usePreferences()
+  const { theme, setTheme, density, setDensity, hideSoon, setHideSoon } = usePreferences()
   const initials = (me?.full_name || me?.email || '?')
     .split(/[\s@.]+/)
     .filter(Boolean)
@@ -175,6 +379,10 @@ function UserMenu({ onShortcuts }: { onShortcuts: () => void }) {
           <DropdownMenuRadioItem value="compact"><Rows3 /> Compact</DropdownMenuRadioItem>
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
+        <DropdownMenuCheckboxItem checked={hideSoon} onCheckedChange={(v) => setHideSoon(v === true)}>
+          <EyeOff /> Hide modules that are coming soon
+        </DropdownMenuCheckboxItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem onSelect={onShortcuts}>
           <Keyboard /> Keyboard shortcuts <Kbd className="ml-auto">?</Kbd>
         </DropdownMenuItem>
@@ -190,43 +398,72 @@ export function Shell() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const navigate = useNavigate()
+  const path = useRouterState({ select: (s) => s.location.pathname })
 
   useHotkey('?', 'Show keyboard shortcuts', () => setShortcutsOpen(true))
-  const { can } = useSession()
+  const { can, me } = useSession()
   useClientPageTitle()
   useHotkey('g c', 'Go to clients', () => void navigate({ to: '/clients' }), 'Go to')
-  useHotkey('g w', 'Go to work', () => can('client.view') && void navigate({ to: '/work' }), 'Go to')
-  useHotkey('g t', 'Go to team & roles', () => can('team.view') && void navigate({ to: '/team' }), 'Go to')
-  useHotkey('g f', 'Go to firm settings', () => can('firm.manage') && void navigate({ to: '/firm' }), 'Go to')
-  useHotkey('escape', 'Close a panel or dialog', () => setMenuOpen(false))
+  useHotkey('g w', 'Go to staff performance', () => can('client.view') && void navigate({ to: '/staff' }), 'Go to')
+  useHotkey('g t', 'Go to team & roles', () => can('team.view') && void navigate({ to: '/settings/team' }), 'Go to')
+  useHotkey('g f', 'Go to firm settings', () => can('firm.manage') && void navigate({ to: '/settings/firm' }), 'Go to')
+
+  // The drawer closes when the person navigates, and when the window grows past the breakpoint.
+  useEffect(() => setMenuOpen(false), [path])
+  useEffect(() => {
+    const query = matchMedia('(min-width: 1024px)')
+    const close = () => query.matches && setMenuOpen(false)
+    query.addEventListener('change', close)
+    return () => query.removeEventListener('change', close)
+  }, [])
 
   return (
     <div className="flex min-h-svh">
-      <aside className="no-print sticky top-0 hidden h-svh w-60 shrink-0 md:block">
+      <a
+        href="#content"
+        onClick={(e) => {
+          e.preventDefault()
+          document.getElementById('content')?.focus()
+        }}
+        className="sr-only z-[60] rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground focus:not-sr-only focus:fixed focus:left-3 focus:top-3"
+      >
+        Skip to content
+      </a>
+
+      <aside className="no-print sticky top-0 hidden h-svh w-[248px] shrink-0 lg:block">
         <Sidebar />
       </aside>
 
-      {menuOpen && (
-        <div className="fixed inset-0 z-40 md:hidden" role="dialog" aria-modal="true" aria-label="Menu">
-          <button className="absolute inset-0 bg-black/45" aria-label="Close menu" onClick={() => setMenuOpen(false)} />
-          <aside className="relative h-full w-64">
+      <Drawer.Root open={menuOpen} onOpenChange={setMenuOpen}>
+        <Drawer.Portal>
+          <Drawer.Overlay className="fixed inset-0 z-40 bg-black/45 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-[120ms] lg:hidden" />
+          <Drawer.Content
+            aria-describedby={undefined}
+            className="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-[120ms] lg:hidden"
+          >
+            <Drawer.Title className="sr-only">Menu</Drawer.Title>
             <Sidebar onNavigate={() => setMenuOpen(false)} />
-          </aside>
-        </div>
-      )}
+          </Drawer.Content>
+        </Drawer.Portal>
+      </Drawer.Root>
 
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background/90 px-3 backdrop-blur md:gap-3 md:px-4">
-          <Button variant="ghost" size="icon" className="shrink-0 md:hidden" aria-label="Open menu" onClick={() => setMenuOpen(true)}>
+        <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background px-3 md:gap-3 lg:px-6">
+          <Button variant="ghost" size="icon" className="size-11 shrink-0 lg:hidden" aria-label="Open menu" onClick={() => setMenuOpen(true)}>
             <Menu />
           </Button>
-          <ClientSwitcher />
+          {me?.firm?.name && (
+            <span className="hidden max-w-48 shrink-0 truncate border-r pr-3 text-[13px] font-medium text-muted-foreground xl:block">{me.firm.name}</span>
+          )}
+          <ClientPicker />
+          <FySelect />
+          <PaletteTrigger />
           <div className="ml-auto flex shrink-0 items-center gap-2 md:gap-3">
-            <FySelect />
+            <AssistantIndicator />
             <UserMenu onShortcuts={() => setShortcutsOpen(true)} />
           </div>
         </header>
-        <main className={cn('mx-auto w-full max-w-[1400px] flex-1 p-4 md:p-6')}>
+        <main id="content" tabIndex={-1} className="mx-auto w-full max-w-[1400px] flex-1 p-4 outline-none md:p-6">
           <Outlet />
         </main>
       </div>

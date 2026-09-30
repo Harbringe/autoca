@@ -13,7 +13,7 @@ export function DropdownMenuContent({ className, sideOffset = 6, ...props }: Com
       <Primitive.Content
         sideOffset={sideOffset}
         className={cn(
-          'z-50 min-w-52 overflow-hidden rounded-md border bg-popover p-1 text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95',
+          'z-50 min-w-52 overflow-hidden rounded-lg border bg-popover p-1 text-popover-foreground shadow-[var(--shadow-float)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-[120ms]',
           className,
         )}
         {...props}
@@ -39,6 +39,19 @@ export function DropdownMenuRadioItem({ className, children, ...props }: Compone
       </span>
       {children}
     </Primitive.RadioItem>
+  )
+}
+
+export function DropdownMenuCheckboxItem({ className, children, ...props }: ComponentProps<typeof Primitive.CheckboxItem>) {
+  return (
+    <Primitive.CheckboxItem className={cn(item, 'pl-8', className)} {...props}>
+      <span className="absolute left-2 grid size-4 place-items-center">
+        <Primitive.ItemIndicator>
+          <Check />
+        </Primitive.ItemIndicator>
+      </span>
+      {children}
+    </Primitive.CheckboxItem>
   )
 }
 

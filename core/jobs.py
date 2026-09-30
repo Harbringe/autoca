@@ -21,7 +21,7 @@ import functools
 import logging
 from dataclasses import dataclass
 
-from django.db import transaction
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from core.models import Job, JobStatus
@@ -82,15 +82,28 @@ def run_job(
         if existing is not None:
             existing.delete()  # a previous failure; let this attempt replace it
 
-    job = Job.objects.create(
-        firm_id=firm_id,
-        kind=kind,
-        idempotency_key=idempotency_key,
-        status=JobStatus.RUNNING,
-        message=message,
-        started_at=timezone.now(),
-        created_by=user,
-    )
+    try:
+        # A savepoint of its own: two requests carrying the same key race on the unique
+        # constraint, and the loser must not poison the transaction it is running in.
+        with transaction.atomic():
+            job = Job.objects.create(
+                firm_id=firm_id,
+                kind=kind,
+                idempotency_key=idempotency_key,
+                status=JobStatus.RUNNING,
+                message=message,
+                started_at=timezone.now(),
+                created_by=user,
+            )
+    except IntegrityError:
+        existing = (
+            Job.objects.filter(firm_id=firm_id, idempotency_key=idempotency_key).first()
+            if idempotency_key
+            else None
+        )
+        if existing is None:
+            raise
+        return JobResult(job=existing, reused=True)
 
     try:
         # A failure must not roll the Job row back along with the work, or the

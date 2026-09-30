@@ -23,7 +23,7 @@ from core import throttle
 from core.access import visible_clients
 from core.db.session import TenantContextError, firm_context
 from core.models import Client, ClientAssignment, Firm, FirmMembership, Role, User
-from teams import activity, service
+from teams import activity, schemas, service
 from teams.models import Invite, TeamEventKind, hash_token
 
 security_log = logging.getLogger("autoca.security")
@@ -50,22 +50,30 @@ def _person(membership: FirmMembership | None) -> dict | None:
 def _member(actor: FirmMembership, m: FirmMembership, clients_by_member: dict) -> dict:
     admin = service.is_admin(actor)
     own_team = service.is_lead(actor) and m.manager_id == actor.pk
-    # Administrators are the owner's to manage; the owner is nobody's.
-    admin_ok = m.role != Role.FIRM_ADMIN or service.can_manage_admins(actor)
+    # The owner is hidden from administrators and cannot be changed in this view.
+    admin_ok = not m.is_owner
     untouchable = m.is_owner or m.pk == actor.pk
+    manage_role = not untouchable and (
+        (admin and admin_ok) or (own_team and m.role in service.TEAM_ROLES)
+    )
     return {
         **_person(m),
         "user_id": str(m.user_id),
         "email": m.user.email,
         "full_name": m.user.full_name,
         "scope_all_clients": m.scope_all_clients or m.role == Role.FIRM_ADMIN,
-        "manager": _person(m.manager),
+        "manager": (
+            {"id": "", "name": "Firm owner", "role": Role.FIRM_ADMIN, "role_display": "Firm owner", "is_owner": True, "is_active": True}
+            if m.manager and m.manager.is_owner and not actor.is_owner
+            else _person(m.manager)
+        ),
         "last_login": m.user.last_login,
         "created_at": m.created_at,
         "is_me": m.pk == actor.pk,
         "clients": clients_by_member.get(m.pk, []),
         "can": {
             "manage": admin and admin_ok and not untouchable,
+            "manage_role": manage_role,
             "set_active": (admin and admin_ok or own_team) and not untouchable,
         },
     }
@@ -159,16 +167,22 @@ class MemberUpdateSerializer(serializers.Serializer):
 class MembersView(TeamView):
     required_permission = {"GET": "team.view", "POST": "member.invite"}
 
+    @schemas.members_get
     def get(self, request):
         actor = request.membership
         members = list(service.visible_members(actor).order_by("-is_active", "role", "user__email"))
         by_member = _clients_by_member(members)
         period = _period(request)
         work = activity.work_by_user(actor.firm_id, [m.user_id for m in members], period)
+        leads = FirmMembership.objects.filter(
+            firm_id=actor.firm_id, is_active=True, role__in=service.LEAD_ROLES
+        )
+        if not actor.is_owner:
+            leads = leads.exclude(is_owner=True)
         return Response(
             {
                 "period": {"from": period.start.date(), "to": (period.end - datetime.timedelta(days=1)).date()},
-                "metrics": [{"key": k, "label": v} for k, v in activity.METRICS],
+                "metrics": activity.metric_list(),
                 "can": {
                     "invite": True,
                     "invite_roles": (
@@ -176,14 +190,13 @@ class MembersView(TeamView):
                         if service.is_admin(actor)
                         else sorted(service.TEAM_ROLES)
                     ),
+                    "role_options": list(Role.values) if service.is_admin(actor) else sorted(service.TEAM_ROLES),
                     "manage": service.is_admin(actor),
                     "manage_admins": service.can_manage_admins(actor),
                 },
                 "leads": [
                     _person(m)
-                    for m in FirmMembership.objects.filter(
-                        firm_id=actor.firm_id, is_active=True, role__in=service.LEAD_ROLES
-                    ).select_related("user")
+                    for m in leads.select_related("user")
                 ],
                 "results": [
                     {**_member(actor, m, by_member), "work": work[m.user_id].totals} for m in members
@@ -191,6 +204,7 @@ class MembersView(TeamView):
             }
         )
 
+    @schemas.members_post(InviteSerializer)
     def post(self, request):
         actor = request.membership
         payload = InviteSerializer(data=request.data)
@@ -213,11 +227,13 @@ class MembersView(TeamView):
 class MemberView(TeamView):
     required_permission = {"GET": "team.view", "PATCH": "team.view"}
 
+    @schemas.member_get
     def get(self, request, pk):
         actor = request.membership
         member = _membership_or_404(actor, pk)
         return Response(_member(actor, member, _clients_by_member([member])))
 
+    @schemas.member_patch(MemberUpdateSerializer)
     def patch(self, request, pk):
         actor = request.membership
         member = _membership_or_404(actor, pk)
@@ -246,6 +262,7 @@ class MemberWorkView(APIView):
     permission_classes = [HasFirmPermission]
     required_permission = "client.view"
 
+    @schemas.member_work_get
     def get(self, request, pk):
         actor = request.membership
         member = _membership_or_404(actor, pk)
@@ -263,7 +280,7 @@ class MemberWorkView(APIView):
             {
                 "member": _person(member),
                 "period": {"from": period.start.date(), "to": (period.end - datetime.timedelta(days=1)).date()},
-                "metrics": [{"key": k, "label": v} for k, v in activity.METRICS],
+                "metrics": activity.metric_list(),
                 "totals": report.totals,
                 "by_client": sorted(
                     (
@@ -295,6 +312,7 @@ class AssignSerializer(serializers.Serializer):
 
 
 class ClientsView(TeamView):
+    @schemas.clients_get
     def get(self, request):
         actor = request.membership
         clients = list(
@@ -304,6 +322,8 @@ class ClientsView(TeamView):
         )
         assignments: dict = {c.pk: [] for c in clients}
         for a in ClientAssignment.objects.filter(client__in=clients).select_related("membership__user"):
+            if a.membership.is_owner and not actor.is_owner:
+                continue
             assignments[a.client_id].append(
                 {**_person(a.membership), "assigned_at": a.created_at, "on_my_team": a.membership.manager_id == actor.pk}
             )
@@ -321,7 +341,11 @@ class ClientsView(TeamView):
                     {
                         "id": str(c.pk),
                         "name": c.name,
-                        "lead": _person(c.lead),
+                        "lead": (
+                            _person(c.lead)
+                            if actor.is_owner or not (c.lead and c.lead.is_owner)
+                            else {"id": "", "name": "Firm owner", "role": Role.FIRM_ADMIN, "role_display": "Firm owner", "is_owner": True, "is_active": True}
+                        ),
                         "team": sorted(assignments[c.pk], key=lambda p: p["name"].lower()),
                         **open_work[c.pk],
                     }
@@ -334,6 +358,7 @@ class ClientsView(TeamView):
 class ClientLeadView(TeamView):
     required_permission = "member.manage"
 
+    @schemas.client_lead_put(LeadSerializer)
     def put(self, request, pk):
         actor = request.membership
         client = _managed_client_or_404(actor, pk)
@@ -348,6 +373,7 @@ class ClientLeadView(TeamView):
 class ClientTeamView(TeamView):
     required_permission = "team.assign"
 
+    @schemas.client_team_post(AssignSerializer)
     def post(self, request, pk):
         actor = request.membership
         client = _managed_client_or_404(actor, pk)
@@ -357,6 +383,7 @@ class ClientTeamView(TeamView):
         service.assign(actor, client, member)
         return Response({"assigned": _person(member)}, status=201)
 
+    @schemas.client_team_delete
     def delete(self, request, pk, member_id):
         actor = request.membership
         client = _managed_client_or_404(actor, pk)
@@ -387,6 +414,7 @@ def _invite(record: Invite) -> dict:
 class InvitesView(TeamView):
     required_permission = "member.invite"
 
+    @schemas.invites_get
     def get(self, request):
         invites = service.visible_invites(request.membership).filter(expires_at__gt=timezone.now())
         return Response({"results": [_invite(i) for i in invites]})
@@ -395,6 +423,7 @@ class InvitesView(TeamView):
 class InviteView(TeamView):
     required_permission = "member.invite"
 
+    @schemas.invite_delete
     def delete(self, request, pk):
         record = service.visible_invites(request.membership).filter(pk=pk).first()
         if record is None:
@@ -404,6 +433,7 @@ class InviteView(TeamView):
 
 
 class EventsView(TeamView):
+    @schemas.events_get
     def get(self, request):
         events = service.visible_events(request.membership)[:200]
         labels = dict(TeamEventKind.choices)
@@ -442,6 +472,7 @@ class FirmSettingsView(APIView):
     permission_classes = [HasFirmPermission]
     required_permission = {"GET": "firm.manage", "PATCH": "firm.manage"}
 
+    @schemas.firm_get
     def get(self, request):
         actor = request.membership
         firm = Firm.objects.get(pk=actor.firm_id)
@@ -452,8 +483,12 @@ class FirmSettingsView(APIView):
                 "id": str(firm.pk),
                 "name": firm.name,
                 "created_at": firm.created_at,
-                "owner": _person(owner),
-                "admins": [_person(m) for m in members if m.role == Role.FIRM_ADMIN and m.is_active],
+                "owner": (
+                    _person(owner)
+                    if actor.is_owner or owner is None
+                    else {"id": "", "name": "Firm owner", "role": Role.FIRM_ADMIN, "role_display": "Firm owner", "is_owner": True, "is_active": True}
+                ),
+                "admins": [_person(m) for m in members if m.role == Role.FIRM_ADMIN and m.is_active and (actor.is_owner or not m.is_owner)],
                 "counts": {
                     "active_members": sum(1 for m in members if m.is_active),
                     "senior_cas": sum(1 for m in members if m.is_active and m.role == Role.SENIOR_CA),
@@ -467,6 +502,7 @@ class FirmSettingsView(APIView):
             }
         )
 
+    @schemas.firm_patch(FirmSettingsSerializer)
     def patch(self, request):
         payload = FirmSettingsSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
@@ -478,6 +514,7 @@ class FirmOwnerView(APIView):
     permission_classes = [HasFirmPermission]
     required_permission = "firm.manage"
 
+    @schemas.firm_owner_post(OwnerSerializer)
     def post(self, request):
         actor = request.membership
         payload = OwnerSerializer(data=request.data)

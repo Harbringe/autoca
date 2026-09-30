@@ -19,7 +19,7 @@ from rest_framework.views import APIView
 
 from api.pagination import DefaultPagination
 from api.permissions import HasFirmPermission
-from core.models import AuditLog, Client, FirmMembership
+from core.models import AuditLog, Client, FirmMembership, Role
 
 UUID = r"[0-9a-fA-F-]{36}"
 
@@ -37,6 +37,7 @@ ACTIONS: list[tuple[str, str, str]] = [
     ("POST", rf"^/api/v1/clients/(?P<client>{UUID})/statements/upload/$", "Uploaded a statement for {client}"),
     ("POST", rf"^/api/v1/clients/(?P<client>{UUID})/approvals/$", "Approved entries for {client}"),
     ("POST", rf"^/api/v1/clients/(?P<client>{UUID})/review-queue/suggest/$", "Asked the model about {client}'s rows"),
+    ("POST", rf"^/api/v1/clients/(?P<client>{UUID})/assistant/next-batch/$", "The assistant read a batch of {client}'s rows"),
     ("POST", rf"^/api/v1/clients/(?P<client>{UUID})/review-queue/recategorize/$", "Re-categorized {client}'s rows with the model"),
     ("POST", rf"^/api/v1/clients/(?P<client>{UUID})/ledgers/{UUID}/accept/$", "Accepted a proposed ledger for {client}"),
     ("POST", rf"^/api/v1/clients/(?P<client>{UUID})/ledgers/{UUID}/merge/$", "Merged a proposed ledger for {client}"),
@@ -87,6 +88,11 @@ class AuditLogView(APIView):
     def get(self, request):
         firm_id = request.firm.pk
         rows = AuditLog.objects.filter(firm_id=firm_id).select_related("user").order_by("-created_at")
+        actor = request.membership
+        if actor.role == Role.FIRM_ADMIN and not actor.is_owner:
+            owner = FirmMembership.objects.filter(firm_id=firm_id, is_owner=True).first()
+            if owner:
+                rows = rows.exclude(user_id=owner.user_id)
         params = request.query_params
         tz = timezone.get_current_timezone()
 

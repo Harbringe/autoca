@@ -5,13 +5,16 @@
 // actions. Typing narrows all three; the first match is selected, so Enter runs it.
 
 import { useQuery } from '@tanstack/react-query'
-import { useNavigate, useParams } from '@tanstack/react-router'
+import { useNavigate, useParams, useRouterState, useSearch } from '@tanstack/react-router'
 import { Command } from 'cmdk'
-import { Activity, BookOpen, Building2, FileText, ListChecks, Moon, PanelTop, Scale, Sun, Upload, UserCog, Users } from 'lucide-react'
+import { Activity, BarChart3, BookOpen, Landmark, Building2, FileText, ListChecks, Moon, PanelTop, Scale, Sun, Upload, UserCog, Users } from 'lucide-react'
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { clientsList } from '@/api/queries/clients'
+import { Kbd } from '@/components/ui/kbd'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { parseFy } from '@/lib/fy'
 import { useHotkey } from '@/lib/hotkeys'
+import { switchClientPath } from '@/lib/modules'
 import { usePreferences } from '@/lib/preferences'
 import { useSession } from '@/session/session'
 
@@ -81,6 +84,8 @@ function PaletteBody({ search, setSearch, close }: { search: string; setSearch: 
   const { theme, setTheme, density, setDensity } = usePreferences()
   const term = useDebounced(search.trim())
   const { clientId } = useParams({ strict: false })
+  const path = useRouterState({ select: (s) => s.location.pathname })
+  const fromUrl = parseFy((useSearch({ strict: false }) as { fy?: unknown }).fy)
   const [selected, setSelected] = useState('')
 
   const clients = useQuery({ ...clientsList(term), enabled: can('client.view') })
@@ -102,20 +107,32 @@ function PaletteBody({ search, setSearch, close }: { search: string; setSearch: 
           ...(can('team.view') || can('client.update')
             ? ([{ value: 'c-team', label: 'Team & details', group: 'This client', icon: <Users />, run: go(() => void navigate({ to: '/clients/$clientId/team', params: { clientId } })) }] satisfies Item[])
             : []),
-          { value: 'c-ledgers', label: 'Ledgers (chart of accounts)', group: 'This client', icon: <BookOpen />, run: go(() => void navigate({ to: '/clients/$clientId/masters', params: { clientId }, search: { tab: 'ledgers' } })) },
+          { value: 'c-ledgers', label: 'Ledgers (chart of accounts)', group: 'This client', icon: <BookOpen />, run: go(() => void navigate({ to: '/clients/$clientId/ledgers', params: { clientId } })) },
         ] satisfies Item[])
       : []
     return [
       ...here,
-      { value: 'go-clients', label: 'All clients', group: 'Go to', icon: <Users />, run: go(() => void navigate({ to: '/clients' })) },
+      { value: 'go-clients', label: 'Clients', group: 'Go to', icon: <Users />, run: go(() => void navigate({ to: '/clients' })) },
       ...(can('client.view')
-        ? ([{ value: 'go-work', label: can('team.view') ? 'Work & performance' : 'My work', group: 'Go to', icon: <Activity />, run: go(() => void navigate({ to: '/work' })) }] satisfies Item[])
+        ? ([{ value: 'go-pipeline', label: 'Work pipeline', group: 'Go to', icon: <Activity />, run: go(() => void navigate({ to: '/pipeline' })) }] satisfies Item[])
+        : []),
+      ...(can('report.view')
+        ? ([{ value: 'go-bookkeeping', label: 'Bookkeeping', group: 'Go to', icon: <BookOpen />, run: go(() => void navigate({ to: (clientId ? `/clients/${clientId}/daybook` : '/bookkeeping') as never })) }] satisfies Item[])
+        : []),
+      ...(can('transaction.view')
+        ? ([{ value: 'go-bank', label: 'Bank statements', group: 'Go to', icon: <Landmark />, run: go(() => void navigate({ to: (clientId ? `/clients/${clientId}/statements` : '/bank') as never })) }] satisfies Item[])
+        : []),
+      ...(can('report.view')
+        ? ([{ value: 'go-reports', label: 'Reports', group: 'Go to', icon: <BarChart3 />, run: go(() => void navigate({ to: (clientId ? `/clients/${clientId}/reports` : '/reports') as never })) }] satisfies Item[])
+        : []),
+      ...(can('client.view')
+        ? ([{ value: 'go-work', label: can('team.view') ? 'Staff performance' : 'My work', group: 'Go to', icon: <Activity />, run: go(() => void navigate({ to: '/staff' })) }] satisfies Item[])
         : []),
       ...(can('team.view')
-        ? ([{ value: 'go-team', label: 'Team & roles', group: 'Go to', icon: <UserCog />, run: go(() => void navigate({ to: '/team' })) }] satisfies Item[])
+        ? ([{ value: 'go-team', label: 'Team & roles', group: 'Go to', icon: <UserCog />, run: go(() => void navigate({ to: '/settings/team' })) }] satisfies Item[])
         : []),
       ...(can('firm.manage')
-        ? ([{ value: 'go-firm', label: 'Firm settings', group: 'Go to', icon: <Building2 />, run: go(() => void navigate({ to: '/firm' })) }] satisfies Item[])
+        ? ([{ value: 'go-firm', label: 'Firm settings', group: 'Go to', icon: <Building2 />, run: go(() => void navigate({ to: '/settings/firm' })) }] satisfies Item[])
         : []),
       {
         value: 'toggle-theme',
@@ -146,10 +163,11 @@ function PaletteBody({ search, setSearch, close }: { search: string; setSearch: 
   const moreClients = settled ? Math.max(0, (clients.data?.count ?? 0) - CLIENTS_SHOWN) : 0
 
   // The first thing listed is selected, so Enter always does something sensible.
-  const firstValue = clientRows[0] ? `client-${clientRows[0].id}` : matching[0]?.value
+  const allClientsShown = !typed || 'all clients'.includes(typed)
+  const firstValue = allClientsShown ? 'client-all' : clientRows[0] ? `client-${clientRows[0].id}` : matching[0]?.value
   useEffect(() => setSelected(firstValue ?? ''), [firstValue, typed])
 
-  const nothing = clientRows.length === 0 && matching.length === 0
+  const nothing = clientRows.length === 0 && matching.length === 0 && !allClientsShown
 
   return (
     <Command shouldFilter={false} label="Command palette" loop value={selected} onValueChange={setSelected}>
@@ -157,7 +175,7 @@ function PaletteBody({ search, setSearch, close }: { search: string; setSearch: 
         value={search}
         onValueChange={setSearch}
         placeholder="Search clients or type a command…"
-        className="h-12 w-full border-b bg-transparent px-4 text-sm outline-none placeholder:text-muted-foreground"
+        className="h-12 w-full border-b bg-transparent px-4 text-sm outline-none placeholder:text-faint"
       />
       <Command.List className="max-h-80 overflow-y-auto p-1.5">
         {nothing && (
@@ -166,8 +184,20 @@ function PaletteBody({ search, setSearch, close }: { search: string; setSearch: 
           </div>
         )}
 
-        {clientRows.length > 0 && (
+        {(clientRows.length > 0 || allClientsShown) && (
           <Group heading="Clients">
+            {allClientsShown && (
+              <Row
+                value="client-all"
+                icon={<Users />}
+                onSelect={() => {
+                  close()
+                  void navigate({ to: switchClientPath(path, null) as never })
+                }}
+              >
+                All clients
+              </Row>
+            )}
             {clientRows.map((client) => (
               <Row
                 key={client.id}
@@ -175,10 +205,12 @@ function PaletteBody({ search, setSearch, close }: { search: string; setSearch: 
                 icon={<Building2 />}
                 onSelect={() => {
                   close()
-                  void navigate({ to: '/clients/$clientId', params: { clientId: client.id } })
+                  // The module and tab stay; a year chosen under All clients comes along.
+                  void navigate({ to: switchClientPath(path, client.id) as never, search: (!clientId && fromUrl ? { fy: fromUrl } : undefined) as never })
                 }}
               >
                 {client.name}
+                {client.id === clientId && <span className="ml-auto text-xs text-muted-foreground">Current</span>}
               </Row>
             ))}
             {moreClients > 0 && (
@@ -202,6 +234,10 @@ function PaletteBody({ search, setSearch, close }: { search: string; setSearch: 
           ) : null
         })}
       </Command.List>
+      <div className="flex items-center gap-4 border-t px-4 py-2 text-xs text-muted-foreground">
+        <span className="flex items-center gap-1.5"><Kbd>Enter</Kbd> select</span>
+        <span className="flex items-center gap-1.5"><Kbd>Esc</Kbd> close</span>
+      </div>
     </Command>
   )
 }

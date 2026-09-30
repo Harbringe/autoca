@@ -1,6 +1,7 @@
 import {
   asAt,
   closingLine,
+  formatCompact,
   plainAmount,
   sideTotal,
   financialYearOf,
@@ -135,5 +136,18 @@ describe('plainAmount', () => {
   it('lets an amount be searched however it is typed', () => {
     expect(plainAmount('₹48,000.00')).toBe('48000.00')
     expect(plainAmount('48 000')).toBe('48000')
+  })
+})
+
+describe('formatCompact', () => {
+  it('abbreviates to crore and lakh, truncating', () => {
+    expect(formatCompact(12_500_000_00)).toBe('₹1.25 Cr')
+    expect(formatCompact(48_50_000_00)).toBe('₹48.5 L')
+    expect(formatCompact(20_000_000_00)).toBe('₹2 Cr')
+    expect(formatCompact(1_999_999_00)).toBe('₹19.9 L')
+  })
+  it('keeps the full figure under a lakh and the sign on a negative', () => {
+    expect(formatCompact(99_999_99)).toBe('₹99,999.99')
+    expect(formatCompact(-12_500_000_00)).toBe('-₹1.25 Cr')
   })
 })

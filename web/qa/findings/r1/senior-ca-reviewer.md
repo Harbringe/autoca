@@ -54,6 +54,9 @@ calls came back clean — `serverErrors()` was empty on every script.
 - **Change:** PARTIAL (user decision D1 option B): automatic posting is unchanged; instead books.sign_off is refused (409 ai_entries_unchecked, count in the message) while any entry dated on or before the sign-off date and after the previous sign-off still carries the AI_POSTED or AI_REVISED marker. The existing "mark reviewed" step clears them. The UI half (dialog, post-all wording) is frontend-dev.
 - **Verify:** With auto-posted entries unchecked, POST books/sign-off/ answers 409 ai_entries_unchecked; after POST books/mark-reviewed/ it succeeds; a marker on an entry dated after the sign-off date does not block.
 - **CONTRACT CHANGE:** POST clients/{id}/books/sign-off/ can answer 409 code `ai_entries_unchecked`.
+- **UI Files:** web/src/features/books/SignOffDialog.tsx, web/src/features/books/BooksScreen.tsx, web/src/features/clients/ClientOverview.tsx, web/src/features/books/state.ts
+- **UI Change:** The Overview checklist and Books screen no longer read "done" for a period with unchecked assistant entries; they show the count as the next step with a link to the Day Book.
+- **UI Verify:** With unchecked assistant entries, the Overview step is not done and the Books screen reads "N entries posted by the assistant, not yet checked" as the next step; the sign-off dialog is blocked with the reason and the two ways out.
 
 ### SCA-002 · blocker · Sign-off succeeds even when the books' own status says it cannot
 - **Role:** senior
@@ -80,6 +83,9 @@ calls came back clean — `serverErrors()` was empty on every script.
 - **Change:** Sign-off refuses unchecked assistant entries (see SCA-001) and the sign-off endpoint rejects unknown fields with 400 (a `through_date` typo no longer signs off through the latest entry). The API description now states the real rule: a person posts, or the assistant auto-posts high-confidence rows, marked and changeable until sign-off, and sign-off needs a person to have checked them. (R1-04, R1-05)
 - **Verify:** POST books/sign-off/ with {"through_date": "..."}: 400, field named in `fields`; nothing is locked. Read the description at the top of /api/schema/.
 - **CONTRACT CHANGE:** sign-off: 400 on an unknown field; 409 `ai_entries_unchecked`; the API description text changes (regenerate openapi.yaml).
+- **UI Files:** web/src/features/books/SignOffDialog.tsx, web/src/features/books/BooksScreen.tsx, web/src/features/clients/ClientOverview.tsx, web/src/features/books/state.ts
+- **UI Change:** The sign-off dialog sends an explicit date, disables confirm while assistant entries are unchecked (the server refuses the same case), and shows the 409 `ai_entries_unchecked` message.
+- **UI Verify:** With unchecked assistant entries, the Overview step is not done and the Books screen reads "N entries posted by the assistant, not yet checked" as the next step; the sign-off dialog is blocked with the reason and the two ways out.
 
 ### SCA-003 · major · A financial year picked with `?fy=` in the URL is silently ignored on Reports
 - **Role:** senior

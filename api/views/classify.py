@@ -45,7 +45,8 @@ from classify.engine import (
     unresolved_for,
 )
 from banking.models import Statement
-from classify.llm import recategorize, suggest_unresolved
+from classify.llm import recategorize
+from classify.queue import mark_waiting, waiting_count
 from classify.proposals import accept as accept_proposal
 from classify.proposals import merge as merge_proposal
 from classify.proposals import reject as reject_proposal
@@ -297,15 +298,14 @@ class ReviewQueueViewSet(
         return super().list(request, *args, **kwargs)
 
     @extend_schema(
-        summary="Ask the model about every unresolved row",
+        summary="Ask the assistant about every unresolved row again",
         description=(
-            "Runs the model tier over the rows no rule could place. Each row the "
-            "model is confident about becomes a *suggestion* with a one-line "
-            "rationale; its confidence sets the band, and a very confident one may be "
-            "posted automatically (marked, and changeable until sign-off). Rows "
-            "it is not confident about stay unresolved, with the rationale attached. "
-            "Returns **202** with a job; the result carries `suggested`, `declined` "
-            "and `error` (empty unless the provider failed).\n\n"
+            "Puts every unresolved row that no other window is reading back in the "
+            "assistant's queue, with its tries counted afresh, and returns at once. The "
+            "reading itself happens a few rows at a time through "
+            "`POST /clients/{client_id}/assistant/next-batch/`. Returns **202** with a "
+            "job; the result carries `considered` and `waiting_for_assistant` (rows "
+            "queued now) and an empty `warning`.\n\n"
             "Nothing identifying leaves the server: narrations are masked, people "
             "are pseudonymised, known parties are aliased. Requires "
             "`transaction.classify`."
@@ -320,15 +320,8 @@ class ReviewQueueViewSet(
             raise PermissionDenied("Your role does not permit transaction.classify.")
 
         def work():
-            outcome = suggest_unresolved(client)
-            return {
-                "considered": outcome.considered,
-                "suggested": outcome.suggested,
-                "declined": outcome.declined,
-                "proposed": outcome.proposed,
-                "error": outcome.error,
-                "warning": _model_warning(outcome),
-            }
+            queued = mark_waiting(unresolved_for(client))
+            return {"considered": queued, "waiting_for_assistant": queued, "warning": ""}
 
         outcome = run_job(
             firm_id=request.firm.pk,
@@ -425,6 +418,7 @@ class ReviewQueueViewSet(
                     "bulk_approvable": summary.bulk_approvable,
                     "unresolved": unresolved_for(self.client).count(),
                     "pending_approval": pending_approval(self.client).count(),
+                    "assistant_waiting": waiting_count(self.client),
                 }
             ).data
         )

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 from django.shortcuts import get_object_or_404
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
@@ -26,9 +28,10 @@ from banking.ingest import confirm_opening_balance, ingest_statement
 from banking.models import BankAccount, Statement, StatementTransaction
 from banking.removal import remove_statement
 from classify.engine import classify_statement
-from classify.llm import suggest_unresolved
+from classify.queue import mark_waiting
 from classify.seeds import rename_account_ledger, seed_client
 from core.jobs import run_job
+from core.models import Job, JobStatus
 from core.access import get_visible_client, visible_client_ids
 
 
@@ -68,11 +71,14 @@ class StatementUploadView(viewsets.GenericViewSet):
 
         upload = payload.validated_data["file"]
         data = upload.read()
+        key = _upload_key(client, data)
+        _drop_job_for_removed_statement(request.firm.pk, key)
 
         outcome = run_job(
             firm_id=request.firm.pk,
             kind="statement.ingest",
             user=request.user,
+            idempotency_key=key,
             message=f"Reading {upload.name}",
             work=lambda: _ingest(
                 client=client,
@@ -88,8 +94,23 @@ class StatementUploadView(viewsets.GenericViewSet):
         )
 
 
+def _upload_key(client, data: bytes) -> str:
+    """The same file for the same client is the same job, however many times it is sent."""
+    return "statement.ingest:" + hashlib.sha256(str(client.pk).encode() + b"|" + data).hexdigest()
+
+
+def _drop_job_for_removed_statement(firm_id, key: str) -> None:
+    """A finished job whose statement has since been removed must not stop a fresh upload."""
+    job = Job.objects.filter(firm_id=firm_id, idempotency_key=key, status=JobStatus.SUCCEEDED).first()
+    if job is None:
+        return
+    statement_id = (job.result or {}).get("statement")
+    if not statement_id or not Statement.objects.filter(firm_id=firm_id, pk=statement_id).exists():
+        job.delete()
+
+
 def _ingest(*, client, data, filename, user, allow_gap) -> dict:
-    """Ingest, seed the client's baseline ledgers, and classify in one pass.
+    """Ingest, seed the client's baseline ledgers, classify by rules, and queue what is left.
 
     Seeding on every upload rather than at client creation is deliberate: a
     client created before the seeds existed would otherwise never get them, and
@@ -105,14 +126,16 @@ def _ingest(*, client, data, filename, user, allow_gap) -> dict:
     seed_client(client, created_by=user)
     classified = classify_statement(result.statement)
 
-    # The model tier, for whatever the rules left. It only ever suggests, and
-    # a provider failure is reported on the job rather than failing it: the
-    # upload has already succeeded and the rows are in the queue either way.
-    model = suggest_unresolved(client, classifications=_unresolved_in(result.statement))
+    # Whatever the rules left waits for the assistant, which reads it a few rows at a
+    # time through the next-batch endpoint. The model is never asked from here: a
+    # rate limit part-way through used to abandon the rest, and the wait sat inside
+    # this request.
+    waiting = mark_waiting(_unresolved_in(result.statement).filter(model_state__isnull=True))
 
-    # What the AI is very sure of goes straight into the books, as a working
+    # What a rule is very sure of goes straight into the books, as a working
     # draft: nothing is permanent until a senior signs off, and each of these is
-    # marked so a CA can find what nobody has yet looked at.
+    # marked so a CA can find what nobody has yet looked at. The assistant's own
+    # suggestions are posted the same way when its batch is applied.
     from ledger.approval import auto_post_client
 
     auto_posted = auto_post_client(client)
@@ -126,12 +149,9 @@ def _ingest(*, client, data, filename, user, allow_gap) -> dict:
         "needs_opening_confirmation": result.needs_opening_confirmation,
         "suggested": classified.placed,
         "queued_for_review": classified.queued,
-        "model_suggested": model.suggested,
-        "model_declined": model.declined,
-        "model_proposed": model.proposed,
-        "model_error": model.error,
+        "waiting_for_assistant": waiting,
         "auto_posted": auto_posted,
-        # Where this statement's own rows stand now, after rules, the model and auto-posting.
+        # Where this statement's own rows stand now, after rules and auto-posting.
         # The three always add up to the rows in the statement; the counters above are the
         # steps' own tallies, which overlap and are not for showing a person.
         **_where_rows_stand(result.statement),

@@ -1,8 +1,8 @@
 // Team & roles: who is in the firm, what each may do, who has been invited, and what changed lately.
 //
-// Everything offered comes from the server's own `can` flags. A firm administrator sees everyone and
-// may change roles and teams; a Senior CA sees their own team and may invite and switch access on and
-// off for it; nobody else has this screen. The server checks again on every change.
+// Everything offered comes from the server's own `can` flags. The owner sees the whole firm;
+// administrators see and manage everyone except the owner; Senior CAs manage their own team.
+// The server checks every change again.
 
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
@@ -38,7 +38,8 @@ export function TeamScreen() {
   if (members.isPending) return <Spinner label="Loading the team…" />
   if (members.error) return <ErrorState error={members.error} retry={() => void members.refetch()} />
   const info = members.data
-  const rows = [...info.results].sort((a, b) => Number(b.is_active) - Number(a.is_active) || a.name.localeCompare(b.name))
+  const rank = (role: string) => ({ FIRM_ADMIN: 0, SENIOR_CA: 1, STAFF: 2, READ_ONLY: 3 })[role as 'FIRM_ADMIN' | 'SENIOR_CA' | 'STAFF' | 'READ_ONLY'] ?? 4
+  const rows = [...info.results].sort((a, b) => Number(b.is_active) - Number(a.is_active) || rank(a.role) - rank(b.role) || (a.manager?.name ?? '').localeCompare(b.manager?.name ?? '') || a.name.localeCompare(b.name))
   const active = rows.filter((m) => m.is_active).length
 
   return (
@@ -48,8 +49,8 @@ export function TeamScreen() {
           title="Team & roles"
           description={
             info.can.manage
-              ? `${plural(active, 'active person', 'active people')} in the firm`
-              : `${plural(active, 'active person', 'active people')} on your team, and you`
+              ? `${plural(active, 'active person', 'active people')} in the firm. Reporting lines follow owner → administrator → Senior CA → staff.`
+              : `${plural(active, 'active person', 'active people')} on your team, and you. Your team reports to you.`
           }
           actions={
             canInvite && (
@@ -81,7 +82,7 @@ export function TeamScreen() {
         </div>
         {!info.can.manage && (
           <p className="mt-2 text-[13px] text-muted-foreground">
-            Roles and teams are changed by a firm administrator. You can invite people onto your team and switch their access off and on.
+            You can change Staff and Read-only roles on your team, invite team members, and switch their access off and on. Administrators manage reporting lines and wider firm access.
           </p>
         )}
       </div>
@@ -138,11 +139,11 @@ function MemberRow({ m, onEdit, onSwitch }: { m: Member; onEdit: () => void; onS
       <td className={`${tbl.td} num whitespace-nowrap text-muted-foreground`}>{m.last_login ? formatDateTime(m.last_login) : 'Never'}</td>
       <td className={`${tbl.td} whitespace-nowrap text-right`}>
         <Button variant="ghost" size="sm" asChild>
-          <Link to="/work" search={{ member: m.id }}>
+          <Link to="/staff" search={{ member: m.id }}>
             Work
           </Link>
         </Button>
-        {m.can.manage && (
+        {(m.can.manage || m.can.manage_role) && (
           <Button variant="ghost" size="sm" onClick={onEdit} aria-label={`Edit ${m.name}`}>
             Edit
           </Button>

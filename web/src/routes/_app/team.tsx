@@ -1,4 +1,8 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { TeamScreen } from '@/features/team/TeamScreen'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-export const Route = createFileRoute('/_app/team')({ component: TeamScreen })
+// Team & roles moved under Settings; the old address keeps working.
+export const Route = createFileRoute('/_app/team')({
+  beforeLoad: () => {
+    throw redirect({ to: '/settings/team', replace: true })
+  },
+})

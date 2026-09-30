@@ -222,7 +222,7 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
       <p className="text-sm text-muted-foreground">{STAGES.find((s) => s.stage === stage)?.hint}</p>
 
       {proposed.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-info/40 bg-info/8 px-4 py-2.5 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-info/30 bg-info-bg px-4 py-2.5 text-sm">
           <span>
             <Bot className="mr-1.5 inline size-4 text-info" aria-hidden />
             The assistant has proposed {plural(proposed.length, 'new ledger')} ({proposed.slice(0, 3).map((l) => l.name).join(', ')}
@@ -332,7 +332,7 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
                     // One Tab stop for the whole table: only the selected row can be tabbed to.
                     tabIndex={r.id === selected?.id ? 0 : -1}
                     aria-selected={r.id === selected?.id}
-                    className={cn('min-h-(--row-h) cursor-pointer border-b align-top focus-visible:outline-offset-[-2px]', r.id === selected?.id ? 'bg-accent/15' : 'hover:bg-hover')}
+                    className={cn('min-h-(--row-h) cursor-pointer border-b align-top focus-visible:outline-offset-[-2px]', r.id === selected?.id ? 'bg-accent shadow-[inset_2px_0_0_var(--primary)]' : 'hover:bg-hover')}
                   >
                     {canPost && stage !== 'unresolved' && (
                       <td className="px-3 pt-2.5" onClick={(e) => e.stopPropagation()}>
@@ -614,7 +614,7 @@ function Decision({
       </div>
 
       {row.open_question && (
-        <div className="flex gap-2 rounded-md border border-warning/50 bg-warning/10 p-2.5 text-sm">
+        <div className="flex gap-2 rounded-md border border-accent-edge bg-accent p-2.5 text-sm">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
           <span>{row.open_question}</span>
         </div>

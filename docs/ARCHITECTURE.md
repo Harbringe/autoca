@@ -533,6 +533,13 @@ Celery worker is a change inside `core.jobs.run_job`; nothing a caller sees
 moves. Retrofitting the shape later would mean changing every call site in a
 frontend at once.
 
+The one slow thing that is *not* a job any more is the model. A statement upload
+does database work only (ingest, rules, auto-post) and marks what the rules left as
+waiting for the assistant; the model is read through a short call of its own, below.
+The upload carries an idempotency key -- the client and a hash of the file -- so the
+same file sent twice is the same job, and a retry after a timeout reuses the finished
+one instead of doubling the work.
+
 **Errors keep the domain's own words.** "Balance chain broke at row 30
 (26-07-2025, 'NEFT/MB/AXOMB20702009852/...'): expected a balance of ..." tells a
 person exactly what to look at. Replacing that with `400 Bad Request` throws
@@ -630,9 +637,31 @@ token is dropped for the template one. Business names are sent, because
 off for a firm that wants only aliases. The model answers with a ledger *name*,
 validated against the list it was given; an invented one is discarded.
 
-It cannot fail the pipeline. A provider outage is a warning in the log and a
-line on the job; the upload has already succeeded and the rows are in the queue
-for a person either way.
+It cannot fail the pipeline, and it does not run inside the upload. Rows the
+rules leave are marked `model_state = waiting` (`classify/queue.py`), and
+`POST /clients/{id}/assistant/next-batch/` reads about ten of them per call. A call
+is three phases, none holding a lock or a transaction across the provider: claim
+(`FOR UPDATE SKIP LOCKED`, marked claimed for 60 seconds, committed), ask (no
+transaction open, one attempt, a 15-second timeout, and a typed rate-limit error
+instead of a sleep), apply (re-read the rows, skip any a person placed meanwhile,
+apply, auto-post what is very sure, commit). Two windows on one client never read
+the same row; a call that dies lets its claim lapse; a row that fails three tries
+is left for a person rather than looping. A rate limit releases the rows without
+counting the try and pauses that firm (one cache key per firm, so polling costs
+nothing); the day's allowance is told from the minute's and paused far longer; a
+provider failure backs off 30, 60, then 120 seconds. With no provider configured the
+endpoint answers `idle` with `assistant_off` and touches nothing, so switching the
+model on later picks the rows up. The cap on ledgers the model may open is now per
+client per hour, since a run is ten rows. While a client is open the web app asks
+for the next batch until `waiting` is zero. Every unresolved row stays reachable by
+a person in the review queue throughout.
+
+That endpoint is the only view that opts out of the tenancy middleware's
+request-wide transaction, by an explicit marker on its class
+(`opens_own_firm_context`), because a model call must not hold a transaction. The
+middleware still authenticates and resolves the firm, then clears the tenant setting
+and hands over; the view opens a `firm_context` for each phase, and a query made
+outside one is refused by Postgres like any other.
 
 Approving a model suggestion teaches a rule, so the same payee is a rule hit in
 the high band next month rather than another model call and another review.

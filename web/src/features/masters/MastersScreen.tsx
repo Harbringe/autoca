@@ -12,7 +12,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
-import { ledgers as ledgersQuery, parties as partiesQuery, rules as rulesQuery } from '@/api/queries/books'
+import { journal, ledgers as ledgersQuery, parties as partiesQuery, rules as rulesQuery } from '@/api/queries/books'
 import { clientDetail, useInvalidateClient, V1 } from '@/api/queries/clients'
 import { GROUP_LABEL, LEDGER_GROUPS, TDS_SECTIONS, type LedgerAccount, type Party, type Rule } from '@/api/types'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
@@ -20,11 +20,13 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox, Select, tbl } from '@/components/ui/controls'
+import { Money } from '@/components/ca/Money'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
-import { formatDate, plural } from '@/lib/format'
+import { formatDate, fyLabel, plural } from '@/lib/format'
+import { useFy } from '@/features/shell/useFy'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 
@@ -32,13 +34,19 @@ export type MasterTab = 'ledgers' | 'parties' | 'rules'
 
 export function MastersScreen({ clientId, tab }: { clientId: string; tab: MasterTab }) {
   const tabs: { tab: MasterTab; label: string }[] = [
-    { tab: 'ledgers', label: 'Ledgers' },
     { tab: 'parties', label: 'Parties' },
     { tab: 'rules', label: 'Rules' },
   ]
   return (
     <div className="grid gap-4">
       <nav aria-label="Masters" className="flex w-fit gap-1 rounded-lg bg-muted p-1">
+        <Link
+          to="/clients/$clientId/ledgers"
+          params={{ clientId }}
+          className={cn('rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground', tab === 'ledgers' && 'bg-card text-foreground shadow-xs')}
+        >
+          Ledgers
+        </Link>
         {tabs.map((t) => (
           <Link
             key={t.tab}
@@ -62,20 +70,47 @@ export function MastersScreen({ clientId, tab }: { clientId: string; tab: Master
 
 function Ledgers({ clientId }: { clientId: string }) {
   const { can } = useSession()
+  const { fy } = useFy()
   const client = useQuery(clientDetail(clientId))
   const all = useQuery(ledgersQuery(clientId))
+  const entries = useQuery(journal(clientId))
   const invalidate = useInvalidateClient(clientId)
   const [editing, setEditing] = useState<LedgerAccount | 'new' | null>(null)
   const [deciding, setDeciding] = useState<LedgerAccount | null>(null)
   const [showInactive, setShowInactive] = useState(false)
+  const [selectedLedger, setSelectedLedger] = useState<string | null>(null)
+  const [entrySearch, setEntrySearch] = useState('')
 
-  if (all.isPending) return <Spinner />
+  if (all.isPending || entries.isPending) return <Spinner />
   if (all.error) return <ErrorState error={all.error} retry={() => void all.refetch()} />
+  if (entries.error) return <ErrorState error={entries.error} retry={() => void entries.refetch()} />
 
   const proposed = all.data.filter((l) => l.status === 'PROPOSED')
   const active = all.data.filter((l) => l.status === 'ACTIVE' && (showInactive || l.is_active))
   const mayDecide = can('journal.approve') && !!client.data?.can_sign_off
   const manage = can('ledger.manage')
+  const ledgerEntries = (entries.data ?? []).filter((entry) => entry.financial_year === fy)
+  const entryStats = new Map<string, { count: number; debit: number; credit: number }>()
+  for (const entry of ledgerEntries) {
+    const seen = new Set<string>()
+    for (const line of entry.lines) {
+      const stats = entryStats.get(line.ledger_account) ?? { count: 0, debit: 0, credit: 0 }
+      if (!seen.has(line.ledger_account)) {
+        stats.count += 1
+        seen.add(line.ledger_account)
+      }
+      if (line.direction === 'DR') stats.debit += line.amount_paise
+      else stats.credit += line.amount_paise
+      entryStats.set(line.ledger_account, stats)
+    }
+  }
+  const selected = all.data.find((ledger) => ledger.id === selectedLedger) ?? null
+  const q = entrySearch.trim().toLowerCase()
+  const selectedEntries = selected
+    ? ledgerEntries.filter((entry) => entry.lines.some((line) => line.ledger_account === selected.id) &&
+        (!q || entry.narration.toLowerCase().includes(q) || String(entry.entry_no).includes(q)))
+        .sort((a, b) => b.entry_date.localeCompare(a.entry_date) || b.entry_no - a.entry_no)
+    : []
 
   async function remove(l: LedgerAccount) {
     try {
@@ -134,7 +169,7 @@ function Ledgers({ clientId }: { clientId: string }) {
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-muted-foreground">
-          {plural(active.length, 'ledger')}. Names must match the client’s Tally company exactly.
+          {plural(active.length, 'ledger')}. Names must match the client’s Tally company exactly. Select a ledger to see its posted entries for FY {fyLabel(fy)}.
         </div>
         <div className="flex items-center gap-3">
           <Checkbox label="Show inactive" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
@@ -152,6 +187,7 @@ function Ledgers({ clientId }: { clientId: string }) {
             <tr>
               <th className={tbl.th}>Ledger</th>
               <th className={tbl.thNum}>Rows placed</th>
+              <th className={tbl.thNum}>FY {fyLabel(fy)} entries</th>
               <th className={tbl.th}></th>
             </tr>
           </thead>
@@ -161,17 +197,18 @@ function Ledgers({ clientId }: { clientId: string }) {
             return (
               <tbody key={group}>
                 <tr className="bg-muted/40">
-                  <th colSpan={3} className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                  <th colSpan={4} className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     {label}
                   </th>
                 </tr>
                 {inGroup.map((l) => (
                   <tr key={l.id} className={tbl.row}>
                     <td className={cn(tbl.td, 'pl-6')}>
-                      {l.name}
+                      <button type="button" className="font-medium text-link underline-offset-2 hover:underline" onClick={() => setSelectedLedger(l.id)}>{l.name}</button>
                       {!l.is_active && <Badge className="ml-2">Inactive</Badge>}
                     </td>
                     <td className={tbl.tdNum}>{l.row_count}</td>
+                    <td className={tbl.tdNum}>{entryStats.get(l.id)?.count ?? 0}</td>
                     <td className={`${tbl.td} text-right`}>
                       {manage && group !== 'BANK' && (
                         <span className="flex justify-end gap-1">
@@ -193,6 +230,46 @@ function Ledgers({ clientId }: { clientId: string }) {
           })}
         </table>
       </div>
+
+      {selected && (
+        <Card className="grid gap-4 p-4" aria-label={`${selected.name} ledger details`}>
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ledger detail · FY {fyLabel(fy)}</div>
+              <h2 className="mt-1 text-lg font-semibold">{selected.name}</h2>
+              <p className="text-sm text-muted-foreground">{GROUP_LABEL[selected.group ?? ''] ?? selected.group} · {plural(selectedEntries.length, 'voucher')}</p>
+            </div>
+            <div className="flex items-center gap-2">
+              {manage && selected.group !== 'BANK' && <Button size="sm" variant="outline" onClick={() => setEditing(selected)}>Edit ledger</Button>}
+              <Button size="sm" variant="ghost" onClick={() => setSelectedLedger(null)}>Close</Button>
+            </div>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Card className="p-3"><div className="text-xs text-muted-foreground">Debits in FY {fyLabel(fy)}</div><Money paise={entryStats.get(selected.id)?.debit ?? 0} /></Card>
+            <Card className="p-3"><div className="text-xs text-muted-foreground">Credits in FY {fyLabel(fy)}</div><Money paise={entryStats.get(selected.id)?.credit ?? 0} /></Card>
+          </div>
+          <Input aria-label="Search ledger entries" placeholder="Search narration or voucher number" value={entrySearch} onChange={(e) => setEntrySearch(e.target.value)} />
+          {selectedEntries.length === 0 ? <p className="py-5 text-center text-sm text-muted-foreground">No posted entries for this ledger in FY {fyLabel(fy)}{q ? ' match this search.' : '.'}</p> : (
+            <div className={tbl.wrap}>
+              <table className={tbl.table}>
+                <thead className={tbl.head}><tr><th className={tbl.th}>Date</th><th className={tbl.th}>Voucher</th><th className={tbl.th}>Narration</th><th className={tbl.thNum}>Debit</th><th className={tbl.thNum}>Credit</th></tr></thead>
+                <tbody>{selectedEntries.map((entry) => {
+                  const matching = entry.lines.filter((item) => item.ledger_account === selected.id)
+                  const debit = matching.filter((line) => line.direction === 'DR').reduce((sum, line) => sum + line.amount_paise, 0)
+                  const credit = matching.filter((line) => line.direction === 'CR').reduce((sum, line) => sum + line.amount_paise, 0)
+                  return <tr key={entry.id} className={tbl.row}>
+                    <td className={`${tbl.td} num whitespace-nowrap`}>{formatDate(entry.entry_date)}</td>
+                    <td className={tbl.td}>{entry.voucher_type} · {entry.entry_no}</td>
+                    <td className={`${tbl.td} max-w-lg truncate`} title={entry.narration}>{entry.narration}</td>
+                    <td className={tbl.tdNum}>{debit > 0 && <Money paise={debit} />}</td>
+                    <td className={tbl.tdNum}>{credit > 0 && <Money paise={credit} />}</td>
+                  </tr>
+                })}</tbody>
+              </table>
+            </div>
+          )}
+        </Card>
+      )}
 
       {editing && <LedgerForm clientId={clientId} ledger={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
       {deciding && (

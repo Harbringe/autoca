@@ -109,7 +109,7 @@ function ReportFrame({
         </div>
       </div>
       {provisional && (
-        <div className="mb-4 flex gap-2 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm">
+        <div className="mb-4 flex gap-2 rounded-md border border-accent-edge bg-accent p-3 text-sm">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
           <div className="grid gap-1">
             <span>
@@ -159,7 +159,7 @@ function TrialBalanceReport({ clientId, fy }: { clientId: string; fy: number }) 
   return (
     <ReportFrame clientId={clientId} title="Trial Balance" footer={tb.footer} period={asAt(fy)}>
       {!tb.balances && (
-        <div className="mb-4 flex gap-2 rounded-md border border-destructive/50 bg-destructive/8 p-3 text-sm">
+        <div className="mb-4 flex gap-2 rounded-md border border-destructive/40 bg-destructive-bg p-3 text-sm">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
           <span>
             <strong>The Trial Balance does not tally.</strong> Debits exceed credits by {formatPaise(diff)}.
@@ -214,7 +214,7 @@ function TrialBalanceReport({ clientId, fy }: { clientId: string; fy: number }) 
 /** The green tick means "tallies and final". While the banner is up the figures are not final, so it says so instead. */
 function TallyMark({ clientId, footer, balances }: { clientId: string; footer: ReportFooter; balances: boolean }) {
   const unconfirmed = useUnconfirmedOpenings(clientId)
-  if (isProvisional(footer, unconfirmed)) return <span className="ml-2 rounded-full bg-warning/15 px-2 py-0.5 text-xs font-medium text-warning">Provisional</span>
+  if (isProvisional(footer, unconfirmed)) return <span className="ml-2 rounded-full bg-accent border border-accent-edge px-2 py-0.5 text-xs font-medium text-warning">Provisional</span>
   return balances ? <CheckCircle2 className="ml-2 inline size-4 text-success" aria-label="Tallies" /> : null
 }
 
@@ -291,7 +291,7 @@ function BalanceSheetReport({ clientId, fy }: { clientId: string; fy: number }) 
   return (
     <ReportFrame clientId={clientId} title="Balance Sheet" footer={bs.footer} period={asAt(fy)}>
       {!bs.balances && (
-        <div className="mb-4 flex gap-2 rounded-md border border-destructive/50 bg-destructive/8 p-3 text-sm">
+        <div className="mb-4 flex gap-2 rounded-md border border-destructive/40 bg-destructive-bg p-3 text-sm">
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
           <span>
             <strong>The Balance Sheet does not balance.</strong> Liabilities and profit are {sideTotal(bs.total_liabilities_and_profit_paise, 'Cr')};
@@ -300,7 +300,7 @@ function BalanceSheetReport({ clientId, fy }: { clientId: string; fy: number }) 
         </div>
       )}
       {bs.suspense_paise !== 0 && (
-        <div className="mb-4 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm">
+        <div className="mb-4 rounded-md border border-accent-edge bg-accent p-3 text-sm">
           <strong>{bs.suspense_display}</strong> is in Suspense A/c. Place those transactions in their proper ledgers before finalising.
         </div>
       )}
@@ -374,7 +374,7 @@ function Reconciliation({ clientId }: { clientId: string }) {
       ) : (
         <div className="grid gap-3">
           {openingUnconfirmed && (
-            <div className="flex gap-2 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm">
+            <div className="flex gap-2 rounded-md border border-accent-edge bg-accent p-3 text-sm">
               <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
               <span>
                 <strong>Opening balance not confirmed.</strong> The books start without this account’s opening balance, so they will differ from the
@@ -400,7 +400,7 @@ function Reconciliation({ clientId }: { clientId: string }) {
           {openingUnconfirmed && !check.data.matches ? null : <div
             className={cn(
               'flex gap-2 rounded-md p-3 text-sm',
-              check.data.matches ? 'border border-success/40 bg-success/8' : 'border border-warning/50 bg-warning/10',
+              check.data.matches ? 'border border-success/30 bg-success-bg' : 'border border-accent-edge bg-accent',
             )}
           >
             {check.data.matches ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" /> : <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />}

@@ -1,4 +1,8 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { FirmScreen } from '@/features/team/FirmScreen'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-export const Route = createFileRoute('/_app/firm')({ component: FirmScreen })
+// Firm settings moved under Settings; the old address keeps working.
+export const Route = createFileRoute('/_app/firm')({
+  beforeLoad: () => {
+    throw redirect({ to: '/settings/firm', replace: true })
+  },
+})

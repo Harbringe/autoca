@@ -44,6 +44,9 @@ interface Preferences {
   setTheme: (theme: Theme) => void
   density: Density
   setDensity: (density: Density) => void
+  /** Hide the sidebar items for modules that are not built yet. Off by default, so the whole map shows. */
+  hideSoon: boolean
+  setHideSoon: (hide: boolean) => void
   /** The financial year each client was last deliberately set to, by the year it starts in (2025 is FY 2025-26). */
   fyByClient: Record<string, number>
   setClientFy: (clientId: string, fy: number) => void
@@ -54,6 +57,7 @@ const Ctx = createContext<Preferences | null>(null)
 export function PreferencesProvider({ children }: { children: ReactNode }) {
   const [theme, setThemeState] = useState<Theme>(() => (read('autoca.theme') as Theme) || 'system')
   const [density, setDensityState] = useState<Density>(() => (read('autoca.density') as Density) || 'comfortable')
+  const [hideSoon, setHideSoonState] = useState<boolean>(() => read('autoca.hideSoon') === '1')
   const [fyByClient, setFyByClient] = useState<Record<string, number>>(readFyMap)
 
   useEffect(() => {
@@ -73,6 +77,10 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
     setDensityState(next)
     write('autoca.density', next)
   }, [])
+  const setHideSoon = useCallback((next: boolean) => {
+    setHideSoonState(next)
+    write('autoca.hideSoon', next ? '1' : '0')
+  }, [])
   const setClientFy = useCallback((clientId: string, next: number) => {
     setFyByClient((prev) => {
       if (prev[clientId] === next) return prev
@@ -83,8 +91,8 @@ export function PreferencesProvider({ children }: { children: ReactNode }) {
   }, [])
 
   const value = useMemo(
-    () => ({ theme, setTheme, density, setDensity, fyByClient, setClientFy }),
-    [theme, setTheme, density, setDensity, fyByClient, setClientFy],
+    () => ({ theme, setTheme, density, setDensity, hideSoon, setHideSoon, fyByClient, setClientFy }),
+    [theme, setTheme, density, setDensity, hideSoon, setHideSoon, fyByClient, setClientFy],
   )
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }

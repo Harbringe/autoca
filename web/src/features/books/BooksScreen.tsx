@@ -54,8 +54,8 @@ export function BooksScreen({ clientId }: { clientId: string }) {
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={BOOKS_STATE_TONE[state]}>{BOOKS_STATE_LABEL[state]}</Badge>
             {b.signed_off_through && (
-              <Badge tone="info">
-                <Lock className="size-3" aria-hidden /> Signed off through {formatDate(b.signed_off_through)}
+              <Badge tone="info" icon={<Lock aria-hidden />}>
+                Signed off through {formatDate(b.signed_off_through)}
               </Badge>
             )}
             <span className="text-sm text-muted-foreground">{BOOKS_STATE_HINT[state]}</span>
@@ -71,7 +71,7 @@ export function BooksScreen({ clientId }: { clientId: string }) {
           </dl>
 
           {unchecked > 0 && (
-            <div className="rounded-md border border-warning/50 bg-warning/10 p-3 text-sm" role="status">
+            <div className="rounded-md border border-accent-edge bg-accent p-3 text-sm" role="status">
               <div className="font-medium">
                 {plural(unchecked, 'entry', 'entries')} posted by the assistant, not yet checked
               </div>
@@ -82,7 +82,7 @@ export function BooksScreen({ clientId }: { clientId: string }) {
             </div>
           )}
           {state === 'returned' && b.returned_note && (
-            <div className="rounded-md border border-destructive/40 bg-destructive/8 p-3 text-sm">
+            <div className="rounded-md border border-destructive/40 bg-destructive-bg p-3 text-sm">
               <div className="font-medium">Returned by {b.history.find((h) => h.action === 'RETURNED')?.actor_email ?? 'the reviewer'}</div>
               <p>{b.returned_note}</p>
             </div>
@@ -165,7 +165,7 @@ export function BooksScreen({ clientId }: { clientId: string }) {
           <ol className="grid gap-3 border-l pl-4 text-sm">
             {b.history.map((h) => (
               <li key={h.id} className="relative">
-                <span className="absolute -left-[21px] top-1.5 size-2.5 rounded-full bg-primary dark:bg-accent" aria-hidden />
+                <span className="absolute -left-[21px] top-1.5 size-2.5 rounded-full bg-primary" aria-hidden />
                 <div className="font-medium">
                   {h.action_display}
                   {h.through_date && ` through ${formatDate(h.through_date)}`}

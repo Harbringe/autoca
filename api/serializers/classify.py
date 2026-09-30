@@ -245,6 +245,33 @@ class RecategorizeSerializer(serializers.Serializer):
     statement = serializers.UUIDField(required=False, allow_null=True)
 
 
+class NextBatchRequestSerializer(serializers.Serializer):
+    max_rows = serializers.IntegerField(
+        required=False, min_value=1, max_value=15, help_text="How many waiting rows to read. Defaults to 10, at most 15."
+    )
+
+
+class NextBatchSerializer(serializers.Serializer):
+    """What one call to the assistant did, and what to do next."""
+
+    processed = serializers.IntegerField(help_text="Rows this call asked the model about.")
+    suggested = serializers.IntegerField(help_text="Of those, rows the model placed in a ledger.")
+    declined = serializers.IntegerField(help_text="Rows left for a person.")
+    waiting = serializers.IntegerField(help_text="Rows still waiting for the assistant, including any another window is reading.")
+    state = serializers.ChoiceField(
+        choices=["working", "idle", "paused"],
+        help_text="`working`: call again. `idle`: nothing is waiting, or the assistant is off; stop. `paused`: call again after `retry_after_seconds`.",
+    )
+    retry_after_seconds = serializers.IntegerField(allow_null=True, help_text="When to call again. Null when the call may be repeated straight away.")
+    reason = serializers.ChoiceField(
+        choices=["", "rate_limit", "daily_limit", "provider_down", "assistant_off"],
+        help_text="Why the assistant is paused or idle. Blank when it is working.",
+    )
+    message = serializers.CharField(help_text="One plain sentence to show.")
+    auto_posted = serializers.IntegerField(help_text="Of the suggested rows, how many were sure enough to be posted automatically.")
+    proposed = serializers.IntegerField(help_text="New ledgers the assistant opened in this call.")
+
+
 class TreatmentSerializer(serializers.Serializer):
     """One complete accounting decision: where it goes, who it was with, and its tax.
 
@@ -394,6 +421,9 @@ class ReviewSummarySerializer(serializers.Serializer):
     unresolved = serializers.IntegerField(help_text="Of the total, how many have no ledger yet.")
     pending_approval = serializers.IntegerField(
         help_text="Of the total, how many have a ledger and await a senior CA."
+    )
+    assistant_waiting = serializers.IntegerField(
+        help_text="Rows queued for the assistant that it has not finished with. Above zero, the app should ask for the next batch."
     )
 
 

@@ -214,7 +214,7 @@ function Failed({ job, onRetry, onAllowGap }: { job: Job; onRetry: () => void; o
   const problem = UPLOAD_PROBLEMS[job.error_code] ?? { title: 'The statement was not imported', help: '' }
   return (
     <div className="grid gap-4">
-      <div className="flex gap-3 rounded-md border border-destructive/40 bg-destructive/8 p-4">
+      <div className="flex gap-3 rounded-md border border-destructive/40 bg-destructive-bg p-4">
         <XCircle className="mt-0.5 size-5 shrink-0 text-destructive" aria-hidden />
         <div className="grid gap-1.5 text-sm">
           <div className="font-semibold">{problem.title}</div>
@@ -269,7 +269,7 @@ function Done({
 
   return (
     <div className="grid gap-4">
-      <div className="flex gap-3 rounded-md border border-success/40 bg-success/8 p-4">
+      <div className="flex gap-3 rounded-md border border-success/30 bg-success-bg p-4">
         <CheckCircle2 className="mt-0.5 size-5 shrink-0 text-success" aria-hidden />
         <div className="text-sm">
           <div className="font-semibold">
@@ -401,7 +401,7 @@ export function OpeningBalance({
   }
 
   return (
-    <div className={cn('grid gap-3', !compact && 'rounded-md border border-warning/50 bg-warning/8 p-4')}>
+    <div className={cn('grid gap-3', !compact && 'rounded-md border border-accent-edge bg-accent p-4')}>
       {!compact && (
         <div className="text-sm">
           <div className="font-semibold">Confirm the opening balance of {account.label}</div>

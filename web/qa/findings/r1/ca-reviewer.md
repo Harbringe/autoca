@@ -30,7 +30,10 @@ Covered: as admin, senior, staff and reader on my own clients (QA CA Ashok Enter
 - **Actual:** "These were placed by the client's rules with high confidence." They were placed by a language model on a brand-new client that has no learned rules. No amounts or totals in the prompt. While it runs, the title flips to "Post 0 high-confidence rows?" A CA who reads "rules" will trust them more than they deserve. (Related to SCA-001; this is the wording/consent side.)
 - **Evidence:** web/qa/screenshots/r1-ca-postall-confirm.png, r1-ca-postall-done.png
 - **Owner:** frontend-dev
-- **Status:** open
+- **Status:** fixed
+- **Files:** web/src/features/review/ReviewScreen.tsx, web/src/features/review/bulkPost.ts (already in commit 8f76fd9; re-checked this run)
+- **Change:** The confirmation counts the rows by who placed them (client rules, language model, a person, from the queue rows' method), shows the payments out and receipts in with their totals, warns when the model placed any, and its title and button take the count captured when it opened, so it no longer reads "Post 0" while running.
+- **Verify:** On a client with high-confidence rows placed by the model, "Post all high-confidence" names the model, shows the count and rupee totals, and the title keeps its count while the post runs.
 
 ### CA-003 · minor · Review, "Create ledger" defaults to a group that is wrong for a debtor
 - **Role / area:** admin, Review, inline New ledger
@@ -116,7 +119,10 @@ Covered: as admin, senior, staff and reader on my own clients (QA CA Ashok Enter
 - **Actual:** the prompt has an empty "Sign off through" box ("Leave empty to sign off through the latest entry") and no figures. The page behind it said "Entries posted by rules that nobody has checked: 3". I signed off with the box empty; the books locked through 30-04-2026 and that counter went 3 to 0, so signing off silently marks the assistant's entries as checked. Numbering did close up correctly (Payment 1-13, Receipt 1-6, Contra 1, no gap, in date order). (Related to SCA-001/SCA-002; this is the consent side.)
 - **Evidence:** web/qa/screenshots/r1-ca-signoff-dialog.png, r1-ca-bindal-signed.png
 - **Owner:** frontend-dev
-- **Status:** open
+- **Status:** fixed
+- **Files:** web/src/features/books/SignOffDialog.tsx, web/src/features/books/state.ts (+ state.test.ts), web/src/features/books/BooksScreen.tsx
+- **Change:** The dialog always sends an explicit `through` date (default the latest entry, DD-MM-YYYY, editable) and states the date, the vouchers to be locked with total Dr and Cr, and the unchecked assistant entries; while any are unchecked, Sign off is disabled with the reason plus "Review them in the Day Book" and "Mark assistant entries as checked". A 409 `ai_entries_unchecked` shows the server message inline.
+- **Verify:** Open "Sign off the books" on a client with assistant-posted entries: the date is filled, the totals show, Sign off is disabled until they are marked checked.
 
 ### CA-011 · minor · Books & sign-off and Overview, status wording contradicts itself after sign-off
 - **Role / area:** admin, Bindal and Ashok

@@ -23,6 +23,7 @@ from api.views.banking import (
     StatementViewSet,
     TransactionViewSet,
 )
+from api.views.assistant import NextBatchView
 from api.views.books import BooksView
 from api.views.classify import (
     ClassificationViewSet,
@@ -88,6 +89,11 @@ urlpatterns = [
         "clients/<uuid:client_id>/approvals/",
         ApprovalView.as_view({"post": "create"}),
         name="approvals",
+    ),
+    path(
+        "clients/<uuid:client_id>/assistant/next-batch/",
+        NextBatchView.as_view(),
+        name="assistant-next-batch",
     ),
     path("clients/<uuid:client_id>/books/", BooksView.as_view({"get": "retrieve"}), name="books"),
     path(

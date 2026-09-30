@@ -119,7 +119,7 @@ export function NewClientDialog({ open, onOpenChange }: { open: boolean; onOpenC
           )}
           </fieldset>
           {confirmingDiscard ? (
-            <div role="alertdialog" aria-label="Discard what you typed?" className="flex items-center justify-between gap-3 rounded-md border border-warning/50 bg-warning/10 p-3 text-sm">
+            <div role="alertdialog" aria-label="Discard what you typed?" className="flex items-center justify-between gap-3 rounded-md border border-accent-edge bg-accent p-3 text-sm">
               <span>Discard what you have typed?</span>
               <span className="flex gap-2">
                 <Button size="sm" variant="outline" autoFocus onClick={() => setConfirmingDiscard(false)}>

@@ -1,21 +1,10 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { WorkScreen, type WorkSearch } from '@/features/work/WorkScreen'
-import type { PeriodKey } from '@/lib/period'
+import { createFileRoute, redirect } from '@tanstack/react-router'
+import { parseWorkSearch } from '@/features/work/WorkScreen'
 
-const PERIODS: PeriodKey[] = ['month', 'last', 'fy', 'custom']
-const ISO = /^\d{4}-\d{2}-\d{2}$/
-const text = (v: unknown) => (typeof v === 'string' && v ? v : undefined)
-
+// /work became /staff (Staff performance). The old address keeps working, with its period and person.
 export const Route = createFileRoute('/_app/work')({
-  validateSearch: (search: Record<string, unknown>): WorkSearch => ({
-    period: PERIODS.includes(search.period as PeriodKey) ? (search.period as PeriodKey) : undefined,
-    from: typeof search.from === 'string' && ISO.test(search.from) ? search.from : undefined,
-    to: typeof search.to === 'string' && ISO.test(search.to) ? search.to : undefined,
-    member: text(search.member),
-  }),
-  component: Screen,
+  validateSearch: parseWorkSearch,
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: '/staff', search, replace: true })
+  },
 })
-
-function Screen() {
-  return <WorkScreen search={Route.useSearch()} />
-}

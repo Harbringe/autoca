@@ -98,9 +98,11 @@ def test_a_senior_ca_cannot_invite_a_senior_ca(lead):
     assert response.status_code == 403
 
 
-def test_an_invitation_links_to_the_web_application(admin, settings):
+def test_an_invitation_links_to_the_web_application(admin, lead, settings):
     settings.FRONTEND_URL = "https://app.example.test"
-    response = sign_in(admin.user).post(f"{TEAM}/members/", {"email": "x@example.test"}, format="json")
+    response = sign_in(admin.user).post(
+        f"{TEAM}/members/", {"email": "x@example.test", "manager": str(lead.pk)}, format="json"
+    )
     assert response.json()["link"].startswith("https://app.example.test/invite/")
 
 
@@ -110,10 +112,10 @@ def test_staff_cannot_invite(firm, lead):
     assert response.status_code == 403
 
 
-def test_an_invite_never_sets_an_existing_accounts_password(firm, admin):
+def test_an_invite_never_sets_an_existing_accounts_password(firm, admin, lead):
     existing = User.objects.create_user(email="known@example.test", password="the-real-password-1")
     token = sign_in(admin.user).post(
-        f"{TEAM}/members/", {"email": "known@example.test", "role": Role.READ_ONLY}, format="json"
+        f"{TEAM}/members/", {"email": "known@example.test", "role": Role.READ_ONLY, "manager": str(lead.pk)}, format="json"
     ).json()["link"].rsplit("/invite/", 1)[1]
 
     _, wrong = _accept(token, password="an-attackers-password-9")
@@ -125,16 +127,16 @@ def test_an_invite_never_sets_an_existing_accounts_password(firm, admin):
     assert right.status_code == 200
 
 
-def test_expired_revoked_and_forged_invites_are_refused(firm, admin):
+def test_expired_revoked_and_forged_invites_are_refused(firm, admin, lead):
     http = sign_in(admin.user)
-    body = http.post(f"{TEAM}/members/", {"email": "late@example.test"}, format="json").json()
+    body = http.post(f"{TEAM}/members/", {"email": "late@example.test", "manager": str(lead.pk)}, format="json").json()
     token = body["link"].rsplit("/invite/", 1)[1]
 
     with firm_context(firm.pk):
         Invite.objects.filter(pk=body["id"]).update(expires_at=timezone.now() - datetime.timedelta(minutes=1))
     assert _accept(token, password=PASSWORD)[1].status_code == 410
 
-    body = http.post(f"{TEAM}/members/", {"email": "late@example.test"}, format="json").json()
+    body = http.post(f"{TEAM}/members/", {"email": "late@example.test", "manager": str(lead.pk)}, format="json").json()
     assert http.delete(f"{TEAM}/invites/{body['id']}/").status_code == 204
     assert _accept(body["link"].rsplit("/invite/", 1)[1], password=PASSWORD)[1].status_code == 410
 

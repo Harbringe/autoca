@@ -1,75 +1,98 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
+@import '@fontsource-variable/inter/wght.css';
+@import '@fontsource-variable/fraunces/opsz.css';
 
 @custom-variant dark (&:is(.dark *));
 
 /*
- * The product's palette: ink-navy chrome, one amber accent, and quiet neutrals.
- * Books are read for hours, so the surfaces are low-contrast and the figures
- * are the only thing that gets full-strength ink. Amber is for the single thing
- * on a screen that wants attention; red and green are reserved for meaning
- * (a difference that does not tally, a figure that does).
+ * The product's palette (r2): graphite chrome on an ivory page, one emerald for the thing you
+ * do, champagne for "a person must look at this", red only for a figure that does not tally
+ * or an operation that failed, green only for a finished or matching thing. Books are read
+ * for hours, so surfaces are warm and quiet and only figures get full-strength ink.
+ * Contrast is measured, not guessed: see docs/design/redesign-r2.md section 2.1.
  */
 :root {
-  --background: #f6f7f9;
-  --foreground: #101828;
+  --background: #f7f5ef;
+  --foreground: #1f1f23;
+  --heading: #161619;
   --card: #ffffff;
-  --card-foreground: #101828;
+  --card-foreground: #1f1f23;
   --popover: #ffffff;
-  --popover-foreground: #101828;
-  --primary: #14213d;
+  --popover-foreground: #1f1f23;
+  --surface-2: #fbfaf7;
+  --primary: #265a50;
+  --primary-hover: #1f4840;
   --primary-foreground: #ffffff;
-  --secondary: #eceff4;
-  --secondary-foreground: #14213d;
-  --muted: #eef0f4;
-  --muted-foreground: #566072;
-  --accent: #fca311;
-  --accent-foreground: #14213d;
-  --hover: #eef1f6;
-  --border: #dfe3ea;
-  --input: #cfd5df;
-  --ring: #3b5b9d;
-  --destructive: #b42318;
+  --secondary: #efece3;
+  --secondary-foreground: #1f1f23;
+  --muted: #f1eee5;
+  --muted-foreground: #5a5a62;
+  --faint: #6b6b73;
+  --accent: #f5ecd9;
+  --accent-foreground: #7a5a1c;
+  --accent-edge: #dcc488;
+  --hover: #f1eee5;
+  --border: #e4e0d2;
+  --input: #8a8574;
+  --ring: #2f6f62;
+  --link: #1f4840;
+  --destructive: #a32020;
+  --destructive-bg: #fbeaea;
   --destructive-foreground: #ffffff;
-  --success: #17724a;
-  --warning: #a15c07;
-  --info: #2c5aa0;
-  --sidebar: #14213d;
-  --sidebar-foreground: #dbe2f0;
-  --sidebar-muted: #8f9db8;
-  --sidebar-active: #22335a;
+  --success: #1f6b4a;
+  --success-bg: #e6f3ed;
+  --warning: #7a5a1c;
+  --info: #2b5a8a;
+  --info-bg: #e8f0f8;
+  --sidebar: #161619;
+  --sidebar-foreground: #c9c9cd;
+  --sidebar-muted: #9a9aa2;
+  --sidebar-active: #22332f;
+  --sidebar-bar: #7fbab0;
   --radius: 0.5rem;
   --row-h: 2.5rem;
+  --shadow-float: 0 8px 24px rgb(22 22 25 / 0.12);
 }
 
 .dark {
-  --background: #0c1220;
-  --foreground: #e7eaf1;
-  --card: #121a2c;
-  --card-foreground: #e7eaf1;
-  --popover: #121a2c;
-  --popover-foreground: #e7eaf1;
-  --primary: #fca311;
-  --primary-foreground: #14213d;
-  --secondary: #1b2640;
-  --secondary-foreground: #e7eaf1;
-  --muted: #182238;
-  --muted-foreground: #97a3b8;
-  --accent: #fca311;
-  --accent-foreground: #14213d;
-  --hover: #1a2540;
-  --border: #243049;
-  --input: #2f3c58;
-  --ring: #6f8fd6;
-  --destructive: #f0837a;
-  --destructive-foreground: #14213d;
-  --success: #4cc38a;
-  --warning: #f0b45b;
-  --info: #7fa6e8;
-  --sidebar: #0a0f1c;
-  --sidebar-foreground: #dbe2f0;
-  --sidebar-muted: #7f8ca6;
-  --sidebar-active: #18233d;
+  --background: #0f0f11;
+  --foreground: #ece9df;
+  --heading: #f6f4ee;
+  --card: #161619;
+  --card-foreground: #ece9df;
+  --popover: #1f1f23;
+  --popover-foreground: #ece9df;
+  --surface-2: #1f1f23;
+  --primary: #4d9a8e;
+  --primary-hover: #7fbab0;
+  --primary-foreground: #0f0f11;
+  --secondary: #232328;
+  --secondary-foreground: #ece9df;
+  --muted: #1f1f23;
+  --muted-foreground: #a3a3a9;
+  --faint: #8a8a92;
+  --accent: #2a2413;
+  --accent-foreground: #dcc488;
+  --accent-edge: #5a4a22;
+  --hover: #232328;
+  --border: #2a2a2e;
+  --input: #74747d;
+  --ring: #7fbab0;
+  --link: #7fbab0;
+  --destructive: #f08a80;
+  --destructive-bg: #2b1614;
+  --destructive-foreground: #0f0f11;
+  --success: #5fc39a;
+  --success-bg: #12241d;
+  --warning: #dcc488;
+  --info: #8ab4e6;
+  --info-bg: #13202e;
+  --sidebar: #0a0a0c;
+  --sidebar-foreground: #c9c9cd;
+  --sidebar-muted: #9a9aa2;
+  --sidebar-active: #1a2724;
+  --shadow-float: 0 0 0 1px rgb(255 255 255 / 0.04);
 }
 
 :root[data-density='compact'] {
@@ -79,35 +102,47 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
+  --color-heading: var(--heading);
   --color-card: var(--card);
   --color-card-foreground: var(--card-foreground);
   --color-popover: var(--popover);
   --color-popover-foreground: var(--popover-foreground);
+  --color-surface-2: var(--surface-2);
   --color-primary: var(--primary);
+  --color-primary-hover: var(--primary-hover);
   --color-primary-foreground: var(--primary-foreground);
   --color-secondary: var(--secondary);
   --color-secondary-foreground: var(--secondary-foreground);
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
+  --color-faint: var(--faint);
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
+  --color-accent-edge: var(--accent-edge);
   --color-hover: var(--hover);
   --color-border: var(--border);
   --color-input: var(--input);
   --color-ring: var(--ring);
+  --color-link: var(--link);
   --color-destructive: var(--destructive);
+  --color-destructive-bg: var(--destructive-bg);
   --color-destructive-foreground: var(--destructive-foreground);
   --color-success: var(--success);
+  --color-success-bg: var(--success-bg);
   --color-warning: var(--warning);
   --color-info: var(--info);
+  --color-info-bg: var(--info-bg);
   --color-sidebar: var(--sidebar);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-muted: var(--sidebar-muted);
   --color-sidebar-active: var(--sidebar-active);
-  --radius-sm: calc(var(--radius) - 3px);
+  --color-sidebar-bar: var(--sidebar-bar);
+  --radius-sm: 0.375rem;
   --radius-md: var(--radius);
-  --radius-lg: calc(var(--radius) + 2px);
-  --font-sans: 'Segoe UI', system-ui, -apple-system, 'Helvetica Neue', Arial, sans-serif;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+  --font-sans: 'Inter Variable', system-ui, -apple-system, 'Segoe UI', Arial, sans-serif;
+  --font-display: 'Fraunces Variable', Georgia, 'Times New Roman', serif;
   --font-mono: ui-monospace, 'Cascadia Mono', Consolas, monospace;
 }
 
@@ -123,7 +158,17 @@
   }
   body {
     @apply bg-background text-foreground font-sans text-[14px] antialiased;
-    font-feature-settings: 'cv11', 'ss01';
+  }
+  /* The one serif: page titles. Never on a figure, a table, a badge or a button. */
+  h1 {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--heading);
+  }
+  a {
+    text-underline-offset: 2px;
   }
   /* Every figure lines up in a column, whatever the digits. */
   .num,
@@ -133,6 +178,34 @@
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-ring;
   }
+}
+
+/* Motion explains something or it is off: dialogs and menus fade, nothing slides or scales. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* A hit area a finger can find. */
+@media (pointer: coarse) {
+  button,
+  [role='button'],
+  select,
+  input:not([type='checkbox']):not([type='radio']) {
+    min-height: 2.75rem;
+  }
+}
+
+/* Tables are read for their figures: static skeleton blocks, no shimmer. */
+.skeleton {
+  background: var(--hover);
+  border-radius: var(--radius-sm);
 }
 
 @media print {

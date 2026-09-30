@@ -178,13 +178,13 @@ export interface Member extends Person {
   created_at: string
   is_me: boolean
   clients: { id: string; name: string; how: 'assigned' | 'leads' }[]
-  can: { manage: boolean; set_active: boolean }
+  can: { manage: boolean; manage_role: boolean; set_active: boolean }
 }
 
 export interface MembersResponse {
   period: { from: string; to: string }
   metrics: Metric[]
-  can: { invite: boolean; invite_roles: Role[]; manage: boolean; manage_admins: boolean }
+  can: { invite: boolean; invite_roles: Role[]; role_options: Role[]; manage: boolean; manage_admins: boolean }
   leads: Person[]
   results: (Member & { work: Record<MetricKey, number> })[]
 }

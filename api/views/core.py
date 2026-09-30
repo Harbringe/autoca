@@ -58,7 +58,16 @@ class ClientViewSet(FirmScopedViewSet):
     }
 
     def get_queryset(self):
-        queryset = super().get_queryset().filter(pk__in=visible_clients(self.request.membership).values("pk"))
+        from django.db.models import Exists, OuterRef
+
+        from ledger.models import JournalEntry
+
+        queryset = (
+            super()
+            .get_queryset()
+            .filter(pk__in=visible_clients(self.request.membership).values("pk"))
+            .annotate(has_entries_flag=Exists(JournalEntry.objects.filter(client=OuterRef("pk"))))
+        )
         search = self.request.query_params.get("search")
         return queryset.filter(name__icontains=search) if search else queryset
 

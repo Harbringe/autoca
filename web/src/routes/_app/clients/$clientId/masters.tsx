@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { MastersScreen, type MasterTab } from '@/features/masters/MastersScreen'
 
-const TABS: MasterTab[] = ['ledgers', 'parties', 'rules']
+const TABS: MasterTab[] = ['parties', 'rules']
 
 export const Route = createFileRoute('/_app/clients/$clientId/masters')({
   validateSearch: (search: Record<string, unknown>): { tab?: MasterTab } => ({
@@ -13,5 +13,5 @@ export const Route = createFileRoute('/_app/clients/$clientId/masters')({
 function Screen() {
   const { clientId } = Route.useParams()
   const { tab } = Route.useSearch()
-  return <MastersScreen clientId={clientId} tab={tab ?? 'ledgers'} />
+  return <MastersScreen clientId={clientId} tab={tab ?? 'parties'} />
 }

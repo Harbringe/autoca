@@ -51,7 +51,7 @@ from classify.models import ClassificationMethod, LedgerAccount, Party, PartyAli
 from classify.pseudonymise import Pseudonymiser
 from classify.treatment import REVIEW_ADVISED, TdsSection, Treatment, band_for
 from core.masking import mask_text
-from integrations.llm.base import LLMError
+from integrations.llm.base import LLMError, LLMRateLimited
 from integrations.registry import get_llm
 
 logger = logging.getLogger("autoca.llm")
@@ -364,7 +364,8 @@ def _ask_splitting(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]
     except LLMError as exc:
         reason = str(exc)
         if (
-            len(batch) < 2
+            isinstance(exc, LLMRateLimited)
+            or len(batch) < 2
             or not any(sign in reason for sign in _SPLITTABLE)
             or (
                 any(sign in reason for sign in _NOT_SPLITTABLE)

@@ -19,6 +19,7 @@ import time
 
 from django.db import DatabaseError
 
+from core.db.session import firm_context
 from core.http import client_ip, request_id
 
 logger = logging.getLogger("autoca.audit")
@@ -60,18 +61,25 @@ class AuditMiddleware:
 
         from core.models import AuditLog
 
+        if getattr(request, "audit_skip", False):
+            # A view that polls says so when a call did nothing worth a permanent row.
+            return
+
         try:
-            AuditLog.objects.create(
-                firm=firm,
-                user=user if (user and user.is_authenticated) else None,
-                method=request.method,
-                path=request.get_full_path()[:512],
-                status_code=response.status_code,
-                ip_address=client_ip(request),
-                user_agent=request.headers.get("User-Agent", "")[:512],
-                request_id=request.request_id,
-                duration_ms=int(elapsed * 1000),
-            )
+            # A view that opened its own firm context left none open for this row. Nesting
+            # the same firm is harmless, so the ordinary path takes the same route.
+            with firm_context(firm.pk):
+                AuditLog.objects.create(
+                    firm=firm,
+                    user=user if (user and user.is_authenticated) else None,
+                    method=request.method,
+                    path=request.get_full_path()[:512],
+                    status_code=response.status_code,
+                    ip_address=client_ip(request),
+                    user_agent=request.headers.get("User-Agent", "")[:512],
+                    request_id=request.request_id,
+                    duration_ms=int(elapsed * 1000),
+                )
         except DatabaseError:
             # Never let auditing break the response. It is logged loudly instead
             # so a persistent failure surfaces rather than silently disabling

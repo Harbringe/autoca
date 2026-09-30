@@ -603,6 +603,11 @@ SPECTACULAR_SETTINGS = {
     ),
     "SERVE_INCLUDE_SCHEMA": False,
     "COMPONENT_SPLIT_REQUEST": True,
+    # Named so a generic "state" or "reason" choice set does not claim a bare component name.
+    "ENUM_NAME_OVERRIDES": {
+        "AssistantStateEnum": ["working", "idle", "paused"],
+        "AssistantReasonEnum": ["", "rate_limit", "daily_limit", "provider_down", "assistant_off"],
+    },
     "SCHEMA_PATH_PREFIX": "/api/v1",
     "TAGS": [
         {"name": "session", "description": "Who is signed in and what they may do."},

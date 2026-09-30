@@ -35,6 +35,28 @@ export function formatPaise(paise: number, { symbol = true, sign = true }: Money
 }
 
 /**
+ * A short form for dashboard cards only: "₹1.25 Cr", "₹48.5 L". Integer-exact and truncating (never
+ * rounded up, so a card cannot claim more than the books hold). Under a lakh the full figure is used.
+ * Callers keep the full amount in `title` and `aria-label`; tables and reports never abbreviate.
+ */
+export function formatCompact(paise: number): string {
+  const negative = paise < 0
+  const rupees = Math.trunc(Math.abs(Math.round(paise)) / 100)
+  const sign = negative ? '-' : ''
+  const trim = (whole: number, frac: number, width: number) =>
+    frac === 0 ? String(whole) : `${whole}.${String(frac).padStart(width, '0').replace(/0+$/, '')}`
+  if (rupees >= 10_000_000) {
+    const hundredths = Math.trunc(rupees / 100_000)
+    return `${sign}${RUPEE}${trim(Math.trunc(hundredths / 100), hundredths % 100, 2)} Cr`
+  }
+  if (rupees >= 100_000) {
+    const tenths = Math.trunc(rupees / 10_000)
+    return `${sign}${RUPEE}${trim(Math.trunc(tenths / 10), tenths % 10, 1)} L`
+  }
+  return formatPaise(paise)
+}
+
+/**
  * A balance the way a ledger writes it: an amount and a side, never a signed
  * number. `net` is debit minus credit; zero has no side.
  */

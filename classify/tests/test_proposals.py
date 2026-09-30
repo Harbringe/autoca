@@ -149,3 +149,21 @@ def test_reject_returns_the_rows_to_the_queue_and_remembers_the_name(client, cla
         assert unresolved_for(client).count() == before
         with pytest.raises(ProposalError):
             accept(rent)
+
+
+def test_a_token_is_refused_in_any_case_and_no_standard_name_trips_the_check():
+    from classify.proposals import _ALIAS_TOKEN
+    from classify.standard_ledgers import STANDARD_LEDGERS
+
+    for token in ("P3F9A1C2B0", "p3f9a1c2b0", "Rent v3f9a1c2b0", "V0000000000"):
+        assert _ALIAS_TOKEN.search(token), token
+    assert not [name for name, _ in STANDARD_LEDGERS if _ALIAS_TOKEN.search(name)]
+    assert not _ALIAS_TOKEN.search("Vehicle Expenses")
+
+
+def test_a_lowercase_token_cannot_become_a_ledger_name(client, classified, scripted):
+    scripted.script = propose("Paid to p3f9a1c2b0")
+    with firm_context(client.firm_id):
+        outcome = suggest_unresolved(client)
+        assert outcome.proposed == 0
+        assert not LedgerAccount.objects.filter(client=client, name__icontains="p3f9a1c2b0").exists()

@@ -273,7 +273,7 @@ function EntryDialog({ clientId, entry, onClose }: { clientId: string; entry: Jo
           {entry.narration}
         </p>
         {entry.marker && (
-          <p className="rounded-md bg-info/10 p-2.5 text-sm">
+          <p className="rounded-md bg-info-bg p-2.5 text-sm">
             {entry.marker === 'AI_POSTED'
               ? 'Posted by a rule without anyone looking. If it is wrong, unpost it below and decide it in Review; if it is right, clear the marker on the Books tab.'
               : 'Changed by the assistant after a correction elsewhere. Check it.'}

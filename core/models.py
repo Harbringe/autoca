@@ -294,10 +294,9 @@ class FirmMembership(UUIDModel, FirmScopedModel):
     #: existing members are unaffected; invitations pass False explicitly.
     scope_all_clients = models.BooleanField(default=True)
 
-    #: The firm's owner: a firm administrator who alone may add, remove or
-    #: re-role other administrators and hand ownership on. At most one per
-    #: firm. A firm with no owner (created before owners existed) behaves as
-    #: before: every administrator has those powers.
+    #: The firm's owner: a firm administrator who alone may invite additional
+    #: administrators or transfer ownership. Administrators may manage the
+    #: roles of other non-owner members. At most one owner per firm.
     is_owner = models.BooleanField(default=False)
 
     #: The Senior CA (or firm admin) whose team this Staff or Read-only member

@@ -164,7 +164,27 @@ re-run locally against `config.settings.prod`.
   so a retry after a client-side timeout reuses the job instead of doubling the
   load.
 - **Owner:** backend-dev.
-- **Status:** open
+- **Status:** fixed
+- **Files:** `classify/queue.py`, `classify/models.py`, `classify/migrations/0015_model_queue.py`,
+  `classify/llm.py`, `integrations/llm/base.py`, `integrations/llm/groq.py`,
+  `core/middleware/tenancy.py`, `core/middleware/audit.py`, `core/jobs.py`,
+  `api/views/assistant.py`, `api/views/banking.py`, `api/views/classify.py`, `api/urls.py`,
+  `api/serializers/classify.py`, `docs/ARCHITECTURE.md`
+- **Change:** the upload no longer calls the model: it ingests, applies the rules, marks
+  what is left as waiting for the assistant and returns, so its transaction holds
+  database work only. The model is read through `POST /clients/{id}/assistant/next-batch/`,
+  one small batch per call in three phases (claim and commit, ask with no transaction open,
+  apply and commit), and that view alone opts out of the request-wide transaction with an
+  explicit marker on its class. The upload also carries an idempotency key (client plus a hash
+  of the file), so a retry reuses the finished job instead of doubling the work.
+- **Verify:** upload a statement and note that the job finishes in seconds with
+  `waiting_for_assistant` in its result and no `model_*` keys; the review summary's
+  `assistant_waiting` then falls as next-batch is called. Send the same file again: 200 with
+  the same job id. `core/tests/test_rls_isolation.py`, `classify/tests/test_queue.py` and
+  `api/tests/test_assistant_queue.py` cover the isolation and the phases.
+- **MIGRATION:** `classify/0015_model_queue` (three columns and one partial index). **CONTRACT
+  CHANGE:** upload job result, `review-queue/suggest/` job result, `review-queue/summary/`, and
+  the new next-batch operation.
 
 ### OPS-003 · major · `manage.py check --deploy` is not run anywhere in the pipeline, so its own warnings (missing `CACHE_URL`, DB role mistakes) never fire
 - **Role / area:** CI, Dockerfile, `core/checks.py`

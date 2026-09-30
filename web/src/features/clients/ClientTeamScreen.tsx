@@ -76,7 +76,7 @@ function People({ clientId, justCreated }: { clientId: string; justCreated: bool
         Senior CA and team
       </h2>
       {needsLead && (
-        <p role="status" className="rounded-md border border-info/40 bg-info/8 px-4 py-2.5 text-sm">
+        <p role="status" className="rounded-md border border-info/30 bg-info-bg px-4 py-2.5 text-sm">
           This client has no Senior CA yet. Choose who leads it: they sign off its books.
         </p>
       )}
@@ -95,7 +95,7 @@ function People({ clientId, justCreated }: { clientId: string; justCreated: bool
               void run(() => setLead.mutateAsync({ clientId, lead }), lead ? 'Senior CA set' : 'Senior CA removed')
             }}
           >
-            <option value="">Not assigned</option>
+            <option value="">{row.lead?.is_owner && !row.lead.id ? 'Firm owner (details hidden)' : 'Not assigned'}</option>
             {leads.map((l) => (
               <option key={l.id} value={l.id}>
                 {l.name} ({l.role_display})

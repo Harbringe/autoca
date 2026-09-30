@@ -5,7 +5,7 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from core.access import can_post, can_sign_off
-from core.models import Client, Firm, Job
+from core.models import Client, Firm, Job, Role
 from core.rbac import PERMISSIONS
 
 
@@ -23,11 +23,16 @@ class ClientSerializer(serializers.ModelSerializer):
     #: entries. Presentation only; ledger.approval checks again.
     can_sign_off = serializers.SerializerMethodField()
     can_post = serializers.SerializerMethodField()
+    #: Whether any entry is posted for this client. The same fact that locks ``fy_start``.
+    has_entries = serializers.SerializerMethodField()
 
     class Meta:
         model = Client
-        fields = ["id", "name", "fy_start", "business_profile", "created_at", "lead", "can_sign_off", "can_post"]
-        read_only_fields = ["id", "created_at", "lead", "can_sign_off", "can_post"]
+        fields = [
+            "id", "name", "fy_start", "business_profile", "created_at", "lead", "can_sign_off", "can_post",
+            "has_entries",
+        ]
+        read_only_fields = ["id", "created_at", "lead", "can_sign_off", "can_post", "has_entries"]
         extra_kwargs = {
             "fy_start": {
                 "help_text": "First day of the client's financial year, normally 1 April.",
@@ -72,7 +77,19 @@ class ClientSerializer(serializers.ModelSerializer):
         lead = client.lead
         if lead is None:
             return None
+        request = self.context.get("request")
+        actor = getattr(request, "membership", None)
+        if actor and actor.role == Role.FIRM_ADMIN and not actor.is_owner and lead.is_owner:
+            return {"id": "", "name": "Firm owner"}
         return {"id": str(lead.pk), "name": lead.user.full_name or lead.user.email}
+
+    def get_has_entries(self, client) -> bool:
+        flag = getattr(client, "has_entries_flag", None)
+        if flag is not None:
+            return flag
+        from ledger.models import JournalEntry
+
+        return JournalEntry.objects.filter(client=client).exists()
 
     def get_can_post(self, client) -> bool:
         request = self.context.get("request")

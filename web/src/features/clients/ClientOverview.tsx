@@ -136,12 +136,12 @@ export function ClientOverview({ clientId }: { clientId: string }) {
       <Card className="p-2">
         <ol className="divide-y">
           {steps.map((step, i) => (
-            <li key={step.title} className={cn('flex items-start gap-4 rounded-md p-4', i === current && 'bg-accent/12')}>
+            <li key={step.title} className={cn('flex items-start gap-4 rounded-md p-4', i === current && 'border border-accent-edge bg-accent')}>
               <span
                 className={cn(
                   'grid size-7 shrink-0 place-items-center rounded-full border text-[13px] font-semibold',
-                  step.done && 'border-success bg-success text-white',
-                  i === current && 'border-accent bg-accent text-accent-foreground',
+                  step.done && 'border-success bg-success text-primary-foreground',
+                  i === current && 'border-primary bg-primary text-primary-foreground',
                 )}
                 aria-hidden
               >

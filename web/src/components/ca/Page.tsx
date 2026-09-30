@@ -1,8 +1,11 @@
 import { AlertTriangle } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { createContext, useContext, type ReactNode } from 'react'
 import { errorTitle, isApiError, messageOf } from '@/api/errors'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
+
+/** Inside a page that already has its own h1 (Settings), the screen's title is an h2. */
+export const HeadingLevel = createContext<1 | 2>(1)
 
 export function PageHeader({
   title,
@@ -15,10 +18,15 @@ export function PageHeader({
   actions?: ReactNode
   className?: string
 }) {
+  const level = useContext(HeadingLevel)
   return (
     <div className={cn('mb-5 flex flex-wrap items-start justify-between gap-3', className)}>
       <div className="min-w-0">
-        <h1 className="text-2xl font-semibold leading-tight tracking-tight">{title}</h1>
+        {level === 1 ? (
+          <h1 className="text-[26px] leading-8 xl:text-[28px] xl:leading-[34px]">{title}</h1>
+        ) : (
+          <h2 className="text-xl font-semibold leading-7 text-heading">{title}</h2>
+        )}
         {description && <p className="mt-1 text-sm text-muted-foreground">{description}</p>}
       </div>
       {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
@@ -29,7 +37,7 @@ export function PageHeader({
 export function EmptyState({ title, children, action }: { title: string; children?: ReactNode; action?: ReactNode }) {
   return (
     <div className="grid justify-items-center gap-2 rounded-lg border border-dashed p-10 text-center">
-      <h2 className="text-base font-semibold">{title}</h2>
+      <h2 className="text-[15px] font-semibold text-heading">{title}</h2>
       {children && <p className="max-w-md text-sm text-muted-foreground">{children}</p>}
       {action && <div className="mt-2">{action}</div>}
     </div>
@@ -50,7 +58,7 @@ export function ErrorState({ error, retry }: { error: unknown; retry?: () => voi
   const title = notFound ? 'Not available' : isApiError(error) ? errorTitle(error) : undefined
   const message = notFound ? 'This does not exist, or you are not on it. Ask your senior CA if you should be.' : messageOf(error)
   return (
-    <div role="alert" className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive/8 p-4">
+    <div role="alert" className="flex items-start gap-3 rounded-lg border border-destructive/40 bg-destructive-bg p-4">
       <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
       <div className="min-w-0 flex-1 text-sm">
         {title && <div className="font-semibold">{title}</div>}

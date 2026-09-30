@@ -1,8 +1,9 @@
 // Work & performance: what people did in a period, and what is waiting on them now.
 //
-// Counts only, in the order people are named: nobody is ranked, scored or compared. A firm
-// administrator sees everyone; a Senior CA their team; everyone else only their own work. What is
-// "waiting now" is not history, so it does not change with the period.
+// Counts only, in the order people are named: nobody is ranked, scored or compared. The owner sees
+// everyone, an administrator sees the firm except its owner, a Senior CA sees their team, and
+// everyone else sees their own work. What is "waiting now" is not history, so it does not change
+// with the period.
 
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
@@ -29,11 +30,25 @@ export interface WorkSearch {
   member?: string
 }
 
+const PERIODS: PeriodKey[] = ['month', 'last', 'fy', 'custom']
+const ISO = /^\d{4}-\d{2}-\d{2}$/
+const text = (v: unknown) => (typeof v === 'string' && v ? v : undefined)
+
+/** The address's period, dates and person, kept only when they are well-formed. */
+export function parseWorkSearch(search: Record<string, unknown>): WorkSearch {
+  return {
+    period: PERIODS.includes(search.period as PeriodKey) ? (search.period as PeriodKey) : undefined,
+    from: typeof search.from === 'string' && ISO.test(search.from) ? search.from : undefined,
+    to: typeof search.to === 'string' && ISO.test(search.to) ? search.to : undefined,
+    member: text(search.member),
+  }
+}
+
 export function WorkScreen({ search }: { search: WorkSearch }) {
   const { can, me } = useSession()
-  const navigate = useNavigate({ from: '/work' })
+  const navigate = useNavigate({ from: '/staff' })
   const firmView = can('team.view')
-  usePageTitle(firmView ? 'Work & performance' : 'My work')
+  usePageTitle(firmView ? 'Staff performance' : 'My work')
 
   const key: PeriodKey = search.period ?? 'month'
   const range: Range | null = useMemo(() => {
@@ -49,7 +64,7 @@ export function WorkScreen({ search }: { search: WorkSearch }) {
     <div className="grid gap-8 [&>*]:min-w-0">
       <div>
         <PageHeader
-          title={firmView ? 'Work & performance' : 'My work'}
+          title={firmView ? 'Staff performance' : 'My work'}
           description={
             firmView
               ? 'What each person did in the period, and what is waiting on them now. Counts only: no rankings.'
@@ -64,7 +79,7 @@ export function WorkScreen({ search }: { search: WorkSearch }) {
 
       {firmView && range && (
         <>
-          <People range={range} selected={memberId} onSelect={(id) => go({ member: id })} />
+          <People range={range} selected={memberId} onSelect={(id) => go({ member: id })} title={can('member.manage') ? 'Firm activity' : 'Team activity'} />
           <WaitingOnClients />
         </>
       )}
@@ -142,7 +157,7 @@ function PeriodPicker({
 
 const count = (n: number) => (n === 0 ? <span className="text-muted-foreground">0</span> : n)
 
-function People({ range, selected, onSelect }: { range: Range; selected?: string; onSelect: (id: string) => void }) {
+function People({ range, selected, onSelect, title }: { range: Range; selected?: string; onSelect: (id: string) => void; title: string }) {
   const members = useQuery(teamMembers(range))
   if (members.isPending) return <Spinner label="Adding up the work…" />
   if (members.error) return <ErrorState error={members.error} retry={() => void members.refetch()} />
@@ -150,11 +165,23 @@ function People({ range, selected, onSelect }: { range: Range; selected?: string
   // Alphabetical, on purpose: the order never says who did more.
   const people = [...results].sort((a, b) => a.name.localeCompare(b.name))
   const total = (k: MetricKey) => people.reduce((sum, p) => sum + p.work[k], 0)
+  const active = people.filter((person) => person.is_active).length
   return (
     <section aria-labelledby="people-work">
-      <h2 id="people-work" className="mb-2 text-base font-semibold">
-        Done in the period
-      </h2>
+      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+        <div>
+          <h2 id="people-work" className="text-base font-semibold">{title}</h2>
+          <p className="text-[13px] text-muted-foreground">{plural(active, 'active person', 'active people')} · totals for the selected period</p>
+        </div>
+      </div>
+      <dl className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
+        {metrics.map((metric) => (
+          <div key={metric.key} className="rounded-lg border bg-card p-3">
+            <dt className="text-[13px] text-muted-foreground">{metric.label}</dt>
+            <dd className="num mt-1 text-2xl font-semibold">{total(metric.key)}</dd>
+          </div>
+        ))}
+      </dl>
       <div className={tbl.wrap}>
         <table className={tbl.table}>
           <thead className={tbl.head}>
@@ -169,7 +196,7 @@ function People({ range, selected, onSelect }: { range: Range; selected?: string
           </thead>
           <tbody>
             {people.map((p) => (
-              <tr key={p.id} className={cn(tbl.row, p.id === selected && 'bg-accent/10')} aria-current={p.id === selected ? 'true' : undefined}>
+              <tr key={p.id} className={cn(tbl.row, p.id === selected && 'bg-accent')} aria-current={p.id === selected ? 'true' : undefined}>
                 <td className={tbl.td}>
                   <button
                     type="button"
@@ -181,6 +208,7 @@ function People({ range, selected, onSelect }: { range: Range; selected?: string
                   </button>
                   <div className="text-[13px] text-muted-foreground">
                     {p.role_display}
+                    {p.manager && ` · reports to ${p.manager.name}`}
                     {!p.is_active && ' · deactivated'}
                   </div>
                 </td>
@@ -217,6 +245,7 @@ function PersonWork({ memberId, range, heading }: { memberId: string; range: Ran
   const w = work.data
   const shownMetrics = w.metrics.filter((m) => w.by_client.some((c) => c[m.key] > 0))
   const activeDays = w.by_day.filter((d) => d.count > 0).length
+  const peakDay = Math.max(1, ...w.by_day.map((d) => d.count))
   const waiting = w.open_work.filter((c) => c.unresolved > 0 || c.pending_approval > 0)
 
   return (
@@ -241,6 +270,17 @@ function PersonWork({ memberId, range, heading }: { memberId: string; range: Ran
           ))}
         </dl>
         <p className="mt-2 text-[13px] text-muted-foreground">Worked on {plural(activeDays, 'day')} in this period.</p>
+        <div className="mt-3 rounded-lg border bg-card p-3">
+          <div className="mb-2 text-[13px] font-medium">Daily activity</div>
+          <div role="img" aria-label={`Daily activity: ${w.by_day.reduce((sum, d) => sum + d.count, 0)} recorded actions across ${activeDays} days`} className="flex h-24 items-end gap-1">
+            {w.by_day.map((day) => {
+              return <div key={day.date} className="group relative flex h-full flex-1 items-end" title={`${formatDate(day.date)} · ${day.count} actions`}>
+                <span className={cn('w-full rounded-t-sm', day.count ? 'bg-primary/70' : 'bg-muted')} style={{ height: `${day.count ? Math.max(8, day.count / peakDay * 100) : 3}%` }} />
+              </div>
+            })}
+          </div>
+          <div className="mt-1 flex justify-between text-xs text-muted-foreground"><span>{w.by_day[0] ? formatDate(w.by_day[0].date) : ''}</span><span>{w.by_day.at(-1) ? formatDate(w.by_day.at(-1)!.date) : ''}</span></div>
+        </div>
       </section>
 
       <section aria-labelledby="w-clients">
@@ -340,17 +380,24 @@ function PersonWork({ memberId, range, heading }: { memberId: string; range: Ran
 }
 
 /** The firm's open work by client, for whoever manages the clients: where the backlog sits. */
-function WaitingOnClients() {
+export function WaitingOnClients() {
   const clients = useQuery(teamClients())
   if (clients.isPending) return null
   if (clients.error) return <ErrorState error={clients.error} retry={() => void clients.refetch()} />
   const rows = clients.data.results.filter((c) => c.unresolved > 0 || c.pending_approval > 0)
   const idle = clients.data.results.length - rows.length
+  const unresolved = rows.reduce((sum, client) => sum + client.unresolved, 0)
+  const pending = rows.reduce((sum, client) => sum + client.pending_approval, 0)
   return (
     <section aria-labelledby="w-backlog">
       <h2 id="w-backlog" className="mb-2 text-base font-semibold">
         Waiting now, by client
       </h2>
+      <dl className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <div className="rounded-lg border bg-card p-3"><dt className="text-[13px] text-muted-foreground">Rows to place</dt><dd className="num mt-1 text-2xl font-semibold">{unresolved}</dd></div>
+        <div className="rounded-lg border bg-card p-3"><dt className="text-[13px] text-muted-foreground">Ready to approve</dt><dd className="num mt-1 text-2xl font-semibold">{pending}</dd></div>
+        <div className="rounded-lg border bg-card p-3"><dt className="text-[13px] text-muted-foreground">Clients with open work</dt><dd className="num mt-1 text-2xl font-semibold">{rows.length}</dd></div>
+      </dl>
       {rows.length === 0 ? (
         <p className="text-sm text-muted-foreground">Nothing is waiting on any client.</p>
       ) : (

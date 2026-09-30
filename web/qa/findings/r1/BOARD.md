@@ -173,3 +173,35 @@ Queued for backend (after wave 2), from the frontend's gaps:
 - Frontend: `gen:api` plus the R1-01 UI (sign-off dialog, checklist, post-all wording) plus handling of the new errors, dispatched.
 - **Q-1 queue**: the user approved the MIGRATION ("Approve the migration (Recommended)"). The orchestrator approved the narrow tenancy-middleware opt-out for the next-batch endpoint only (a failure mode is a loud RLS refusal, not a leak; the RLS suite must pass). Dispatched to backend-dev together with the team/work metric gaps. **The migration has not been run anywhere.** The local server uses the shared DB, so it must be applied there before local re-verification: ask the user for the go-ahead first.
 - Re-verification by the testers is held until the queue lands, so that it runs once, on the final code, with one backend restart.
+
+## Tree state (2026-09-29 evening)
+
+- The user committed the round's work so far as 8f76fd9 on team/r1 and pushed it to origin/team/r1. `main` is unchanged (f36063f).
+- The user has uncommitted work on top: a firm reporting hierarchy (teams/migrations/0005_reporting_hierarchy.py, which **backfills `manager` on existing memberships**, plus core/models.py, teams/service.py, teams/views.py, api/views/audit.py, api/serializers/core.py, superadmin/admin.py, and several web/src team/work/masters files and a new ledgers route). The user said: "yes build on top of this".
+- **Two migrations are now pending, neither applied:** the user's `teams/0005_reporting_hierarchy` (a data backfill) and the Q-1 queue migration (being written). Both need the user's go-ahead before anyone runs `migrate --database=owner` against the shared DB; the local server needs them before re-verification.
+- Re-dispatched: frontend (gen:api, R1-01 UI, CA-002, rule_created, new error handling) and backend (Q-1 queue, team metric gaps, schemas, `_ALIAS_TOKEN`).
+
+## Redesign (round r2), decided 2026-09-30
+
+The user asked to rebuild the app on the cofounder's mockup (github.com/Harbringe/test-ca, private, Bolt/React/Tailwind on demo data) and to improve it. Decisions:
+- Phase 2 modules: "Show as 'Coming soon'".
+- Layout: "I want u to use mockup as base and improve on it like make it better, think like pro designer". So the mockup's module sidebar plus the top-bar client and FY picker, improved.
+- Timing: "Redesign now, verify once". The testers verify r1 fixes and the redesign together at the end.
+
+The mockup is cloned read-only in the orchestrator scratchpad and served on 127.0.0.1:5190 (the orchestrator started it; stop it when the round ends). Step 1: ux-critic writes docs/design/redesign-r2.md (design system, IA mapping to our API, page specs, build waves, backend gaps). Step 2: frontend-dev builds it in waves. Backend Q-1 is still running in parallel.
+
+## Redesign decisions (2026-09-30)
+
+Spec: docs/design/redesign-r2.md (ux-critic). Orchestrator decisions on its section 7:
+- Fonts: approved, self-hosted `@fontsource-variable/inter` and `@fontsource-variable/fraunces` (no CDN; CSP unchanged).
+- Brand: graphite/emerald/champagne, with the mockup's "CA" tile as the mark, text "AutoCA". Approved (the user asked for the mockup's look).
+- Coming soon: shown, per the user's choice. The hide preference may stay.
+- Dashboard: v1 ships with what exists; backend builds B1 (firm overview) after Q-1; v2 when it lands.
+- **Override of the spec:** the FY picker works under All clients too. Books always run April to March, and R1-33 restricts `fy_start` to 1 April (backend validation + form); "clients can start in January" is the CA-012 bug, not a design constraint.
+- User: names, "Use the new names (Recommended)", so Bank statements and Work pipeline. GST: "Build GST screens now (Recommended)", so wave 6.
+- User on the fake metrics: "can we add stuff to measure them with as well?" Orchestrator definitions (backend B9, after Q-1, with B1):
+  - AI automation %: rows that reached the books without a person placing them (rule/model placement, then posted) / all rows, per period.
+  - Accuracy: of rule/model placements, the share posted unchanged (changed, corrected or unposted count against).
+  - Time saved: an estimate, labelled: automatic rows × a firm-set minutes-per-row (default 2, in Settings).
+  - Risk: a per-client "Needs attention" with reasons (unreconciled, months missing, unchecked assistant entries, unsigned too long, Suspense balance).
+  - Staff efficiency % is replaced by turnaround times (upload to posted; request to sign-off) per person; no hours are recorded, and no rankings (the user's earlier choice).

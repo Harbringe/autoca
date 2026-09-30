@@ -70,7 +70,7 @@ export function Confirm({
             {(props) => <Textarea {...props} autoFocus value={text} onChange={(e) => setText(e.target.value)} maxLength={1000} />}
           </Field>
         )}
-        {blockedReason && <div className="rounded-md border border-warning/50 bg-warning/10 p-3 text-sm">{blockedReason}</div>}
+        {blockedReason && <div className="rounded-md border border-accent-edge bg-accent p-3 text-sm">{blockedReason}</div>}
         {error && (
           <p role="alert" className="text-sm text-destructive">
             {error}

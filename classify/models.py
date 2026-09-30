@@ -516,6 +516,17 @@ class ClassificationMethod(models.TextChoices):
     LLM = "LLM", "Suggested by a language model"
 
 
+class ModelState(models.TextChoices):
+    """Where a row stands in the queue for the model tier (``classify.queue``)."""
+
+    WAITING = "waiting", "Waiting for the assistant"
+    #: Taken by a call that is asking the model now. The claim lapses if that call dies.
+    CLAIMED = "claimed", "Being read by the assistant"
+    DONE = "done", "The assistant suggested a ledger"
+    #: Looked at and left for a person: the model gave no usable answer, or three tries failed.
+    DECLINED = "declined", "Left for a person"
+
+
 class TransactionClassification(UUIDModel, FirmScopedModel):
     """What one transaction was taken to mean, and on whose authority."""
 
@@ -618,6 +629,15 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
     #: soon as a person looks and decides.
     ai_revised = models.BooleanField(default=False)
 
+    #: The row's place in the model queue. NULL means never queued (a row from before
+    #: the queue existed, or one a rule placed); only the manual "ask again" touches those.
+    model_state = models.CharField(max_length=8, choices=ModelState.choices, null=True, blank=True)
+    #: When a claim lapses. A call that dies leaves its rows claimed until then.
+    model_claimed_until = models.DateTimeField(null=True, blank=True)
+    #: Claims so far. At three the row is left for a person, so a row the model cannot
+    #: answer does not loop forever.
+    model_attempts = models.PositiveSmallIntegerField(default=0)
+
     class Meta:
         db_table = "classify_transaction_classification"
         constraints = [
@@ -637,6 +657,13 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
         ]
         indexes = [
             models.Index(fields=["firm", "needs_review"], name="idx_classification_queue"),
+            # The claim reads both states (a claimed row whose claim lapsed is up for
+            # grabs again), and the partial form keeps the index to the few rows in play.
+            models.Index(
+                fields=["firm", "model_state"],
+                name="idx_classification_model_queue",
+                condition=models.Q(model_state__in=["waiting", "claimed"]),
+            ),
         ]
 
     def __str__(self) -> str:

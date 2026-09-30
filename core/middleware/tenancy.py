@@ -27,6 +27,7 @@ from django.conf import settings
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.http import JsonResponse
+from django.urls import Resolver404, resolve
 from django.utils.module_loading import import_string
 
 from core.db.session import _apply, _apply_user
@@ -53,6 +54,23 @@ def resolve_membership(user):
     if not user or not user.is_authenticated:
         return None
     return FirmMembership.objects.filter(user=user, is_active=True).order_by("created_at").first()
+
+
+def opens_own_firm_context(request) -> bool:
+    """Does the view about to run say it opens its own ``firm_context``?
+
+    A view that must call something slow (a model provider) cannot sit inside a
+    transaction that holds a connection and its locks for the whole call, so it
+    opts out with ``opens_own_firm_context = True`` on its class -- an explicit
+    marker, not a path pattern. Nothing else changes: the request still needs a
+    verified user and an active firm membership, and every query the view makes
+    outside its own ``firm_context`` is refused by the database.
+    """
+    try:
+        match = resolve(request.path_info, getattr(request, "urlconf", None))
+    except Resolver404:
+        return False
+    return getattr(getattr(match.func, "cls", None), "opens_own_firm_context", False) is True
 
 
 class TenantContextMiddleware:
@@ -106,7 +124,17 @@ class TenantContextMiddleware:
             request.membership = membership
             request.firm_id = firm_id
 
-            return self.get_response(request)
+            if not opens_own_firm_context(request):
+                return self.get_response(request)
+
+            # Cleared explicitly: the local settings would go with the commit, but a test
+            # runs inside one outer transaction that a savepoint release does not revert.
+            _apply("", "default")
+            _apply_user("", "default")
+
+        # The view runs with no transaction and no tenant context of its own making;
+        # a query outside a firm_context it opens itself is refused by Postgres.
+        return self.get_response(request)
 
 
 def _firmless_allowed(request, membership) -> bool:

@@ -275,7 +275,7 @@ def apply_place(user, current: PlatformMembership | None, data: dict) -> None:
     """
     firm = data.get("firm")
     role = data.get("role") or Role.STAFF
-    manager = data.get("manager") if role in TEAM_ROLES else None
+    manager = data.get("manager") if not data.get("make_owner") else None
     values = dict(
         role=role,
         manager_id=manager.pk if manager else None,
@@ -329,7 +329,7 @@ class ProfileWithFirmForm(forms.ModelForm):
         queryset=PlatformMembership.objects.filter(role__in=[Role.SENIOR_CA, Role.FIRM_ADMIN], is_active=True),
         required=False,
         label="Reports to",
-        help_text="Staff and Read-only only. Must be a Senior CA or administrator of the same firm.",
+        help_text="Choose the direct manager: administrators report to the owner, Senior CAs to an administrator, and Staff/Read-only to a Senior CA.",
     )
     scope_all_clients = forms.BooleanField(required=False, label="Sees every client in the firm")
     membership_active = forms.BooleanField(

@@ -7,13 +7,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, useRouterState, useSearch } from '@tanstack/react-router'
 import { Command } from 'cmdk'
-import { Activity, BarChart3, BookOpen, Landmark, Building2, FileText, ListChecks, Moon, PanelTop, Scale, Sun, Upload, UserCog, Users } from 'lucide-react'
+import { Activity, BarChart3, BookOpen, FileSpreadsheet, Landmark, Building2, FileText, ListChecks, Moon, PanelTop, Scale, Sun, Upload, UserCog, Users } from 'lucide-react'
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { clientsList } from '@/api/queries/clients'
 import { Kbd } from '@/components/ui/kbd'
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
 import { parseFy } from '@/lib/fy'
 import { useHotkey } from '@/lib/hotkeys'
+import { moduleHref } from '@/lib/jump'
 import { switchClientPath } from '@/lib/modules'
 import { usePreferences } from '@/lib/preferences'
 import { useSession } from '@/session/session'
@@ -100,30 +101,37 @@ function PaletteBody({ search, setSearch, close }: { search: string; setSearch: 
           { value: 'c-upload', label: 'Upload bank statement', group: 'This client', icon: <Upload />, run: go(() => void navigate({ to: '/clients/$clientId/statements', params: { clientId } }).then(() => setTimeout(() => document.dispatchEvent(new CustomEvent('autoca:upload')), 50))) },
           { value: 'c-review', label: 'Review transactions', group: 'This client', icon: <ListChecks />, run: go(() => void navigate({ to: '/clients/$clientId/review', params: { clientId }, search: { stage: 'unresolved' } })) },
           { value: 'c-daybook', label: 'Day Book', group: 'This client', icon: <BookOpen />, run: go(() => void navigate({ to: '/clients/$clientId/daybook', params: { clientId } })) },
+          { value: 'c-bookkeeping', label: 'Books overview', group: 'This client', icon: <BookOpen />, run: go(() => void navigate({ to: '/clients/$clientId/bookkeeping', params: { clientId } })) },
           { value: 'c-tb', label: 'Trial Balance', group: 'This client', icon: <Scale />, run: go(() => void navigate({ to: '/clients/$clientId/reports', params: { clientId }, search: { report: 'tb' } })) },
           { value: 'c-pl', label: 'Profit & Loss A/c', group: 'This client', icon: <FileText />, run: go(() => void navigate({ to: '/clients/$clientId/reports', params: { clientId }, search: { report: 'pl' } })) },
           { value: 'c-bs', label: 'Balance Sheet', group: 'This client', icon: <FileText />, run: go(() => void navigate({ to: '/clients/$clientId/reports', params: { clientId }, search: { report: 'bs' } })) },
           { value: 'c-books', label: 'Books & sign-off', group: 'This client', icon: <ListChecks />, run: go(() => void navigate({ to: '/clients/$clientId/books', params: { clientId } })) },
           ...(can('team.view') || can('client.update')
-            ? ([{ value: 'c-team', label: 'Team & details', group: 'This client', icon: <Users />, run: go(() => void navigate({ to: '/clients/$clientId/team', params: { clientId } })) }] satisfies Item[])
+            ? ([{ value: 'c-team', label: 'Settings & team', group: 'This client', icon: <Users />, run: go(() => void navigate({ to: '/clients/$clientId/team', params: { clientId } })) }] satisfies Item[])
             : []),
           { value: 'c-ledgers', label: 'Ledgers (chart of accounts)', group: 'This client', icon: <BookOpen />, run: go(() => void navigate({ to: '/clients/$clientId/ledgers', params: { clientId } })) },
         ] satisfies Item[])
       : []
     return [
       ...here,
+      ...(can('client.view')
+        ? ([{ value: 'go-dashboard', label: 'Dashboard', group: 'Go to', icon: <PanelTop />, run: go(() => void navigate({ to: '/dashboard' })) }] satisfies Item[])
+        : []),
       { value: 'go-clients', label: 'Clients', group: 'Go to', icon: <Users />, run: go(() => void navigate({ to: '/clients' })) },
       ...(can('client.view')
         ? ([{ value: 'go-pipeline', label: 'Work pipeline', group: 'Go to', icon: <Activity />, run: go(() => void navigate({ to: '/pipeline' })) }] satisfies Item[])
         : []),
       ...(can('report.view')
-        ? ([{ value: 'go-bookkeeping', label: 'Bookkeeping', group: 'Go to', icon: <BookOpen />, run: go(() => void navigate({ to: (clientId ? `/clients/${clientId}/daybook` : '/bookkeeping') as never })) }] satisfies Item[])
+        ? ([{ value: 'go-bookkeeping', label: 'Bookkeeping', group: 'Go to', icon: <BookOpen />, run: go(() => void navigate({ to: (clientId ? `/clients/${clientId}/bookkeeping` : '/bookkeeping') as never })) }] satisfies Item[])
         : []),
       ...(can('transaction.view')
         ? ([{ value: 'go-bank', label: 'Bank statements', group: 'Go to', icon: <Landmark />, run: go(() => void navigate({ to: (clientId ? `/clients/${clientId}/statements` : '/bank') as never })) }] satisfies Item[])
         : []),
       ...(can('report.view')
         ? ([{ value: 'go-reports', label: 'Reports', group: 'Go to', icon: <BarChart3 />, run: go(() => void navigate({ to: (clientId ? `/clients/${clientId}/reports` : '/reports') as never })) }] satisfies Item[])
+        : []),
+      ...(can('gst.view')
+        ? ([{ value: 'go-gst', label: 'GST reconciliation', group: 'Go to', icon: <FileSpreadsheet />, run: go(() => void navigate({ to: moduleHref('gst', clientId) as never })) }] satisfies Item[])
         : []),
       ...(can('client.view')
         ? ([{ value: 'go-work', label: can('team.view') ? 'Staff performance' : 'My work', group: 'Go to', icon: <Activity />, run: go(() => void navigate({ to: '/staff' })) }] satisfies Item[])

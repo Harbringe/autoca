@@ -19,7 +19,7 @@ from rest_framework.views import APIView
 
 from api.pagination import DefaultPagination
 from api.permissions import HasFirmPermission
-from core.models import AuditLog, Client, FirmMembership, Role
+from core.models import AuditLog, Client, FirmMembership
 
 UUID = r"[0-9a-fA-F-]{36}"
 
@@ -88,11 +88,6 @@ class AuditLogView(APIView):
     def get(self, request):
         firm_id = request.firm.pk
         rows = AuditLog.objects.filter(firm_id=firm_id).select_related("user").order_by("-created_at")
-        actor = request.membership
-        if actor.role == Role.FIRM_ADMIN and not actor.is_owner:
-            owner = FirmMembership.objects.filter(firm_id=firm_id, is_owner=True).first()
-            if owner:
-                rows = rows.exclude(user_id=owner.user_id)
         params = request.query_params
         tz = timezone.get_current_timezone()
 

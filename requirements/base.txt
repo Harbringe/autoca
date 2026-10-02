@@ -36,6 +36,9 @@ boto3==1.40.14
 # Reads the purchase register and GSTR-2B when they arrive as Excel, and writes
 # the reconciliation working paper. In-process and file-only, like pdfplumber.
 openpyxl==3.1.5
+# Reads a client's Tally masters export. Entities, DTDs and external references are refused,
+# so a hostile file is a refusal rather than a fetch or a memory bomb (ledger/tally_parse.py).
+defusedxml==0.7.1
 
 # --- Serving ---
 gunicorn==23.0.0

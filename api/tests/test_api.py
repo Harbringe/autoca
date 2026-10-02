@@ -429,14 +429,9 @@ def test_reconciling_a_date_no_statement_covers_is_a_404(api, client_record, sta
     assert response.json()["code"] == "no_statement_for_date"
 
 
-def test_the_tally_export_carries_only_approved_entries(api, client_record, statement):
-    api.post(f"{V1}/clients/{client_record.pk}/approvals/", {"band": ReviewBand.HIGH}, format="json")
-
-    body = api.get(f"{V1}/statements/{statement.pk}/tally-export/").json()
-
-    assert body["voucher_count"] == 4
-    assert body["unapproved"] == 50
-    assert body["xml"].startswith("<?xml")
+def test_the_tally_export_is_gone(api, client_record, statement):
+    """AutoCA replaces Tally; it imports from it and no longer writes to it."""
+    assert api.get(f"{V1}/statements/{statement.pk}/tally-export/").status_code == 404
 
 
 # ---------------------------------------------------------------------------

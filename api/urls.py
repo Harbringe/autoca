@@ -33,15 +33,17 @@ from api.views.classify import (
     PartyViewSet,
 )
 from api.views.core import ClientViewSet, JobViewSet, MeView
+from api.views.documents import DocumentDownloadView, FirmDocumentListView
 from api.views.gst import RegistrationViewSet, RunSignOffView, RunViewSet
 from api.views.ledger import (
     ApprovalView,
     JournalEntryViewSet,
     ReconciliationView,
     ReportView,
-    TallyExportView,
 )
+from api.views.tally import TallyImportViewSet
 
+from api.views.overview import FirmMetricsView, FirmOverviewView
 from teams.views import FirmOwnerView, FirmSettingsView
 
 app_name = "api"
@@ -54,7 +56,6 @@ root.register("transactions", TransactionViewSet, basename="transaction")
 root.register("classifications", ClassificationViewSet, basename="classification")
 root.register("journal-entries", JournalEntryViewSet, basename="journal-entry")
 root.register("bank-accounts", ReconciliationView, basename="bank-account-reconciliation")
-root.register("statements", TallyExportView, basename="statement-export")
 
 #: Everything that belongs to one client.
 per_client = DefaultRouter()
@@ -78,6 +79,8 @@ for _router in (root, per_client):
 
 urlpatterns = [
     path("me/", MeView.as_view(), name="me"),
+    path("documents/", FirmDocumentListView.as_view(), name="documents"),
+    path("documents/<uuid:pk>/download/", DocumentDownloadView.as_view(), name="document-download"),
     # Literal routes first, so intent beats pattern matching where both would
     # work at all.
     path(
@@ -136,6 +139,21 @@ urlpatterns = [
         ReportView.as_view({"get": "balance_sheet"}),
         name="report-balance-sheet",
     ),
+    path(
+        "clients/<uuid:client_id>/tally-imports/",
+        TallyImportViewSet.as_view({"get": "list", "post": "create"}),
+        name="tally-imports",
+    ),
+    path(
+        "clients/<uuid:client_id>/tally-imports/<uuid:pk>/",
+        TallyImportViewSet.as_view({"get": "retrieve"}),
+        name="tally-import",
+    ),
+    path(
+        "clients/<uuid:client_id>/tally-imports/<uuid:pk>/confirm/",
+        TallyImportViewSet.as_view({"post": "confirm"}),
+        name="tally-import-confirm",
+    ),
     # GST reconciliation -- a removable add-on: delete this block, api/views/gst.py and gst/.
     path(
         "clients/<uuid:client_id>/gst/registrations/",
@@ -184,6 +202,8 @@ urlpatterns = [
     ),
     path("team/", include("teams.urls")),
     path("firm/", FirmSettingsView.as_view(), name="firm-settings"),
+    path("firm/overview/", FirmOverviewView.as_view(), name="firm-overview"),
+    path("firm/metrics/", FirmMetricsView.as_view(), name="firm-metrics"),
     path("firm/owner/", FirmOwnerView.as_view(), name="firm-owner"),
     path("audit/", AuditLogView.as_view(), name="audit-log"),
     path("", include(root.urls)),

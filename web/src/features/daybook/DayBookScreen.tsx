@@ -21,7 +21,8 @@ import { Money } from '@/components/ca/Money'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { Checkbox, Textarea, tbl } from '@/components/ui/controls'
+import { Checkbox, Textarea } from '@/components/ui/controls'
+import { DataTable, type Column } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
@@ -75,10 +76,36 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
     return { e, line, isDr }
   })
 
-  if (entries.isPending || accounts.isPending) return <Spinner label="Loading the Day Book…" />
   if (entries.error) return <ErrorState error={entries.error} retry={() => void entries.refetch()} />
 
   const otherYears = (entries.data ?? []).length - inYear.length
+  type Row = (typeof rows)[number]
+  const dash = <span className="text-faint" aria-hidden>–</span>
+  const columns: Column<Row>[] = [
+    { key: 'date', header: 'Date', align: 'right', cell: ({ e }) => formatDate(e.entry_date) },
+    {
+      key: 'particulars',
+      header: 'Particulars',
+      className: 'max-w-0 w-full',
+      cell: ({ e, line }) => (
+        <>
+          <span className="flex items-center gap-1.5">
+            <span className="truncate font-medium text-heading">{line.ledger_name}</span>
+            {line.party_name && <span className="truncate text-muted-foreground">· {line.party_name}</span>}
+            {e.marker && <Badge tone="assistant">{e.marker === 'AI_POSTED' ? 'Assistant posted' : 'Assistant changed'}</Badge>}
+            {e.is_locked && <Lock className="size-3.5 shrink-0 text-muted-foreground" aria-label="Signed off" />}
+          </span>
+          <div className="truncate text-xs text-muted-foreground" title={e.narration}>
+            {e.narration}
+          </div>
+        </>
+      ),
+    },
+    { key: 'type', header: 'Vch type', priority: 2, cell: ({ e }) => e.voucher_type },
+    { key: 'no', header: 'Vch no.', priority: 2, align: 'right', cell: ({ e }) => e.entry_no },
+    { key: 'debit', header: 'Debit', align: 'right', cell: ({ line, isDr }) => (isDr ? <Money display={line.amount_display} /> : dash) },
+    { key: 'credit', header: 'Credit', align: 'right', cell: ({ line, isDr }) => (!isDr ? <Money display={line.amount_display} /> : dash) },
+  ]
   const mayUnpost = can('journal.approve') && !!client.data?.can_post
   const assistantEntries = inYear.filter(isAssistantEntry)
   return (
@@ -99,6 +126,7 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
                 key={t || 'all'}
                 type="button"
                 onClick={() => setType(t)}
+                aria-pressed={type === t}
                 className={cn('rounded-md px-2.5 py-1 text-muted-foreground', type === t && 'bg-card text-foreground shadow-xs')}
               >
                 {t || 'All'}
@@ -114,59 +142,41 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
         </div>
       </div>
 
-      {inYear.length === 0 ? (
-        <EmptyState title={`Nothing posted in FY ${fyLabel(fy)}`}>
-          Entries appear here once transactions are placed and posted.{' '}
-          <Link to="/clients/$clientId/review" params={{ clientId }} search={{ stage: 'unresolved' }} className="underline">
-            Go to Review
-          </Link>
-          {otherYears > 0 ? `, or pick another financial year at the top (${otherYears} entries are in other years).` : '.'}
-        </EmptyState>
-      ) : (
-        <div className={tbl.wrap}>
-          <table className={tbl.table}>
-            <thead className={tbl.head}>
-              <tr>
-                <th className={tbl.th}>Date</th>
-                <th className={tbl.th}>Particulars</th>
-                <th className={tbl.th}>Vch Type</th>
-                <th className={tbl.thNum}>Vch No.</th>
-                <th className={tbl.thNum}>Debit</th>
-                <th className={tbl.thNum}>Credit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map(({ e, line, isDr }) => (
-                <tr key={e.id} className={cn(tbl.row, 'cursor-pointer hover:bg-hover')} onClick={() => setOpen(e)}>
-                  <td className={`${tbl.td} num whitespace-nowrap`}>{formatDate(e.entry_date)}</td>
-                  <td className={tbl.td}>
-                    <span className="flex items-center gap-1.5">
-                      <span className="font-medium">{line.ledger_name}</span>
-                      {line.party_name && <span className="text-muted-foreground">· {line.party_name}</span>}
-                      {e.marker && <Badge tone="info">{e.marker === 'AI_POSTED' ? 'Assistant posted' : 'Assistant changed'}</Badge>}
-                      {e.is_locked && <Lock className="size-3.5 text-muted-foreground" aria-label="Signed off" />}
-                    </span>
-                    <div className="max-w-xl truncate text-xs text-muted-foreground">{e.narration}</div>
-                  </td>
-                  <td className={tbl.td}>{e.voucher_type}</td>
-                  <td className={tbl.tdNum}>{e.entry_no}</td>
-                  <td className={tbl.tdNum}>{isDr ? <Money display={line.amount_display} /> : ''}</td>
-                  <td className={tbl.tdNum}>{!isDr ? <Money display={line.amount_display} /> : ''}</td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot className={tbl.foot}>
-              <tr>
-                <td className={tbl.td} colSpan={4}>
-                  Total ({plural(shown.length, 'voucher')})
-                </td>
-                <td className={tbl.tdNum}>{formatPaise(debit)}</td>
-                <td className={tbl.tdNum}>{formatPaise(credit)}</td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      )}
+      <DataTable
+        caption={`Day Book, FY ${fyLabel(fy)}`}
+        columns={columns}
+        rows={rows}
+        loading={entries.isPending || accounts.isPending}
+        rowKey={(r) => r.e.id}
+        onRowClick={(r) => setOpen(r.e)}
+        scrollHeight="calc(100svh - 17rem)"
+        empty={
+          inYear.length === 0 ? (
+            <EmptyState title={`No vouchers in FY ${fyLabel(fy)}`}>
+              Post rows from{' '}
+              <Link to="/clients/$clientId/review" params={{ clientId }} search={{ stage: 'unresolved' }} className="underline">
+                Review
+              </Link>
+              {otherYears > 0 ? `, or pick another financial year at the top (${otherYears} entries are in other years).` : '.'}
+            </EmptyState>
+          ) : (
+            <EmptyState title="No voucher matches">
+              <button type="button" className="underline" onClick={() => { setText(''); setType(''); setOnlyAi(false) }}>
+                Clear the filters
+              </button>
+            </EmptyState>
+          )
+        }
+        footer={
+          <tr>
+            <td className="px-3 py-2" colSpan={4}>
+              Total ({plural(shown.length, 'voucher')})
+            </td>
+            <td className="num px-3 py-2 text-right">{formatPaise(debit)}</td>
+            <td className="num px-3 py-2 text-right">{formatPaise(credit)}</td>
+          </tr>
+        }
+      />
 
       {open && <EntryDialog clientId={clientId} entry={open} onClose={() => setOpen(null)} />}
 
@@ -228,7 +238,10 @@ function EntryDialog({ clientId, entry, onClose }: { clientId: string; entry: Jo
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-2xl" aria-describedby={undefined}>
+      <DialogContent
+        className="sm:left-auto sm:right-0 sm:top-0 sm:h-svh sm:max-h-none sm:w-full sm:max-w-xl sm:translate-x-0 sm:translate-y-0 sm:content-start sm:rounded-none sm:border-y-0 sm:border-r-0"
+        aria-describedby={undefined}
+      >
         <DialogHeader>
           <DialogTitle>
             {entry.voucher_type} No. {entry.entry_no} · {formatDate(entry.entry_date)}
@@ -240,20 +253,18 @@ function EntryDialog({ clientId, entry, onClose }: { clientId: string; entry: Jo
           </DialogDescription>
         </DialogHeader>
 
-        <table className={tbl.table}>
-          <thead className={tbl.head}>
-            <tr>
-              <th className={tbl.th}></th>
-              <th className={tbl.th}>Particulars</th>
-              <th className={tbl.thNum}>Debit</th>
-              <th className={tbl.thNum}>Credit</th>
-            </tr>
-          </thead>
-          <tbody>
-            {entry.lines.map((l) => (
-              <tr key={l.id} className={tbl.row}>
-                <td className={`${tbl.td} w-10 text-muted-foreground`}>{l.direction === 'DR' ? 'Dr' : 'Cr'}</td>
-                <td className={tbl.td}>
+        <DataTable
+          caption={`Lines of ${entry.voucher_type} No. ${entry.entry_no}`}
+          rows={entry.lines}
+          rowKey={(l) => String(l.id)}
+          columns={[
+            { key: 'side', header: <span className="sr-only">Dr or Cr</span>, cell: (l) => <span className="text-muted-foreground">{l.direction === 'DR' ? 'Dr' : 'Cr'}</span>, width: '2.5rem' },
+            {
+              key: 'particulars',
+              header: 'Particulars',
+              className: 'whitespace-normal',
+              cell: (l) => (
+                <>
                   {l.ledger_name}
                   {l.party_name && <span className="text-muted-foreground"> · {l.party_name}</span>}
                   {(l.tds_section || l.rcm) && (
@@ -261,13 +272,13 @@ function EntryDialog({ clientId, entry, onClose }: { clientId: string; entry: Jo
                       {l.tds_section && `TDS ${l.tds_section}`} {l.rcm && 'RCM'}
                     </span>
                   )}
-                </td>
-                <td className={tbl.tdNum}>{l.direction === 'DR' ? <Money display={l.amount_display} /> : ''}</td>
-                <td className={tbl.tdNum}>{l.direction === 'CR' ? <Money display={l.amount_display} /> : ''}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
+                </>
+              ),
+            },
+            { key: 'debit', header: 'Debit', align: 'right', cell: (l) => (l.direction === 'DR' ? <Money display={l.amount_display} /> : <span className="text-faint" aria-hidden>–</span>) },
+            { key: 'credit', header: 'Credit', align: 'right', cell: (l) => (l.direction === 'CR' ? <Money display={l.amount_display} /> : <span className="text-faint" aria-hidden>–</span>) },
+          ]}
+        />
         <p className="text-sm">
           <span className="text-muted-foreground">Narration: </span>
           {entry.narration}

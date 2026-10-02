@@ -1,27 +1,26 @@
 // Work & performance: what people did in a period, and what is waiting on them now.
 //
 // Counts only, in the order people are named: nobody is ranked, scored or compared. The owner sees
-// everyone, an administrator sees the firm except its owner, a Senior CA sees their team, and
+// everyone, an administrator sees the whole firm, a Senior CA sees their team, and
 // everyone else sees their own work. What is "waiting now" is not history, so it does not change
 // with the period.
 
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { useMemo, useState, type FormEvent } from 'react'
-import { memberWork, teamClients, teamMembers } from '@/api/queries/team'
-import type { Metric, MetricKey } from '@/api/types'
+import { useMemo } from 'react'
+import { memberWork, teamMembers } from '@/api/queries/team'
+import type { MemberWithWork, MemberWork, MetricKey } from '@/api/types'
 import { EmptyState, ErrorState, PageHeader } from '@/components/ca/Page'
-import { Button } from '@/components/ui/button'
-import { tbl } from '@/components/ui/controls'
-import { DateInput } from '@/components/ui/date-input'
 import { Spinner } from '@/components/ui/spinner'
-import { formatDate, parseDate, plural } from '@/lib/format'
-import { PERIOD_LABEL, presetRange, rangeProblem, type PeriodKey, type Range } from '@/lib/period'
+import { StatCard, StatGrid } from '@/components/ui/stat-card'
+import { DataTable, type Column } from '@/components/ui/table'
+import { formatDate, plural } from '@/lib/format'
+import { rangeFor, type PeriodKey, type Range } from '@/lib/period'
 import { usePageTitle } from '@/lib/title'
+import { MeasuredFigures } from './MeasuredFigures'
+import { PeriodPicker } from './PeriodPicker'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
-
-const PRESETS: PeriodKey[] = ['month', 'last', 'fy', 'custom']
 
 export interface WorkSearch {
   period?: PeriodKey
@@ -51,10 +50,7 @@ export function WorkScreen({ search }: { search: WorkSearch }) {
   usePageTitle(firmView ? 'Staff performance' : 'My work')
 
   const key: PeriodKey = search.period ?? 'month'
-  const range: Range | null = useMemo(() => {
-    if (key !== 'custom') return presetRange(key, new Date())
-    return search.from && search.to ? { from: search.from, to: search.to } : null
-  }, [key, search.from, search.to])
+  const range: Range | null = useMemo(() => rangeFor(key, search.from, search.to), [key, search.from, search.to])
 
   const memberId = (firmView ? search.member : undefined) ?? me?.membership_id ?? undefined
   const go = (next: { period?: PeriodKey; from?: string; to?: string; member?: string }) =>
@@ -79,8 +75,8 @@ export function WorkScreen({ search }: { search: WorkSearch }) {
 
       {firmView && range && (
         <>
+          <MeasuredFigures range={range} />
           <People range={range} selected={memberId} onSelect={(id) => go({ member: id })} title={can('member.manage') ? 'Firm activity' : 'Team activity'} />
-          <WaitingOnClients />
         </>
       )}
       {memberId && range && <PersonWork memberId={memberId} range={range} heading={firmView} />}
@@ -89,154 +85,84 @@ export function WorkScreen({ search }: { search: WorkSearch }) {
   )
 }
 
-function PeriodPicker({
-  value,
-  range,
-  onPick,
-}: {
-  value: PeriodKey
-  range: Range | null
-  onPick: (next: { period: PeriodKey; from?: string; to?: string }) => void
-}) {
-  const [from, setFrom] = useState(range ? formatDate(range.from) : '')
-  const [to, setTo] = useState(range ? formatDate(range.to) : '')
-  const [error, setError] = useState<string | null>(null)
-
-  function apply(e: FormEvent) {
-    e.preventDefault()
-    const f = parseDate(from)
-    const t = parseDate(to)
-    const problem = rangeProblem(f && t ? { from: f, to: t } : null)
-    setError(problem)
-    if (!problem) onPick({ period: 'custom', from: f!, to: t! })
-  }
-
-  return (
-    <div className="grid gap-2">
-      <div role="group" aria-label="Period" className="flex flex-wrap gap-1.5">
-        {PRESETS.map((p) => (
-          <Button
-            key={p}
-            size="sm"
-            variant={p === value ? 'primary' : 'outline'}
-            aria-pressed={p === value}
-            onClick={() => (p === 'custom' ? onPick({ period: 'custom', from: range?.from, to: range?.to }) : onPick({ period: p, from: undefined, to: undefined }))}
-          >
-            {PERIOD_LABEL[p]}
-          </Button>
-        ))}
-      </div>
-      {value === 'custom' && (
-        <form onSubmit={apply} className="flex flex-wrap items-start gap-2" noValidate>
-          <label className="grid gap-1 text-[13px] text-muted-foreground">
-            From
-            <DateInput aria-invalid={!!error} className="w-36" value={from} onChange={(e) => setFrom(e.target.value)} />
-          </label>
-          <label className="grid gap-1 text-[13px] text-muted-foreground">
-            To
-            <DateInput aria-invalid={!!error} className="w-36" value={to} onChange={(e) => setTo(e.target.value)} />
-          </label>
-          <Button type="submit" size="md" className="mt-5">
-            Show
-          </Button>
-          {error && (
-            <p role="alert" className="mt-5 text-sm text-destructive">
-              {error}
-            </p>
-          )}
-        </form>
-      )}
-      {range && (
-        <p className="text-[13px] text-muted-foreground">
-          <span className="num">{formatDate(range.from)}</span> to <span className="num">{formatDate(range.to)}</span>
-        </p>
-      )}
-    </div>
-  )
-}
-
-const count = (n: number) => (n === 0 ? <span className="text-muted-foreground">0</span> : n)
+const count = (n: number) => (n === 0 ? <span className="text-faint">0</span> : n)
 
 function People({ range, selected, onSelect, title }: { range: Range; selected?: string; onSelect: (id: string) => void; title: string }) {
   const members = useQuery(teamMembers(range))
   if (members.isPending) return <Spinner label="Adding up the work…" />
   if (members.error) return <ErrorState error={members.error} retry={() => void members.refetch()} />
   const { metrics, results } = members.data
-  // Alphabetical, on purpose: the order never says who did more.
+  // Alphabetical, on purpose: the order never says who did more. Columns are not sortable for the same reason.
   const people = [...results].sort((a, b) => a.name.localeCompare(b.name))
   const total = (k: MetricKey) => people.reduce((sum, p) => sum + p.work[k], 0)
   const active = people.filter((person) => person.is_active).length
-  return (
-    <section aria-labelledby="people-work">
-      <div className="mb-3 flex flex-wrap items-end justify-between gap-2">
+  const columns: Column<MemberWithWork>[] = [
+    {
+      key: 'person',
+      header: 'Person',
+      cell: (p) => (
         <div>
-          <h2 id="people-work" className="text-base font-semibold">{title}</h2>
-          <p className="text-[13px] text-muted-foreground">{plural(active, 'active person', 'active people')} · totals for the selected period</p>
-        </div>
-      </div>
-      <dl className="mb-4 grid grid-cols-2 gap-2 sm:grid-cols-3 xl:grid-cols-4">
-        {metrics.map((metric) => (
-          <div key={metric.key} className="rounded-lg border bg-card p-3">
-            <dt className="text-[13px] text-muted-foreground">{metric.label}</dt>
-            <dd className="num mt-1 text-2xl font-semibold">{total(metric.key)}</dd>
+          <button
+            type="button"
+            className="text-left font-medium text-heading hover:underline"
+            aria-label={`Show ${p.name}’s work in detail`}
+            aria-pressed={p.id === selected}
+            onClick={() => onSelect(p.id)}
+          >
+            {p.name}
+          </button>
+          <div className="text-[13px] text-muted-foreground">
+            {p.role_display}
+            {p.manager && ` · reports to ${p.manager.name}`}
+            {!p.is_active && ' · deactivated'}
           </div>
+        </div>
+      ),
+    },
+    ...metrics.map<Column<MemberWithWork>>((m, i) => ({
+      key: m.key,
+      header: m.label,
+      align: 'right',
+      priority: i < 2 ? 1 : 3,
+      cell: (p) => count(p.work[m.key]),
+    })),
+  ]
+  return (
+    <section aria-labelledby="people-work" className="grid gap-3">
+      <div>
+        <h2 id="people-work" className="text-[15px] font-semibold text-heading">{title}</h2>
+        <p className="text-[13px] text-muted-foreground">{plural(active, 'active person', 'active people')} · totals for the selected period</p>
+      </div>
+      <StatGrid className="xl:grid-cols-4">
+        {metrics.map((metric) => (
+          <StatCard key={metric.key} label={metric.label} value={total(metric.key)} />
         ))}
-      </dl>
-      <div className={tbl.wrap}>
-        <table className={tbl.table}>
-          <thead className={tbl.head}>
+      </StatGrid>
+      <DataTable
+        caption="Work done by each person in the period"
+        columns={columns}
+        rows={people}
+        rowKey={(p) => p.id}
+        selectedKey={selected}
+        footer={
+          people.length > 1 ? (
             <tr>
-              <th scope="col" className={tbl.th}>Person</th>
-              {metrics.map((m) => (
-                <th key={m.key} scope="col" className={cn(tbl.thNum, 'whitespace-normal')}>
-                  {m.label}
-                </th>
+              <th scope="row" className="px-3 py-2 text-left">All shown</th>
+              {metrics.map((m, i) => (
+                <td key={m.key} className={cn('num px-3 py-2 text-right', i >= 2 && 'max-lg:hidden')}>
+                  {total(m.key)}
+                </td>
               ))}
             </tr>
-          </thead>
-          <tbody>
-            {people.map((p) => (
-              <tr key={p.id} className={cn(tbl.row, p.id === selected && 'bg-accent')} aria-current={p.id === selected ? 'true' : undefined}>
-                <td className={tbl.td}>
-                  <button
-                    type="button"
-                    className="text-left font-medium hover:underline"
-                    aria-label={`Show ${p.name}’s work in detail`}
-                    onClick={() => onSelect(p.id)}
-                  >
-                    {p.name}
-                  </button>
-                  <div className="text-[13px] text-muted-foreground">
-                    {p.role_display}
-                    {p.manager && ` · reports to ${p.manager.name}`}
-                    {!p.is_active && ' · deactivated'}
-                  </div>
-                </td>
-                {metrics.map((m) => (
-                  <td key={m.key} className={tbl.tdNum}>
-                    {count(p.work[m.key])}
-                  </td>
-                ))}
-              </tr>
-            ))}
-          </tbody>
-          {people.length > 1 && (
-            <tfoot className={tbl.foot}>
-              <tr className={tbl.row}>
-                <th scope="row" className={cn(tbl.td, 'text-left')}>All shown</th>
-                {metrics.map((m) => (
-                  <td key={m.key} className={tbl.tdNum}>
-                    {total(m.key)}
-                  </td>
-                ))}
-              </tr>
-            </tfoot>
-          )}
-        </table>
-      </div>
+          ) : undefined
+        }
+      />
     </section>
   )
 }
+
+type ByClient = MemberWork['by_client'][number]
+type OpenWork = MemberWork['open_work'][number]
 
 function PersonWork({ memberId, range, heading }: { memberId: string; range: Range; heading: boolean }) {
   const work = useQuery(memberWork(memberId, range))
@@ -245,133 +171,102 @@ function PersonWork({ memberId, range, heading }: { memberId: string; range: Ran
   const w = work.data
   const shownMetrics = w.metrics.filter((m) => w.by_client.some((c) => c[m.key] > 0))
   const activeDays = w.by_day.filter((d) => d.count > 0).length
-  const peakDay = Math.max(1, ...w.by_day.map((d) => d.count))
   const waiting = w.open_work.filter((c) => c.unresolved > 0 || c.pending_approval > 0)
+
+  const byClient: Column<ByClient>[] = [
+    {
+      key: 'client',
+      header: 'Client',
+      cell: (c) =>
+        c.id ? (
+          <Link to="/clients/$clientId" params={{ clientId: c.id }} className="font-medium text-heading hover:underline">
+            {c.name}
+          </Link>
+        ) : (
+          c.name
+        ),
+    },
+    ...shownMetrics.map<Column<ByClient>>((m, i) => ({
+      key: m.key,
+      header: m.label,
+      align: 'right',
+      priority: i < 2 ? 1 : 3,
+      cell: (c) => count(c[m.key]),
+    })),
+  ]
+  const waitingCols: Column<OpenWork>[] = [
+    { key: 'client', header: 'Client', cell: (c) => <span className="font-medium text-heading">{c.name}</span> },
+    {
+      key: 'unresolved',
+      header: 'Rows to place',
+      align: 'right',
+      cell: (c) =>
+        c.unresolved ? (
+          <Link to="/clients/$clientId/review" params={{ clientId: c.id }} search={{ stage: 'unresolved' }} className="text-accent-foreground underline">
+            {c.unresolved}
+          </Link>
+        ) : (
+          count(0)
+        ),
+    },
+    {
+      key: 'pending',
+      header: 'Ready to approve',
+      align: 'right',
+      cell: (c) =>
+        c.pending_approval ? (
+          <Link to="/clients/$clientId/review" params={{ clientId: c.id }} search={{ stage: 'pending_approval' }} className="text-link underline">
+            {c.pending_approval}
+          </Link>
+        ) : (
+          count(0)
+        ),
+    },
+  ]
 
   return (
     <div className="grid gap-6 [&>*]:min-w-0" aria-live="polite">
       {heading && (
-        <h2 className="text-lg font-semibold">
+        <h2 className="text-lg font-semibold text-heading">
           {w.member.name}
           <span className="ml-2 text-sm font-normal text-muted-foreground">{w.member.role_display}</span>
         </h2>
       )}
 
-      <section aria-labelledby="w-done">
-        <h3 id="w-done" className="mb-2 text-base font-semibold">
+      <section aria-labelledby="w-done" className="grid gap-3">
+        <h3 id="w-done" className="text-[15px] font-semibold text-heading">
           Done, <span className="num">{formatDate(w.period.from)}</span> to <span className="num">{formatDate(w.period.to)}</span>
         </h3>
-        <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {w.metrics.map((m: Metric) => (
-            <div key={m.key} className="rounded-lg border bg-card p-3">
-              <dt className="text-[13px] text-muted-foreground">{m.label}</dt>
-              <dd className="num mt-0.5 text-2xl font-semibold">{w.totals[m.key]}</dd>
-            </div>
+        <StatGrid>
+          {w.metrics.map((m) => (
+            <StatCard key={m.key} label={m.label} value={w.totals[m.key]} />
           ))}
-        </dl>
-        <p className="mt-2 text-[13px] text-muted-foreground">Worked on {plural(activeDays, 'day')} in this period.</p>
-        <div className="mt-3 rounded-lg border bg-card p-3">
-          <div className="mb-2 text-[13px] font-medium">Daily activity</div>
-          <div role="img" aria-label={`Daily activity: ${w.by_day.reduce((sum, d) => sum + d.count, 0)} recorded actions across ${activeDays} days`} className="flex h-24 items-end gap-1">
-            {w.by_day.map((day) => {
-              return <div key={day.date} className="group relative flex h-full flex-1 items-end" title={`${formatDate(day.date)} · ${day.count} actions`}>
-                <span className={cn('w-full rounded-t-sm', day.count ? 'bg-primary/70' : 'bg-muted')} style={{ height: `${day.count ? Math.max(8, day.count / peakDay * 100) : 3}%` }} />
-              </div>
-            })}
-          </div>
-          <div className="mt-1 flex justify-between text-xs text-muted-foreground"><span>{w.by_day[0] ? formatDate(w.by_day[0].date) : ''}</span><span>{w.by_day.at(-1) ? formatDate(w.by_day.at(-1)!.date) : ''}</span></div>
-        </div>
+        </StatGrid>
+        <p className="text-[13px] text-muted-foreground">Worked on {plural(activeDays, 'day')} in this period.</p>
+        <DailyActivity days={w.by_day} activeDays={activeDays} />
       </section>
 
-      <section aria-labelledby="w-clients">
-        <h3 id="w-clients" className="mb-2 text-base font-semibold">
+      <section aria-labelledby="w-clients" className="grid gap-3">
+        <h3 id="w-clients" className="text-[15px] font-semibold text-heading">
           By client
         </h3>
         {shownMetrics.length === 0 ? (
           <p className="text-sm text-muted-foreground">No recorded work in this period.</p>
         ) : (
-          <div className={tbl.wrap}>
-            <table className={tbl.table}>
-              <thead className={tbl.head}>
-                <tr>
-                  <th scope="col" className={tbl.th}>Client</th>
-                  {shownMetrics.map((m) => (
-                    <th key={m.key} scope="col" className={cn(tbl.thNum, 'whitespace-normal')}>
-                      {m.label}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody>
-                {w.by_client.map((c) => (
-                  <tr key={c.id ?? 'deleted'} className={tbl.row}>
-                    <td className={tbl.td}>
-                      {c.id ? (
-                        <Link to="/clients/$clientId" params={{ clientId: c.id }} className="hover:underline">
-                          {c.name}
-                        </Link>
-                      ) : (
-                        c.name
-                      )}
-                    </td>
-                    {shownMetrics.map((m) => (
-                      <td key={m.key} className={tbl.tdNum}>
-                        {count(c[m.key])}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable caption="Work by client in the period" columns={byClient} rows={w.by_client} rowKey={(c) => c.id ?? 'deleted'} />
         )}
       </section>
 
-      <section aria-labelledby="w-waiting">
-        <h3 id="w-waiting" className="mb-2 text-base font-semibold">
+      <section aria-labelledby="w-waiting" className="grid gap-3">
+        <h3 id="w-waiting" className="text-[15px] font-semibold text-heading">
           Waiting now, on the clients they are on
         </h3>
         {!waiting.length ? (
           <p className="text-sm text-muted-foreground">Nothing is waiting on the clients this person can open.</p>
         ) : (
-          <div className={tbl.wrap}>
-            <table className={tbl.table}>
-              <thead className={tbl.head}>
-                <tr>
-                  <th scope="col" className={tbl.th}>Client</th>
-                  <th scope="col" className={tbl.thNum}>Rows to place</th>
-                  <th scope="col" className={tbl.thNum}>Ready to approve</th>
-                </tr>
-              </thead>
-              <tbody>
-                {waiting.map((c) => (
-                  <tr key={c.id} className={tbl.row}>
-                    <td className={tbl.td}>{c.name}</td>
-                    <td className={tbl.tdNum}>
-                      {c.unresolved ? (
-                        <Link to="/clients/$clientId/review" params={{ clientId: c.id }} search={{ stage: 'unresolved' }} className="text-warning hover:underline">
-                          {c.unresolved}
-                        </Link>
-                      ) : (
-                        count(0)
-                      )}
-                    </td>
-                    <td className={tbl.tdNum}>
-                      {c.pending_approval ? (
-                        <Link to="/clients/$clientId/review" params={{ clientId: c.id }} search={{ stage: 'pending_approval' }} className="text-info hover:underline">
-                          {c.pending_approval}
-                        </Link>
-                      ) : (
-                        count(0)
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable caption="Open work on this person’s clients" columns={waitingCols} rows={waiting} rowKey={(c) => c.id} />
         )}
-        <p className="mt-2 text-[13px] text-muted-foreground">
+        <p className="text-[13px] text-muted-foreground">
           “Rows to place” have no ledger yet. “Ready to approve” have a ledger and wait for a Senior CA.
         </p>
       </section>
@@ -379,58 +274,46 @@ function PersonWork({ memberId, range, heading }: { memberId: string; range: Ran
   )
 }
 
-/** The firm's open work by client, for whoever manages the clients: where the backlog sits. */
-export function WaitingOnClients() {
-  const clients = useQuery(teamClients())
-  if (clients.isPending) return null
-  if (clients.error) return <ErrorState error={clients.error} retry={() => void clients.refetch()} />
-  const rows = clients.data.results.filter((c) => c.unresolved > 0 || c.pending_approval > 0)
-  const idle = clients.data.results.length - rows.length
-  const unresolved = rows.reduce((sum, client) => sum + client.unresolved, 0)
-  const pending = rows.reduce((sum, client) => sum + client.pending_approval, 0)
+/** Bars for the eye, a table for everyone else: the same numbers, one day per row. */
+function DailyActivity({ days, activeDays }: { days: MemberWork['by_day']; activeDays: number }) {
+  const peak = Math.max(1, ...days.map((d) => d.count))
+  const actions = days.reduce((sum, d) => sum + d.count, 0)
   return (
-    <section aria-labelledby="w-backlog">
-      <h2 id="w-backlog" className="mb-2 text-base font-semibold">
-        Waiting now, by client
-      </h2>
-      <dl className="mb-3 grid grid-cols-2 gap-2 sm:grid-cols-3">
-        <div className="rounded-lg border bg-card p-3"><dt className="text-[13px] text-muted-foreground">Rows to place</dt><dd className="num mt-1 text-2xl font-semibold">{unresolved}</dd></div>
-        <div className="rounded-lg border bg-card p-3"><dt className="text-[13px] text-muted-foreground">Ready to approve</dt><dd className="num mt-1 text-2xl font-semibold">{pending}</dd></div>
-        <div className="rounded-lg border bg-card p-3"><dt className="text-[13px] text-muted-foreground">Clients with open work</dt><dd className="num mt-1 text-2xl font-semibold">{rows.length}</dd></div>
-      </dl>
-      {rows.length === 0 ? (
-        <p className="text-sm text-muted-foreground">Nothing is waiting on any client.</p>
-      ) : (
-        <div className={tbl.wrap}>
-          <table className={tbl.table}>
-            <thead className={tbl.head}>
+    <div className="rounded-lg border bg-card p-3">
+      <div className="mb-2 text-[13px] font-medium text-heading">Daily activity</div>
+      <div role="img" aria-label={`Daily activity: ${actions} recorded actions across ${activeDays} days`} className="flex h-24 items-end gap-1">
+        {days.map((day) => (
+          <div key={day.date} className="flex h-full flex-1 items-end" title={`${formatDate(day.date)} · ${day.count} actions`}>
+            <span className={cn('w-full rounded-t-sm', day.count ? 'bg-primary/70' : 'bg-muted')} style={{ height: `${day.count ? Math.max(8, (day.count / peak) * 100) : 3}%` }} />
+          </div>
+        ))}
+      </div>
+      <div className="num mt-1 flex justify-between text-xs text-muted-foreground">
+        <span>{days[0] ? formatDate(days[0].date) : ''}</span>
+        <span>{days.at(-1) ? formatDate(days.at(-1)!.date) : ''}</span>
+      </div>
+      <details className="mt-2 text-sm">
+        <summary className="cursor-pointer text-[13px] text-link underline">Show as a table</summary>
+        <div className="mt-2 max-h-64 overflow-auto rounded-md border">
+          <table className="w-full text-left text-sm">
+            <caption className="sr-only">Recorded actions by day</caption>
+            <thead className="sticky top-0 bg-surface-2 text-xs text-muted-foreground">
               <tr>
-                <th scope="col" className={tbl.th}>Client</th>
-                <th scope="col" className={tbl.th}>Senior CA</th>
-                <th scope="col" className={tbl.th}>Team</th>
-                <th scope="col" className={tbl.thNum}>Rows to place</th>
-                <th scope="col" className={tbl.thNum}>Ready to approve</th>
+                <th scope="col" className="px-3 py-1.5 font-semibold">Date</th>
+                <th scope="col" className="px-3 py-1.5 text-right font-semibold">Actions</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((c) => (
-                <tr key={c.id} className={tbl.row}>
-                  <td className={tbl.td}>
-                    <Link to="/clients/$clientId/team" params={{ clientId: c.id }} className="font-medium hover:underline">
-                      {c.name}
-                    </Link>
-                  </td>
-                  <td className={tbl.td}>{c.lead?.name ?? <span className="text-warning">Not assigned</span>}</td>
-                  <td className={cn(tbl.td, 'max-w-64 text-[13px] text-muted-foreground')}>{c.team.map((p) => p.name).join(', ') || 'Nobody assigned'}</td>
-                  <td className={tbl.tdNum}>{count(c.unresolved)}</td>
-                  <td className={tbl.tdNum}>{count(c.pending_approval)}</td>
+              {days.map((d) => (
+                <tr key={d.date} className="border-t">
+                  <td className="num px-3 py-1">{formatDate(d.date)}</td>
+                  <td className="num px-3 py-1 text-right">{count(d.count)}</td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
-      )}
-      {idle > 0 && <p className="mt-2 text-[13px] text-muted-foreground">{plural(idle, 'other client')} with nothing waiting.</p>}
-    </section>
+      </details>
+    </div>
   )
 }

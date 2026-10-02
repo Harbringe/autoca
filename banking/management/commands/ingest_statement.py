@@ -1,7 +1,6 @@
 """Run a statement through the whole pipeline from the command line.
 
     python manage.py ingest_statement --firm <uuid> --client "Arjun Nair" axis.pdf
-    python manage.py ingest_statement --firm <uuid> --client "..." axis.pdf --export books.xml
 
 The firm id is required and cannot be inferred from the client name, because
 finding a client without already knowing their firm would mean reading
@@ -22,17 +21,15 @@ from classify.engine import classify_statement, review_summary
 from classify.seeds import seed_client
 from core.db.session import firm_context
 from core.models import Client
-from ledger.tally import export_statement
 
 
 class Command(BaseCommand):
-    help = "Ingest a bank statement PDF, classify its rows, and optionally export Tally XML."
+    help = "Ingest a bank statement PDF, and classify its rows."
 
     def add_arguments(self, parser):
         parser.add_argument("path", help="Path to the statement PDF.")
         parser.add_argument("--firm", required=True, help="Firm id (UUID).")
         parser.add_argument("--client", required=True, help="Client name, as filed by the firm.")
-        parser.add_argument("--export", help="Write Tally XML to this path.")
         parser.add_argument(
             "--no-seed",
             action="store_true",
@@ -91,21 +88,3 @@ class Command(BaseCommand):
                         f"{summary.judgement} need judgement"
                     )
                 )
-
-            if options["export"]:
-                self._export(statement, client, pathlib.Path(options["export"]))
-
-    def _export(self, statement, client, destination: pathlib.Path) -> None:
-        result = export_statement(statement, company_name=client.name)
-        destination.write_text(result.xml, encoding="utf-8")
-        self.stdout.write(
-            self.style.SUCCESS(
-                f"wrote {result.voucher_count} vouchers and {result.ledger_count} "
-                f"ledger masters to {destination}"
-            )
-        )
-        if result.unapproved:
-            self.stdout.write(
-                f"left out {result.unapproved} row(s) that have not been approved. "
-                f"Nothing reaches a client's books without a CA signing it off."
-            )

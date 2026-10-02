@@ -112,7 +112,7 @@ def resolve_proposal(
 
 @db_transaction.atomic
 def accept(ledger: LedgerAccount, *, name: str | None = None, group: str | None = None) -> LedgerAccount:
-    """A CA agrees the client needs this ledger, optionally fixing its name to match Tally."""
+    """A CA agrees the client needs this ledger, optionally fixing its name to the client's own spelling."""
     _require_proposed(ledger)
     if name is not None:
         name = clean_name(name)

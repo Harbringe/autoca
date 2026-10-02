@@ -434,7 +434,13 @@ def not_decided_by_a_person(client, statement=None):
 
 
 def _unposted(client):
-    """Classifications with no live journal entry behind them.
+    return unposted_in(client.firm_id, [client.pk])
+
+
+def unposted_in(firm_id, clients):
+    """Classifications with no live journal entry behind them, for one or many clients.
+
+    ``clients`` is a list of ids or a subquery of them.
 
     A superseded entry does not count as posted: its correction is what stands,
     and the correction carries its own classification.
@@ -448,12 +454,12 @@ def _unposted(client):
     from ledger.models import JournalEntry
 
     posted = JournalEntry.objects.filter(
-        firm_id=client.firm_id, superseded_by_set__isnull=True
+        firm_id=firm_id, superseded_by_set__isnull=True
     ).values("source_transaction_id")
 
     return TransactionClassification.objects.filter(
-        firm_id=client.firm_id,
-        transaction__bank_account__client=client,
+        firm_id=firm_id,
+        transaction__bank_account__client__in=clients,
         # The other side of an own-account transfer is done once its twin is posted.
         mirrored_entry_id__isnull=True,
     ).exclude(transaction_id__in=posted)

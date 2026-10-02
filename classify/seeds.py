@@ -111,8 +111,8 @@ def rename_account_ledger(account, name: str) -> int:
     Changing only ``account.ledger_name`` would make :func:`contra_ledger_for`
     open a second, empty ledger under the new name: every approved entry would
     stay on the old one and month-end reconciliation would stop matching.
-    Returns how many journal lines already name the ledger, so a caller can warn
-    that a Tally company importing under the old name must be renamed too.
+    Returns how many journal lines already name the ledger, so a caller can say
+    how many entries moved with it.
     """
     from ledger.models import JournalLine
 

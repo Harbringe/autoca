@@ -1,4 +1,4 @@
-import { presetRange, rangeProblem } from './period'
+import { presetRange, rangeFor, rangeProblem } from './period'
 
 describe('presetRange', () => {
   const today = new Date(2026, 8, 29) // 29 Sep 2026
@@ -16,4 +16,13 @@ describe('rangeProblem', () => {
   it('refuses a reversed range', () => expect(rangeProblem({ from: '2026-05-01', to: '2026-04-01' })).toMatch(/before/))
   it('refuses more than a year', () => expect(rangeProblem({ from: '2025-01-01', to: '2026-06-01' })).toMatch(/year/))
   it('asks for both dates', () => expect(rangeProblem(null)).toMatch(/DD-MM-YYYY/))
+})
+
+describe('rangeFor', () => {
+  const today = new Date(2026, 8, 15) // 15 Sep 2026
+  it('uses the preset for a named period and the dates for a custom one', () => {
+    expect(rangeFor('month', undefined, undefined, today)).toEqual({ from: '2026-09-01', to: '2026-09-15' })
+    expect(rangeFor('custom', '2026-04-01', '2026-06-30', today)).toEqual({ from: '2026-04-01', to: '2026-06-30' })
+    expect(rangeFor('custom', '2026-04-01', undefined, today)).toBeNull()
+  })
 })

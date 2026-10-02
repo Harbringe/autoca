@@ -160,3 +160,24 @@ def test_the_registrations_list_is_the_paginated_envelope(api, client_record):
 
     assert set(body) == {"count", "next", "previous", "results"}
     assert body["count"] == 1 and body["results"][0]["gstin"] == ME
+
+
+def test_the_schema_documents_the_gst_and_assistant_responses():
+    from drf_spectacular.generators import SchemaGenerator
+
+    paths = SchemaGenerator().get_schema(request=None, public=True)["paths"]
+    base = "/api/v1/clients/{client_id}/gst/"
+    wanted = [
+        (f"{base}registrations/", "get"), (f"{base}registrations/", "post"),
+        (f"{base}runs/", "get"), (f"{base}runs/", "post"), (f"{base}runs/{{id}}/", "get"),
+        (f"{base}runs/{{id}}/register/", "post"), (f"{base}runs/{{id}}/portal/", "post"),
+        (f"{base}runs/{{id}}/reconcile/", "post"), (f"{base}runs/{{id}}/decisions/", "post"),
+        (f"{base}runs/{{id}}/export/", "get"), (f"{base}runs/{{id}}/sign-off/", "post"),
+        ("/api/v1/clients/{client_id}/assistant/next-batch/", "post"),
+    ]
+    for path, method in wanted:
+        responses = paths[path][method]["responses"]
+        ok = next(v for code, v in responses.items() if code.startswith("2"))
+        assert ok["content"], (path, method)
+    run_body = paths[f"{base}runs/"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"]
+    assert run_body.endswith("RunCreateRequest")

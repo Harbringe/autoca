@@ -20,8 +20,8 @@ export function booksState(status: Pick<BooksStatus, 'review_pending' | 'history
 
 export const BOOKS_STATE_LABEL: Record<BooksState, string> = {
   draft: 'Working draft',
-  awaiting_senior: 'Awaiting sign-off',
-  returned: 'Returned for changes',
+  awaiting_senior: 'Sent for review',
+  returned: 'Returned',
 }
 
 export const BOOKS_STATE_TONE: Record<BooksState, 'neutral' | 'warning' | 'danger'> = {

@@ -37,6 +37,8 @@ from ledger.models import (
     EntryChange,
     JournalEntry,
     JournalLine,
+    LedgerImportRun,
+    LedgerOpening,
     VoucherSequence,
     VoucherType,
 )
@@ -336,6 +338,29 @@ def _gst_decision(firm, **kw):
     )
 
 
+def _ledger_import_run(firm, **kw):
+    return LedgerImportRun.objects.create(
+        firm=firm,
+        client=kw.get("client") or _client(firm),
+        financial_year=2025,
+        file_sha256=uuid.uuid4().hex * 2,
+        source_format="xml",
+        chart_stamp="x",
+        expires_at=django_timezone.now() + datetime.timedelta(days=7),
+    )
+
+
+def _ledger_opening(firm, **kw):
+    client = kw.get("client") or _client(firm)
+    return LedgerOpening.objects.create(
+        firm=firm,
+        client=client,
+        ledger=kw.get("ledger") or _ledger_account(firm, client=client),
+        financial_year=2025,
+        signed_paise=150_000,
+    )
+
+
 #: model -> callable(firm, **kwargs) -> instance
 FACTORIES = {
     Client: _client,
@@ -367,6 +392,8 @@ FACTORIES = {
     JournalLine: _journal_line,
     BooksEvent: _books_event,
     EntryChange: _entry_change,
+    LedgerImportRun: _ledger_import_run,
+    LedgerOpening: _ledger_opening,
 }
 
 #: Firm is firm-scoped by primary key rather than by a firm_id column, so it is

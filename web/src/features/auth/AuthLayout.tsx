@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/card'
 export function Brand({ className }: { className?: string }) {
   return (
     <div className={`flex items-center gap-2.5 ${className ?? ''}`}>
-      <span className="grid size-8 place-items-center rounded-md bg-[#2f6f62] text-[13px] font-bold tracking-tight text-white" aria-hidden>
+      <span className="grid size-8 place-items-center rounded-md bg-brand text-[13px] font-bold tracking-tight text-white" aria-hidden>
         CA
       </span>
       <span className="text-lg font-semibold tracking-tight">AutoCA</span>

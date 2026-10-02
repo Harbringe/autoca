@@ -2,9 +2,12 @@
 
 Every write goes through here, and every function takes the acting membership
 first. The reporting chain is owner -> firm administrators -> Senior CAs ->
-Staff and Read-only members. The owner manages administrator invitations and
-ownership transfer; administrators manage everyone except the owner; a Senior
-CA manages roles and access for their own direct reports.
+Staff and Read-only members; a firm with no active Senior CA lets Staff and
+Read-only members report to the owner or an active administrator instead.
+Only the owner invites, changes or deactivates another administrator, and
+transfers ownership; administrators manage everyone else; nobody but the owner
+can change the owner; a Senior CA manages roles and access for their own
+direct reports.
 
 Nobody is left orphaned: a Senior CA who still leads clients or has a team
 cannot be deactivated or demoted until those are handed over.
@@ -76,7 +79,7 @@ def visible_members(actor: FirmMembership):
         "user", "manager__user"
     )
     if is_admin(actor):
-        return members if actor.is_owner else members.exclude(is_owner=True)
+        return members
     if is_lead(actor):
         return members.filter(Q(pk=actor.pk) | Q(manager=actor))
     return members.filter(pk=actor.pk)
@@ -106,20 +109,43 @@ def _valid_manager(actor: FirmMembership, manager: FirmMembership | None) -> Non
         raise TeamError("A reporting line has to point to an active manager in the firm.")
 
 
-def _valid_parent(actor: FirmMembership, child_role: str, manager: FirmMembership | None) -> None:
+def _senior_exists(firm_id, exclude_pk=None) -> bool:
+    seniors = FirmMembership.objects.filter(firm_id=firm_id, role=Role.SENIOR_CA, is_active=True)
+    if exclude_pk is not None:
+        seniors = seniors.exclude(pk=exclude_pk)
+    return seniors.exists()
+
+
+def _fallback_manager(firm_id, exclude_pk=None) -> FirmMembership | None:
+    """Who Staff and Read-only report to when the firm has no Senior CA: the owner, else an administrator."""
+    admins = FirmMembership.objects.filter(firm_id=firm_id, role=Role.FIRM_ADMIN, is_active=True)
+    if exclude_pk is not None:
+        admins = admins.exclude(pk=exclude_pk)
+    return admins.select_related("user").order_by("-is_owner", "created_at").first()
+
+
+def _may_report(child_role: str, manager: FirmMembership, child_pk=None) -> bool:
+    if child_role == Role.FIRM_ADMIN:
+        return manager.is_owner
+    if child_role == Role.SENIOR_CA:
+        return manager.role == Role.FIRM_ADMIN
+    if child_role in TEAM_ROLES:
+        if manager.role == Role.SENIOR_CA:
+            return True
+        return manager.role == Role.FIRM_ADMIN and not _senior_exists(manager.firm_id, exclude_pk=child_pk)
+    return False
+
+
+def _valid_parent(
+    actor: FirmMembership, child_role: str, manager: FirmMembership | None, child_pk=None
+) -> None:
     """Keep the reporting chain owner -> admin -> senior -> staff/read-only."""
     if manager is None:
         if child_role in {Role.SENIOR_CA, Role.STAFF, Role.READ_ONLY} or firm_owner(actor.firm_id):
             raise TeamError("Assign an active manager at the level directly above this role.")
         return
     _valid_manager(actor, manager)
-    allowed = {
-        Role.FIRM_ADMIN: manager.is_owner,
-        Role.SENIOR_CA: manager.role == Role.FIRM_ADMIN,
-        Role.STAFF: manager.role == Role.SENIOR_CA,
-        Role.READ_ONLY: manager.role == Role.SENIOR_CA,
-    }
-    if not allowed.get(child_role, False):
+    if not _may_report(child_role, manager, child_pk):
         raise TeamError("Choose a manager from the level directly above this role.")
 
 
@@ -190,6 +216,8 @@ def invite(
         manager = actor
     elif role in TEAM_ROLES and is_lead(actor):
         manager = actor
+    elif role in TEAM_ROLES and manager is None and not _senior_exists(actor.firm_id):
+        manager = _fallback_manager(actor.firm_id)
     _valid_parent(actor, role, manager)
     return issue_invite(
         actor.firm_id,
@@ -342,8 +370,12 @@ def accept(record: Invite, *, full_name: str, password: str, existing_user: User
         if manager is None or not manager.is_active:
             raise TeamError("This invitation no longer has an active administrator to report to. Ask for a new invite.")
     elif record.role in TEAM_ROLES:
-        if manager is None or manager.role != Role.SENIOR_CA:
-            raise TeamError("This invitation no longer has an active Senior CA to report to. Ask for a new invite.")
+        if manager is None or not _may_report(record.role, manager):
+            if _senior_exists(record.firm_id):
+                raise TeamError("This invitation no longer has an active Senior CA to report to. Ask for a new invite.")
+            manager = _fallback_manager(record.firm_id)
+            if manager is None:
+                raise TeamError("This invitation no longer has an active manager to report to. Ask for a new invite.")
     try:
         membership, _ = FirmMembership.objects.update_or_create(
             firm_id=record.firm_id,
@@ -397,14 +429,19 @@ def update_member(
 ) -> FirmMembership:
     _same_firm(actor, target)
     target = FirmMembership.objects.select_for_update(of=("self",)).select_related("user").get(pk=target.pk)
-    if target.is_owner and target.pk != actor.pk and (role is not None or is_active is not None):
-        raise TeamError(
-            "The firm owner can't be changed or deactivated here. The owner can transfer ownership "
-            "from Firm settings; otherwise ask the AutoCA super admin."
+    changes = (
+        (role is not None and role != target.role)
+        or (is_active is not None and is_active != target.is_active)
+        or (manager is not ... and manager != target.manager)
+        or (scope_all_clients is not None and scope_all_clients != target.scope_all_clients)
+    )
+    if target.is_owner and target.pk != actor.pk and changes:
+        raise PermissionDenied(
+            "Only the firm owner can change the firm owner, and only by transferring ownership "
+            "from Firm settings."
         )
-    touches_admin = target.role == Role.FIRM_ADMIN or role == Role.FIRM_ADMIN
-    if touches_admin and (role not in (None, target.role) or is_active is not None):
-        _require(is_admin(actor) and not target.is_owner, "Only an administrator can manage another administrator; the firm owner is protected.")
+    if changes and (target.role == Role.FIRM_ADMIN or role == Role.FIRM_ADMIN) and target.pk != actor.pk:
+        _require(can_manage_admins(actor), "Only the firm owner can change or remove a firm administrator.")
 
     if role is not None and role != target.role:
         may_manage_team_role = (
@@ -431,12 +468,18 @@ def update_member(
                 target.manager = manager
             else:
                 target.manager = target.manager if target.manager_id and target.manager.role == Role.FIRM_ADMIN else (actor if is_admin(actor) else firm_owner(actor.firm_id))
-        elif role in TEAM_ROLES and target.manager_id and target.manager.role != Role.SENIOR_CA:
-            target.manager = manager if manager is not ... else (actor if is_lead(actor) else None)
-        elif role in TEAM_ROLES and manager is not ...:
-            target.manager = manager
+        elif role in TEAM_ROLES:
+            if manager is not ...:
+                target.manager = manager
+            elif target.manager is None or not _may_report(role, target.manager, target.pk):
+                if is_lead(actor):
+                    target.manager = actor
+                elif not _senior_exists(actor.firm_id, exclude_pk=target.pk):
+                    target.manager = _fallback_manager(actor.firm_id, exclude_pk=target.pk)
+                else:
+                    target.manager = None
         if role in {Role.FIRM_ADMIN, Role.SENIOR_CA, Role.STAFF, Role.READ_ONLY}:
-            _valid_parent(actor, role, target.manager)
+            _valid_parent(actor, role, target.manager, target.pk)
         target.save(update_fields=["role", "manager"])
         _event(actor, TeamEventKind.ROLE_CHANGED, member=target, **{"from": before, "to": target.get_role_display()})
 
@@ -445,7 +488,7 @@ def update_member(
         if target.role == Role.FIRM_ADMIN:
             _require(not target.is_owner, "The firm owner's reporting line cannot be changed.")
         if target.role != Role.FIRM_ADMIN or not target.is_owner:
-            _valid_parent(actor, target.role, manager)
+            _valid_parent(actor, target.role, manager, target.pk)
         if manager != target.manager:
             old = target.manager
             removed = 0
@@ -554,11 +597,6 @@ def unassign(actor: FirmMembership, client: Client, member: FirmMembership) -> N
 
 def visible_events(actor: FirmMembership):
     events = TeamEvent.objects.filter(firm_id=actor.firm_id)
-    if actor.is_owner:
-        return events
-    owner = firm_owner(actor.firm_id)
-    if owner:
-        events = events.exclude(actor_id=owner.user_id).exclude(member_id=owner.pk)
     if is_admin(actor):
         return events
     team = list(FirmMembership.objects.filter(manager=actor).values_list("pk", flat=True))
@@ -662,15 +700,9 @@ def _platform_event(firm_id, kind, *, member: FirmMembership, **detail) -> None:
     )
 
 
-def _platform_manager(firm_id, target_role: str, manager_id) -> FirmMembership | None:
+def _platform_manager(firm_id, target_role: str, manager_id, child_pk=None) -> FirmMembership | None:
     """Resolve a direct report's manager inside the firm, or refuse clearly."""
-    expected = {
-        Role.FIRM_ADMIN: Role.FIRM_ADMIN,
-        Role.SENIOR_CA: Role.FIRM_ADMIN,
-        Role.STAFF: Role.SENIOR_CA,
-        Role.READ_ONLY: Role.SENIOR_CA,
-    }.get(target_role)
-    if expected is None:
+    if target_role not in Role.values:
         raise TeamError("Not a role.")
     # Looked up inside this firm's context, so another firm's membership is
     # simply not found. The composite key in core/migrations/0009 would refuse
@@ -681,16 +713,18 @@ def _platform_manager(firm_id, target_role: str, manager_id) -> FirmMembership |
     elif target_role == Role.FIRM_ADMIN:
         manager = firm_owner(firm_id)
     elif target_role == Role.SENIOR_CA:
-        managers = FirmMembership.objects.filter(firm_id=firm_id, role=expected, is_active=True)
+        managers = FirmMembership.objects.filter(firm_id=firm_id, role=Role.FIRM_ADMIN, is_active=True)
         manager = managers.order_by("-is_owner", "created_at").first()
+    elif target_role in TEAM_ROLES and not _senior_exists(firm_id, exclude_pk=child_pk):
+        manager = _fallback_manager(firm_id, exclude_pk=child_pk)
     if manager is None:
         if target_role == Role.FIRM_ADMIN and not firm_owner(firm_id):
             return None
         raise TeamError("Assign an active manager at the level directly above this role.")
-    if not manager.is_active or manager.role != expected:
-        raise TeamError("Choose an active manager from the level directly above this role.")
-    if target_role == Role.FIRM_ADMIN and not manager.is_owner:
+    if target_role == Role.FIRM_ADMIN and manager.is_active and not manager.is_owner:
         raise TeamError("A firm administrator reports to the firm owner.")
+    if not manager.is_active or not _may_report(target_role, manager, child_pk):
+        raise TeamError("Choose an active manager from the level directly above this role.")
     return manager
 
 
@@ -768,7 +802,7 @@ def platform_update(
         if steps_down and (problem := _handover_needed(target)):
             raise TeamError(problem)
 
-        manager = None if target.is_owner else _platform_manager(firm_id, role, manager_id)
+        manager = None if target.is_owner else _platform_manager(firm_id, role, manager_id, target.pk)
         if manager is not None and manager.pk == target.pk:
             raise TeamError("Someone can't lead their own team.")
 

@@ -56,6 +56,7 @@ def test_assign_puts_someone_in_a_firm_and_records_it(firm_a):
 
 
 def test_an_account_joins_one_firm_only(firm_a, firm_b):
+    member(firm_b, Role.FIRM_ADMIN, "admin@b.test")
     person = _person()
     service.platform_assign(person, firm_a.pk)
     with pytest.raises(TeamError, match="already belongs to a firm"):
@@ -66,6 +67,7 @@ def test_a_move_is_a_removal_and_a_join_in_one_transaction(firm_a, firm_b):
     """``firm_context`` clears itself on exit, so two firms fit in one transaction."""
     from django.db import transaction
 
+    member(firm_b, Role.FIRM_ADMIN, "admin@b.test")
     person = _person()
     first = service.platform_assign(person, firm_a.pk)
     with transaction.atomic():
@@ -81,14 +83,50 @@ def test_a_move_is_a_removal_and_a_join_in_one_transaction(firm_a, firm_b):
 
 def test_a_manager_must_lead_in_the_same_firm(firm_a, firm_b):
     other_lead = member(firm_b, Role.SENIOR_CA, "lead@b.test")
-    with pytest.raises(TeamError, match="of this firm"):
+    with pytest.raises(TeamError, match="active manager"):
         service.platform_assign(_person(), firm_a.pk, role=Role.STAFF, manager_id=other_lead.pk)
 
 
-def test_only_team_roles_report_to_someone(firm_a):
+def test_a_senior_ca_reports_to_an_administrator_not_to_a_senior_ca(firm_a):
     lead = member(firm_a, Role.SENIOR_CA, "lead@a.test")
-    with pytest.raises(TeamError, match="Only Staff and Read-only"):
+    with pytest.raises(TeamError, match="active manager"):
         service.platform_assign(_person(), firm_a.pk, role=Role.SENIOR_CA, manager_id=lead.pk)
+
+
+def test_without_a_senior_ca_staff_report_to_the_owner_then_an_administrator(firm_a):
+    with firm_context(firm_a.pk):
+        first_admin = FirmMembership.objects.get(role=Role.FIRM_ADMIN)
+    owner = member(firm_a, Role.FIRM_ADMIN, "owner@a.test")
+    with firm_context(firm_a.pk):
+        owner.is_owner = True
+        owner.save(update_fields=["is_owner"])
+
+    by_default = service.platform_assign(_person("one@example.test"), firm_a.pk, role=Role.STAFF)
+    assert by_default.manager_id == owner.pk
+    named = service.platform_assign(
+        _person("two@example.test"), firm_a.pk, role=Role.READ_ONLY, manager_id=first_admin.pk
+    )
+    assert named.manager_id == first_admin.pk
+
+
+def test_with_a_senior_ca_staff_may_not_report_to_an_administrator(firm_a):
+    with firm_context(firm_a.pk):
+        admin = FirmMembership.objects.get(role=Role.FIRM_ADMIN)
+    member(firm_a, Role.SENIOR_CA, "lead@a.test")
+
+    with pytest.raises(TeamError, match="active manager"):
+        service.platform_assign(_person("x@example.test"), firm_a.pk, role=Role.STAFF, manager_id=admin.pk)
+    with pytest.raises(TeamError, match="active manager"):
+        service.platform_assign(_person("y@example.test"), firm_a.pk, role=Role.STAFF)
+
+
+def test_the_fallback_manager_must_be_active(firm_a):
+    with firm_context(firm_a.pk):
+        admin = FirmMembership.objects.get(role=Role.FIRM_ADMIN)
+        admin.is_active = False
+        admin.save(update_fields=["is_active"])
+    with pytest.raises(TeamError, match="active manager"):
+        service.platform_assign(_person(), firm_a.pk, role=Role.STAFF, manager_id=admin.pk)
 
 
 def test_the_last_administrator_cannot_be_removed_or_demoted(firm_a):

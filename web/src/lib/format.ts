@@ -69,8 +69,8 @@ export function formatDrCr(net: number, options: Omit<MoneyOptions, 'sign'> = {}
 export const plainAmount = (text: string): string => text.replace(/[₹,\s]/g, '')
 
 /** A statement's total: plain on its natural side, and `Cr`/`Dr` written out if it has gone the other way. */
-export function sideTotal(paise: number, natural: 'Dr' | 'Cr'): string {
-  return paise >= 0 ? formatPaise(paise) : `${formatPaise(-paise, { sign: false })} ${natural === 'Dr' ? 'Cr' : 'Dr'}`
+export function sideTotal(paise: number, natural: 'Dr' | 'Cr', { symbol = true }: { symbol?: boolean } = {}): string {
+  return paise >= 0 ? formatPaise(paise, { symbol }) : `${formatPaise(-paise, { sign: false, symbol })} ${natural === 'Dr' ? 'Cr' : 'Dr'}`
 }
 
 export type StatementKind = 'asset' | 'expense' | 'liability' | 'income'
@@ -79,18 +79,21 @@ export type StatementKind = 'asset' | 'expense' | 'liability' | 'income'
  * A ledger's closing balance as a line of a horizontal statement. On its natural side (a debit for
  * assets and expenses, a credit for liabilities and income) it is the plain amount. On the other side
  * it is written the way a ledger writes it, `₹x Cr` or `₹x Dr`; the one exception is a debit balance
- * among the liabilities, which keeps Tally's "(-)". Uses the displays the server formatted.
+ * among the liabilities, which keeps Tally's "(-)". Formatted from whole paise; `symbol: false` for
+ * a column whose header carries the ₹.
  */
 export function closingLine(
-  r: { closing_debit_paise: number; closing_credit_paise: number; closing_debit_display: string | null; closing_credit_display: string | null },
+  r: { closing_debit_paise: number; closing_credit_paise: number },
   kind: StatementKind,
+  { symbol = true }: { symbol?: boolean } = {},
 ): string | null {
+  const money = (paise: number) => formatPaise(paise, { symbol, sign: false })
   const debitNatural = kind === 'asset' || kind === 'expense'
   const natural = debitNatural ? r.closing_debit_paise : r.closing_credit_paise
-  if (natural) return debitNatural ? r.closing_debit_display : r.closing_credit_display
-  if (debitNatural) return r.closing_credit_paise ? `${r.closing_credit_display} Cr` : null
+  if (natural) return money(natural)
+  if (debitNatural) return r.closing_credit_paise ? `${money(r.closing_credit_paise)} Cr` : null
   if (!r.closing_debit_paise) return null
-  return kind === 'liability' ? `(-) ${r.closing_debit_display}` : `${r.closing_debit_display} Dr`
+  return kind === 'liability' ? `(-) ${money(r.closing_debit_paise)}` : `${money(r.closing_debit_paise)} Dr`
 }
 
 /**

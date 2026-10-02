@@ -50,6 +50,9 @@ _APPROVE = _PREPARE | {
     "books.sign_off",
     #: Signing a GST reconciliation off. Like the books, the senior's act.
     "gst.sign_off",
+    #: Replacing a client's chart and opening balances from a Tally export. What the
+    #: books start from is the senior's to set (and, per client, the lead's: core.access).
+    "ledger.import",
 }
 
 #: Leading a team. Every one of these is limited, for a Senior CA, to their own

@@ -8,7 +8,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { CheckCircle2, FileUp, UploadCloud, XCircle } from 'lucide-react'
+import { CheckCircle2, FileUp, Loader2, UploadCloud, XCircle } from 'lucide-react'
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
@@ -55,7 +55,7 @@ export function UploadProvider({ clientId, children }: { clientId: string; child
 
 type Phase =
   | { kind: 'choose'; file: File | null; problem?: string }
-  | { kind: 'reading'; file: File }
+  | { kind: 'reading'; file: File; job?: Job }
   | { kind: 'done'; file: File; result: IngestResult; statement: Statement | null; account: BankAccount | null }
   | { kind: 'failed'; file: File; job: Job }
 
@@ -70,7 +70,9 @@ function UploadDialog({ clientId, onClose }: { clientId: string; onClose: () => 
       const form = new FormData()
       form.append('file', file)
       if (allowGap) form.append('allow_gap', 'true')
-      const job = await waitForJob(await raw.post<Job>(`${V1}/clients/${clientId}/statements/upload/`, form))
+      const created = await raw.post<Job>(`${V1}/clients/${clientId}/statements/upload/`, form)
+      setPhase({ kind: 'reading', file, job: created })
+      const job = await waitForJob(created, (update) => setPhase({ kind: 'reading', file, job: update }))
       if (job.status === 'FAILED') {
         setPhase({ kind: 'failed', file, job })
         return
@@ -97,7 +99,7 @@ function UploadDialog({ clientId, onClose }: { clientId: string; onClose: () => 
           <DialogDescription>{client.data?.name}</DialogDescription>
         </DialogHeader>
         {phase.kind === 'choose' && <Chooser phase={phase} setPhase={setPhase} onSend={(f) => void send(f)} />}
-        {phase.kind === 'reading' && <Reading file={phase.file} />}
+        {phase.kind === 'reading' && <Reading file={phase.file} job={phase.job} />}
         {phase.kind === 'failed' && (
           <Failed
             job={phase.job}
@@ -197,14 +199,29 @@ function Chooser({
   )
 }
 
-function Reading({ file }: { file: File }) {
+function Reading({ file, job }: { file: File; job?: Job }) {
+  // The bar is the server's own progress figure (0 to 100). Until the server has answered there is
+  // no figure to show, so the bar says nothing rather than pretending.
+  const progress = job ? Math.min(100, Math.max(0, job.progress)) : null
   return (
-    <div className="grid justify-items-center gap-3 py-8 text-center" role="status">
-      <div className="size-8 animate-spin rounded-full border-2 border-muted border-t-primary" aria-hidden />
-      <div className="font-medium">Reading {file.name}</div>
-      <p className="max-w-sm text-sm text-muted-foreground">
-        Checking every row against the running balance, then applying the client’s rules and asking the assistant about the rest.
-        This can take up to a minute for a long statement.
+    <div className="grid gap-3 py-6" role="status">
+      <div className="flex items-center gap-2 font-medium">
+        <Loader2 className="size-4 shrink-0 animate-spin motion-reduce:animate-none" aria-hidden />
+        <span className="min-w-0 truncate">{job?.message || `Sending ${file.name}`}</span>
+      </div>
+      <div
+        role="progressbar"
+        aria-label={`Reading ${file.name}`}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={progress ?? undefined}
+        className="h-2 overflow-hidden rounded-full bg-muted"
+      >
+        <div className="h-full rounded-full bg-primary" style={{ width: `${progress ?? 0}%` }} />
+      </div>
+      <p className="text-[13px] text-muted-foreground">
+        {progress === null ? 'Sending the file.' : `${progress}%`} Every row is checked against the running balance, then the client’s rules
+        place what they can. The assistant reads the rest after this, a few rows at a time. A long statement can take up to a minute.
       </p>
     </div>
   )
@@ -254,6 +271,7 @@ function Done({
   const needLedger = result.rows_need_ledger ?? 0
   const ready = result.rows_ready_to_post ?? Math.max(0, result.rows_created - posted - needLedger)
   const leftForYou = ready + needLedger
+  const waitingForAssistant = Math.min(result.waiting_for_assistant ?? 0, needLedger)
   const [openingDone, setOpeningDone] = useState(!result.needs_opening_confirmation)
 
   const facts: [string, string | number][] = [
@@ -294,30 +312,28 @@ function Done({
 
       {!nothingNew && (
         <div className="rounded-md bg-muted/60 p-3 text-sm">
-          <div className="mb-1 font-medium">Where the {plural(result.rows_created, 'row')} stand now</div>
+          <div className="mb-1 font-medium">
+            {plural(result.rows_created, 'row')} read. {posted} posted by rules, {ready} ready to post, {needLedger} need a ledger.
+          </div>
           <ul className="grid gap-0.5 text-muted-foreground">
-            <li>
-              <strong className="text-foreground">{posted}</strong> posted automatically, by the client’s rules or by the assistant
-              where it was very sure, marked “Assistant posted” in the Day Book. Check them there, and unpost any you disagree with.
-            </li>
-            <li>
-              <strong className="text-foreground">{ready}</strong> placed in a ledger by the client’s rules or the assistant, waiting for
-              you to check and post
-            </li>
-            <li>
-              <strong className="text-foreground">{needLedger}</strong> need you to choose a ledger
-            </li>
-            {result.model_proposed > 0 && (
+            {posted > 0 && (
               <li>
-                The assistant also opened {plural(result.model_proposed, 'new ledger')}, already in use. Check them in Masters, and
-                rename or merge any that do not match the client’s books
+                <strong className="text-foreground">{posted}</strong> posted already, where a rule was very sure. They are marked “Assistant
+                posted” in the Day Book: check them there, and unpost any you disagree with.
               </li>
             )}
-            {result.model_error && (
-              <li className="text-warning">
-                The assistant stopped before it finished ({result.model_error}). The rows it did not reach are left for you.
-              </li>
-            )}
+            <li>
+              <strong className="text-foreground">{ready}</strong> placed in a ledger and waiting for you to check and post
+            </li>
+            <li>
+              <strong className="text-foreground">{needLedger}</strong> need a ledger
+              {waitingForAssistant > 0 && (
+                <>
+                  , <strong className="text-foreground">{waitingForAssistant}</strong> of them waiting for the assistant, which reads them a few at a
+                  time while this client is open. They appear in Review as it goes.
+                </>
+              )}
+            </li>
           </ul>
         </div>
       )}

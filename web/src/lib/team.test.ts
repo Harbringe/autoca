@@ -1,5 +1,6 @@
 import type { Member, TeamEvent } from '@/api/types'
-import { describeEvent, memberPatch } from './team'
+import type { Person } from '@/api/types'
+import { describeEvent, managerChoices, memberPatch } from './team'
 
 const member = (over: Partial<Member> = {}): Member =>
   ({
@@ -36,4 +37,16 @@ describe('describeEvent', () => {
       'Asha changed the Senior CA of QA Traders from nobody to Ravi',
     ))
   it('falls back to the kind for one it does not know', () => expect(describeEvent(ev('new.kind', { actor: 'Asha' }))).toBe('X (Asha)'))
+})
+
+describe('managerChoices', () => {
+  const p = (id: string, role: Person['role'], is_owner = false) => ({ id, role, is_owner, name: id }) as Person
+  const owner = p('o', 'FIRM_ADMIN', true)
+  const admin = p('a', 'FIRM_ADMIN')
+  const sen = p('s', 'SENIOR_CA')
+  it('Staff report to a Senior CA when there is one', () => expect(managerChoices('STAFF', [owner, admin, sen])).toEqual([sen]))
+  it('Staff fall back to the owner and administrators with no Senior CA', () =>
+    expect(managerChoices('READ_ONLY', [owner, admin])).toEqual([owner, admin]))
+  it('a Senior CA reports to an administrator, the owner included', () => expect(managerChoices('SENIOR_CA', [owner, admin, sen])).toEqual([owner, admin]))
+  it('an administrator has no picker', () => expect(managerChoices('FIRM_ADMIN', [owner, admin, sen])).toEqual([]))
 })

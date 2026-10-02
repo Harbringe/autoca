@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseFy, resolveFy } from './fy'
+import { fySearch, parseFy, resolveFy } from './fy'
 
 describe('resolveFy', () => {
   const base = { dataYears: [2024, 2025], current: 2026 }
@@ -24,5 +24,16 @@ describe('parseFy', () => {
   })
   it('rejects rubbish', () => {
     for (const v of ['abc', '25', 1999, 2025.5, undefined, null, '2025-26']) expect(parseFy(v)).toBeUndefined()
+  })
+})
+
+describe('fySearch', () => {
+  it('keeps a good year, from the address or already parsed', () => {
+    expect(fySearch({ fy: '2025' })).toEqual({ fy: 2025 })
+    expect(fySearch({ fy: 2025 })).toEqual({ fy: 2025 })
+  })
+  it('drops anything else, and other keys', () => {
+    expect(fySearch({ fy: 'x', other: 1 })).toEqual({ fy: undefined })
+    expect(fySearch({})).toEqual({ fy: undefined })
   })
 })

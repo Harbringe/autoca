@@ -11,7 +11,10 @@ export interface TabItem {
   count?: number
   /** Match only this exact path (the first tab of a module). */
   exact?: boolean
-  /** Extra keys in the URL that identify the tab, e.g. ?report=tb. */
+  /**
+   * Extra keys in the URL that identify the tab, e.g. ?report=tb. They are merged over the current
+   * search, so ?fy= survives, and the tab is current only when they all match.
+   */
   search?: Record<string, unknown>
 }
 
@@ -28,8 +31,8 @@ export function TabNav({ label, items, className, trailing }: { label: string; i
             key={`${tab.to}${JSON.stringify(tab.search ?? '')}`}
             to={tab.to as never}
             params={tab.params as never}
-            search={tab.search as never}
-            activeOptions={{ exact: !!tab.exact, includeSearch: false }}
+            search={(tab.search ? (prev: Record<string, unknown>) => ({ ...prev, ...tab.search }) : undefined) as never}
+            activeOptions={{ exact: !!tab.exact, includeSearch: !!tab.search }}
             className="flex h-10 items-center gap-1.5 whitespace-nowrap border-b-2 border-transparent px-3 text-sm font-medium text-muted-foreground hover:text-foreground data-[status=active]:border-primary data-[status=active]:text-heading"
           >
             {tab.label}

@@ -42,3 +42,9 @@ export function rangeProblem(range: Range | null): string | null {
   if ((ms(range.to) - ms(range.from)) / DAY > 366) return 'Pick a period of a year or less.'
   return null
 }
+
+/** The dates a period key stands for: a preset's own, or the custom dates when both are known. */
+export function rangeFor(key: PeriodKey, from: string | undefined, to: string | undefined, today: Date = new Date()): Range | null {
+  if (key !== 'custom') return presetRange(key, today)
+  return from && to ? { from, to } : null
+}

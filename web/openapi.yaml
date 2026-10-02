@@ -297,6 +297,45 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedJournalEntryList'
           description: ''
+  /api/v1/clients/{client_id}/assistant/next-batch/:
+    post:
+      operationId: clients_assistant_next_batch_create
+      description: |-
+        Reads one small batch (10 rows unless `max_rows` says otherwise, at most 15) of the rows the upload could not place, and returns at once with what happened and what to do next. Call it again while `state` is `working`; wait `retry_after_seconds` first when it is `paused`; stop when it is `idle`.
+
+        A call takes about twenty seconds at most and never waits out a rate limit: it reports `paused` with the seconds to wait. `reason` says why: `rate_limit` (this minute's allowance), `daily_limit` (today's; the rest is for a person or for tomorrow), `provider_down`, or `assistant_off` (no model is configured, so nothing will ever be read and `state` is `idle`).
+
+        Two windows open on the same client never read the same row. Rows the model is very sure of are posted automatically, marked as the assistant's, exactly as before. A row it cannot answer after three tries is left for a person. Requires `transaction.classify`.
+      summary: Read the next few waiting rows with the assistant
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NextBatchRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/NextBatchRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/NextBatchRequestRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NextBatch'
+          description: ''
   /api/v1/clients/{client_id}/bank-accounts/:
     get:
       operationId: clients_bank_accounts_list
@@ -691,7 +730,11 @@ paths:
   /api/v1/clients/{client_id}/gst/registrations/:
     get:
       operationId: clients_gst_registrations_list
-      description: The GSTINs a client holds. Each is reconciled and reported separately.
+      description: |-
+        Active registrations, paginated. Requires `gst.view`.
+
+        Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong).
+      summary: List the client's GSTINs
       parameters:
       - in: path
         name: client_id
@@ -722,9 +765,25 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedRegistrationList'
           description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
     post:
       operationId: clients_gst_registrations_create
-      description: The GSTINs a client holds. Each is reconciled and reported separately.
+      description: |-
+        The state code is read from the GSTIN. Requires `gst.prepare`.
+
+        Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched) (not a valid GSTIN, or already registered for this client).
+      summary: Add a GSTIN for the client
       parameters:
       - in: path
         name: client_id
@@ -755,10 +814,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/Registration'
           description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
   /api/v1/clients/{client_id}/gst/runs/:
     get:
       operationId: clients_gst_runs_list
-      description: One GSTIN's reconciliation for one return month.
+      description: |-
+        A plain array, not paginated; `registration` narrows it to one GSTIN. Requires `gst.view`.
+
+        Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong).
+      summary: List a client's reconciliation runs
       parameters:
       - in: path
         name: client_id
@@ -766,18 +853,12 @@ paths:
           type: string
           format: uuid
         required: true
-      - name: page
-        required: false
-        in: query
-        description: A page number within the paginated result set.
+      - in: query
+        name: registration
         schema:
-          type: integer
-      - name: page_size
-        required: false
-        in: query
-        description: Number of results to return per page.
-        schema:
-          type: integer
+          type: string
+          format: uuid
+        description: Only this registration's runs.
       tags:
       - gst
       security:
@@ -787,11 +868,29 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/PaginatedRunCreateList'
+                type: array
+                items:
+                  $ref: '#/components/schemas/RunListItem'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
           description: ''
     post:
       operationId: clients_gst_runs_create
-      description: One GSTIN's reconciliation for one return month.
+      description: |-
+        Idempotent: asking again for the same registration and month returns the existing run's report. Requires `gst.prepare`.
+
+        Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong).
+      summary: Start (or open) the reconciliation for one GSTIN and month
       parameters:
       - in: path
         name: client_id
@@ -820,12 +919,34 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RunCreate'
+                $ref: '#/components/schemas/RunReport'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
           description: ''
   /api/v1/clients/{client_id}/gst/runs/{id}/:
     get:
       operationId: clients_gst_runs_retrieve
-      description: One GSTIN's reconciliation for one return month.
+      description: |-
+        The whole run as data: headline figures, GSTR-3B table 4, the groups of invoices and what to do next. The Excel working paper is built from this same report. Requires `gst.view`.
+
+        Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong).
+      summary: The reconciliation report
       parameters:
       - in: path
         name: client_id
@@ -848,12 +969,27 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RunCreate'
+                $ref: '#/components/schemas/RunReport'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
           description: ''
   /api/v1/clients/{client_id}/gst/runs/{id}/decisions/:
     post:
       operationId: clients_gst_runs_decisions_create
-      description: One GSTIN's reconciliation for one return month.
+      description: |-
+        Appends a decision; the latest one on an invoice stands. `kind` is one of `accept_match`, `claim_itc`, `disallow_itc`, `defer`, `note` (`sign_off` is refused with `400 invalid`; signing off has its own endpoint). Requires `gst.prepare`.
+
+        Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched) (the kind does not apply to that row's group, or the run is signed off).
       summary: Record a decision about one invoice
       parameters:
       - in: path
@@ -889,12 +1025,39 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RunCreate'
+                $ref: '#/components/schemas/RunReport'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
           description: ''
   /api/v1/clients/{client_id}/gst/runs/{id}/export/:
     get:
       operationId: clients_gst_runs_export_retrieve
-      description: One GSTIN's reconciliation for one return month.
+      description: |-
+        An .xlsx built from the run report. Requires `gst.view`.
+
+        Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong).
       summary: Download the Excel working paper
       parameters:
       - in: path
@@ -916,15 +1079,30 @@ paths:
       responses:
         '200':
           content:
-            application/json:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
               schema:
                 type: string
                 format: binary
           description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
   /api/v1/clients/{client_id}/gst/runs/{id}/portal/:
     post:
       operationId: clients_gst_runs_portal_create
-      description: One GSTIN's reconciliation for one return month.
+      description: |-
+        Replaces the run's GSTR-2B rows. A JSON file must be this GSTIN's and this month's return (`409 gst_rule` otherwise). Requires `gst.prepare`.
+
+        Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched); `422 gst_file_unreadable` (the file could not be read as a register or GSTR-2B).
       summary: Upload GSTR-2B (JSON or Excel)
       parameters:
       - in: path
@@ -943,13 +1121,7 @@ paths:
       - gst
       requestBody:
         content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UploadRequest'
           multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/UploadRequest'
-          application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/UploadRequest'
         required: true
@@ -960,12 +1132,45 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RunCreate'
+                $ref: '#/components/schemas/UploadResult'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
           description: ''
   /api/v1/clients/{client_id}/gst/runs/{id}/reconcile/:
     post:
       operationId: clients_gst_runs_reconcile_create
-      description: One GSTIN's reconciliation for one return month.
+      description: |-
+        Rebuilds the matches from the two uploads; earlier decisions are kept because they follow the invoice, not the row. Requires `gst.prepare`.
+
+        Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched) (either upload is missing, or the run is signed off).
       summary: Match the register against GSTR-2B
       parameters:
       - in: path
@@ -989,12 +1194,39 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RunCreate'
+                $ref: '#/components/schemas/RunReport'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
           description: ''
   /api/v1/clients/{client_id}/gst/runs/{id}/register/:
     post:
       operationId: clients_gst_runs_register_create
-      description: One GSTIN's reconciliation for one return month.
+      description: |-
+        Replaces the run's register rows. `file` is Excel or CSV; `mapping` is optional JSON naming which header holds which field. Requires `gst.prepare`.
+
+        Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched); `422 gst_file_unreadable` (the file could not be read as a register or GSTR-2B).
       summary: Upload the purchase register
       parameters:
       - in: path
@@ -1013,13 +1245,7 @@ paths:
       - gst
       requestBody:
         content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/UploadRequest'
           multipart/form-data:
-            schema:
-              $ref: '#/components/schemas/UploadRequest'
-          application/x-www-form-urlencoded:
             schema:
               $ref: '#/components/schemas/UploadRequest'
         required: true
@@ -1030,13 +1256,45 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/RunCreate'
+                $ref: '#/components/schemas/UploadResult'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
           description: ''
   /api/v1/clients/{client_id}/gst/runs/{id}/sign-off/:
     post:
       operationId: clients_gst_runs_sign_off_create
-      description: Signing a reconciliation off. The lead's or an administrator's
-        act.
+      description: |-
+        Locks the run. Requires `gst.sign_off` and, beyond the permission, being the client's lead or a firm administrator: a role that holds the permission can still get `403 forbidden`.
+
+        Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched) (nothing has been matched yet, rows still need a decision, or already signed off).
       summary: Sign the reconciliation off
       parameters:
       - in: path
@@ -1056,8 +1314,36 @@ paths:
       security:
       - cookieAuth: []
       responses:
-        '201':
-          description: No response body
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunReport'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
   /api/v1/clients/{client_id}/ledgers/:
     get:
       operationId: clients_ledgers_list
@@ -1787,10 +2073,10 @@ paths:
     post:
       operationId: clients_review_queue_suggest_create
       description: |-
-        Runs the model tier over the rows no rule could place. Each row the model is confident about becomes a *suggestion* with a one-line rationale; its confidence sets the band, and a very confident one may be posted automatically (marked, and changeable until sign-off). Rows it is not confident about stay unresolved, with the rationale attached. Returns **202** with a job; the result carries `suggested`, `declined` and `error` (empty unless the provider failed).
+        Puts every unresolved row that no other window is reading back in the assistant's queue, with its tries counted afresh, and returns at once. The reading itself happens a few rows at a time through `POST /clients/{client_id}/assistant/next-batch/`. Returns **202** with a job; the result carries `considered` and `waiting_for_assistant` (rows queued now) and an empty `warning`.
 
         Nothing identifying leaves the server: narrations are masked, people are pseudonymised, known parties are aliased. Requires `transaction.classify`.
-      summary: Ask the model about every unresolved row
+      summary: Ask the assistant about every unresolved row again
       parameters:
       - in: path
         name: client_id
@@ -2347,32 +2633,126 @@ paths:
   /api/v1/firm/:
     get:
       operationId: firm_retrieve
+      summary: The firm, its owner and administrators
       tags:
       - firm
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FirmResponse'
+          description: ''
     patch:
       operationId: firm_partial_update
+      summary: Rename the firm
       tags:
       - firm
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedFirmSettingsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedFirmSettingsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedFirmSettingsRequest'
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FirmRenamed'
+          description: ''
+  /api/v1/firm/metrics/:
+    get:
+      operationId: firm_metrics_retrieve
+      description: Figures computed only from data already stored, per client and
+        for the firm, for `from` to `to` inclusive (ISO dates; default the current
+        month up to today). A firm administrator gets every client; a senior CA the
+        clients of their team; other roles get 403. Ratios are null, never 0, when
+        there is nothing to divide. Nothing is a score and people are not ranked.
+        `needs_attention` reflects where the books stand now, not the period.
+      summary: 'Measured figures: automation, accuracy, time saved, what needs attention,
+        turnaround'
+      parameters:
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date
+        description: First day, YYYY-MM-DD.
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date
+        description: Last day, YYYY-MM-DD.
+      tags:
+      - clients
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FirmMetrics'
+          description: ''
+  /api/v1/firm/overview/:
+    get:
+      operationId: firm_overview_retrieve
+      description: 'One row for each client the caller may see (the same rule as the
+        client list), with its stage, next step and what is waiting, plus firm totals
+        and the number of clients in each stage. Computed with a fixed number of queries,
+        so it costs the same for 5 clients as for 500. Stages, in order of precedence:
+        `no_statements`, `needs_ledger`, `ready_to_post`, `in_review`, `ready_for_review`,
+        `signed_off`.'
+      summary: Where every client's books stand
+      tags:
+      - clients
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FirmOverview'
+          description: ''
   /api/v1/firm/owner/:
     post:
       operationId: firm_owner_create
+      summary: Hand ownership to another administrator
       tags:
       - firm
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OwnerRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OwnerRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OwnerRequest'
+        required: true
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OwnerTransferred'
+          description: ''
   /api/v1/jobs/:
     get:
       operationId: jobs_list
@@ -2670,16 +3050,22 @@ paths:
   /api/v1/team/clients/:
     get:
       operationId: team_clients_retrieve
+      summary: Clients with their lead, team and open work
       tags:
       - team
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamClientsResponse'
+          description: ''
   /api/v1/team/clients/{id}/lead/:
     put:
       operationId: team_clients_lead_update
+      summary: Set or clear a client's lead
       parameters:
       - in: path
         name: id
@@ -2689,14 +3075,31 @@ paths:
         required: true
       tags:
       - team
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LeadRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LeadRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/LeadRequest'
+        required: true
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LeadSet'
+          description: ''
   /api/v1/team/clients/{id}/team/:
     post:
       operationId: team_clients_team_create
+      summary: Put someone on a client
       parameters:
       - in: path
         name: id
@@ -2706,13 +3109,30 @@ paths:
         required: true
       tags:
       - team
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AssignRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AssignRequest'
+        required: true
       security:
       - cookieAuth: []
       responses:
-        '200':
-          description: No response body
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assigned'
+          description: ''
     delete:
       operationId: team_clients_team_destroy
+      summary: Take someone off a client
       parameters:
       - in: path
         name: id
@@ -2730,6 +3150,7 @@ paths:
   /api/v1/team/clients/{id}/team/{member_id}/:
     post:
       operationId: team_clients_team_create_2
+      summary: Put someone on a client
       parameters:
       - in: path
         name: id
@@ -2745,13 +3166,30 @@ paths:
         required: true
       tags:
       - team
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AssignRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AssignRequest'
+        required: true
       security:
       - cookieAuth: []
       responses:
-        '200':
-          description: No response body
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Assigned'
+          description: ''
     delete:
       operationId: team_clients_team_destroy_2
+      summary: Take someone off a client
       parameters:
       - in: path
         name: id
@@ -2775,26 +3213,37 @@ paths:
   /api/v1/team/events/:
     get:
       operationId: team_events_retrieve
+      summary: Who changed the team, and how
       tags:
       - team
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TeamEventsResponse'
+          description: ''
   /api/v1/team/invites/:
     get:
       operationId: team_invites_retrieve
+      summary: Invitations still open
       tags:
       - team
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvitesResponse'
+          description: ''
   /api/v1/team/invites/{id}/:
     delete:
       operationId: team_invites_destroy
+      summary: Revoke an invitation
       parameters:
       - in: path
         name: id
@@ -2812,25 +3261,61 @@ paths:
   /api/v1/team/members/:
     get:
       operationId: team_members_retrieve
+      summary: The team, with each person's work in a period
+      parameters:
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date
+        description: Start of the period. Defaults to 30 days ago.
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date
+        description: End of the period, inclusive. Defaults to today.
       tags:
       - team
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MembersResponse'
+          description: ''
     post:
       operationId: team_members_create
+      summary: Invite someone
       tags:
       - team
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InviteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InviteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InviteRequest'
+        required: true
       security:
       - cookieAuth: []
       responses:
-        '200':
-          description: No response body
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteCreated'
+          description: ''
   /api/v1/team/members/{id}/:
     get:
       operationId: team_members_retrieve_2
+      summary: One member
       parameters:
       - in: path
         name: id
@@ -2844,9 +3329,14 @@ paths:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+          description: ''
     patch:
       operationId: team_members_partial_update
+      summary: Change a member's role, reporting line, access or active state
       parameters:
       - in: path
         name: id
@@ -2856,30 +3346,62 @@ paths:
         required: true
       tags:
       - team
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedMemberUpdateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedMemberUpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedMemberUpdateRequest'
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Member'
+          description: ''
   /api/v1/team/members/{id}/work/:
     get:
       operationId: team_members_work_retrieve
       description: One person's work. Anyone may see their own; leads and admins their
         team's.
+      summary: One person's work in a period, and what is waiting on them now
       parameters:
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date
+        description: Start of the period. Defaults to 30 days ago.
       - in: path
         name: id
         schema:
           type: string
           format: uuid
         required: true
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date
+        description: End of the period, inclusive. Defaults to today.
       tags:
       - team
       security:
       - cookieAuth: []
       responses:
         '200':
-          description: No response body
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemberWorkResponse'
+          description: ''
   /api/v1/transactions/:
     get:
       operationId: transactions_list
@@ -2958,6 +3480,113 @@ components:
             format: uuid
         band:
           $ref: '#/components/schemas/BandEnum'
+    AssignRequest:
+      type: object
+      properties:
+        member:
+          type: string
+          format: uuid
+      required:
+      - member
+    Assigned:
+      type: object
+      properties:
+        assigned:
+          $ref: '#/components/schemas/Person'
+      required:
+      - assigned
+    AssignedPerson:
+      type: object
+      description: |-
+        A member of the firm, as named beside a client or in a list.
+
+        The owner appears like anyone else, to every role that can see the team. Only the owner
+        can change the owner (by transferring ownership); anyone else gets 403.
+      properties:
+        id:
+          type: string
+          description: The membership id.
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        role_display:
+          type: string
+        is_owner:
+          type: boolean
+        is_active:
+          type: boolean
+        assigned_at:
+          type: string
+          format: date-time
+        on_my_team:
+          type: boolean
+          description: Reports directly to the person asking.
+      required:
+      - assigned_at
+      - id
+      - is_active
+      - is_owner
+      - name
+      - on_my_team
+      - role
+      - role_display
+    AssistantReasonEnum:
+      enum:
+      - rate_limit
+      - daily_limit
+      - provider_down
+      - assistant_off
+      type: string
+      description: "* `` - \n* `rate_limit` - rate_limit\n* `daily_limit` - daily_limit\n\
+        * `provider_down` - provider_down\n* `assistant_off` - assistant_off"
+    AssistantStateEnum:
+      enum:
+      - working
+      - idle
+      - paused
+      type: string
+      description: |-
+        * `working` - working
+        * `idle` - idle
+        * `paused` - paused
+    AttentionReason:
+      type: object
+      properties:
+        code:
+          allOf:
+          - $ref: '#/components/schemas/AttentionReasonCodeEnum'
+          description: |-
+            reconciliation_difference: the books and the bank statement disagree at the latest statement date. statement_month_missing: a month inside a bank account's run of statements has none. assistant_entries_unchecked: entries the assistant posted or changed are not yet checked. unsigned_too_long: the books are not signed off more than 45 days after the latest entry. suspense_balance: the Suspense ledger holds a non-zero balance. opening_balance_unconfirmed: a bank account's opening balance is not confirmed. These describe where the books stand now, whatever period was asked for.
+
+            * `reconciliation_difference` - reconciliation_difference
+            * `statement_month_missing` - statement_month_missing
+            * `assistant_entries_unchecked` - assistant_entries_unchecked
+            * `unsigned_too_long` - unsigned_too_long
+            * `suspense_balance` - suspense_balance
+            * `opening_balance_unconfirmed` - opening_balance_unconfirmed
+        message:
+          type: string
+          description: A plain sentence; show it as it is.
+      required:
+      - code
+      - message
+    AttentionReasonCodeEnum:
+      enum:
+      - reconciliation_difference
+      - statement_month_missing
+      - assistant_entries_unchecked
+      - unsigned_too_long
+      - suspense_balance
+      - opening_balance_unconfirmed
+      type: string
+      description: |-
+        * `reconciliation_difference` - reconciliation_difference
+        * `statement_month_missing` - statement_month_missing
+        * `assistant_entries_unchecked` - assistant_entries_unchecked
+        * `unsigned_too_long` - unsigned_too_long
+        * `suspense_balance` - suspense_balance
+        * `opening_balance_unconfirmed` - opening_balance_unconfirmed
     BalanceCheck:
       type: object
       description: |-
@@ -3350,6 +3979,65 @@ components:
       - review_pending
       - signed_off_through
       - waiting
+    ByClient:
+      type: object
+      description: Counts of work in the period, one per metric in `metrics`. Keys
+        are the metric keys.
+      properties:
+        statements_uploaded:
+          type: integer
+        rows_placed:
+          type: integer
+        entries_approved:
+          type: integer
+          description: First-time approvals, not corrections.
+        entries_corrected:
+          type: integer
+        entries_posted:
+          type: integer
+          description: 'Entries carrying this person''s name: approvals and corrections
+            together. Entries the assistant posted by itself are counted for nobody.'
+        books_sent_for_review:
+          type: integer
+          description: Times this person asked a senior to sign a client's books off.
+        ledgers_created:
+          type: integer
+        rules_written:
+          type: integer
+        proposals_decided:
+          type: integer
+        model_runs:
+          type: integer
+        id:
+          type: string
+          nullable: true
+          description: Null for work not tied to a client.
+        name:
+          type: string
+      required:
+      - books_sent_for_review
+      - entries_approved
+      - entries_corrected
+      - entries_posted
+      - id
+      - ledgers_created
+      - model_runs
+      - name
+      - proposals_decided
+      - rows_placed
+      - rules_written
+      - statements_uploaded
+    ByDay:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        count:
+          type: integer
+      required:
+      - count
+      - date
     Classification:
       type: object
       description: A row awaiting a decision, with everything needed to make it.
@@ -3634,7 +4322,7 @@ components:
         fy_start:
           type: string
           format: date
-          description: First day of the client's financial year, normally 1 April.
+          description: 'First day of the client''s financial year: always 1 April.'
         business_profile:
           type: string
           description: What the client's business does, in a few sentences. Shown
@@ -3655,11 +4343,15 @@ components:
         can_post:
           type: boolean
           readOnly: true
+        has_entries:
+          type: boolean
+          readOnly: true
       required:
       - can_post
       - can_sign_off
       - created_at
       - fy_start
+      - has_entries
       - id
       - lead
       - name
@@ -3673,7 +4365,7 @@ components:
         fy_start:
           type: string
           format: date
-          description: First day of the client's financial year, normally 1 April.
+          description: 'First day of the client''s financial year: always 1 April.'
         business_profile:
           type: string
           description: What the client's business does, in a few sentences. Shown
@@ -3901,6 +4593,123 @@ components:
       - id
       - is_active
       - name
+    FirmCan:
+      type: object
+      properties:
+        rename:
+          type: boolean
+        transfer:
+          type: boolean
+          description: 'May hand ownership to another administrator: the owner only.'
+      required:
+      - rename
+      - transfer
+    FirmCounts:
+      type: object
+      properties:
+        active_members:
+          type: integer
+        senior_cas:
+          type: integer
+        staff:
+          type: integer
+        clients:
+          type: integer
+      required:
+      - active_members
+      - clients
+      - senior_cas
+      - staff
+    FirmMetrics:
+      type: object
+      properties:
+        period:
+          $ref: '#/components/schemas/MetricsPeriod'
+        assumed_minutes_per_row:
+          type: integer
+          description: The minutes a person is assumed to need per row (setting ASSUMED_MINUTES_PER_ROW).
+        is_estimate:
+          type: boolean
+          description: 'Always true: estimated_minutes_saved is an assumption times
+            a count.'
+        firm:
+          $ref: '#/components/schemas/MetricsFirm'
+        clients:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetricsClient'
+        turnaround:
+          type: array
+          items:
+            $ref: '#/components/schemas/MetricsTurnaround'
+          description: One entry per person with work in the period; sorted by name,
+            not ranked.
+      required:
+      - assumed_minutes_per_row
+      - clients
+      - firm
+      - is_estimate
+      - period
+      - turnaround
+    FirmOverview:
+      type: object
+      properties:
+        totals:
+          $ref: '#/components/schemas/OverviewTotals'
+        by_stage:
+          $ref: '#/components/schemas/OverviewByStage'
+        clients:
+          type: array
+          items:
+            $ref: '#/components/schemas/OverviewClient'
+      required:
+      - by_stage
+      - clients
+      - totals
+    FirmRenamed:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+      required:
+      - id
+      - name
+    FirmResponse:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+        owner:
+          allOf:
+          - $ref: '#/components/schemas/Person'
+          nullable: true
+        admins:
+          type: array
+          items:
+            $ref: '#/components/schemas/Person'
+          description: Active administrators; the owner is left out for an administrator
+            who is not the owner.
+        counts:
+          $ref: '#/components/schemas/FirmCounts'
+        can:
+          $ref: '#/components/schemas/FirmCan'
+      required:
+      - admins
+      - can
+      - counts
+      - created_at
+      - id
+      - name
+      - owner
     GroupEnum:
       enum:
       - BANK
@@ -3931,6 +4740,142 @@ components:
         * `INVESTMENT` - Investments
         * `CAPITAL` - Capital Account
         * `SUSPENSE` - Suspense A/c
+    GstError:
+      type: object
+      properties:
+        code:
+          type: string
+          description: 'Stable code: gst_rule (409), gst_file_unreadable (422), invalid
+            (400), not_found (404), forbidden (403).'
+        detail:
+          type: string
+          description: A sentence for a person; show it as it is.
+      required:
+      - code
+      - detail
+    InviteCreated:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        role_display:
+          type: string
+        manager:
+          allOf:
+          - $ref: '#/components/schemas/Person'
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+          format: email
+          nullable: true
+        link:
+          type: string
+          description: The one-time link to send the person. Shown only now.
+      required:
+      - created_at
+      - created_by
+      - email
+      - expires_at
+      - full_name
+      - id
+      - link
+      - manager
+      - role
+      - role_display
+    InviteRecord:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        role_display:
+          type: string
+        manager:
+          allOf:
+          - $ref: '#/components/schemas/Person'
+          nullable: true
+        expires_at:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        created_by:
+          type: string
+          format: email
+          nullable: true
+      required:
+      - created_at
+      - created_by
+      - email
+      - expires_at
+      - full_name
+      - id
+      - manager
+      - role
+      - role_display
+    InviteRequest:
+      type: object
+      properties:
+        email:
+          type: string
+          format: email
+          minLength: 1
+        full_name:
+          type: string
+          maxLength: 255
+        role:
+          allOf:
+          - $ref: '#/components/schemas/RoleEnum'
+          default: STAFF
+        manager:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+      - email
+    InvitesResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/InviteRecord'
+      required:
+      - results
+    ItcStatusEnum:
+      enum:
+      - eligible
+      - blocked
+      - not_eligible
+      - rcm_on_payment
+      type: string
+      description: |-
+        * `eligible` - eligible
+        * `blocked` - blocked
+        * `not_eligible` - not_eligible
+        * `rcm_on_payment` - rcm_on_payment
     Job:
       type: object
       description: |-
@@ -4181,6 +5126,28 @@ components:
       description: |-
         * `DR` - Debit
         * `CR` - Credit
+    LeadRequest:
+      type: object
+      properties:
+        lead:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+      - lead
+    LeadSet:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        lead:
+          allOf:
+          - $ref: '#/components/schemas/Person'
+          nullable: true
+      required:
+      - id
+      - lead
     LedgerAccount:
       type: object
       properties:
@@ -4406,6 +5373,263 @@ components:
       - permissions
       - role
       - role_display
+    Member:
+      type: object
+      description: |-
+        A member of the firm, as named beside a client or in a list.
+
+        The owner appears like anyone else, to every role that can see the team. Only the owner
+        can change the owner (by transferring ownership); anyone else gets 403.
+      properties:
+        id:
+          type: string
+          description: The membership id.
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        role_display:
+          type: string
+        is_owner:
+          type: boolean
+        is_active:
+          type: boolean
+        user_id:
+          type: string
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        scope_all_clients:
+          type: boolean
+        manager:
+          allOf:
+          - $ref: '#/components/schemas/Person'
+          nullable: true
+          description: 'Who this person reports to: owner -> administrators -> Senior
+            CAs -> Staff and Read-only. Null for the owner.'
+        last_login:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        is_me:
+          type: boolean
+        clients:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemberClient'
+        can:
+          $ref: '#/components/schemas/MemberCan'
+      required:
+      - can
+      - clients
+      - created_at
+      - email
+      - full_name
+      - id
+      - is_active
+      - is_me
+      - is_owner
+      - last_login
+      - manager
+      - name
+      - role
+      - role_display
+      - scope_all_clients
+      - user_id
+    MemberCan:
+      type: object
+      properties:
+        manage:
+          type: boolean
+          description: May change this person's role and reporting line.
+        manage_role:
+          type: boolean
+        set_active:
+          type: boolean
+          description: May deactivate or reactivate this person.
+      required:
+      - manage
+      - manage_role
+      - set_active
+    MemberClient:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+        how:
+          type: string
+          description: '`assigned` or `leads`.'
+      required:
+      - how
+      - id
+      - name
+    MemberWithWork:
+      type: object
+      description: |-
+        A member of the firm, as named beside a client or in a list.
+
+        The owner appears like anyone else, to every role that can see the team. Only the owner
+        can change the owner (by transferring ownership); anyone else gets 403.
+      properties:
+        id:
+          type: string
+          description: The membership id.
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        role_display:
+          type: string
+        is_owner:
+          type: boolean
+        is_active:
+          type: boolean
+        user_id:
+          type: string
+        email:
+          type: string
+          format: email
+        full_name:
+          type: string
+        scope_all_clients:
+          type: boolean
+        manager:
+          allOf:
+          - $ref: '#/components/schemas/Person'
+          nullable: true
+          description: 'Who this person reports to: owner -> administrators -> Senior
+            CAs -> Staff and Read-only. Null for the owner.'
+        last_login:
+          type: string
+          format: date-time
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+        is_me:
+          type: boolean
+        clients:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemberClient'
+        can:
+          $ref: '#/components/schemas/MemberCan'
+        work:
+          $ref: '#/components/schemas/WorkTotals'
+      required:
+      - can
+      - clients
+      - created_at
+      - email
+      - full_name
+      - id
+      - is_active
+      - is_me
+      - is_owner
+      - last_login
+      - manager
+      - name
+      - role
+      - role_display
+      - scope_all_clients
+      - user_id
+      - work
+    MemberWorkResponse:
+      type: object
+      properties:
+        member:
+          $ref: '#/components/schemas/Person'
+        period:
+          $ref: '#/components/schemas/Period'
+        metrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/Metric'
+        totals:
+          $ref: '#/components/schemas/WorkTotals'
+        by_client:
+          type: array
+          items:
+            $ref: '#/components/schemas/ByClient'
+        by_day:
+          type: array
+          items:
+            $ref: '#/components/schemas/ByDay'
+        open_work:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpenWork'
+          description: What is waiting now on the clients this person can see, not
+            history.
+      required:
+      - by_client
+      - by_day
+      - member
+      - metrics
+      - open_work
+      - period
+      - totals
+    MembersCan:
+      type: object
+      properties:
+        invite:
+          type: boolean
+        invite_roles:
+          type: array
+          items:
+            type: string
+          description: Roles the person asking may invite.
+        role_options:
+          type: array
+          items:
+            type: string
+          description: Roles the person asking may give.
+        manage:
+          type: boolean
+        manage_admins:
+          type: boolean
+          description: 'May invite administrators and hand ownership on: the owner
+            only.'
+      required:
+      - invite
+      - invite_roles
+      - manage
+      - manage_admins
+      - role_options
+    MembersResponse:
+      type: object
+      properties:
+        period:
+          $ref: '#/components/schemas/Period'
+        metrics:
+          type: array
+          items:
+            $ref: '#/components/schemas/Metric'
+        can:
+          $ref: '#/components/schemas/MembersCan'
+        leads:
+          type: array
+          items:
+            $ref: '#/components/schemas/Person'
+          description: Active Senior CAs and administrators who can be named as a
+            client's lead or a manager.
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/MemberWithWork'
+      required:
+      - can
+      - leads
+      - metrics
+      - period
+      - results
     MergeProposalRequest:
       type: object
       properties:
@@ -4427,6 +5651,273 @@ components:
         * `UNRESOLVED` - Awaiting review
         * `REVIEWED` - Set by a person
         * `LLM` - Suggested by a language model
+    Metric:
+      type: object
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        note:
+          type: string
+          description: How to read the number where its label alone would mislead.
+            Often empty.
+      required:
+      - key
+      - label
+      - note
+    MetricsClient:
+      type: object
+      properties:
+        rows_posted:
+          type: integer
+          description: 'Statement rows that reached the books in the period: journal
+            entries approved in the period that stand for a statement row, corrections
+            excluded. A transfer between two of the client''s own accounts is one
+            entry and counts once.'
+        rows_automated:
+          type: integer
+          description: 'Of those, the rows nobody posted by hand: the assistant posted
+            them (no approving person is recorded) and no person has since edited
+            the entry.'
+        automation_share:
+          type: number
+          format: double
+          nullable: true
+          description: rows_automated / rows_posted, between 0 and 1. Null when no
+            row was posted in the period.
+        placements_stayed:
+          type: integer
+          description: 'Rule or model placements posted in the period that nobody
+            has changed: an automatic post with nothing in the change log, or an entry
+            a person posted without changing the placement (the row still carries
+            the rule that placed it, or the model''s suggestion with no placement
+            by a person recorded against it).'
+        placements_changed:
+          type: integer
+          description: 'Changes made in the period to a rule or model placement: a
+            change-log item that moved an automatic entry to other ledgers, the removal
+            of one, a correction entry against one, or a person placing a row the
+            model had already suggested. A change that only reworded the narration
+            is not counted.'
+        accuracy:
+          type: number
+          format: double
+          nullable: true
+          description: placements_stayed / (placements_stayed + placements_changed),
+            between 0 and 1. Null when there is nothing to judge. Stored data cannot
+            show a rule placement that a person overrode before posting, nor later
+            changes to an entry a person posted from a rule placement, so this figure
+            errs high.
+        estimated_minutes_saved:
+          type: integer
+          description: 'rows_automated times assumed_minutes_per_row. An estimate,
+            not a measurement: nothing records how long a person would have taken.'
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        needs_attention:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttentionReason'
+          description: Empty when nothing needs a look.
+      required:
+      - accuracy
+      - automation_share
+      - estimated_minutes_saved
+      - id
+      - name
+      - needs_attention
+      - placements_changed
+      - placements_stayed
+      - rows_automated
+      - rows_posted
+    MetricsFirm:
+      type: object
+      properties:
+        rows_posted:
+          type: integer
+          description: 'Statement rows that reached the books in the period: journal
+            entries approved in the period that stand for a statement row, corrections
+            excluded. A transfer between two of the client''s own accounts is one
+            entry and counts once.'
+        rows_automated:
+          type: integer
+          description: 'Of those, the rows nobody posted by hand: the assistant posted
+            them (no approving person is recorded) and no person has since edited
+            the entry.'
+        automation_share:
+          type: number
+          format: double
+          nullable: true
+          description: rows_automated / rows_posted, between 0 and 1. Null when no
+            row was posted in the period.
+        placements_stayed:
+          type: integer
+          description: 'Rule or model placements posted in the period that nobody
+            has changed: an automatic post with nothing in the change log, or an entry
+            a person posted without changing the placement (the row still carries
+            the rule that placed it, or the model''s suggestion with no placement
+            by a person recorded against it).'
+        placements_changed:
+          type: integer
+          description: 'Changes made in the period to a rule or model placement: a
+            change-log item that moved an automatic entry to other ledgers, the removal
+            of one, a correction entry against one, or a person placing a row the
+            model had already suggested. A change that only reworded the narration
+            is not counted.'
+        accuracy:
+          type: number
+          format: double
+          nullable: true
+          description: placements_stayed / (placements_stayed + placements_changed),
+            between 0 and 1. Null when there is nothing to judge. Stored data cannot
+            show a rule placement that a person overrode before posting, nor later
+            changes to an entry a person posted from a rule placement, so this figure
+            errs high.
+        estimated_minutes_saved:
+          type: integer
+          description: 'rows_automated times assumed_minutes_per_row. An estimate,
+            not a measurement: nothing records how long a person would have taken.'
+        clients:
+          type: integer
+          description: Clients the caller may see; the totals cover these.
+        clients_needing_attention:
+          type: integer
+          description: Clients with at least one reason.
+      required:
+      - accuracy
+      - automation_share
+      - clients
+      - clients_needing_attention
+      - estimated_minutes_saved
+      - placements_changed
+      - placements_stayed
+      - rows_automated
+      - rows_posted
+    MetricsMember:
+      type: object
+      properties:
+        id:
+          type: string
+          description: The membership id.
+        name:
+          type: string
+      required:
+      - id
+      - name
+    MetricsPeriod:
+      type: object
+      properties:
+        to:
+          type: string
+          format: date
+        from:
+          type: string
+          format: date
+      required:
+      - from
+      - to
+    MetricsTurnaround:
+      type: object
+      properties:
+        member:
+          $ref: '#/components/schemas/MetricsMember'
+        statements_completed:
+          type: integer
+          description: Statements this person uploaded in the period whose every row
+            has since been posted (or is the mirror of a transfer already posted).
+        median_days_upload_to_posted:
+          type: number
+          format: double
+          nullable: true
+          description: Median days from upload to the last row of the statement being
+            posted. Null when none completed. Elapsed time, not working time.
+        books_signed_off:
+          type: integer
+          description: Sign-offs this person made in the period for which a request
+            for review was recorded.
+        median_days_request_to_sign_off:
+          type: number
+          format: double
+          nullable: true
+          description: Median days from the latest request for review before the sign-off
+            to the sign-off. Null when there were none.
+      required:
+      - books_signed_off
+      - median_days_request_to_sign_off
+      - median_days_upload_to_posted
+      - member
+      - statements_completed
+    NextBatch:
+      type: object
+      description: What one call to the assistant did, and what to do next.
+      properties:
+        processed:
+          type: integer
+          description: Rows this call asked the model about.
+        suggested:
+          type: integer
+          description: Of those, rows the model placed in a ledger.
+        declined:
+          type: integer
+          description: Rows left for a person.
+        waiting:
+          type: integer
+          description: Rows still waiting for the assistant, including any another
+            window is reading.
+        state:
+          allOf:
+          - $ref: '#/components/schemas/AssistantStateEnum'
+          description: |-
+            `working`: call again. `idle`: nothing is waiting, or the assistant is off; stop. `paused`: call again after `retry_after_seconds`.
+
+            * `working` - working
+            * `idle` - idle
+            * `paused` - paused
+        retry_after_seconds:
+          type: integer
+          nullable: true
+          description: When to call again. Null when the call may be repeated straight
+            away.
+        reason:
+          description: "Why the assistant is paused or idle. Blank when it is working.\n\
+            \n* `` - \n* `rate_limit` - rate_limit\n* `daily_limit` - daily_limit\n\
+            * `provider_down` - provider_down\n* `assistant_off` - assistant_off"
+          oneOf:
+          - $ref: '#/components/schemas/AssistantReasonEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        message:
+          type: string
+          description: One plain sentence to show.
+        auto_posted:
+          type: integer
+          description: Of the suggested rows, how many were sure enough to be posted
+            automatically.
+        proposed:
+          type: integer
+          description: New ledgers the assistant opened in this call.
+      required:
+      - auto_posted
+      - declined
+      - message
+      - processed
+      - proposed
+      - reason
+      - retry_after_seconds
+      - state
+      - suggested
+      - waiting
+    NextBatchRequestRequest:
+      type: object
+      properties:
+        max_rows:
+          type: integer
+          maximum: 15
+          minimum: 1
+          description: How many waiting rows to read. Defaults to 10, at most 15.
     NoteRequest:
       type: object
       properties:
@@ -4434,6 +5925,31 @@ components:
           type: string
           default: ''
           maxLength: 1000
+    OpenWork:
+      type: object
+      properties:
+        unresolved:
+          type: integer
+          description: Rows nobody has placed in a ledger yet.
+        pending_approval:
+          type: integer
+          description: Rows placed but not yet posted.
+        books_to_send:
+          type: boolean
+          description: 'True when every row is placed and posted, nothing is already
+            waiting for a senior, and there are entries newer than the last sign-off:
+            the books can be sent for review now.'
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+      required:
+      - books_to_send
+      - id
+      - name
+      - pending_approval
+      - unresolved
     OpeningBalanceRequest:
       type: object
       description: |-
@@ -4456,6 +5972,181 @@ components:
       required:
       - opening_as_of
       - opening_balance_paise
+    OverviewByStage:
+      type: object
+      properties:
+        no_statements:
+          type: integer
+        needs_ledger:
+          type: integer
+        ready_to_post:
+          type: integer
+        in_review:
+          type: integer
+        ready_for_review:
+          type: integer
+        signed_off:
+          type: integer
+      required:
+      - in_review
+      - needs_ledger
+      - no_statements
+      - ready_for_review
+      - ready_to_post
+      - signed_off
+    OverviewClient:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        lead:
+          allOf:
+          - $ref: '#/components/schemas/OverviewLead'
+          nullable: true
+        stage:
+          $ref: '#/components/schemas/StageEnum'
+        next_step:
+          $ref: '#/components/schemas/OverviewNextStep'
+        unresolved:
+          type: integer
+          description: Rows nobody has placed in a ledger.
+        pending_approval:
+          type: integer
+          description: Rows with a ledger, not yet posted.
+        assistant_waiting:
+          type: integer
+          description: Unplaced rows still queued for the assistant.
+        ai_unchecked:
+          type: integer
+          description: Entries after the last sign-off that the assistant posted or
+            changed and nobody has checked.
+        review_pending:
+          type: boolean
+          description: The books have been sent for review and not yet decided.
+        signed_off_through:
+          type: string
+          format: date
+          nullable: true
+        last_statement_end:
+          type: string
+          format: date
+          nullable: true
+        months_missing:
+          type: array
+          items:
+            type: string
+          description: Months (YYYY-MM) inside a bank account's run of statements
+            that none of its statements touches.
+      required:
+      - ai_unchecked
+      - assistant_waiting
+      - id
+      - last_statement_end
+      - lead
+      - months_missing
+      - name
+      - next_step
+      - pending_approval
+      - review_pending
+      - signed_off_through
+      - stage
+      - unresolved
+    OverviewLead:
+      type: object
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+      required:
+      - id
+      - name
+    OverviewNextStep:
+      type: object
+      properties:
+        code:
+          allOf:
+          - $ref: '#/components/schemas/OverviewNextStepCodeEnum'
+          description: |-
+            What to do next: upload a statement, place rows in ledgers, post them, sign off, or send for review.
+
+            * `upload` - upload
+            * `place` - place
+            * `post` - post
+            * `sign_off` - sign_off
+            * `send_for_review` - send_for_review
+            * `none` - none
+        label:
+          type: string
+          description: The same words the client list shows.
+        count:
+          type: integer
+          description: Rows to place or post; 0 for the other steps.
+      required:
+      - code
+      - count
+      - label
+    OverviewNextStepCodeEnum:
+      enum:
+      - upload
+      - place
+      - post
+      - sign_off
+      - send_for_review
+      - none
+      type: string
+      description: |-
+        * `upload` - upload
+        * `place` - place
+        * `post` - post
+        * `sign_off` - sign_off
+        * `send_for_review` - send_for_review
+        * `none` - none
+    OverviewTotals:
+      type: object
+      properties:
+        clients:
+          type: integer
+        unresolved:
+          type: integer
+        pending_approval:
+          type: integer
+        assistant_waiting:
+          type: integer
+        ai_unchecked:
+          type: integer
+        review_pending:
+          type: integer
+          description: Clients whose books await a decision.
+        months_missing:
+          type: integer
+          description: Missing months summed over clients.
+      required:
+      - ai_unchecked
+      - assistant_waiting
+      - clients
+      - months_missing
+      - pending_approval
+      - review_pending
+      - unresolved
+    OwnerRequest:
+      type: object
+      properties:
+        member:
+          type: string
+          format: uuid
+      required:
+      - member
+    OwnerTransferred:
+      type: object
+      properties:
+        owner:
+          $ref: '#/components/schemas/Person'
+      required:
+      - owner
     PaginatedBankAccountList:
       type: object
       required:
@@ -4663,29 +6354,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Registration'
-    PaginatedRunCreateList:
-      type: object
-      required:
-      - count
-      - results
-      properties:
-        count:
-          type: integer
-          example: 123
-        next:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=4
-        previous:
-          type: string
-          nullable: true
-          format: uri
-          example: http://api.example.org/accounts/?page=2
-        results:
-          type: array
-          items:
-            $ref: '#/components/schemas/RunCreate'
     PaginatedStatementList:
       type: object
       required:
@@ -4850,12 +6518,19 @@ components:
         fy_start:
           type: string
           format: date
-          description: First day of the client's financial year, normally 1 April.
+          description: 'First day of the client''s financial year: always 1 April.'
         business_profile:
           type: string
           description: What the client's business does, in a few sentences. Shown
             to the model that suggests ledgers.
           maxLength: 2000
+    PatchedFirmSettingsRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
     PatchedLedgerAccountRequest:
       type: object
       properties:
@@ -4870,6 +6545,22 @@ components:
           $ref: '#/components/schemas/GroupEnum'
         is_active:
           type: boolean
+    PatchedMemberUpdateRequest:
+      type: object
+      properties:
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        manager:
+          type: string
+          format: uuid
+          nullable: true
+        scope_all_clients:
+          type: boolean
+        is_active:
+          type: boolean
+        keep_client_assignments:
+          type: boolean
+          default: false
     PatchedPartyRequest:
       type: object
       properties:
@@ -4889,6 +6580,46 @@ components:
           - $ref: '#/components/schemas/BlankEnum'
         is_active:
           type: boolean
+    Period:
+      type: object
+      properties:
+        to:
+          type: string
+          format: date
+        from:
+          type: string
+          format: date
+      required:
+      - from
+      - to
+    Person:
+      type: object
+      description: |-
+        A member of the firm, as named beside a client or in a list.
+
+        The owner appears like anyone else, to every role that can see the team. Only the owner
+        can change the owner (by transferring ownership); anyone else gets 403.
+      properties:
+        id:
+          type: string
+          description: The membership id.
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/RoleEnum'
+        role_display:
+          type: string
+        is_owner:
+          type: boolean
+        is_active:
+          type: boolean
+      required:
+      - id
+      - is_active
+      - is_owner
+      - name
+      - role
+      - role_display
     PipelineTierEnum:
       enum:
       - UNKNOWN
@@ -5050,6 +6781,47 @@ components:
           default: ''
           description: Why it is being removed. Kept in the change log.
           maxLength: 500
+    ReportAction:
+      type: object
+      properties:
+        match:
+          type: string
+          format: uuid
+          description: The row this action is about (a `rows[].id`).
+        text:
+          type: string
+      required:
+      - match
+      - text
+    ReportDecision:
+      type: object
+      properties:
+        kind:
+          $ref: '#/components/schemas/ReportDecisionKindEnum'
+        note:
+          type: string
+        at:
+          type: string
+          format: date-time
+          description: When the decision was recorded.
+      required:
+      - at
+      - kind
+      - note
+    ReportDecisionKindEnum:
+      enum:
+      - accept_match
+      - claim_itc
+      - disallow_itc
+      - defer
+      - note
+      type: string
+      description: |-
+        * `accept_match` - accept_match
+        * `claim_itc` - claim_itc
+        * `disallow_itc` - disallow_itc
+        * `defer` - defer
+        * `note` - note
     ReportFooter:
       type: object
       description: |-
@@ -5094,6 +6866,249 @@ components:
       - pending_review
       - period_end
       - period_start
+    ReportGroup:
+      type: object
+      properties:
+        kind:
+          $ref: '#/components/schemas/ReportGroupKindEnum'
+        title:
+          type: string
+          description: Show as sent. Groups arrive in the order a person should work
+            them.
+        count:
+          type: integer
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportRow'
+      required:
+      - count
+      - kind
+      - rows
+      - title
+    ReportGroupKindEnum:
+      enum:
+      - matched
+      - amount_mismatch
+      - possible_match
+      - missing_in_2b
+      - missing_in_books
+      - duplicate
+      - invalid_gstin
+      - rcm
+      - tax_head_mismatch
+      - wrong_period
+      - import
+      - isd_credit
+      type: string
+      description: |-
+        * `matched` - matched
+        * `amount_mismatch` - amount_mismatch
+        * `possible_match` - possible_match
+        * `missing_in_2b` - missing_in_2b
+        * `missing_in_books` - missing_in_books
+        * `duplicate` - duplicate
+        * `invalid_gstin` - invalid_gstin
+        * `rcm` - rcm
+        * `tax_head_mismatch` - tax_head_mismatch
+        * `wrong_period` - wrong_period
+        * `import` - import
+        * `isd_credit` - isd_credit
+    ReportGstr3bLine:
+      type: object
+      properties:
+        code:
+          type: string
+          description: 'GSTR-3B table 4 line: 4A(1), 4A(3), 4A(4), 4A(5), 4B(1) or
+            4D(2).'
+        label:
+          type: string
+        igst_paise:
+          type: integer
+        cgst_paise:
+          type: integer
+        sgst_paise:
+          type: integer
+        cess_paise:
+          type: integer
+      required:
+      - cess_paise
+      - cgst_paise
+      - code
+      - igst_paise
+      - label
+      - sgst_paise
+    ReportInvoice:
+      type: object
+      description: One invoice as it stands in the purchase register (`book`) or GSTR-2B
+        (`portal`).
+      properties:
+        gstin:
+          type: string
+          description: The supplier's GSTIN; may be blank or invalid.
+        invoice_no:
+          type: string
+        invoice_date:
+          type: string
+          format: date
+          nullable: true
+        supplier_name:
+          type: string
+        hsn:
+          type: string
+        section:
+          allOf:
+          - $ref: '#/components/schemas/SectionEnum'
+          description: |-
+            B2B invoice; CDN credit note (reduces credit); DN debit note (adds credit); IMPG import of goods; ISD credit from an Input Service Distributor.
+
+            * `B2B` - B2B
+            * `CDN` - CDN
+            * `DN` - DN
+            * `IMPG` - IMPG
+            * `ISD` - ISD
+        taxable_paise:
+          type: integer
+        igst_paise:
+          type: integer
+        cgst_paise:
+          type: integer
+        sgst_paise:
+          type: integer
+        cess_paise:
+          type: integer
+      required:
+      - cess_paise
+      - cgst_paise
+      - gstin
+      - hsn
+      - igst_paise
+      - invoice_date
+      - invoice_no
+      - section
+      - sgst_paise
+      - supplier_name
+      - taxable_paise
+    ReportRegistration:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        gstin:
+          type: string
+        state_code:
+          type: string
+          description: The first two digits of the GSTIN.
+      required:
+      - gstin
+      - id
+      - state_code
+    ReportRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          description: The match id; send it as `match` when recording a decision.
+        itc_status:
+          allOf:
+          - $ref: '#/components/schemas/ItcStatusEnum'
+          description: |-
+            eligible; blocked (a section 17(5) category); not_eligible (not claimable on this evidence yet); rcm_on_payment (reverse charge, claimable after the tax is paid).
+
+            * `eligible` - eligible
+            * `blocked` - blocked
+            * `not_eligible` - not_eligible
+            * `rcm_on_payment` - rcm_on_payment
+        eligible_paise:
+          type: integer
+          description: Credit claimable on this row with the latest decision applied;
+            negative for a credit note.
+        ineligible_paise:
+          type: integer
+          description: Credit this row carries that is not claimable, with the latest
+            decision applied.
+        cause:
+          type: string
+          description: Why the row is in this group.
+        action:
+          type: string
+          description: What the preparer should do about it.
+        timing:
+          type: boolean
+          description: The difference is one of month, not an error (for example the
+            supplier has not filed yet).
+        differences:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Books minus GSTR-2B in paise, keyed by `taxable_paise`, `igst_paise`,
+            `cgst_paise`, `sgst_paise`, `cess_paise`; only the heads that differ beyond
+            rounding.
+        book:
+          allOf:
+          - $ref: '#/components/schemas/ReportInvoice'
+          nullable: true
+          description: Null when the invoice is only in GSTR-2B.
+        portal:
+          allOf:
+          - $ref: '#/components/schemas/ReportInvoice'
+          nullable: true
+          description: Null when the invoice is only in the books.
+        decision:
+          allOf:
+          - $ref: '#/components/schemas/ReportDecision'
+          nullable: true
+          description: The latest decision on this invoice; null if none. Notes do
+            not count.
+      required:
+      - action
+      - book
+      - cause
+      - decision
+      - differences
+      - eligible_paise
+      - id
+      - ineligible_paise
+      - itc_status
+      - portal
+      - timing
+    ReportSummary:
+      type: object
+      properties:
+        counts:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Rows per group `kind`; groups with no rows are absent.
+        eligible_paise:
+          type: integer
+          description: Total eligible ITC, decisions applied.
+        blocked_paise:
+          type: integer
+          description: Credit in blocked categories (section 17(5)).
+        ineligible_paise:
+          type: integer
+          description: Other credit that is not claimable.
+        rcm_liability_paise:
+          type: integer
+          description: Reverse-charge tax payable on rows from the books.
+        unclaimed_in_2b_paise:
+          type: integer
+          description: Tax on invoices in GSTR-2B that are not in the books.
+        unresolved:
+          type: integer
+          description: Amount differences, tax-head differences and possible matches
+            with no decision. Sign-off is refused while this is not 0.
+      required:
+      - blocked_paise
+      - counts
+      - eligible_paise
+      - ineligible_paise
+      - rcm_liability_paise
+      - unclaimed_in_2b_paise
+      - unresolved
     RequiredNoteRequest:
       type: object
       properties:
@@ -5141,27 +7156,31 @@ components:
         pending_approval:
           type: integer
           description: Of the total, how many have a ledger and await a senior CA.
+        assistant_waiting:
+          type: integer
+          description: Rows queued for the assistant that it has not finished with.
+            Above zero, the app should ask for the next batch.
       required:
       - advised
+      - assistant_waiting
       - bulk_approvable
       - high
       - judgement
       - pending_approval
       - total
       - unresolved
-    RunCreate:
-      type: object
-      properties:
-        registration:
-          type: string
-          format: uuid
-        period:
-          type: string
-          description: Return month, e.g. 2026-08.
-          pattern: ^\d{4}-(0[1-9]|1[0-2])$
-      required:
-      - period
-      - registration
+    RoleEnum:
+      enum:
+      - FIRM_ADMIN
+      - SENIOR_CA
+      - STAFF
+      - READ_ONLY
+      type: string
+      description: |-
+        * `FIRM_ADMIN` - Firm administrator
+        * `SENIOR_CA` - Senior CA
+        * `STAFF` - Staff
+        * `READ_ONLY` - Read only
     RunCreateRequest:
       type: object
       properties:
@@ -5176,6 +7195,99 @@ components:
       required:
       - period
       - registration
+    RunListItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        registration:
+          type: string
+          format: uuid
+          description: The GST registration (GSTIN) this run is for.
+        gstin:
+          type: string
+        period_start:
+          type: string
+          format: date
+          description: First day of the return month.
+        status:
+          $ref: '#/components/schemas/Status42dEnum'
+      required:
+      - gstin
+      - id
+      - period_start
+      - registration
+      - status
+    RunReport:
+      type: object
+      description: The reconciliation as data. The Excel working paper is laid out
+        from this same dictionary.
+      properties:
+        id:
+          type: string
+          format: uuid
+        registration:
+          $ref: '#/components/schemas/ReportRegistration'
+        period_start:
+          type: string
+          format: date
+          description: First day of the return month.
+        status:
+          $ref: '#/components/schemas/Status42dEnum'
+        signed_off_at:
+          type: string
+          format: date-time
+          nullable: true
+        has_register:
+          type: boolean
+          description: The purchase register has been uploaded.
+        has_portal:
+          type: boolean
+          description: GSTR-2B has been uploaded.
+        summary:
+          $ref: '#/components/schemas/ReportSummary'
+        gstr3b:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportGstr3bLine'
+          description: Indicative GSTR-3B table 4, not the return. Always all six
+            lines, in order.
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportGroup'
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportAction'
+          description: Rows with an action and no decision, matched rows excluded.
+      required:
+      - actions
+      - groups
+      - gstr3b
+      - has_portal
+      - has_register
+      - id
+      - period_start
+      - registration
+      - signed_off_at
+      - status
+      - summary
+    SectionEnum:
+      enum:
+      - B2B
+      - CDN
+      - DN
+      - IMPG
+      - ISD
+      type: string
+      description: |-
+        * `B2B` - B2B
+        * `CDN` - CDN
+        * `DN` - DN
+        * `IMPG` - IMPG
+        * `ISD` - ISD
     SignOffRequest:
       type: object
       properties:
@@ -5198,6 +7310,22 @@ components:
         * `SEED` - Built in
         * `LEARNED` - Learned from a review
         * `MANUAL` - Written by hand
+    StageEnum:
+      enum:
+      - no_statements
+      - needs_ledger
+      - ready_to_post
+      - in_review
+      - ready_for_review
+      - signed_off
+      type: string
+      description: |-
+        * `no_statements` - no_statements
+        * `needs_ledger` - needs_ledger
+        * `ready_to_post` - ready_to_post
+        * `in_review` - in_review
+        * `ready_for_review` - ready_for_review
+        * `signed_off` - signed_off
     Statement:
       type: object
       description: Adds a ``*_display`` string beside every ``*_paise`` field named
@@ -5401,6 +7529,14 @@ components:
             it only when the earlier period genuinely is not available.
       required:
       - file
+    Status42dEnum:
+      enum:
+      - draft
+      - signed_off
+      type: string
+      description: |-
+        * `draft` - Draft
+        * `signed_off` - Signed off
     TallyExport:
       type: object
       description: |-
@@ -5442,6 +7578,146 @@ components:
         * `194I` - 194I -- Rent
         * `194J` - 194J -- Professional or technical fees
         * `194Q` - 194Q -- Purchase of goods
+    TeamClient:
+      type: object
+      properties:
+        unresolved:
+          type: integer
+          description: Rows nobody has placed in a ledger yet.
+        pending_approval:
+          type: integer
+          description: Rows placed but not yet posted.
+        books_to_send:
+          type: boolean
+          description: 'True when every row is placed and posted, nothing is already
+            waiting for a senior, and there are entries newer than the last sign-off:
+            the books can be sent for review now.'
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        lead:
+          allOf:
+          - $ref: '#/components/schemas/Person'
+          nullable: true
+        team:
+          type: array
+          items:
+            $ref: '#/components/schemas/AssignedPerson'
+      required:
+      - books_to_send
+      - id
+      - lead
+      - name
+      - pending_approval
+      - team
+      - unresolved
+    TeamClientsCan:
+      type: object
+      properties:
+        set_lead:
+          type: boolean
+      required:
+      - set_lead
+    TeamClientsResponse:
+      type: object
+      properties:
+        can:
+          $ref: '#/components/schemas/TeamClientsCan'
+        assignable:
+          type: array
+          items:
+            $ref: '#/components/schemas/Person'
+          description: Who the person asking may put on a client.
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamClient'
+      required:
+      - assignable
+      - can
+      - results
+    TeamEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+          description: One of the `kind` values in the table on `detail`.
+        kind_display:
+          type: string
+        detail:
+          $ref: '#/components/schemas/TeamEventDetail'
+        member_id:
+          type: string
+          format: uuid
+          nullable: true
+        client_id:
+          type: string
+          format: uuid
+          nullable: true
+        at:
+          type: string
+          format: date-time
+      required:
+      - at
+      - client_id
+      - detail
+      - id
+      - kind
+      - kind_display
+      - member_id
+    TeamEventDetail:
+      type: object
+      description: |-
+        What a team event records. Names are as they were then; which keys appear depends on `kind`.
+
+        | kind | keys |
+        |---|---|
+        | member.invited | actor, email, role, to (the manager, or empty) |
+        | member.joined | actor, member, role |
+        | invite.revoked | actor, email |
+        | member.role_changed | actor, member, from, to |
+        | member.manager_changed | actor, member, from, to, removed_from_clients |
+        | member.scope_changed | actor, member, to (`on` or `off`) |
+        | member.deactivated, member.reactivated | actor, member |
+        | member.removed | actor, member, role |
+        | client.lead_changed | actor, client, from, to |
+        | client.assigned, client.unassigned | actor, member, client |
+        | firm.owner_changed | actor, member, from, to |
+        | firm.renamed | actor, from, to |
+
+        `actor` is "AutoCA platform" for a change made by the platform owner.
+      properties:
+        actor:
+          type: string
+        member:
+          type: string
+        client:
+          type: string
+        email:
+          type: string
+        role:
+          type: string
+        to:
+          type: string
+        removed_from_clients:
+          type: integer
+        from:
+          type: string
+    TeamEventsResponse:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/TeamEvent'
+          description: The latest 200, newest first.
+      required:
+      - results
     TreatmentRequest:
       type: object
       description: |-
@@ -5539,6 +7815,17 @@ components:
             "Vendor GST"}.'
       required:
       - file
+    UploadResult:
+      type: object
+      properties:
+        rows:
+          type: integer
+          description: Rows read from the file; they replace any earlier upload.
+        run:
+          $ref: '#/components/schemas/RunReport'
+      required:
+      - rows
+      - run
     VoucherTypeEnum:
       enum:
       - Payment
@@ -5551,6 +7838,46 @@ components:
         * `Receipt` - Receipt
         * `Contra` - Contra
         * `Journal` - Journal
+    WorkTotals:
+      type: object
+      description: Counts of work in the period, one per metric in `metrics`. Keys
+        are the metric keys.
+      properties:
+        statements_uploaded:
+          type: integer
+        rows_placed:
+          type: integer
+        entries_approved:
+          type: integer
+          description: First-time approvals, not corrections.
+        entries_corrected:
+          type: integer
+        entries_posted:
+          type: integer
+          description: 'Entries carrying this person''s name: approvals and corrections
+            together. Entries the assistant posted by itself are counted for nobody.'
+        books_sent_for_review:
+          type: integer
+          description: Times this person asked a senior to sign a client's books off.
+        ledgers_created:
+          type: integer
+        rules_written:
+          type: integer
+        proposals_decided:
+          type: integer
+        model_runs:
+          type: integer
+      required:
+      - books_sent_for_review
+      - entries_approved
+      - entries_corrected
+      - entries_posted
+      - ledgers_created
+      - model_runs
+      - proposals_decided
+      - rows_placed
+      - rules_written
+      - statements_uploaded
   securitySchemes:
     cookieAuth:
       type: apiKey

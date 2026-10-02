@@ -48,9 +48,9 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
         extra_kwargs = {
             "name": {
                 "help_text": (
-                    "Must match the ledger name in the client's Tally company exactly. "
-                    "Tally creates an unrecognised name rather than rejecting it, so a "
-                    "near-miss silently splits a year across two ledgers."
+                    "The ledger's name in this client's books. Unique per client, ignoring "
+                    "case and spacing: \"Advance Tax\" and \"Advance tax\" would split a year "
+                    "across two ledgers, so the second is refused."
                 )
             }
         }
@@ -64,7 +64,7 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
         client = getattr(self.context.get("view"), "client", None)
         if client is None:
             return value
-        # Tally keeps one ledger per name whatever the case, so "salary received" beside
+        # One ledger per name whatever the case, so "salary received" beside
         # "Salary Received" would split a year across two. The database's own uniqueness is
         # case-sensitive, so this is where that is refused.
         clash = LedgerAccount.objects.filter(client=client, name__iexact=value)
@@ -77,8 +77,8 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
         existing = clash.first()
         if existing is not None:
             raise serializers.ValidationError(
-                f'This client already has a ledger called "{existing.name}". Tally treats names that differ '
-                "only in capital letters as the same ledger."
+                f'This client already has a ledger called "{existing.name}". Names that differ '
+                "only in capital letters as the same ledger, and two would split the books."
             )
         return value
 
@@ -232,7 +232,7 @@ class ClassificationRuleSerializer(serializers.ModelSerializer):
 
 class AcceptProposalSerializer(serializers.Serializer):
     name = serializers.CharField(
-        required=False, max_length=255, help_text="Rename to match the client's Tally company exactly."
+        required=False, max_length=255, help_text="Rename the ledger as it is accepted, e.g. to the spelling the client already uses."
     )
     group = serializers.ChoiceField(choices=LedgerGroup.choices, required=False)
 

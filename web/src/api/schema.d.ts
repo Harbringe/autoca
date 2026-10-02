@@ -161,6 +161,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/assistant/next-batch/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read the next few waiting rows with the assistant
+         * @description Reads one small batch (10 rows unless `max_rows` says otherwise, at most 15) of the rows the upload could not place, and returns at once with what happened and what to do next. Call it again while `state` is `working`; wait `retry_after_seconds` first when it is `paused`; stop when it is `idle`.
+         *
+         *     A call takes about twenty seconds at most and never waits out a rate limit: it reports `paused` with the seconds to wait. `reason` says why: `rate_limit` (this minute's allowance), `daily_limit` (today's; the rest is for a person or for tomorrow), `provider_down`, or `assistant_off` (no model is configured, so nothing will ever be read and `state` is `idle`).
+         *
+         *     Two windows open on the same client never read the same row. Rows the model is very sure of are posted automatically, marked as the assistant's, exactly as before. A row it cannot answer after three tries is left for a person. Requires `transaction.classify`.
+         */
+        post: operations["clients_assistant_next_batch_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/bank-accounts/": {
         parameters: {
             query?: never;
@@ -365,10 +389,20 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description The GSTINs a client holds. Each is reconciled and reported separately. */
+        /**
+         * List the client's GSTINs
+         * @description Active registrations, paginated. Requires `gst.view`.
+         *
+         *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong).
+         */
         get: operations["clients_gst_registrations_list"];
         put?: never;
-        /** @description The GSTINs a client holds. Each is reconciled and reported separately. */
+        /**
+         * Add a GSTIN for the client
+         * @description The state code is read from the GSTIN. Requires `gst.prepare`.
+         *
+         *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched) (not a valid GSTIN, or already registered for this client).
+         */
         post: operations["clients_gst_registrations_create"];
         delete?: never;
         options?: never;
@@ -383,10 +417,20 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description One GSTIN's reconciliation for one return month. */
+        /**
+         * List a client's reconciliation runs
+         * @description A plain array, not paginated; `registration` narrows it to one GSTIN. Requires `gst.view`.
+         *
+         *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong).
+         */
         get: operations["clients_gst_runs_list"];
         put?: never;
-        /** @description One GSTIN's reconciliation for one return month. */
+        /**
+         * Start (or open) the reconciliation for one GSTIN and month
+         * @description Idempotent: asking again for the same registration and month returns the existing run's report. Requires `gst.prepare`.
+         *
+         *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong).
+         */
         post: operations["clients_gst_runs_create"];
         delete?: never;
         options?: never;
@@ -401,7 +445,12 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description One GSTIN's reconciliation for one return month. */
+        /**
+         * The reconciliation report
+         * @description The whole run as data: headline figures, GSTR-3B table 4, the groups of invoices and what to do next. The Excel working paper is built from this same report. Requires `gst.view`.
+         *
+         *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong).
+         */
         get: operations["clients_gst_runs_retrieve"];
         put?: never;
         post?: never;
@@ -422,7 +471,9 @@ export interface paths {
         put?: never;
         /**
          * Record a decision about one invoice
-         * @description One GSTIN's reconciliation for one return month.
+         * @description Appends a decision; the latest one on an invoice stands. `kind` is one of `accept_match`, `claim_itc`, `disallow_itc`, `defer`, `note` (`sign_off` is refused with `400 invalid`; signing off has its own endpoint). Requires `gst.prepare`.
+         *
+         *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched) (the kind does not apply to that row's group, or the run is signed off).
          */
         post: operations["clients_gst_runs_decisions_create"];
         delete?: never;
@@ -440,7 +491,9 @@ export interface paths {
         };
         /**
          * Download the Excel working paper
-         * @description One GSTIN's reconciliation for one return month.
+         * @description An .xlsx built from the run report. Requires `gst.view`.
+         *
+         *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong).
          */
         get: operations["clients_gst_runs_export_retrieve"];
         put?: never;
@@ -462,7 +515,9 @@ export interface paths {
         put?: never;
         /**
          * Upload GSTR-2B (JSON or Excel)
-         * @description One GSTIN's reconciliation for one return month.
+         * @description Replaces the run's GSTR-2B rows. A JSON file must be this GSTIN's and this month's return (`409 gst_rule` otherwise). Requires `gst.prepare`.
+         *
+         *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched); `422 gst_file_unreadable` (the file could not be read as a register or GSTR-2B).
          */
         post: operations["clients_gst_runs_portal_create"];
         delete?: never;
@@ -482,7 +537,9 @@ export interface paths {
         put?: never;
         /**
          * Match the register against GSTR-2B
-         * @description One GSTIN's reconciliation for one return month.
+         * @description Rebuilds the matches from the two uploads; earlier decisions are kept because they follow the invoice, not the row. Requires `gst.prepare`.
+         *
+         *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched) (either upload is missing, or the run is signed off).
          */
         post: operations["clients_gst_runs_reconcile_create"];
         delete?: never;
@@ -502,7 +559,9 @@ export interface paths {
         put?: never;
         /**
          * Upload the purchase register
-         * @description One GSTIN's reconciliation for one return month.
+         * @description Replaces the run's register rows. `file` is Excel or CSV; `mapping` is optional JSON naming which header holds which field. Requires `gst.prepare`.
+         *
+         *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched); `422 gst_file_unreadable` (the file could not be read as a register or GSTR-2B).
          */
         post: operations["clients_gst_runs_register_create"];
         delete?: never;
@@ -522,7 +581,9 @@ export interface paths {
         put?: never;
         /**
          * Sign the reconciliation off
-         * @description Signing a reconciliation off. The lead's or an administrator's act.
+         * @description Locks the run. Requires `gst.sign_off` and, beyond the permission, being the client's lead or a firm administrator: a role that holds the permission can still get `403 forbidden`.
+         *
+         *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched) (nothing has been matched yet, rows still need a decision, or already signed off).
          */
         post: operations["clients_gst_runs_sign_off_create"];
         delete?: never;
@@ -837,8 +898,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Ask the model about every unresolved row
-         * @description Runs the model tier over the rows no rule could place. Each row the model is confident about becomes a *suggestion* with a one-line rationale; its confidence sets the band, and a very confident one may be posted automatically (marked, and changeable until sign-off). Rows it is not confident about stay unresolved, with the rationale attached. Returns **202** with a job; the result carries `suggested`, `declined` and `error` (empty unless the provider failed).
+         * Ask the assistant about every unresolved row again
+         * @description Puts every unresolved row that no other window is reading back in the assistant's queue, with its tries counted afresh, and returns at once. The reading itself happens a few rows at a time through `POST /clients/{client_id}/assistant/next-batch/`. Returns **202** with a job; the result carries `considered` and `waiting_for_assistant` (rows queued now) and an empty `warning`.
          *
          *     Nothing identifying leaves the server: narrations are masked, people are pseudonymised, known parties are aliased. Requires `transaction.classify`.
          */
@@ -1060,13 +1121,55 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** The firm, its owner and administrators */
         get: operations["firm_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
+        /** Rename the firm */
         patch: operations["firm_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/firm/metrics/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Measured figures: automation, accuracy, time saved, what needs attention, turnaround
+         * @description Figures computed only from data already stored, per client and for the firm, for `from` to `to` inclusive (ISO dates; default the current month up to today). A firm administrator gets every client; a senior CA the clients of their team; other roles get 403. Ratios are null, never 0, when there is nothing to divide. Nothing is a score and people are not ranked. `needs_attention` reflects where the books stand now, not the period.
+         */
+        get: operations["firm_metrics_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/firm/overview/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Where every client's books stand
+         * @description One row for each client the caller may see (the same rule as the client list), with its stage, next step and what is waiting, plus firm totals and the number of clients in each stage. Computed with a fixed number of queries, so it costs the same for 5 clients as for 500. Stages, in order of precedence: `no_statements`, `needs_ledger`, `ready_to_post`, `in_review`, `ready_for_review`, `signed_off`.
+         */
+        get: operations["firm_overview_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/firm/owner/": {
@@ -1078,6 +1181,7 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Hand ownership to another administrator */
         post: operations["firm_owner_create"];
         delete?: never;
         options?: never;
@@ -1310,6 +1414,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Clients with their lead, team and open work */
         get: operations["team_clients_retrieve"];
         put?: never;
         post?: never;
@@ -1327,6 +1432,7 @@ export interface paths {
             cookie?: never;
         };
         get?: never;
+        /** Set or clear a client's lead */
         put: operations["team_clients_lead_update"];
         post?: never;
         delete?: never;
@@ -1344,7 +1450,9 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Put someone on a client */
         post: operations["team_clients_team_create"];
+        /** Take someone off a client */
         delete: operations["team_clients_team_destroy"];
         options?: never;
         head?: never;
@@ -1360,7 +1468,9 @@ export interface paths {
         };
         get?: never;
         put?: never;
+        /** Put someone on a client */
         post: operations["team_clients_team_create_2"];
+        /** Take someone off a client */
         delete: operations["team_clients_team_destroy_2"];
         options?: never;
         head?: never;
@@ -1374,6 +1484,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Who changed the team, and how */
         get: operations["team_events_retrieve"];
         put?: never;
         post?: never;
@@ -1390,6 +1501,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** Invitations still open */
         get: operations["team_invites_retrieve"];
         put?: never;
         post?: never;
@@ -1409,6 +1521,7 @@ export interface paths {
         get?: never;
         put?: never;
         post?: never;
+        /** Revoke an invitation */
         delete: operations["team_invites_destroy"];
         options?: never;
         head?: never;
@@ -1422,8 +1535,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** The team, with each person's work in a period */
         get: operations["team_members_retrieve"];
         put?: never;
+        /** Invite someone */
         post: operations["team_members_create"];
         delete?: never;
         options?: never;
@@ -1438,12 +1553,14 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
+        /** One member */
         get: operations["team_members_retrieve_2"];
         put?: never;
         post?: never;
         delete?: never;
         options?: never;
         head?: never;
+        /** Change a member's role, reporting line, access or active state */
         patch: operations["team_members_partial_update"];
         trace?: never;
     };
@@ -1454,7 +1571,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** @description One person's work. Anyone may see their own; leads and admins their team's. */
+        /**
+         * One person's work in a period, and what is waiting on them now
+         * @description One person's work. Anyone may see their own; leads and admins their team's.
+         */
         get: operations["team_members_work_retrieve"];
         put?: never;
         post?: never;
@@ -1518,6 +1638,73 @@ export interface components {
             classifications?: string[];
             band?: components["schemas"]["BandEnum"];
         };
+        AssignRequest: {
+            /** Format: uuid */
+            member: string;
+        };
+        Assigned: {
+            assigned: components["schemas"]["Person"];
+        };
+        /**
+         * @description A member of the firm, as named beside a client or in a list.
+         *
+         *     The owner appears like anyone else, to every role that can see the team. Only the owner
+         *     can change the owner (by transferring ownership); anyone else gets 403.
+         */
+        AssignedPerson: {
+            /** @description The membership id. */
+            id: string;
+            name: string;
+            role: components["schemas"]["RoleEnum"];
+            role_display: string;
+            is_owner: boolean;
+            is_active: boolean;
+            /** Format: date-time */
+            assigned_at: string;
+            /** @description Reports directly to the person asking. */
+            on_my_team: boolean;
+        };
+        /**
+         * @description * `` -
+         *     * `rate_limit` - rate_limit
+         *     * `daily_limit` - daily_limit
+         *     * `provider_down` - provider_down
+         *     * `assistant_off` - assistant_off
+         * @enum {string}
+         */
+        AssistantReasonEnum: "rate_limit" | "daily_limit" | "provider_down" | "assistant_off";
+        /**
+         * @description * `working` - working
+         *     * `idle` - idle
+         *     * `paused` - paused
+         * @enum {string}
+         */
+        AssistantStateEnum: "working" | "idle" | "paused";
+        AttentionReason: {
+            /**
+             * @description reconciliation_difference: the books and the bank statement disagree at the latest statement date. statement_month_missing: a month inside a bank account's run of statements has none. assistant_entries_unchecked: entries the assistant posted or changed are not yet checked. unsigned_too_long: the books are not signed off more than 45 days after the latest entry. suspense_balance: the Suspense ledger holds a non-zero balance. opening_balance_unconfirmed: a bank account's opening balance is not confirmed. These describe where the books stand now, whatever period was asked for.
+             *
+             *     * `reconciliation_difference` - reconciliation_difference
+             *     * `statement_month_missing` - statement_month_missing
+             *     * `assistant_entries_unchecked` - assistant_entries_unchecked
+             *     * `unsigned_too_long` - unsigned_too_long
+             *     * `suspense_balance` - suspense_balance
+             *     * `opening_balance_unconfirmed` - opening_balance_unconfirmed
+             */
+            code: components["schemas"]["AttentionReasonCodeEnum"];
+            /** @description A plain sentence; show it as it is. */
+            message: string;
+        };
+        /**
+         * @description * `reconciliation_difference` - reconciliation_difference
+         *     * `statement_month_missing` - statement_month_missing
+         *     * `assistant_entries_unchecked` - assistant_entries_unchecked
+         *     * `unsigned_too_long` - unsigned_too_long
+         *     * `suspense_balance` - suspense_balance
+         *     * `opening_balance_unconfirmed` - opening_balance_unconfirmed
+         * @enum {string}
+         */
+        AttentionReasonCodeEnum: "reconciliation_difference" | "statement_month_missing" | "assistant_entries_unchecked" | "unsigned_too_long" | "suspense_balance" | "opening_balance_unconfirmed";
         /**
          * @description Month end: does the ledger agree with the bank?
          *
@@ -1670,6 +1857,30 @@ export interface components {
             can_sign_off: boolean;
             history: components["schemas"]["BooksEvent"][];
         };
+        /** @description Counts of work in the period, one per metric in `metrics`. Keys are the metric keys. */
+        ByClient: {
+            statements_uploaded: number;
+            rows_placed: number;
+            /** @description First-time approvals, not corrections. */
+            entries_approved: number;
+            entries_corrected: number;
+            /** @description Entries carrying this person's name: approvals and corrections together. Entries the assistant posted by itself are counted for nobody. */
+            entries_posted: number;
+            /** @description Times this person asked a senior to sign a client's books off. */
+            books_sent_for_review: number;
+            ledgers_created: number;
+            rules_written: number;
+            proposals_decided: number;
+            model_runs: number;
+            /** @description Null for work not tied to a client. */
+            id: string | null;
+            name: string;
+        };
+        ByDay: {
+            /** Format: date */
+            date: string;
+            count: number;
+        };
         /** @description A row awaiting a decision, with everything needed to make it. */
         Classification: {
             /** Format: uuid */
@@ -1774,7 +1985,7 @@ export interface components {
             name: string;
             /**
              * Format: date
-             * @description First day of the client's financial year, normally 1 April.
+             * @description First day of the client's financial year: always 1 April.
              */
             fy_start: string;
             /** @description What the client's business does, in a few sentences. Shown to the model that suggests ledgers. */
@@ -1786,12 +1997,13 @@ export interface components {
             } | null;
             readonly can_sign_off: boolean;
             readonly can_post: boolean;
+            readonly has_entries: boolean;
         };
         ClientRequest: {
             name: string;
             /**
              * Format: date
-             * @description First day of the client's financial year, normally 1 April.
+             * @description First day of the client's financial year: always 1 April.
              */
             fy_start: string;
             /** @description What the client's business does, in a few sentences. Shown to the model that suggests ledgers. */
@@ -1898,6 +2110,50 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
         };
+        FirmCan: {
+            rename: boolean;
+            /** @description May hand ownership to another administrator: the owner only. */
+            transfer: boolean;
+        };
+        FirmCounts: {
+            active_members: number;
+            senior_cas: number;
+            staff: number;
+            clients: number;
+        };
+        FirmMetrics: {
+            period: components["schemas"]["MetricsPeriod"];
+            /** @description The minutes a person is assumed to need per row (setting ASSUMED_MINUTES_PER_ROW). */
+            assumed_minutes_per_row: number;
+            /** @description Always true: estimated_minutes_saved is an assumption times a count. */
+            is_estimate: boolean;
+            firm: components["schemas"]["MetricsFirm"];
+            clients: components["schemas"]["MetricsClient"][];
+            /** @description One entry per person with work in the period; sorted by name, not ranked. */
+            turnaround: components["schemas"]["MetricsTurnaround"][];
+        };
+        FirmOverview: {
+            totals: components["schemas"]["OverviewTotals"];
+            by_stage: components["schemas"]["OverviewByStage"];
+            clients: components["schemas"]["OverviewClient"][];
+        };
+        FirmRenamed: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
+        FirmResponse: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: date-time */
+            created_at: string;
+            owner: components["schemas"]["Person"] | null;
+            /** @description Active administrators; the owner is left out for an administrator who is not the owner. */
+            admins: components["schemas"]["Person"][];
+            counts: components["schemas"]["FirmCounts"];
+            can: components["schemas"]["FirmCan"];
+        };
         /**
          * @description * `BANK` - Bank Accounts
          *     * `CASH` - Cash-in-Hand
@@ -1915,6 +2171,66 @@ export interface components {
          * @enum {string}
          */
         GroupEnum: "BANK" | "CASH" | "DEBTOR" | "CREDITOR" | "INDIRECT_EXPENSE" | "DIRECT_EXPENSE" | "INDIRECT_INCOME" | "DIRECT_INCOME" | "DUTIES_AND_TAXES" | "LOAN" | "INVESTMENT" | "CAPITAL" | "SUSPENSE";
+        GstError: {
+            /** @description Stable code: gst_rule (409), gst_file_unreadable (422), invalid (400), not_found (404), forbidden (403). */
+            code: string;
+            /** @description A sentence for a person; show it as it is. */
+            detail: string;
+        };
+        InviteCreated: {
+            /** Format: uuid */
+            id: string;
+            /** Format: email */
+            email: string;
+            full_name: string;
+            role: components["schemas"]["RoleEnum"];
+            role_display: string;
+            manager: components["schemas"]["Person"] | null;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: email */
+            created_by: string | null;
+            /** @description The one-time link to send the person. Shown only now. */
+            link: string;
+        };
+        InviteRecord: {
+            /** Format: uuid */
+            id: string;
+            /** Format: email */
+            email: string;
+            full_name: string;
+            role: components["schemas"]["RoleEnum"];
+            role_display: string;
+            manager: components["schemas"]["Person"] | null;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: date-time */
+            created_at: string;
+            /** Format: email */
+            created_by: string | null;
+        };
+        InviteRequest: {
+            /** Format: email */
+            email: string;
+            full_name?: string;
+            /** @default STAFF */
+            role: components["schemas"]["RoleEnum"];
+            /** Format: uuid */
+            manager?: string | null;
+        };
+        InvitesResponse: {
+            results: components["schemas"]["InviteRecord"][];
+        };
+        /**
+         * @description * `eligible` - eligible
+         *     * `blocked` - blocked
+         *     * `not_eligible` - not_eligible
+         *     * `rcm_on_payment` - rcm_on_payment
+         * @enum {string}
+         */
+        ItcStatusEnum: "eligible" | "blocked" | "not_eligible" | "rcm_on_payment";
         /**
          * @description What a 202 hands back, and what polling returns.
          *
@@ -2009,6 +2325,15 @@ export interface components {
          * @enum {string}
          */
         JournalLineDirectionEnum: "DR" | "CR";
+        LeadRequest: {
+            /** Format: uuid */
+            lead: string | null;
+        };
+        LeadSet: {
+            /** Format: uuid */
+            id: string;
+            lead: components["schemas"]["Person"] | null;
+        };
         LedgerAccount: {
             /** Format: uuid */
             readonly id: string;
@@ -2110,6 +2435,106 @@ export interface components {
             readonly is_owner: boolean;
             readonly permissions: string[];
         };
+        /**
+         * @description A member of the firm, as named beside a client or in a list.
+         *
+         *     The owner appears like anyone else, to every role that can see the team. Only the owner
+         *     can change the owner (by transferring ownership); anyone else gets 403.
+         */
+        Member: {
+            /** @description The membership id. */
+            id: string;
+            name: string;
+            role: components["schemas"]["RoleEnum"];
+            role_display: string;
+            is_owner: boolean;
+            is_active: boolean;
+            user_id: string;
+            /** Format: email */
+            email: string;
+            full_name: string;
+            scope_all_clients: boolean;
+            /** @description Who this person reports to: owner -> administrators -> Senior CAs -> Staff and Read-only. Null for the owner. */
+            manager: components["schemas"]["Person"] | null;
+            /** Format: date-time */
+            last_login: string | null;
+            /** Format: date-time */
+            created_at: string;
+            is_me: boolean;
+            clients: components["schemas"]["MemberClient"][];
+            can: components["schemas"]["MemberCan"];
+        };
+        MemberCan: {
+            /** @description May change this person's role and reporting line. */
+            manage: boolean;
+            manage_role: boolean;
+            /** @description May deactivate or reactivate this person. */
+            set_active: boolean;
+        };
+        MemberClient: {
+            id: string;
+            name: string;
+            /** @description `assigned` or `leads`. */
+            how: string;
+        };
+        /**
+         * @description A member of the firm, as named beside a client or in a list.
+         *
+         *     The owner appears like anyone else, to every role that can see the team. Only the owner
+         *     can change the owner (by transferring ownership); anyone else gets 403.
+         */
+        MemberWithWork: {
+            /** @description The membership id. */
+            id: string;
+            name: string;
+            role: components["schemas"]["RoleEnum"];
+            role_display: string;
+            is_owner: boolean;
+            is_active: boolean;
+            user_id: string;
+            /** Format: email */
+            email: string;
+            full_name: string;
+            scope_all_clients: boolean;
+            /** @description Who this person reports to: owner -> administrators -> Senior CAs -> Staff and Read-only. Null for the owner. */
+            manager: components["schemas"]["Person"] | null;
+            /** Format: date-time */
+            last_login: string | null;
+            /** Format: date-time */
+            created_at: string;
+            is_me: boolean;
+            clients: components["schemas"]["MemberClient"][];
+            can: components["schemas"]["MemberCan"];
+            work: components["schemas"]["WorkTotals"];
+        };
+        MemberWorkResponse: {
+            member: components["schemas"]["Person"];
+            period: components["schemas"]["Period"];
+            metrics: components["schemas"]["Metric"][];
+            totals: components["schemas"]["WorkTotals"];
+            by_client: components["schemas"]["ByClient"][];
+            by_day: components["schemas"]["ByDay"][];
+            /** @description What is waiting now on the clients this person can see, not history. */
+            open_work: components["schemas"]["OpenWork"][];
+        };
+        MembersCan: {
+            invite: boolean;
+            /** @description Roles the person asking may invite. */
+            invite_roles: string[];
+            /** @description Roles the person asking may give. */
+            role_options: string[];
+            manage: boolean;
+            /** @description May invite administrators and hand ownership on: the owner only. */
+            manage_admins: boolean;
+        };
+        MembersResponse: {
+            period: components["schemas"]["Period"];
+            metrics: components["schemas"]["Metric"][];
+            can: components["schemas"]["MembersCan"];
+            /** @description Active Senior CAs and administrators who can be named as a client's lead or a manager. */
+            leads: components["schemas"]["Person"][];
+            results: components["schemas"]["MemberWithWork"][];
+        };
         MergeProposalRequest: {
             /**
              * Format: uuid
@@ -2125,9 +2550,148 @@ export interface components {
          * @enum {string}
          */
         MethodEnum: "RULE" | "UNRESOLVED" | "REVIEWED" | "LLM";
+        Metric: {
+            key: string;
+            label: string;
+            /** @description How to read the number where its label alone would mislead. Often empty. */
+            note: string;
+        };
+        MetricsClient: {
+            /** @description Statement rows that reached the books in the period: journal entries approved in the period that stand for a statement row, corrections excluded. A transfer between two of the client's own accounts is one entry and counts once. */
+            rows_posted: number;
+            /** @description Of those, the rows nobody posted by hand: the assistant posted them (no approving person is recorded) and no person has since edited the entry. */
+            rows_automated: number;
+            /**
+             * Format: double
+             * @description rows_automated / rows_posted, between 0 and 1. Null when no row was posted in the period.
+             */
+            automation_share: number | null;
+            /** @description Rule or model placements posted in the period that nobody has changed: an automatic post with nothing in the change log, or an entry a person posted without changing the placement (the row still carries the rule that placed it, or the model's suggestion with no placement by a person recorded against it). */
+            placements_stayed: number;
+            /** @description Changes made in the period to a rule or model placement: a change-log item that moved an automatic entry to other ledgers, the removal of one, a correction entry against one, or a person placing a row the model had already suggested. A change that only reworded the narration is not counted. */
+            placements_changed: number;
+            /**
+             * Format: double
+             * @description placements_stayed / (placements_stayed + placements_changed), between 0 and 1. Null when there is nothing to judge. Stored data cannot show a rule placement that a person overrode before posting, nor later changes to an entry a person posted from a rule placement, so this figure errs high.
+             */
+            accuracy: number | null;
+            /** @description rows_automated times assumed_minutes_per_row. An estimate, not a measurement: nothing records how long a person would have taken. */
+            estimated_minutes_saved: number;
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** @description Empty when nothing needs a look. */
+            needs_attention: components["schemas"]["AttentionReason"][];
+        };
+        MetricsFirm: {
+            /** @description Statement rows that reached the books in the period: journal entries approved in the period that stand for a statement row, corrections excluded. A transfer between two of the client's own accounts is one entry and counts once. */
+            rows_posted: number;
+            /** @description Of those, the rows nobody posted by hand: the assistant posted them (no approving person is recorded) and no person has since edited the entry. */
+            rows_automated: number;
+            /**
+             * Format: double
+             * @description rows_automated / rows_posted, between 0 and 1. Null when no row was posted in the period.
+             */
+            automation_share: number | null;
+            /** @description Rule or model placements posted in the period that nobody has changed: an automatic post with nothing in the change log, or an entry a person posted without changing the placement (the row still carries the rule that placed it, or the model's suggestion with no placement by a person recorded against it). */
+            placements_stayed: number;
+            /** @description Changes made in the period to a rule or model placement: a change-log item that moved an automatic entry to other ledgers, the removal of one, a correction entry against one, or a person placing a row the model had already suggested. A change that only reworded the narration is not counted. */
+            placements_changed: number;
+            /**
+             * Format: double
+             * @description placements_stayed / (placements_stayed + placements_changed), between 0 and 1. Null when there is nothing to judge. Stored data cannot show a rule placement that a person overrode before posting, nor later changes to an entry a person posted from a rule placement, so this figure errs high.
+             */
+            accuracy: number | null;
+            /** @description rows_automated times assumed_minutes_per_row. An estimate, not a measurement: nothing records how long a person would have taken. */
+            estimated_minutes_saved: number;
+            /** @description Clients the caller may see; the totals cover these. */
+            clients: number;
+            /** @description Clients with at least one reason. */
+            clients_needing_attention: number;
+        };
+        MetricsMember: {
+            /** @description The membership id. */
+            id: string;
+            name: string;
+        };
+        MetricsPeriod: {
+            /** Format: date */
+            to: string;
+            /** Format: date */
+            from: string;
+        };
+        MetricsTurnaround: {
+            member: components["schemas"]["MetricsMember"];
+            /** @description Statements this person uploaded in the period whose every row has since been posted (or is the mirror of a transfer already posted). */
+            statements_completed: number;
+            /**
+             * Format: double
+             * @description Median days from upload to the last row of the statement being posted. Null when none completed. Elapsed time, not working time.
+             */
+            median_days_upload_to_posted: number | null;
+            /** @description Sign-offs this person made in the period for which a request for review was recorded. */
+            books_signed_off: number;
+            /**
+             * Format: double
+             * @description Median days from the latest request for review before the sign-off to the sign-off. Null when there were none.
+             */
+            median_days_request_to_sign_off: number | null;
+        };
+        /** @description What one call to the assistant did, and what to do next. */
+        NextBatch: {
+            /** @description Rows this call asked the model about. */
+            processed: number;
+            /** @description Of those, rows the model placed in a ledger. */
+            suggested: number;
+            /** @description Rows left for a person. */
+            declined: number;
+            /** @description Rows still waiting for the assistant, including any another window is reading. */
+            waiting: number;
+            /**
+             * @description `working`: call again. `idle`: nothing is waiting, or the assistant is off; stop. `paused`: call again after `retry_after_seconds`.
+             *
+             *     * `working` - working
+             *     * `idle` - idle
+             *     * `paused` - paused
+             */
+            state: components["schemas"]["AssistantStateEnum"];
+            /** @description When to call again. Null when the call may be repeated straight away. */
+            retry_after_seconds: number | null;
+            /**
+             * @description Why the assistant is paused or idle. Blank when it is working.
+             *
+             *     * `` -
+             *     * `rate_limit` - rate_limit
+             *     * `daily_limit` - daily_limit
+             *     * `provider_down` - provider_down
+             *     * `assistant_off` - assistant_off
+             */
+            reason: components["schemas"]["AssistantReasonEnum"] | components["schemas"]["BlankEnum"];
+            /** @description One plain sentence to show. */
+            message: string;
+            /** @description Of the suggested rows, how many were sure enough to be posted automatically. */
+            auto_posted: number;
+            /** @description New ledgers the assistant opened in this call. */
+            proposed: number;
+        };
+        NextBatchRequestRequest: {
+            /** @description How many waiting rows to read. Defaults to 10, at most 15. */
+            max_rows?: number;
+        };
         NoteRequest: {
             /** @default  */
             note: string;
+        };
+        OpenWork: {
+            /** @description Rows nobody has placed in a ledger yet. */
+            unresolved: number;
+            /** @description Rows placed but not yet posted. */
+            pending_approval: number;
+            /** @description True when every row is placed and posted, nothing is already waiting for a senior, and there are entries newer than the last sign-off: the books can be sent for review now. */
+            books_to_send: boolean;
+            /** Format: uuid */
+            id: string;
+            name: string;
         };
         /**
          * @description Confirming what the client's books actually started from.
@@ -2145,6 +2709,87 @@ export interface components {
              * @description The date that balance was true. Normally the first day of the period.
              */
             opening_as_of: string;
+        };
+        OverviewByStage: {
+            no_statements: number;
+            needs_ledger: number;
+            ready_to_post: number;
+            in_review: number;
+            ready_for_review: number;
+            signed_off: number;
+        };
+        OverviewClient: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            lead: components["schemas"]["OverviewLead"] | null;
+            stage: components["schemas"]["StageEnum"];
+            next_step: components["schemas"]["OverviewNextStep"];
+            /** @description Rows nobody has placed in a ledger. */
+            unresolved: number;
+            /** @description Rows with a ledger, not yet posted. */
+            pending_approval: number;
+            /** @description Unplaced rows still queued for the assistant. */
+            assistant_waiting: number;
+            /** @description Entries after the last sign-off that the assistant posted or changed and nobody has checked. */
+            ai_unchecked: number;
+            /** @description The books have been sent for review and not yet decided. */
+            review_pending: boolean;
+            /** Format: date */
+            signed_off_through: string | null;
+            /** Format: date */
+            last_statement_end: string | null;
+            /** @description Months (YYYY-MM) inside a bank account's run of statements that none of its statements touches. */
+            months_missing: string[];
+        };
+        OverviewLead: {
+            id: string;
+            name: string;
+        };
+        OverviewNextStep: {
+            /**
+             * @description What to do next: upload a statement, place rows in ledgers, post them, sign off, or send for review.
+             *
+             *     * `upload` - upload
+             *     * `place` - place
+             *     * `post` - post
+             *     * `sign_off` - sign_off
+             *     * `send_for_review` - send_for_review
+             *     * `none` - none
+             */
+            code: components["schemas"]["OverviewNextStepCodeEnum"];
+            /** @description The same words the client list shows. */
+            label: string;
+            /** @description Rows to place or post; 0 for the other steps. */
+            count: number;
+        };
+        /**
+         * @description * `upload` - upload
+         *     * `place` - place
+         *     * `post` - post
+         *     * `sign_off` - sign_off
+         *     * `send_for_review` - send_for_review
+         *     * `none` - none
+         * @enum {string}
+         */
+        OverviewNextStepCodeEnum: "upload" | "place" | "post" | "sign_off" | "send_for_review" | "none";
+        OverviewTotals: {
+            clients: number;
+            unresolved: number;
+            pending_approval: number;
+            assistant_waiting: number;
+            ai_unchecked: number;
+            /** @description Clients whose books await a decision. */
+            review_pending: number;
+            /** @description Missing months summed over clients. */
+            months_missing: number;
+        };
+        OwnerRequest: {
+            /** Format: uuid */
+            member: string;
+        };
+        OwnerTransferred: {
+            owner: components["schemas"]["Person"];
         };
         PaginatedBankAccountList: {
             /** @example 123 */
@@ -2281,21 +2926,6 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["Registration"][];
         };
-        PaginatedRunCreateList: {
-            /** @example 123 */
-            count: number;
-            /**
-             * Format: uri
-             * @example http://api.example.org/accounts/?page=4
-             */
-            next?: string | null;
-            /**
-             * Format: uri
-             * @example http://api.example.org/accounts/?page=2
-             */
-            previous?: string | null;
-            results: components["schemas"]["RunCreate"][];
-        };
         PaginatedStatementList: {
             /** @example 123 */
             count: number;
@@ -2378,17 +3008,29 @@ export interface components {
             name?: string;
             /**
              * Format: date
-             * @description First day of the client's financial year, normally 1 April.
+             * @description First day of the client's financial year: always 1 April.
              */
             fy_start?: string;
             /** @description What the client's business does, in a few sentences. Shown to the model that suggests ledgers. */
             business_profile?: string;
+        };
+        PatchedFirmSettingsRequest: {
+            name?: string;
         };
         PatchedLedgerAccountRequest: {
             /** @description Must match the ledger name in the client's Tally company exactly. Tally creates an unrecognised name rather than rejecting it, so a near-miss silently splits a year across two ledgers. */
             name?: string;
             group?: components["schemas"]["GroupEnum"];
             is_active?: boolean;
+        };
+        PatchedMemberUpdateRequest: {
+            role?: components["schemas"]["RoleEnum"];
+            /** Format: uuid */
+            manager?: string | null;
+            scope_all_clients?: boolean;
+            is_active?: boolean;
+            /** @default false */
+            keep_client_assignments: boolean;
         };
         PatchedPartyRequest: {
             canonical_name?: string;
@@ -2397,6 +3039,27 @@ export interface components {
             rcm_default?: boolean;
             tds_section?: components["schemas"]["TdsSectionEnum"] | components["schemas"]["BlankEnum"];
             is_active?: boolean;
+        };
+        Period: {
+            /** Format: date */
+            to: string;
+            /** Format: date */
+            from: string;
+        };
+        /**
+         * @description A member of the firm, as named beside a client or in a list.
+         *
+         *     The owner appears like anyone else, to every role that can see the team. Only the owner
+         *     can change the owner (by transferring ownership); anyone else gets 403.
+         */
+        Person: {
+            /** @description The membership id. */
+            id: string;
+            name: string;
+            role: components["schemas"]["RoleEnum"];
+            role_display: string;
+            is_owner: boolean;
+            is_active: boolean;
         };
         /**
          * @description * `UNKNOWN` - Not yet routed
@@ -2469,6 +3132,32 @@ export interface components {
              */
             note: string;
         };
+        ReportAction: {
+            /**
+             * Format: uuid
+             * @description The row this action is about (a `rows[].id`).
+             */
+            match: string;
+            text: string;
+        };
+        ReportDecision: {
+            kind: components["schemas"]["ReportDecisionKindEnum"];
+            note: string;
+            /**
+             * Format: date-time
+             * @description When the decision was recorded.
+             */
+            at: string;
+        };
+        /**
+         * @description * `accept_match` - accept_match
+         *     * `claim_itc` - claim_itc
+         *     * `disallow_itc` - disallow_itc
+         *     * `defer` - defer
+         *     * `note` - note
+         * @enum {string}
+         */
+        ReportDecisionKindEnum: "accept_match" | "claim_itc" | "disallow_itc" | "defer" | "note";
         /**
          * @description What a reader needs in order to trust, or distrust, the figures above.
          *
@@ -2490,6 +3179,124 @@ export interface components {
             /** Format: date-time */
             generated_at: string;
             readonly caption: string;
+        };
+        ReportGroup: {
+            kind: components["schemas"]["ReportGroupKindEnum"];
+            /** @description Show as sent. Groups arrive in the order a person should work them. */
+            title: string;
+            count: number;
+            rows: components["schemas"]["ReportRow"][];
+        };
+        /**
+         * @description * `matched` - matched
+         *     * `amount_mismatch` - amount_mismatch
+         *     * `possible_match` - possible_match
+         *     * `missing_in_2b` - missing_in_2b
+         *     * `missing_in_books` - missing_in_books
+         *     * `duplicate` - duplicate
+         *     * `invalid_gstin` - invalid_gstin
+         *     * `rcm` - rcm
+         *     * `tax_head_mismatch` - tax_head_mismatch
+         *     * `wrong_period` - wrong_period
+         *     * `import` - import
+         *     * `isd_credit` - isd_credit
+         * @enum {string}
+         */
+        ReportGroupKindEnum: "matched" | "amount_mismatch" | "possible_match" | "missing_in_2b" | "missing_in_books" | "duplicate" | "invalid_gstin" | "rcm" | "tax_head_mismatch" | "wrong_period" | "import" | "isd_credit";
+        ReportGstr3bLine: {
+            /** @description GSTR-3B table 4 line: 4A(1), 4A(3), 4A(4), 4A(5), 4B(1) or 4D(2). */
+            code: string;
+            label: string;
+            igst_paise: number;
+            cgst_paise: number;
+            sgst_paise: number;
+            cess_paise: number;
+        };
+        /** @description One invoice as it stands in the purchase register (`book`) or GSTR-2B (`portal`). */
+        ReportInvoice: {
+            /** @description The supplier's GSTIN; may be blank or invalid. */
+            gstin: string;
+            invoice_no: string;
+            /** Format: date */
+            invoice_date: string | null;
+            supplier_name: string;
+            hsn: string;
+            /**
+             * @description B2B invoice; CDN credit note (reduces credit); DN debit note (adds credit); IMPG import of goods; ISD credit from an Input Service Distributor.
+             *
+             *     * `B2B` - B2B
+             *     * `CDN` - CDN
+             *     * `DN` - DN
+             *     * `IMPG` - IMPG
+             *     * `ISD` - ISD
+             */
+            section: components["schemas"]["SectionEnum"];
+            taxable_paise: number;
+            igst_paise: number;
+            cgst_paise: number;
+            sgst_paise: number;
+            cess_paise: number;
+        };
+        ReportRegistration: {
+            /** Format: uuid */
+            id: string;
+            gstin: string;
+            /** @description The first two digits of the GSTIN. */
+            state_code: string;
+        };
+        ReportRow: {
+            /**
+             * Format: uuid
+             * @description The match id; send it as `match` when recording a decision.
+             */
+            id: string;
+            /**
+             * @description eligible; blocked (a section 17(5) category); not_eligible (not claimable on this evidence yet); rcm_on_payment (reverse charge, claimable after the tax is paid).
+             *
+             *     * `eligible` - eligible
+             *     * `blocked` - blocked
+             *     * `not_eligible` - not_eligible
+             *     * `rcm_on_payment` - rcm_on_payment
+             */
+            itc_status: components["schemas"]["ItcStatusEnum"];
+            /** @description Credit claimable on this row with the latest decision applied; negative for a credit note. */
+            eligible_paise: number;
+            /** @description Credit this row carries that is not claimable, with the latest decision applied. */
+            ineligible_paise: number;
+            /** @description Why the row is in this group. */
+            cause: string;
+            /** @description What the preparer should do about it. */
+            action: string;
+            /** @description The difference is one of month, not an error (for example the supplier has not filed yet). */
+            timing: boolean;
+            /** @description Books minus GSTR-2B in paise, keyed by `taxable_paise`, `igst_paise`, `cgst_paise`, `sgst_paise`, `cess_paise`; only the heads that differ beyond rounding. */
+            differences: {
+                [key: string]: number;
+            };
+            /** @description Null when the invoice is only in GSTR-2B. */
+            book: components["schemas"]["ReportInvoice"] | null;
+            /** @description Null when the invoice is only in the books. */
+            portal: components["schemas"]["ReportInvoice"] | null;
+            /** @description The latest decision on this invoice; null if none. Notes do not count. */
+            decision: components["schemas"]["ReportDecision"] | null;
+        };
+        ReportSummary: {
+            /** @description Rows per group `kind`; groups with no rows are absent. */
+            counts: {
+                [key: string]: number;
+            };
+            /** @description Total eligible ITC, decisions applied. */
+            eligible_paise: number;
+            /** @description Credit in blocked categories (section 17(5)). */
+            blocked_paise: number;
+            /** @description Other credit that is not claimable. */
+            ineligible_paise: number;
+            /** @description Reverse-charge tax payable on rows from the books. */
+            rcm_liability_paise: number;
+            /** @description Tax on invoices in GSTR-2B that are not in the books. */
+            unclaimed_in_2b_paise: number;
+            /** @description Amount differences, tax-head differences and possible matches with no decision. Sign-off is refused while this is not 0. */
+            unresolved: number;
         };
         RequiredNoteRequest: {
             /** @description Why -- shown to whoever reads the history. */
@@ -2521,19 +3328,72 @@ export interface components {
             unresolved: number;
             /** @description Of the total, how many have a ledger and await a senior CA. */
             pending_approval: number;
+            /** @description Rows queued for the assistant that it has not finished with. Above zero, the app should ask for the next batch. */
+            assistant_waiting: number;
         };
-        RunCreate: {
-            /** Format: uuid */
-            registration: string;
-            /** @description Return month, e.g. 2026-08. */
-            period: string;
-        };
+        /**
+         * @description * `FIRM_ADMIN` - Firm administrator
+         *     * `SENIOR_CA` - Senior CA
+         *     * `STAFF` - Staff
+         *     * `READ_ONLY` - Read only
+         * @enum {string}
+         */
+        RoleEnum: "FIRM_ADMIN" | "SENIOR_CA" | "STAFF" | "READ_ONLY";
         RunCreateRequest: {
             /** Format: uuid */
             registration: string;
             /** @description Return month, e.g. 2026-08. */
             period: string;
         };
+        RunListItem: {
+            /** Format: uuid */
+            id: string;
+            /**
+             * Format: uuid
+             * @description The GST registration (GSTIN) this run is for.
+             */
+            registration: string;
+            gstin: string;
+            /**
+             * Format: date
+             * @description First day of the return month.
+             */
+            period_start: string;
+            status: components["schemas"]["Status42dEnum"];
+        };
+        /** @description The reconciliation as data. The Excel working paper is laid out from this same dictionary. */
+        RunReport: {
+            /** Format: uuid */
+            id: string;
+            registration: components["schemas"]["ReportRegistration"];
+            /**
+             * Format: date
+             * @description First day of the return month.
+             */
+            period_start: string;
+            status: components["schemas"]["Status42dEnum"];
+            /** Format: date-time */
+            signed_off_at: string | null;
+            /** @description The purchase register has been uploaded. */
+            has_register: boolean;
+            /** @description GSTR-2B has been uploaded. */
+            has_portal: boolean;
+            summary: components["schemas"]["ReportSummary"];
+            /** @description Indicative GSTR-3B table 4, not the return. Always all six lines, in order. */
+            gstr3b: components["schemas"]["ReportGstr3bLine"][];
+            groups: components["schemas"]["ReportGroup"][];
+            /** @description Rows with an action and no decision, matched rows excluded. */
+            actions: components["schemas"]["ReportAction"][];
+        };
+        /**
+         * @description * `B2B` - B2B
+         *     * `CDN` - CDN
+         *     * `DN` - DN
+         *     * `IMPG` - IMPG
+         *     * `ISD` - ISD
+         * @enum {string}
+         */
+        SectionEnum: "B2B" | "CDN" | "DN" | "IMPG" | "ISD";
         SignOffRequest: {
             /**
              * Format: date
@@ -2550,6 +3410,16 @@ export interface components {
          * @enum {string}
          */
         SourceEnum: "SEED" | "LEARNED" | "MANUAL";
+        /**
+         * @description * `no_statements` - no_statements
+         *     * `needs_ledger` - needs_ledger
+         *     * `ready_to_post` - ready_to_post
+         *     * `in_review` - in_review
+         *     * `ready_for_review` - ready_for_review
+         *     * `signed_off` - signed_off
+         * @enum {string}
+         */
+        StageEnum: "no_statements" | "needs_ledger" | "ready_to_post" | "in_review" | "ready_for_review" | "signed_off";
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         Statement: {
             /** Format: uuid */
@@ -2631,6 +3501,12 @@ export interface components {
             allow_gap: boolean;
         };
         /**
+         * @description * `draft` - Draft
+         *     * `signed_off` - Signed off
+         * @enum {string}
+         */
+        Status42dEnum: "draft" | "signed_off";
+        /**
          * @description A Tally Prime import document, and what was left out of it.
          *
          *     ``unapproved`` is not an error. A firm exporting nine tenths of a statement
@@ -2655,6 +3531,76 @@ export interface components {
          * @enum {string}
          */
         TdsSectionEnum: "192" | "194A" | "194C" | "194H" | "194I" | "194J" | "194Q";
+        TeamClient: {
+            /** @description Rows nobody has placed in a ledger yet. */
+            unresolved: number;
+            /** @description Rows placed but not yet posted. */
+            pending_approval: number;
+            /** @description True when every row is placed and posted, nothing is already waiting for a senior, and there are entries newer than the last sign-off: the books can be sent for review now. */
+            books_to_send: boolean;
+            /** Format: uuid */
+            id: string;
+            name: string;
+            lead: components["schemas"]["Person"] | null;
+            team: components["schemas"]["AssignedPerson"][];
+        };
+        TeamClientsCan: {
+            set_lead: boolean;
+        };
+        TeamClientsResponse: {
+            can: components["schemas"]["TeamClientsCan"];
+            /** @description Who the person asking may put on a client. */
+            assignable: components["schemas"]["Person"][];
+            results: components["schemas"]["TeamClient"][];
+        };
+        TeamEvent: {
+            /** Format: uuid */
+            id: string;
+            /** @description One of the `kind` values in the table on `detail`. */
+            kind: string;
+            kind_display: string;
+            detail: components["schemas"]["TeamEventDetail"];
+            /** Format: uuid */
+            member_id: string | null;
+            /** Format: uuid */
+            client_id: string | null;
+            /** Format: date-time */
+            at: string;
+        };
+        /**
+         * @description What a team event records. Names are as they were then; which keys appear depends on `kind`.
+         *
+         *     | kind | keys |
+         *     |---|---|
+         *     | member.invited | actor, email, role, to (the manager, or empty) |
+         *     | member.joined | actor, member, role |
+         *     | invite.revoked | actor, email |
+         *     | member.role_changed | actor, member, from, to |
+         *     | member.manager_changed | actor, member, from, to, removed_from_clients |
+         *     | member.scope_changed | actor, member, to (`on` or `off`) |
+         *     | member.deactivated, member.reactivated | actor, member |
+         *     | member.removed | actor, member, role |
+         *     | client.lead_changed | actor, client, from, to |
+         *     | client.assigned, client.unassigned | actor, member, client |
+         *     | firm.owner_changed | actor, member, from, to |
+         *     | firm.renamed | actor, from, to |
+         *
+         *     `actor` is "AutoCA platform" for a change made by the platform owner.
+         */
+        TeamEventDetail: {
+            actor?: string;
+            member?: string;
+            client?: string;
+            email?: string;
+            role?: string;
+            to?: string;
+            removed_from_clients?: number;
+            from?: string;
+        };
+        TeamEventsResponse: {
+            /** @description The latest 200, newest first. */
+            results: components["schemas"]["TeamEvent"][];
+        };
         /**
          * @description One complete accounting decision: where it goes, who it was with, and its tax.
          *
@@ -2718,6 +3664,11 @@ export interface components {
             /** @description Optional JSON mapping a field to a header, e.g. {"gstin": "Vendor GST"}. */
             mapping?: string;
         };
+        UploadResult: {
+            /** @description Rows read from the file; they replace any earlier upload. */
+            rows: number;
+            run: components["schemas"]["RunReport"];
+        };
         /**
          * @description * `Payment` - Payment
          *     * `Receipt` - Receipt
@@ -2726,6 +3677,22 @@ export interface components {
          * @enum {string}
          */
         VoucherTypeEnum: "Payment" | "Receipt" | "Contra" | "Journal";
+        /** @description Counts of work in the period, one per metric in `metrics`. Keys are the metric keys. */
+        WorkTotals: {
+            statements_uploaded: number;
+            rows_placed: number;
+            /** @description First-time approvals, not corrections. */
+            entries_approved: number;
+            entries_corrected: number;
+            /** @description Entries carrying this person's name: approvals and corrections together. Entries the assistant posted by itself are counted for nobody. */
+            entries_posted: number;
+            /** @description Times this person asked a senior to sign a client's books off. */
+            books_sent_for_review: number;
+            ledgers_created: number;
+            rules_written: number;
+            proposals_decided: number;
+            model_runs: number;
+        };
     };
     responses: never;
     parameters: never;
@@ -2955,6 +3922,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaginatedJournalEntryList"];
+                };
+            };
+        };
+    };
+    clients_assistant_next_batch_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["NextBatchRequestRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["NextBatchRequestRequest"];
+                "multipart/form-data": components["schemas"]["NextBatchRequestRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NextBatch"];
                 };
             };
         };
@@ -3270,6 +4264,22 @@ export interface operations {
                     "application/json": components["schemas"]["PaginatedRegistrationList"];
                 };
             };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
         };
     };
     clients_gst_registrations_create: {
@@ -3297,15 +4307,45 @@ export interface operations {
                     "application/json": components["schemas"]["Registration"];
                 };
             };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
         };
     };
     clients_gst_runs_list: {
         parameters: {
             query?: {
-                /** @description A page number within the paginated result set. */
-                page?: number;
-                /** @description Number of results to return per page. */
-                page_size?: number;
+                /** @description Only this registration's runs. */
+                registration?: string;
             };
             header?: never;
             path: {
@@ -3320,7 +4360,23 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["PaginatedRunCreateList"];
+                    "application/json": components["schemas"]["RunListItem"][];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
                 };
             };
         };
@@ -3347,7 +4403,31 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RunCreate"];
+                    "application/json": components["schemas"]["RunReport"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
                 };
             };
         };
@@ -3369,7 +4449,23 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RunCreate"];
+                    "application/json": components["schemas"]["RunReport"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
                 };
             };
         };
@@ -3397,7 +4493,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RunCreate"];
+                    "application/json": components["schemas"]["RunReport"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
                 };
             };
         };
@@ -3419,7 +4547,23 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": string;
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
                 };
             };
         };
@@ -3436,9 +4580,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UploadRequest"];
                 "multipart/form-data": components["schemas"]["UploadRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["UploadRequest"];
             };
         };
         responses: {
@@ -3447,7 +4589,47 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RunCreate"];
+                    "application/json": components["schemas"]["UploadResult"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
                 };
             };
         };
@@ -3469,7 +4651,39 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RunCreate"];
+                    "application/json": components["schemas"]["RunReport"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
                 };
             };
         };
@@ -3486,9 +4700,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["UploadRequest"];
                 "multipart/form-data": components["schemas"]["UploadRequest"];
-                "application/x-www-form-urlencoded": components["schemas"]["UploadRequest"];
             };
         };
         responses: {
@@ -3497,7 +4709,47 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["RunCreate"];
+                    "application/json": components["schemas"]["UploadResult"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
                 };
             };
         };
@@ -3514,12 +4766,45 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
-            201: {
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["RunReport"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
             };
         };
     };
@@ -4455,12 +5740,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["FirmResponse"];
+                };
             };
         };
     };
@@ -4471,14 +5757,64 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedFirmSettingsRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedFirmSettingsRequest"];
+                "multipart/form-data": components["schemas"]["PatchedFirmSettingsRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["FirmRenamed"];
+                };
+            };
+        };
+    };
+    firm_metrics_retrieve: {
+        parameters: {
+            query?: {
+                /** @description First day, YYYY-MM-DD. */
+                from?: string;
+                /** @description Last day, YYYY-MM-DD. */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FirmMetrics"];
+                };
+            };
+        };
+    };
+    firm_overview_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FirmOverview"];
+                };
             };
         };
     };
@@ -4489,14 +5825,21 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OwnerRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["OwnerRequest"];
+                "multipart/form-data": components["schemas"]["OwnerRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["OwnerTransferred"];
+                };
             };
         };
     };
@@ -4737,12 +6080,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["TeamClientsResponse"];
+                };
             };
         };
     };
@@ -4755,14 +6099,21 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LeadRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["LeadRequest"];
+                "multipart/form-data": components["schemas"]["LeadRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["LeadSet"];
+                };
             };
         };
     };
@@ -4775,14 +6126,21 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AssignRequest"];
+                "multipart/form-data": components["schemas"]["AssignRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Assigned"];
+                };
             };
         };
     };
@@ -4816,14 +6174,21 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssignRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AssignRequest"];
+                "multipart/form-data": components["schemas"]["AssignRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Assigned"];
+                };
             };
         };
     };
@@ -4857,12 +6222,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["TeamEventsResponse"];
+                };
             };
         };
     };
@@ -4875,12 +6241,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["InvitesResponse"];
+                };
             };
         };
     };
@@ -4906,19 +6273,25 @@ export interface operations {
     };
     team_members_retrieve: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Start of the period. Defaults to 30 days ago. */
+                from?: string;
+                /** @description End of the period, inclusive. Defaults to today. */
+                to?: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["MembersResponse"];
+                };
             };
         };
     };
@@ -4929,14 +6302,21 @@ export interface operations {
             path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InviteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["InviteRequest"];
+                "multipart/form-data": components["schemas"]["InviteRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
-            200: {
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["InviteCreated"];
+                };
             };
         };
     };
@@ -4951,12 +6331,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Member"];
+                };
             };
         };
     };
@@ -4969,20 +6350,32 @@ export interface operations {
             };
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedMemberUpdateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedMemberUpdateRequest"];
+                "multipart/form-data": components["schemas"]["PatchedMemberUpdateRequest"];
+            };
+        };
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["Member"];
+                };
             };
         };
     };
     team_members_work_retrieve: {
         parameters: {
-            query?: never;
+            query?: {
+                /** @description Start of the period. Defaults to 30 days ago. */
+                from?: string;
+                /** @description End of the period, inclusive. Defaults to today. */
+                to?: string;
+            };
             header?: never;
             path: {
                 id: string;
@@ -4991,12 +6384,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description No response body */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content?: never;
+                content: {
+                    "application/json": components["schemas"]["MemberWorkResponse"];
+                };
             };
         };
     };

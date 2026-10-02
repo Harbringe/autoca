@@ -58,9 +58,11 @@ class BankAccount(UUIDModel, FirmScopedModel):
 
     ifsc = models.CharField(max_length=16, blank=True)
 
-    #: The ledger name in the client's Tally company. Exported vouchers name
-    #: this string, so it must match Tally exactly -- a near-miss creates a
-    #: second ledger on import rather than failing.
+    #: The name of this account's ledger in the client's books. Posted entries
+    #: find the ledger by this string, so renaming goes through
+    #: ``classify.seeds.rename_account_ledger``, which moves the entries with it;
+    #: a name changed any other way would leave the account pointing at an empty
+    #: ledger.
     ledger_name = models.CharField(max_length=255, blank=True)
 
     #: Explicitly confirmed, never assumed to be zero. A client onboarding in
@@ -130,11 +132,11 @@ class BankAccount(UUIDModel, FirmScopedModel):
     def default_ledger_name(self) -> str:
         """A bank ledger name that does not put the account number on every screen and export.
 
-        The ledger name is plaintext everywhere it goes -- reports, the Tally
-        file -- so it carries the last four digits, a common Tally convention. A
+        The ledger name is plaintext everywhere it goes -- reports, the Day Book --
+        so it carries the last four digits, a common convention. A
         client with two accounts at one bank ending in the same digits gets the
         full number instead, because two accounts sharing a ledger would merge
-        their books. A CA can rename either to match their Tally company.
+        their books. A CA can rename either, or a Tally import can.
         """
         bank = f"{self.bank_code.title()} Bank A/c"
         short = f"{bank} {self.account_last4}"

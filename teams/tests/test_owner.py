@@ -175,3 +175,54 @@ def test_audit_log_reads_as_actions_and_is_for_owner_and_admins(owner, senior, c
     assert mine and all(row["email"] == owner.user.email for row in mine)
 
     assert sign_in(senior.user).get(f"{V1}/audit/").status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# The owner is visible to administrators, and protected from them
+# ---------------------------------------------------------------------------
+
+
+def test_an_administrator_sees_the_owner_but_every_change_to_them_is_a_403(owner, admin, firm):
+    http = sign_in(admin.user)
+    listed = http.get(f"{V1}/team/members/").json()
+    row = next(m for m in listed["results"] if m["id"] == str(owner.pk))
+    assert row["is_owner"] is True and row["can"] == {"manage": False, "manage_role": False, "set_active": False}
+    assert str(owner.pk) in [lead["id"] for lead in listed["leads"]]
+    assert http.get(f"{V1}/team/members/{owner.pk}/").status_code == 200
+
+    url = f"{V1}/team/members/{owner.pk}/"
+    for body in ({"is_active": False}, {"role": Role.STAFF}, {"scope_all_clients": False}, {"manager": str(admin.pk)}):
+        assert http.patch(url, body, format="json").status_code == 403, body
+    owner.refresh_from_db()
+    assert owner.is_active and owner.is_owner and owner.role == Role.FIRM_ADMIN and owner.manager_id is None
+
+
+def test_an_administrator_cannot_deactivate_or_demote_another_administrator(owner, admin, firm):
+    other = member(firm, Role.FIRM_ADMIN, "admin2@example.test")
+    http = sign_in(admin.user)
+    url = f"{V1}/team/members/{other.pk}/"
+
+    row = next(m for m in http.get(f"{V1}/team/members/").json()["results"] if m["id"] == str(other.pk))
+    assert row["can"] == {"manage": False, "manage_role": False, "set_active": False}
+    for body in ({"is_active": False}, {"role": Role.SENIOR_CA}, {"scope_all_clients": False}):
+        assert http.patch(url, body, format="json").status_code == 403, body
+
+    owner_view = next(m for m in sign_in(owner.user).get(f"{V1}/team/members/").json()["results"] if m["id"] == str(other.pk))
+    assert owner_view["can"]["manage"] is True and owner_view["can"]["set_active"] is True
+    assert sign_in(owner.user).patch(url, {"is_active": False}, format="json").status_code == 200
+
+
+def test_administrators_see_the_owner_as_a_lead_and_in_the_audit_log(owner, admin, firm, client_record):
+    from teams import service
+
+    with firm_context(firm.pk):
+        service.set_lead(owner, client_record, owner)
+    http = sign_in(admin.user)
+    assert http.get(f"{V1}/clients/{client_record.pk}/").json()["lead"]["id"] == str(owner.pk)
+    team_clients = http.get(f"{V1}/team/clients/").json()["results"]
+    assert team_clients[0]["lead"]["id"] == str(owner.pk)
+    assert http.get(f"{V1}/firm/").json()["owner"]["id"] == str(owner.pk)
+
+    sign_in(owner.user).patch(f"{V1}/clients/{client_record.pk}/", {"name": "Acme Traders Pvt Ltd"}, format="json")
+    rows = http.get(f"{V1}/audit/").json()["results"]
+    assert any(row["email"] == owner.user.email for row in rows)

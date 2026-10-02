@@ -18,11 +18,11 @@ from core.models import Role
 class PersonSerializer(serializers.Serializer):
     """A member of the firm, as named beside a client or in a list.
 
-    An administrator who is not the owner sees the owner as `{"id": "", "name": "Firm owner"}`
-    wherever the owner would appear: the owner cannot be picked, changed or looked up.
+    The owner appears like anyone else, to every role that can see the team. Only the owner
+    can change the owner (by transferring ownership); anyone else gets 403.
     """
 
-    id = serializers.CharField(help_text="The membership id; empty for the owner as an administrator sees them.")
+    id = serializers.CharField(help_text="The membership id.")
     name = serializers.CharField()
     role = serializers.ChoiceField(choices=Role.choices)
     role_display = serializers.CharField()

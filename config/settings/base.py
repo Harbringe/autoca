@@ -409,6 +409,8 @@ TRUSTED_PROXY_COUNT = int(env("TRUSTED_PROXY_COUNT", "0"))
 # request body, not a target; the upload serializer applies a tighter one to
 # the file itself and checks that it is a PDF before reading it.
 MAX_STATEMENT_UPLOAD_BYTES = 25 * 1024 * 1024
+# A Tally masters file is names and numbers: ten megabytes is far past a real company's chart.
+MAX_TALLY_IMPORT_BYTES = 10 * 1024 * 1024
 # Extraction cost grows with pages, not bytes: a 300 KB file with two thousand
 # blank pages held a request for over two minutes. Checked before any extraction.
 MAX_STATEMENT_PAGES = int(env("MAX_STATEMENT_PAGES", "300"))
@@ -527,6 +529,11 @@ INTEGRATION_OPTIONS = {
 # Rows per model call. Classification is not latency-sensitive; fewer, larger
 # calls share the system prompt and cost less.
 LLM_BATCH_SIZE = int(env("LLM_BATCH_SIZE", "25"))
+
+# The minutes a person would have spent placing and posting one row by hand. It
+# turns "rows the assistant posted" into an *estimate* of time saved
+# (``ledger.metrics``); nothing measures it.
+ASSUMED_MINUTES_PER_ROW = int(env("ASSUMED_MINUTES_PER_ROW", "2"))
 
 # Whether an organisation's name may be sent to the model as part of a row.
 # People's names never are -- see classify/pseudonymise.py. A firm that wants

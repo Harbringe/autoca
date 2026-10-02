@@ -16,7 +16,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { formatDate } from '@/lib/format'
-import { isTeamRole } from '@/lib/team'
+import { managerChoices as choicesFor, managerHint } from '@/lib/team'
 
 const ROLE_HINT: Record<Role, string> = {
   FIRM_ADMIN: 'Sees the firm, manages its teams and reports to the owner.',
@@ -81,9 +81,8 @@ export function InviteDialog({
   const [error, setError] = useState<string | null>(null)
   const [done, setDone] = useState<InviteCreated | null>(null)
   // An administrator chooses the next-level manager; a Senior CA's team is assigned server-side.
-  const managerRoles: Role[] = role === 'SENIOR_CA' ? ['FIRM_ADMIN'] : isTeamRole(role) ? ['SENIOR_CA'] : []
-  const managerChoices = info.leads.filter((person) => managerRoles.includes(person.role))
-  const chooseTeam = info.can.manage && managerRoles.length > 0
+  const managerChoices = choicesFor(role, info.leads)
+  const chooseTeam = info.can.manage && role !== 'FIRM_ADMIN'
   const missingManager = chooseTeam && (!manager || !managerChoices.some((person) => person.id === manager))
 
   function close(next: boolean) {
@@ -161,8 +160,7 @@ export function InviteDialog({
                 <Select {...p} value={role} onChange={(e) => {
                   const next = e.target.value as Role
                   setRole(next)
-                  const nextRoles: Role[] = next === 'SENIOR_CA' ? ['FIRM_ADMIN'] : isTeamRole(next) ? ['SENIOR_CA'] : []
-                  const nextParents = info.leads.filter((person) => nextRoles.includes(person.role))
+                  const nextParents = choicesFor(next, info.leads)
                   if (!nextParents.some((person) => person.id === manager)) setManager(nextParents[0]?.id ?? '')
                 }}>
                   {roles.map((r) => (
@@ -174,11 +172,11 @@ export function InviteDialog({
               )}
             </Field>
             {chooseTeam && (
-              <Field label="Reports to" hint={role === 'SENIOR_CA' ? 'Senior CAs report to an administrator.' : 'Staff and Read-only members report to a Senior CA.'}>
+              <Field label="Reports to" hint={managerHint(role, managerChoices)}>
                 {(p) => <LeadSelect {...p} value={manager} onChange={setManager} leads={managerChoices} none="Not assigned yet" />}
               </Field>
             )}
-            {chooseTeam && managerChoices.length === 0 && <p className="text-sm text-warning">No active manager is available at the next level. Invite a Senior CA first for staff roles.</p>}
+            {chooseTeam && managerChoices.length === 0 && <p className="text-sm text-warning">Nobody is available to report to. Invite an administrator or a Senior CA first.</p>}
             {!info.can.manage && <p className="text-[13px] text-muted-foreground">They will join your team.</p>}
             <ErrorLine message={error} />
             <DialogFooter>
@@ -229,8 +227,7 @@ function EditForm({ member, info, onClose }: { member: Member; info: MembersResp
   const patch: MemberPatch = {}
   if (member.can.manage_role && role !== member.role) patch.role = role
   if (info.can.manage) {
-    const hiddenOwnerParentUnchanged = !!member.manager?.is_owner && !member.manager.id && !manager
-    if (role !== 'FIRM_ADMIN' && manager !== (member.manager?.id ?? '') && !hiddenOwnerParentUnchanged && (manager || member.manager?.id)) {
+    if (role !== 'FIRM_ADMIN' && manager !== (member.manager?.id ?? '')) {
       patch.manager = manager || null
       if (member.manager && keep) patch.keep_client_assignments = true
     }
@@ -238,8 +235,9 @@ function EditForm({ member, info, onClose }: { member: Member; info: MembersResp
   }
   const changed = Object.keys(patch).filter((k) => k !== 'keep_client_assignments').length > 0
   const movingTeam = 'manager' in patch && !!member.manager
-  const parentRoles: Role[] = role === 'SENIOR_CA' ? ['FIRM_ADMIN'] : isTeamRole(role) ? ['SENIOR_CA'] : []
-  const parents = info.leads.filter((person) => parentRoles.includes(person.role))
+  const listed = choicesFor(role, info.leads)
+  // Someone who reports to an administrator (no Senior CA at the time) keeps that line in the list.
+  const parents = member.manager && role === member.role && !listed.some((p) => p.id === member.manager!.id) && member.manager.id ? [member.manager, ...listed] : listed
   const missingRequiredParent = role !== member.role && role !== 'FIRM_ADMIN' && parents.length === 0
 
   async function submit(e: FormEvent) {
@@ -268,8 +266,7 @@ function EditForm({ member, info, onClose }: { member: Member; info: MembersResp
               setRole(next)
               if (member.role === 'FIRM_ADMIN' && next !== 'FIRM_ADMIN') setScopeAll(false)
               if (info.can.manage && next !== 'FIRM_ADMIN') {
-                const nextParentRole = next === 'SENIOR_CA' ? 'FIRM_ADMIN' : 'SENIOR_CA'
-                const candidates = info.leads.filter((person) => person.role === nextParentRole)
+                const candidates = choicesFor(next, info.leads)
                 if (!candidates.some((person) => person.id === manager)) setManager(candidates[0]?.id ?? '')
               }
             }}>
@@ -282,11 +279,11 @@ function EditForm({ member, info, onClose }: { member: Member; info: MembersResp
           )}
         </Field>
         {info.can.manage && role !== 'FIRM_ADMIN' && (
-          <Field label="Reports to" hint={role === 'SENIOR_CA' ? 'Senior CAs report to an administrator.' : 'Staff and Read-only members report to a Senior CA.'}>
+          <Field label="Reports to" hint={managerHint(role, parents)}>
             {(p) => <LeadSelect {...p} value={manager} onChange={setManager} leads={parents} exclude={member.id} none="Not assigned yet" />}
           </Field>
         )}
-        {missingRequiredParent && <p className="text-sm text-warning">No active manager is available at the next level. Add a manager before changing this role.</p>}
+        {missingRequiredParent && <p className="text-sm text-warning">Nobody is available to report to. Add an administrator or a Senior CA before changing this role.</p>}
         {movingTeam && (
           <Checkbox
             label="Keep them on the clients they are already assigned to"

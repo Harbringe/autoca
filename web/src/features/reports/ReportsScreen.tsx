@@ -10,12 +10,14 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { AlertTriangle, CheckCircle2, Printer } from 'lucide-react'
 import { useEffect, useState, type ReactNode } from 'react'
+import type { ReportTab } from './tabs'
 import { balanceSheet, profitAndLoss, reconciliation, trialBalance } from '@/api/queries/books'
 import { bankAccounts, statements } from '@/api/queries/clients'
 import type { BankAccount, LedgerBalance, ReportFooter } from '@/api/types'
 import { GROUP_LABEL } from '@/api/types'
 import { Money } from '@/components/ca/Money'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Select, tbl } from '@/components/ui/controls'
@@ -25,39 +27,19 @@ import { asAt, closingLine, formatDate, formatDateTime, formatDrCr, formatPaise,
 import { useFy } from '@/features/shell/useFy'
 import { cn } from '@/lib/utils'
 
-export type ReportTab = 'tb' | 'pl' | 'bs' | 'recon'
-
-const TABS: { tab: ReportTab; label: string }[] = [
-  { tab: 'tb', label: 'Trial Balance' },
-  { tab: 'pl', label: 'Profit & Loss A/c' },
-  { tab: 'bs', label: 'Balance Sheet' },
-  { tab: 'recon', label: 'Bank Reconciliation' },
-]
+export type { ReportTab }
 
 export function ReportsScreen({ clientId, report }: { clientId: string; report: ReportTab }) {
   const { fy } = useFy()
   return (
     <div className="grid gap-4">
-      <div className="no-print flex flex-wrap items-center justify-between gap-3">
-        <nav aria-label="Report" className="flex flex-wrap gap-1 rounded-lg bg-muted p-1">
-          {TABS.map((t) => (
-            <Link
-              key={t.tab}
-              to="/clients/$clientId/reports"
-              params={{ clientId }}
-              search={(prev) => ({ ...prev, report: t.tab })}
-              className={cn('rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground', report === t.tab && 'bg-card text-foreground shadow-xs')}
-            >
-              {t.label}
-            </Link>
-          ))}
-        </nav>
-        {report !== 'recon' && (
-          <Button variant="outline" onClick={() => window.print()}>
+      {report !== 'recon' && (
+        <div className="no-print flex justify-end">
+          <Button variant="secondary" onClick={() => window.print()}>
             <Printer /> Print
           </Button>
-        )}
-      </div>
+        </div>
+      )}
       {report === 'tb' && <TrialBalanceReport clientId={clientId} fy={fy} />}
       {report === 'pl' && <ProfitAndLossReport clientId={clientId} fy={fy} />}
       {report === 'bs' && <BalanceSheetReport clientId={clientId} fy={fy} />}
@@ -102,7 +84,7 @@ function ReportFrame({
   return (
     <Card className="p-5 print:border-0 print:p-0 print:shadow-none">
       <div className="mb-4 text-center">
-        <div className="text-lg font-semibold">{footer.client_name}</div>
+        <h2 className="text-lg font-semibold text-heading">{footer.client_name}</h2>
         <div className="font-medium">{title}</div>
         <div className="text-sm text-muted-foreground">
           {period ?? `for the year ${formatDate(footer.period_start)} to ${formatDate(footer.period_end)} (FY ${footer.fy_label})`}
@@ -110,7 +92,7 @@ function ReportFrame({
       </div>
       {provisional && (
         <div className="mb-4 flex gap-2 rounded-md border border-accent-edge bg-accent p-3 text-sm">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-accent-foreground" aria-hidden />
           <div className="grid gap-1">
             <span>
               <strong>Provisional.</strong>
@@ -139,6 +121,8 @@ function ReportFrame({
     </Card>
   )
 }
+
+const NO_SYMBOL = { symbol: false }
 
 const isProvisional = (footer: ReportFooter, unconfirmed: BankAccount[]) => !footer.is_complete || unconfirmed.length > 0
 
@@ -170,27 +154,33 @@ function TrialBalanceReport({ clientId, fy }: { clientId: string; fy: number }) 
         <table className={tbl.table}>
           <thead className={tbl.head}>
             <tr>
-              <th className={tbl.th}>Particulars</th>
-              <th className={tbl.th}>Group</th>
-              <th className={tbl.thNum}>Opening</th>
-              <th className={tbl.thNum}>Debit</th>
-              <th className={tbl.thNum}>Credit</th>
-              <th className={tbl.thNum}>Closing Dr</th>
-              <th className={tbl.thNum}>Closing Cr</th>
+              <th scope="col" className={tbl.th}>Particulars</th>
+              <th scope="col" className={tbl.th}>Group</th>
+              <th scope="col" className={tbl.thNum}>Opening ₹</th>
+              <th scope="col" className={tbl.thNum}>Debit ₹</th>
+              <th scope="col" className={tbl.thNum}>Credit ₹</th>
+              <th scope="col" className={tbl.thNum}>Closing Dr ₹</th>
+              <th scope="col" className={tbl.thNum}>Closing Cr ₹</th>
             </tr>
           </thead>
           <tbody>
-            {tb.rows.map((row) => (
-              <tr key={row.name} className={tbl.row}>
-                <td className={tbl.td}>{row.name}</td>
-                <td className={`${tbl.td} text-muted-foreground`}>{GROUP_LABEL[row.group ?? ''] ?? row.group}</td>
-                <td className={tbl.tdNum}><Money muted display={drCr(row.opening_paise)} /></td>
-                <td className={tbl.tdNum}><Money display={row.debit_paise ? row.debit_display : ''} /></td>
-                <td className={tbl.tdNum}><Money display={row.credit_paise ? row.credit_display : ''} /></td>
-                <td className={tbl.tdNum}><Money muted display={row.closing_debit_paise ? row.closing_debit_display : ''} /></td>
-                <td className={tbl.tdNum}><Money muted display={row.closing_credit_paise ? row.closing_credit_display : ''} /></td>
-              </tr>
-            ))}
+            {tb.rows.map((row) => {
+              const nil = !row.closing_debit_paise && !row.closing_credit_paise
+              return (
+                <tr key={row.name} className={tbl.row}>
+                  <td className={tbl.td}>{row.name}</td>
+                  <td className={`${tbl.td} text-muted-foreground`}>{GROUP_LABEL[row.group ?? ''] ?? row.group}</td>
+                  <td className={tbl.tdNum}>
+                    <Money dash display={row.opening_paise ? drCr(row.opening_paise) : undefined} paise={row.opening_paise ? undefined : 0} symbol={false} />
+                  </td>
+                  <td className={tbl.tdNum}><Money dash paise={row.debit_paise} symbol={false} /></td>
+                  <td className={tbl.tdNum}><Money dash paise={row.credit_paise} symbol={false} /></td>
+                  {/* A ledger with no balance at all stays 0.00, as auditors expect; otherwise an empty side is a dash. */}
+                  <td className={tbl.tdNum}><Money dash={!nil} muted paise={row.closing_debit_paise} symbol={false} /></td>
+                  <td className={tbl.tdNum}><Money dash paise={row.closing_credit_paise} symbol={false} /></td>
+                </tr>
+              )
+            })}
           </tbody>
           <tfoot className={tbl.foot}>
             <tr>
@@ -198,11 +188,11 @@ function TrialBalanceReport({ clientId, fy }: { clientId: string; fy: number }) 
                 Grand Total
                 <TallyMark clientId={clientId} footer={tb.footer} balances={tb.balances} />
               </td>
-              <td className={tbl.tdNum}>{drCr(sum((row) => row.opening_paise)) || formatPaise(0)}</td>
-              <td className={tbl.tdNum}>{formatPaise(sum((row) => row.debit_paise))}</td>
-              <td className={tbl.tdNum}>{formatPaise(sum((row) => row.credit_paise))}</td>
-              <td className={tbl.tdNum}>{tb.total_debit_display}</td>
-              <td className={tbl.tdNum}>{tb.total_credit_display}</td>
+              <td className={tbl.tdNum}>{drCr(sum((row) => row.opening_paise)) || formatPaise(0, { symbol: false })}</td>
+              <td className={tbl.tdNum}>{formatPaise(sum((row) => row.debit_paise), { symbol: false })}</td>
+              <td className={tbl.tdNum}>{formatPaise(sum((row) => row.credit_paise), { symbol: false })}</td>
+              <td className={tbl.tdNum}>{formatPaise(tb.total_debit_paise, { symbol: false })}</td>
+              <td className={tbl.tdNum}>{formatPaise(tb.total_credit_paise, { symbol: false })}</td>
             </tr>
           </tfoot>
         </table>
@@ -214,14 +204,14 @@ function TrialBalanceReport({ clientId, fy }: { clientId: string; fy: number }) 
 /** The green tick means "tallies and final". While the banner is up the figures are not final, so it says so instead. */
 function TallyMark({ clientId, footer, balances }: { clientId: string; footer: ReportFooter; balances: boolean }) {
   const unconfirmed = useUnconfirmedOpenings(clientId)
-  if (isProvisional(footer, unconfirmed)) return <span className="ml-2 rounded-full bg-accent border border-accent-edge px-2 py-0.5 text-xs font-medium text-warning">Provisional</span>
+  if (isProvisional(footer, unconfirmed)) return <Badge tone="attention" className="ml-2">Provisional</Badge>
   return balances ? <CheckCircle2 className="ml-2 inline size-4 text-success" aria-label="Tallies" /> : null
 }
 
 /** An opening balance written with its side, as ledgers show it. Debits are positive. */
 function drCr(paise: number): string {
   if (!paise) return ''
-  return `${formatPaise(Math.abs(paise), { sign: false })} ${paise > 0 ? 'Dr' : 'Cr'}`
+  return `${formatPaise(Math.abs(paise), { sign: false, symbol: false })} ${paise > 0 ? 'Dr' : 'Cr'}`
 }
 
 /** A side of a horizontal statement: its lines, padded so both sides end on the same row. */
@@ -239,7 +229,7 @@ function Side({ heading, rows, total, rowsTo, amount }: { heading: string; rows:
         {padded.map(([name, value], i) => (
           <tr key={`${name}-${i}`} className="h-(--row-h) border-b border-dashed last:border-b-0">
             <td className={tbl.td}>{name}</td>
-            <td className={tbl.tdNum}>{value && <Money display={value} />}</td>
+            <td className={tbl.tdNum}>{value}</td>
           </tr>
         ))}
       </tbody>
@@ -259,21 +249,22 @@ function ProfitAndLossReport({ clientId, fy }: { clientId: string; fy: number })
   const pl = r.data
   if (!pl.income.length && !pl.expenses.length) return <NothingYet clientId={clientId} fy={fy} />
   const profit = pl.net_profit_paise >= 0
-  const net = formatPaise(Math.abs(pl.net_profit_paise))
-  const left: [string, string | null][] = pl.expenses.map((e) => [e.name, closingLine(e, 'expense')])
-  const right: [string, string | null][] = pl.income.map((i) => [i.name, closingLine(i, 'income')])
+  const net = formatPaise(Math.abs(pl.net_profit_paise), { symbol: false })
+  const netText = formatPaise(Math.abs(pl.net_profit_paise))
+  const left: [string, string | null][] = pl.expenses.map((e) => [e.name, closingLine(e, 'expense', NO_SYMBOL)])
+  const right: [string, string | null][] = pl.income.map((i) => [i.name, closingLine(i, 'income', NO_SYMBOL)])
   if (profit) left.push(['Net Profit (carried to Capital)', net])
   else right.push(['Net Loss (carried to Capital)', net])
-  const total = formatPaise(Math.max(pl.total_income_paise, pl.total_expenses_paise))
+  const total = formatPaise(Math.max(pl.total_income_paise, pl.total_expenses_paise), { symbol: false })
   const rowsTo = Math.max(left.length, right.length)
   return (
     <ReportFrame clientId={clientId} title="Profit & Loss A/c" footer={pl.footer}>
       <div className="grid gap-4 md:grid-cols-2 md:gap-0 md:divide-x">
-        <Side heading="Dr · Expenses" amount="Amount" rows={left} rowsTo={rowsTo} total={total} />
-        <Side heading="Cr · Income" amount="Amount" rows={right} rowsTo={rowsTo} total={total} />
+        <Side heading="Dr · Expenses" amount="Amount ₹" rows={left} rowsTo={rowsTo} total={total} />
+        <Side heading="Cr · Income" amount="Amount ₹" rows={right} rowsTo={rowsTo} total={total} />
       </div>
       <p className={cn('mt-3 text-sm font-medium', profit ? 'text-success' : 'text-destructive')}>
-        {profit ? 'Net Profit' : 'Net Loss'} for the year: {net}
+        {profit ? 'Net Profit' : 'Net Loss'} for the year: {netText}
       </p>
     </ReportFrame>
   )
@@ -284,9 +275,9 @@ function BalanceSheetReport({ clientId, fy }: { clientId: string; fy: number }) 
   if (!r.data) return r.node
   const bs = r.data
   if (!bs.assets.length && !bs.liabilities.length) return <NothingYet clientId={clientId} fy={fy} />
-  const liabilities: [string, string | null][] = bs.liabilities.map((l) => [l.name, closingLine(l, 'liability')])
-  liabilities.push([bs.net_profit_paise >= 0 ? 'Add: Net Profit for the year' : 'Less: Net Loss for the year', formatPaise(Math.abs(bs.net_profit_paise))])
-  const assets: [string, string | null][] = bs.assets.map((a) => [a.name, closingLine(a, 'asset')])
+  const liabilities: [string, string | null][] = bs.liabilities.map((l) => [l.name, closingLine(l, 'liability', NO_SYMBOL)])
+  liabilities.push([bs.net_profit_paise >= 0 ? 'Add: Net Profit for the year' : 'Less: Net Loss for the year', formatPaise(Math.abs(bs.net_profit_paise), { symbol: false })])
+  const assets: [string, string | null][] = bs.assets.map((a) => [a.name, closingLine(a, 'asset', NO_SYMBOL)])
   const rowsTo = Math.max(liabilities.length, assets.length)
   return (
     <ReportFrame clientId={clientId} title="Balance Sheet" footer={bs.footer} period={asAt(fy)}>
@@ -305,8 +296,8 @@ function BalanceSheetReport({ clientId, fy }: { clientId: string; fy: number }) 
         </div>
       )}
       <div className="grid gap-4 md:grid-cols-2 md:gap-0 md:divide-x">
-        <Side heading="Liabilities" amount="Amount" rows={liabilities} rowsTo={rowsTo} total={sideTotal(bs.total_liabilities_and_profit_paise, 'Cr')} />
-        <Side heading="Assets" amount="Amount" rows={assets} rowsTo={rowsTo} total={sideTotal(bs.total_assets_paise, 'Dr')} />
+        <Side heading="Liabilities" amount="Amount ₹" rows={liabilities} rowsTo={rowsTo} total={sideTotal(bs.total_liabilities_and_profit_paise, 'Cr', NO_SYMBOL)} />
+        <Side heading="Assets" amount="Amount ₹" rows={assets} rowsTo={rowsTo} total={sideTotal(bs.total_assets_paise, 'Dr', NO_SYMBOL)} />
       </div>
     </ReportFrame>
   )
@@ -375,7 +366,7 @@ function Reconciliation({ clientId }: { clientId: string }) {
         <div className="grid gap-3">
           {openingUnconfirmed && (
             <div className="flex gap-2 rounded-md border border-accent-edge bg-accent p-3 text-sm">
-              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-accent-foreground" aria-hidden />
               <span>
                 <strong>Opening balance not confirmed.</strong> The books start without this account’s opening balance, so they will differ from the
                 statement by that amount. <OpeningLink clientId={clientId} />.
@@ -403,7 +394,7 @@ function Reconciliation({ clientId }: { clientId: string }) {
               check.data.matches ? 'border border-success/30 bg-success-bg' : 'border border-accent-edge bg-accent',
             )}
           >
-            {check.data.matches ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" /> : <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" />}
+            {check.data.matches ? <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-success" /> : <AlertTriangle className="mt-0.5 size-4 shrink-0 text-accent-foreground" />}
             <span>{check.data.explanation}</span>
           </div>}
           {check.data.unapproved_count > 0 && (

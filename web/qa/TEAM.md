@@ -70,7 +70,9 @@ explicit approval, relayed by the orchestrator. The orchestrator creates a branc
 `team/<round>` before the first developer edit; developers leave their edits
 uncommitted on it and list the files they changed.
 
-**5. Migrations do not run themselves in production.** Render has no pre-deploy step.
+**5. Migrations do not run themselves in production, and they ship before the code that needs them.** A migration applied to the shared database while Render still runs the previous release must be backward-compatible with that release: new columns are nullable or carry a `db_default`; drops and renames wait for a later release. (Incident 2026-10-01: a NOT NULL column with only a Python default broke every production upload.)
+
+**5b. (the original rule 5, unchanged)**  Render has no pre-deploy step.
 A developer who adds a migration says **MIGRATION** in capitals in their report; the
 orchestrator holds the work until the user has approved and run
 `manage.py migrate --database=owner` against the shared database.

@@ -205,3 +205,44 @@ Spec: docs/design/redesign-r2.md (ux-critic). Orchestrator decisions on its sect
   - Time saved: an estimate, labelled: automatic rows × a firm-set minutes-per-row (default 2, in Settings).
   - Risk: a per-client "Needs attention" with reasons (unreconciled, months missing, unchecked assistant entries, unsigned too long, Suspense balance).
   - Staff efficiency % is replaced by turnaround times (upload to posted; request to sign-off) per person; no hours are recorded, and no rankings (the user's earlier choice).
+
+## State and decisions (2026-09-30 morning)
+
+- The user moved the work to branch `preview/r2-redesign` (commit 5076260, pushed to origin; it contains the queue, the user's reporting hierarchy and the redesign waves 1-2 code). `team/r1` stays as the r1 record. `main` untouched. Agents now work on preview/r2-redesign, uncommitted.
+- Local servers are down (the session ended). **The local backend cannot run on this code until two migrations are applied to the shared DB** (classify/0015_model_queue, teams/0005_reporting_hierarchy): the models reference columns that do not exist yet. The user approved both ("Both: queue + hierarchy (Recommended)") and will run `manage.py migrate --database=owner` themselves ("You run it"). No agent and not the orchestrator runs it. Waiting for the user to say it is done; then the orchestrator restarts the servers and lets the testers and snaps run.
+- **Deploy caution:** the branch's frontend calls endpoints and fields that main's backend on Render lacks, and the migrations are not on production. A Vercel preview of this branch proxies to the production backend, so it will misbehave until the backend and migrations are deployed. Do not merge to main before the migrations run on the production DB (which is the same shared DB, so running them once covers both), and before the backend code deploys.
+- Hierarchy decisions by the user (all three), sent to backend-dev: "No: owner only (Recommended)" for administrators changing administrators; "Fall back to an admin (Recommended)" when a firm has no Senior CA; "Show the owner, refuse changes" for the owner's visibility. The 7 failing older tests are to be brought in line with those decisions, not the other way round. Also in that dispatch: R1-33 (FY start must be 1 April) and B1 (firm overview endpoint).
+- Frontend-dev continues waves 2-4 (code-level checks only until servers return); waves 5-7 (reports, dashboard, work pipeline, staff, settings, GST screens, polish) follow after B1.
+- Still to do after that: B9 metrics (automation %, accuracy, estimated time saved, per-client "needs attention", turnaround per person) and then one re-verification round by all testers.
+
+## Progress (2026-10-01)
+
+- Backend (hierarchy per the user's 3 answers; R1-33 FY 1 April; B1 `GET /firm/overview/`): done, wider suite passed (about 954 collected, 1 skipped, exit 0; includes RLS isolation and ledger), no new migration. Side effect noted: removing the owner masking also removed the hiding of owner actions from administrators in audit and team events; kept unless the user says otherwise.
+- Frontend redesign waves 1 to 4 done (typecheck, lint, 112 tests, build clean); not seen on a screen yet.
+- Dispatched: backend (GST OpenAPI schemas B5/B6, `next-batch` schema check, B9 metrics endpoint `GET /firm/metrics/`, no migration) and frontend wave 5 (gen:api, hierarchy UI, reports, All-clients landings from overview, dashboard, work pipeline, staff, settings).
+- Next: wave 6 GST screens (after the GST schemas), wave 7 polish, then the user's migrations, servers back, and ONE verification round by all testers (r1 fixes + redesign). Metrics UI (automation %, accuracy, estimated time saved, needs attention, turnaround) follows B9.
+
+## Progress (2026-10-01, later)
+
+- Backend: GST OpenAPI schemas, `GET /firm/metrics/` (automation share, accuracy that errs high, labelled estimate of minutes saved, needs-attention reasons, turnaround per person), `next-batch` confirmed in the schema. Full suite passed, no migration. Note: the full suite takes about 25 minutes.
+- Frontend: wave 5 done (pipeline, staff, settings, dashboard, reports, landings, clients list on overview). Dispatched waves 6-7 (GST screens, measured figures UI, polish/a11y/dark/390).
+- Backend is idle. After the frontend reports: the user runs the two migrations; the orchestrator restarts the servers; ONE verification round by all testers (r1 fixes and the redesign), with the testers briefed on both. Bring up for the testers: the UX critic and CA reviewers must judge the new design against docs/design/redesign-r2.md.
+
+## Build complete (2026-10-01)
+
+Redesign waves 1-7 built on preview/r2-redesign (uncommitted): typecheck, lint, 173 tests, build all clean. **Nothing seen on a screen yet.** Not built or deviating (frontend-dev's list): client picker reuses the palette (no combobox, recents, lead rows); single-client dashboard not wired; palette "Post ready rows / Send for review" actions; FY picker stays in the top bar at 390 px; error toasts are not persistent; no focus-to-first-invalid-field on submit failure; 200%/400% zoom and keyboard-only passes not done; no statement delete or Tally XML link on the Statements tab; API gaps: B3 (PAN etc.), B4 (per-statement standing), overview has no Returned state or unconfirmed-opening flag, /audit/ not in the OpenAPI schema (hand-typed).
+Testers should look first at: focus after sidebar/palette navigation; Day Book drawer and statement-rows dialog at narrow width; top bar at 390 px; dark theme (Provisional alert, offline strip, assistant chips, sidebar chips); GST run page title/focus; an unknown address inside the shell.
+
+**Gate: the user runs `manage.py migrate --database=owner` (classify/0015_model_queue, teams/0005_reporting_hierarchy). Then the orchestrator restarts the servers and runs the single verification round** (ca-reviewer, senior-ca-reviewer, api-qa, ux-critic, security-auditor re-check, devops re-read of the infra items), each briefed with the finding ids to re-verify and the redesign spec to judge against. Pending user decisions still open: D3 (Render dashboard facts), D4 (Dockerfile/CI/vercel.json edits), D5/D6, D7, R1-09, R1-12/13/14.
+
+## INCIDENT 2026-10-01 (production uploads failing) and new decisions
+
+- The user ran the migrations on the shared DB. `classify/0015_model_queue` added `model_attempts` NOT NULL with no database default; production (Render) still runs the previous release, whose INSERT omits the column, so every production statement upload fails with NotNullViolation (seen in the user's Render log at 23:36 and 23:37 IST). Cause: the migration I approved as "additive/optional"; one column was not. This is the OPS-005 risk made real. Hot fix (user, SQL, instant, reversible): `ALTER TABLE classify_transaction_classification ALTER COLUMN model_attempts SET DEFAULT 0;`. Permanent: corrective migration `classify/0016` with `db_default=0`, plus a guard test and an ARCHITECTURE note (dispatched to backend-dev). TEAM.md rule 5 now says migrations must be backward-compatible with the live release.
+- Same log, R1-09 evidence: `login failed ip=10.28.29.130` and `ip=10.25.98.2` are private addresses, so production's client_ip resolves to an internal hop, not the visitor. The audit IP is wrong (and the address lockout, which is already off, would have been wrong).
+- A bot probed `/admin` on the backend (normal; /admin is public, behind login).
+- Tally decisions by the user: import by "Upload Tally exports (Recommended)"; the old Tally export: "Remove it". The scope question (chart + opening balances, past vouchers, or everything) was not answered: asked again after the incident. Memory note: todo-import-client-ledgers-from-tally (client's own chart as the default).
+
+## Tally import: decisions (2026-10-02)
+
+Design note: docs/design/tally-import.md. User decisions: "Openings table (Recommended)"; "Approve defusedxml (Recommended)"; "Add the missing groups (Recommended)"; earlier "Upload Tally exports (Recommended)" and "Remove it" (the old Tally export). Phase A (chart + opening balances) is being built by backend-dev; phase B (vouchers) is outline only and needs: a real anonymised sample from a real Tally company (masters XML and Excel, Trial Balance for one FY; Tally Prime and ERP 9 if clients use it), how a company whose books began earlier supplies its FY-start opening, and which voucher types to cover. Migrations still to run by the user: classify/0016 (db default), then the Tally import migration(s) when built.
+Then: frontend (import screen, preview/conflicts, removal of the export buttons and links), rewording of "must match Tally exactly" copy, QA re-verification includes the import with synthetic Tally files.

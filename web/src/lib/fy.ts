@@ -17,6 +17,9 @@ export function parseFy(value: unknown): number | undefined {
   return typeof n === 'number' && Number.isInteger(n) && n >= 2000 && n <= 2100 ? n : undefined
 }
 
+/** Route search for screens that only carry the financial year: `?fy=2025` kept, anything else dropped. */
+export const fySearch = (search: Record<string, unknown>): { fy?: number } => ({ fy: parseFy(search.fy) })
+
 export function resolveFy(opts: { fromUrl?: number; remembered?: number; dataYears: number[]; current: number }): FyChoice {
   if (opts.fromUrl !== undefined) return { fy: opts.fromUrl, explicit: true }
   if (opts.remembered !== undefined) return { fy: opts.remembered, explicit: true }

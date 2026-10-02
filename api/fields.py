@@ -58,7 +58,7 @@ class MoneyDisplayField(serializers.Field):
 def read_path(instance, path: str):
     """Follow a dotted attribute path, tolerating a None anywhere along it."""
     for part in path.split("."):
-        instance = getattr(instance, part, None)
+        instance = instance.get(part) if isinstance(instance, dict) else getattr(instance, part, None)
         if instance is None:
             return None
     return instance

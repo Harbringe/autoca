@@ -19,7 +19,7 @@ const schema = z.object({
   fy_start: z
     .string()
     .refine((v) => parseDate(v) !== null, 'Enter a date as DD-MM-YYYY, for example 01-04-2025.')
-    .refine((v) => parseDate(v)?.endsWith('-01'), 'The financial year must start on the 1st of a month, normally 1 April.'),
+    .refine((v) => parseDate(v)?.endsWith('-04-01'), 'Books run April to March, so the year starts on 01-04-YYYY.'),
   business_profile: z.string().max(2000, 'Keep this under 2,000 characters.'),
 })
 type Values = z.infer<typeof schema>
@@ -93,7 +93,7 @@ export function NewClientDialog({ open, onOpenChange }: { open: boolean; onOpenC
           </Field>
           <Field
             label="Financial year starts"
-            hint="Books are kept April to March, so this is normally 01-04-YYYY. It cannot be changed once entries are posted."
+            hint="Books are kept April to March, so it starts on 01-04-YYYY. It cannot be changed once entries are posted."
             error={formState.errors.fy_start?.message}
           >
             {(props) => <DateInput {...props} {...register('fy_start')} />}

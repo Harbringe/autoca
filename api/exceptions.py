@@ -66,6 +66,13 @@ DOMAIN_ERRORS = {
     # GST reconciliation: an unreadable upload, and a rule that refused the step.
     "GstParseError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "gst_file_unreadable"),
     "GstError": (status.HTTP_409_CONFLICT, "gst_rule"),
+    # Importing a client's chart and opening balances from Tally.
+    "TallyParseError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "tally_file_unreadable"),
+    "TallyTooLargeError": (status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "tally_file_too_large"),
+    "TallyYearMismatchError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "tally_year_mismatch"),
+    "TallyRunStaleError": (status.HTTP_409_CONFLICT, "tally_run_stale"),
+    "TallyConflictsUnresolvedError": (status.HTTP_409_CONFLICT, "tally_conflicts_unresolved"),
+    "TallyImportError": (status.HTTP_409_CONFLICT, "tally_rule"),
     # Nothing to act on.
     "NoStatementError": (status.HTTP_404_NOT_FOUND, "no_statement_for_date"),
 }

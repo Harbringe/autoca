@@ -16,6 +16,7 @@ import { Select } from '@/components/ui/controls'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
+import { StatCard, StatGrid } from '@/components/ui/stat-card'
 import { formatDate, plural } from '@/lib/format'
 import { usePageTitle } from '@/lib/title'
 import { useSession } from '@/session/session'
@@ -36,9 +37,9 @@ export function FirmScreen() {
       <Rename name={f.name} allowed={f.can.rename} onSaved={() => void refresh()} />
 
       <section aria-labelledby="firm-owner" className="grid gap-3">
-        <h2 id="firm-owner" className="text-base font-semibold">
+        <h3 id="firm-owner" className="text-[15px] font-semibold text-heading">
           Owner and administrators
-        </h2>
+        </h3>
         <p className="text-sm">
           Owner: <span className="font-medium">{f.owner?.name ?? 'Nobody yet'}</span>
         </p>
@@ -58,24 +59,15 @@ export function FirmScreen() {
       </section>
 
       <section aria-labelledby="firm-counts">
-        <h2 id="firm-counts" className="mb-2 text-base font-semibold">
+        <h3 id="firm-counts" className="mb-2 text-[15px] font-semibold text-heading">
           The firm today
-        </h2>
-        <dl className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {(
-            [
-              ['Active people', f.counts.active_members],
-              ['Senior CAs', f.counts.senior_cas],
-              ['Staff and read-only', f.counts.staff],
-              ['Clients', f.counts.clients],
-            ] as const
-          ).map(([label, n]) => (
-            <div key={label} className="rounded-lg border bg-card p-3">
-              <dt className="text-[13px] text-muted-foreground">{label}</dt>
-              <dd className="num mt-0.5 text-2xl font-semibold">{n}</dd>
-            </div>
-          ))}
-        </dl>
+        </h3>
+        <StatGrid>
+          <StatCard label="Active people" value={f.counts.active_members} />
+          <StatCard label="Senior CAs" value={f.counts.senior_cas} />
+          <StatCard label="Staff and read-only" value={f.counts.staff} />
+          <StatCard label="Clients" value={f.counts.clients} />
+        </StatGrid>
         <p className="mt-2 text-[13px] text-muted-foreground">{plural(f.counts.active_members, 'person', 'people')} can sign in.</p>
       </section>
     </div>
@@ -103,9 +95,9 @@ function Rename({ name, allowed, onSaved }: { name: string; allowed: boolean; on
 
   return (
     <section aria-labelledby="firm-name">
-      <h2 id="firm-name" className="mb-3 text-base font-semibold">
+      <h3 id="firm-name" className="mb-3 text-[15px] font-semibold text-heading">
         Firm name
-      </h2>
+      </h3>
       <form onSubmit={submit} className="flex flex-wrap items-start gap-2" noValidate>
         <div className="w-full max-w-sm">
           <Field label="Name on the books" hint="Shown in the sidebar and on printed reports." error={error ?? undefined}>

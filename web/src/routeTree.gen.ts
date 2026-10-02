@@ -11,9 +11,11 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as AppSplatRouteImport } from './routes/_app/$'
 import { Route as AppBankRouteImport } from './routes/_app/bank'
 import { Route as AppBookkeepingRouteImport } from './routes/_app/bookkeeping'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
+import { Route as AppDocumentsRouteImport } from './routes/_app/documents'
 import { Route as AppFirmRouteImport } from './routes/_app/firm'
 import { Route as AppGstRouteImport } from './routes/_app/gst'
 import { Route as AppPipelineRouteImport } from './routes/_app/pipeline'
@@ -26,12 +28,17 @@ import { Route as InviteTokenRouteImport } from './routes/invite.$token'
 import { Route as AppClientsIndexRouteImport } from './routes/_app/clients/index'
 import { Route as AppClientsClientIdRouteRouteImport } from './routes/_app/clients/$clientId/route'
 import { Route as AppSettingsIndexRouteImport } from './routes/_app/settings/index'
+import { Route as AppSettingsActivityRouteImport } from './routes/_app/settings/activity'
 import { Route as AppSettingsFirmRouteImport } from './routes/_app/settings/firm'
+import { Route as AppSettingsPreferencesRouteImport } from './routes/_app/settings/preferences'
 import { Route as AppSettingsTeamRouteImport } from './routes/_app/settings/team'
 import { Route as AppSoonModuleRouteImport } from './routes/_app/soon.$module'
 import { Route as AppClientsClientIdIndexRouteImport } from './routes/_app/clients/$clientId/index'
+import { Route as AppClientsClientIdBookkeepingRouteImport } from './routes/_app/clients/$clientId/bookkeeping'
 import { Route as AppClientsClientIdBooksRouteImport } from './routes/_app/clients/$clientId/books'
 import { Route as AppClientsClientIdDaybookRouteImport } from './routes/_app/clients/$clientId/daybook'
+import { Route as AppClientsClientIdDocumentsRouteImport } from './routes/_app/clients/$clientId/documents'
+import { Route as AppClientsClientIdGstRouteImport } from './routes/_app/clients/$clientId/gst'
 import { Route as AppClientsClientIdLedgersRouteImport } from './routes/_app/clients/$clientId/ledgers'
 import { Route as AppClientsClientIdMastersRouteImport } from './routes/_app/clients/$clientId/masters'
 import { Route as AppClientsClientIdReportsRouteImport } from './routes/_app/clients/$clientId/reports'
@@ -48,6 +55,11 @@ const AppRoute = AppRouteImport.update({
   id: '/_app',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AppSplatRoute = AppSplatRouteImport.update({
+  id: '/$',
+  path: '/$',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppBankRoute = AppBankRouteImport.update({
   id: '/bank',
   path: '/bank',
@@ -61,6 +73,11 @@ const AppBookkeepingRoute = AppBookkeepingRouteImport.update({
 const AppDashboardRoute = AppDashboardRouteImport.update({
   id: '/dashboard',
   path: '/dashboard',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppDocumentsRoute = AppDocumentsRouteImport.update({
+  id: '/documents',
+  path: '/documents',
   getParentRoute: () => AppRoute,
 } as any)
 const AppFirmRoute = AppFirmRouteImport.update({
@@ -123,9 +140,19 @@ const AppSettingsIndexRoute = AppSettingsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppSettingsRoute,
 } as any)
+const AppSettingsActivityRoute = AppSettingsActivityRouteImport.update({
+  id: '/activity',
+  path: '/activity',
+  getParentRoute: () => AppSettingsRoute,
+} as any)
 const AppSettingsFirmRoute = AppSettingsFirmRouteImport.update({
   id: '/firm',
   path: '/firm',
+  getParentRoute: () => AppSettingsRoute,
+} as any)
+const AppSettingsPreferencesRoute = AppSettingsPreferencesRouteImport.update({
+  id: '/preferences',
+  path: '/preferences',
   getParentRoute: () => AppSettingsRoute,
 } as any)
 const AppSettingsTeamRoute = AppSettingsTeamRouteImport.update({
@@ -143,6 +170,12 @@ const AppClientsClientIdIndexRoute = AppClientsClientIdIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppClientsClientIdRouteRoute,
 } as any)
+const AppClientsClientIdBookkeepingRoute =
+  AppClientsClientIdBookkeepingRouteImport.update({
+    id: '/bookkeeping',
+    path: '/bookkeeping',
+    getParentRoute: () => AppClientsClientIdRouteRoute,
+  } as any)
 const AppClientsClientIdBooksRoute = AppClientsClientIdBooksRouteImport.update({
   id: '/books',
   path: '/books',
@@ -154,6 +187,17 @@ const AppClientsClientIdDaybookRoute =
     path: '/daybook',
     getParentRoute: () => AppClientsClientIdRouteRoute,
   } as any)
+const AppClientsClientIdDocumentsRoute =
+  AppClientsClientIdDocumentsRouteImport.update({
+    id: '/documents',
+    path: '/documents',
+    getParentRoute: () => AppClientsClientIdRouteRoute,
+  } as any)
+const AppClientsClientIdGstRoute = AppClientsClientIdGstRouteImport.update({
+  id: '/gst',
+  path: '/gst',
+  getParentRoute: () => AppClientsClientIdRouteRoute,
+} as any)
 const AppClientsClientIdLedgersRoute =
   AppClientsClientIdLedgersRouteImport.update({
     id: '/ledgers',
@@ -192,9 +236,11 @@ const AppClientsClientIdTeamRoute = AppClientsClientIdTeamRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '/$': typeof AppSplatRoute
   '/bank': typeof AppBankRoute
   '/bookkeeping': typeof AppBookkeepingRoute
   '/dashboard': typeof AppDashboardRoute
+  '/documents': typeof AppDocumentsRoute
   '/firm': typeof AppFirmRoute
   '/gst': typeof AppGstRoute
   '/pipeline': typeof AppPipelineRoute
@@ -205,13 +251,18 @@ export interface FileRoutesByFullPath {
   '/work': typeof AppWorkRoute
   '/invite/$token': typeof InviteTokenRoute
   '/clients/$clientId': typeof AppClientsClientIdRouteRouteWithChildren
+  '/settings/activity': typeof AppSettingsActivityRoute
   '/settings/firm': typeof AppSettingsFirmRoute
+  '/settings/preferences': typeof AppSettingsPreferencesRoute
   '/settings/team': typeof AppSettingsTeamRoute
   '/soon/$module': typeof AppSoonModuleRoute
   '/clients/': typeof AppClientsIndexRoute
   '/settings/': typeof AppSettingsIndexRoute
+  '/clients/$clientId/bookkeeping': typeof AppClientsClientIdBookkeepingRoute
   '/clients/$clientId/books': typeof AppClientsClientIdBooksRoute
   '/clients/$clientId/daybook': typeof AppClientsClientIdDaybookRoute
+  '/clients/$clientId/documents': typeof AppClientsClientIdDocumentsRoute
+  '/clients/$clientId/gst': typeof AppClientsClientIdGstRoute
   '/clients/$clientId/ledgers': typeof AppClientsClientIdLedgersRoute
   '/clients/$clientId/masters': typeof AppClientsClientIdMastersRoute
   '/clients/$clientId/reports': typeof AppClientsClientIdReportsRoute
@@ -222,9 +273,11 @@ export interface FileRoutesByFullPath {
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '/$': typeof AppSplatRoute
   '/bank': typeof AppBankRoute
   '/bookkeeping': typeof AppBookkeepingRoute
   '/dashboard': typeof AppDashboardRoute
+  '/documents': typeof AppDocumentsRoute
   '/firm': typeof AppFirmRoute
   '/gst': typeof AppGstRoute
   '/pipeline': typeof AppPipelineRoute
@@ -233,13 +286,18 @@ export interface FileRoutesByTo {
   '/team': typeof AppTeamRoute
   '/work': typeof AppWorkRoute
   '/invite/$token': typeof InviteTokenRoute
+  '/settings/activity': typeof AppSettingsActivityRoute
   '/settings/firm': typeof AppSettingsFirmRoute
+  '/settings/preferences': typeof AppSettingsPreferencesRoute
   '/settings/team': typeof AppSettingsTeamRoute
   '/soon/$module': typeof AppSoonModuleRoute
   '/clients': typeof AppClientsIndexRoute
   '/settings': typeof AppSettingsIndexRoute
+  '/clients/$clientId/bookkeeping': typeof AppClientsClientIdBookkeepingRoute
   '/clients/$clientId/books': typeof AppClientsClientIdBooksRoute
   '/clients/$clientId/daybook': typeof AppClientsClientIdDaybookRoute
+  '/clients/$clientId/documents': typeof AppClientsClientIdDocumentsRoute
+  '/clients/$clientId/gst': typeof AppClientsClientIdGstRoute
   '/clients/$clientId/ledgers': typeof AppClientsClientIdLedgersRoute
   '/clients/$clientId/masters': typeof AppClientsClientIdMastersRoute
   '/clients/$clientId/reports': typeof AppClientsClientIdReportsRoute
@@ -252,9 +310,11 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
+  '/_app/$': typeof AppSplatRoute
   '/_app/bank': typeof AppBankRoute
   '/_app/bookkeeping': typeof AppBookkeepingRoute
   '/_app/dashboard': typeof AppDashboardRoute
+  '/_app/documents': typeof AppDocumentsRoute
   '/_app/firm': typeof AppFirmRoute
   '/_app/gst': typeof AppGstRoute
   '/_app/pipeline': typeof AppPipelineRoute
@@ -265,13 +325,18 @@ export interface FileRoutesById {
   '/_app/work': typeof AppWorkRoute
   '/invite/$token': typeof InviteTokenRoute
   '/_app/clients/$clientId': typeof AppClientsClientIdRouteRouteWithChildren
+  '/_app/settings/activity': typeof AppSettingsActivityRoute
   '/_app/settings/firm': typeof AppSettingsFirmRoute
+  '/_app/settings/preferences': typeof AppSettingsPreferencesRoute
   '/_app/settings/team': typeof AppSettingsTeamRoute
   '/_app/soon/$module': typeof AppSoonModuleRoute
   '/_app/clients/': typeof AppClientsIndexRoute
   '/_app/settings/': typeof AppSettingsIndexRoute
+  '/_app/clients/$clientId/bookkeeping': typeof AppClientsClientIdBookkeepingRoute
   '/_app/clients/$clientId/books': typeof AppClientsClientIdBooksRoute
   '/_app/clients/$clientId/daybook': typeof AppClientsClientIdDaybookRoute
+  '/_app/clients/$clientId/documents': typeof AppClientsClientIdDocumentsRoute
+  '/_app/clients/$clientId/gst': typeof AppClientsClientIdGstRoute
   '/_app/clients/$clientId/ledgers': typeof AppClientsClientIdLedgersRoute
   '/_app/clients/$clientId/masters': typeof AppClientsClientIdMastersRoute
   '/_app/clients/$clientId/reports': typeof AppClientsClientIdReportsRoute
@@ -284,9 +349,11 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/$'
     | '/bank'
     | '/bookkeeping'
     | '/dashboard'
+    | '/documents'
     | '/firm'
     | '/gst'
     | '/pipeline'
@@ -297,13 +364,18 @@ export interface FileRouteTypes {
     | '/work'
     | '/invite/$token'
     | '/clients/$clientId'
+    | '/settings/activity'
     | '/settings/firm'
+    | '/settings/preferences'
     | '/settings/team'
     | '/soon/$module'
     | '/clients/'
     | '/settings/'
+    | '/clients/$clientId/bookkeeping'
     | '/clients/$clientId/books'
     | '/clients/$clientId/daybook'
+    | '/clients/$clientId/documents'
+    | '/clients/$clientId/gst'
     | '/clients/$clientId/ledgers'
     | '/clients/$clientId/masters'
     | '/clients/$clientId/reports'
@@ -314,9 +386,11 @@ export interface FileRouteTypes {
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
+    | '/$'
     | '/bank'
     | '/bookkeeping'
     | '/dashboard'
+    | '/documents'
     | '/firm'
     | '/gst'
     | '/pipeline'
@@ -325,13 +399,18 @@ export interface FileRouteTypes {
     | '/team'
     | '/work'
     | '/invite/$token'
+    | '/settings/activity'
     | '/settings/firm'
+    | '/settings/preferences'
     | '/settings/team'
     | '/soon/$module'
     | '/clients'
     | '/settings'
+    | '/clients/$clientId/bookkeeping'
     | '/clients/$clientId/books'
     | '/clients/$clientId/daybook'
+    | '/clients/$clientId/documents'
+    | '/clients/$clientId/gst'
     | '/clients/$clientId/ledgers'
     | '/clients/$clientId/masters'
     | '/clients/$clientId/reports'
@@ -343,9 +422,11 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/_app'
+    | '/_app/$'
     | '/_app/bank'
     | '/_app/bookkeeping'
     | '/_app/dashboard'
+    | '/_app/documents'
     | '/_app/firm'
     | '/_app/gst'
     | '/_app/pipeline'
@@ -356,13 +437,18 @@ export interface FileRouteTypes {
     | '/_app/work'
     | '/invite/$token'
     | '/_app/clients/$clientId'
+    | '/_app/settings/activity'
     | '/_app/settings/firm'
+    | '/_app/settings/preferences'
     | '/_app/settings/team'
     | '/_app/soon/$module'
     | '/_app/clients/'
     | '/_app/settings/'
+    | '/_app/clients/$clientId/bookkeeping'
     | '/_app/clients/$clientId/books'
     | '/_app/clients/$clientId/daybook'
+    | '/_app/clients/$clientId/documents'
+    | '/_app/clients/$clientId/gst'
     | '/_app/clients/$clientId/ledgers'
     | '/_app/clients/$clientId/masters'
     | '/_app/clients/$clientId/reports'
@@ -394,6 +480,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_app/$': {
+      id: '/_app/$'
+      path: '/$'
+      fullPath: '/$'
+      preLoaderRoute: typeof AppSplatRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/bank': {
       id: '/_app/bank'
       path: '/bank'
@@ -413,6 +506,13 @@ declare module '@tanstack/react-router' {
       path: '/dashboard'
       fullPath: '/dashboard'
       preLoaderRoute: typeof AppDashboardRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/documents': {
+      id: '/_app/documents'
+      path: '/documents'
+      fullPath: '/documents'
+      preLoaderRoute: typeof AppDocumentsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/firm': {
@@ -499,11 +599,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppSettingsIndexRouteImport
       parentRoute: typeof AppSettingsRoute
     }
+    '/_app/settings/activity': {
+      id: '/_app/settings/activity'
+      path: '/activity'
+      fullPath: '/settings/activity'
+      preLoaderRoute: typeof AppSettingsActivityRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
     '/_app/settings/firm': {
       id: '/_app/settings/firm'
       path: '/firm'
       fullPath: '/settings/firm'
       preLoaderRoute: typeof AppSettingsFirmRouteImport
+      parentRoute: typeof AppSettingsRoute
+    }
+    '/_app/settings/preferences': {
+      id: '/_app/settings/preferences'
+      path: '/preferences'
+      fullPath: '/settings/preferences'
+      preLoaderRoute: typeof AppSettingsPreferencesRouteImport
       parentRoute: typeof AppSettingsRoute
     }
     '/_app/settings/team': {
@@ -527,6 +641,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppClientsClientIdIndexRouteImport
       parentRoute: typeof AppClientsClientIdRouteRoute
     }
+    '/_app/clients/$clientId/bookkeeping': {
+      id: '/_app/clients/$clientId/bookkeeping'
+      path: '/bookkeeping'
+      fullPath: '/clients/$clientId/bookkeeping'
+      preLoaderRoute: typeof AppClientsClientIdBookkeepingRouteImport
+      parentRoute: typeof AppClientsClientIdRouteRoute
+    }
     '/_app/clients/$clientId/books': {
       id: '/_app/clients/$clientId/books'
       path: '/books'
@@ -539,6 +660,20 @@ declare module '@tanstack/react-router' {
       path: '/daybook'
       fullPath: '/clients/$clientId/daybook'
       preLoaderRoute: typeof AppClientsClientIdDaybookRouteImport
+      parentRoute: typeof AppClientsClientIdRouteRoute
+    }
+    '/_app/clients/$clientId/documents': {
+      id: '/_app/clients/$clientId/documents'
+      path: '/documents'
+      fullPath: '/clients/$clientId/documents'
+      preLoaderRoute: typeof AppClientsClientIdDocumentsRouteImport
+      parentRoute: typeof AppClientsClientIdRouteRoute
+    }
+    '/_app/clients/$clientId/gst': {
+      id: '/_app/clients/$clientId/gst'
+      path: '/gst'
+      fullPath: '/clients/$clientId/gst'
+      preLoaderRoute: typeof AppClientsClientIdGstRouteImport
       parentRoute: typeof AppClientsClientIdRouteRoute
     }
     '/_app/clients/$clientId/ledgers': {
@@ -587,13 +722,17 @@ declare module '@tanstack/react-router' {
 }
 
 interface AppSettingsRouteChildren {
+  AppSettingsActivityRoute: typeof AppSettingsActivityRoute
   AppSettingsFirmRoute: typeof AppSettingsFirmRoute
+  AppSettingsPreferencesRoute: typeof AppSettingsPreferencesRoute
   AppSettingsTeamRoute: typeof AppSettingsTeamRoute
   AppSettingsIndexRoute: typeof AppSettingsIndexRoute
 }
 
 const AppSettingsRouteChildren: AppSettingsRouteChildren = {
+  AppSettingsActivityRoute: AppSettingsActivityRoute,
   AppSettingsFirmRoute: AppSettingsFirmRoute,
+  AppSettingsPreferencesRoute: AppSettingsPreferencesRoute,
   AppSettingsTeamRoute: AppSettingsTeamRoute,
   AppSettingsIndexRoute: AppSettingsIndexRoute,
 }
@@ -603,8 +742,11 @@ const AppSettingsRouteWithChildren = AppSettingsRoute._addFileChildren(
 )
 
 interface AppClientsClientIdRouteRouteChildren {
+  AppClientsClientIdBookkeepingRoute: typeof AppClientsClientIdBookkeepingRoute
   AppClientsClientIdBooksRoute: typeof AppClientsClientIdBooksRoute
   AppClientsClientIdDaybookRoute: typeof AppClientsClientIdDaybookRoute
+  AppClientsClientIdDocumentsRoute: typeof AppClientsClientIdDocumentsRoute
+  AppClientsClientIdGstRoute: typeof AppClientsClientIdGstRoute
   AppClientsClientIdLedgersRoute: typeof AppClientsClientIdLedgersRoute
   AppClientsClientIdMastersRoute: typeof AppClientsClientIdMastersRoute
   AppClientsClientIdReportsRoute: typeof AppClientsClientIdReportsRoute
@@ -616,8 +758,11 @@ interface AppClientsClientIdRouteRouteChildren {
 
 const AppClientsClientIdRouteRouteChildren: AppClientsClientIdRouteRouteChildren =
   {
+    AppClientsClientIdBookkeepingRoute: AppClientsClientIdBookkeepingRoute,
     AppClientsClientIdBooksRoute: AppClientsClientIdBooksRoute,
     AppClientsClientIdDaybookRoute: AppClientsClientIdDaybookRoute,
+    AppClientsClientIdDocumentsRoute: AppClientsClientIdDocumentsRoute,
+    AppClientsClientIdGstRoute: AppClientsClientIdGstRoute,
     AppClientsClientIdLedgersRoute: AppClientsClientIdLedgersRoute,
     AppClientsClientIdMastersRoute: AppClientsClientIdMastersRoute,
     AppClientsClientIdReportsRoute: AppClientsClientIdReportsRoute,
@@ -633,9 +778,11 @@ const AppClientsClientIdRouteRouteWithChildren =
   )
 
 interface AppRouteChildren {
+  AppSplatRoute: typeof AppSplatRoute
   AppBankRoute: typeof AppBankRoute
   AppBookkeepingRoute: typeof AppBookkeepingRoute
   AppDashboardRoute: typeof AppDashboardRoute
+  AppDocumentsRoute: typeof AppDocumentsRoute
   AppFirmRoute: typeof AppFirmRoute
   AppGstRoute: typeof AppGstRoute
   AppPipelineRoute: typeof AppPipelineRoute
@@ -650,9 +797,11 @@ interface AppRouteChildren {
 }
 
 const AppRouteChildren: AppRouteChildren = {
+  AppSplatRoute: AppSplatRoute,
   AppBankRoute: AppBankRoute,
   AppBookkeepingRoute: AppBookkeepingRoute,
   AppDashboardRoute: AppDashboardRoute,
+  AppDocumentsRoute: AppDocumentsRoute,
   AppFirmRoute: AppFirmRoute,
   AppGstRoute: AppGstRoute,
   AppPipelineRoute: AppPipelineRoute,

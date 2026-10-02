@@ -6,7 +6,7 @@
 // first, and a wide table becomes a labelled scroll region rather than squeezing.
 
 import { ArrowDown, ArrowUp, ChevronsUpDown } from 'lucide-react'
-import { useMemo, useState, type KeyboardEvent, type ReactNode } from 'react'
+import { Fragment, useMemo, useState, type KeyboardEvent, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 export interface Column<T> {
@@ -23,6 +23,8 @@ export interface Column<T> {
   className?: string
   /** A CSS width, e.g. '9rem'. */
   width?: string
+  /** Keep this column in view while the table scrolls sideways (the first column of a wide table). */
+  sticky?: boolean
 }
 
 const PRIORITY_HIDE: Record<number, string> = { 1: '', 2: 'max-sm:hidden', 3: 'max-lg:hidden' }
@@ -37,6 +39,7 @@ export function DataTable<T>({
   empty,
   onRowClick,
   rowClassName,
+  groupOf,
   selectedKey,
   defaultSort,
   scrollHeight,
@@ -54,6 +57,8 @@ export function DataTable<T>({
   empty?: ReactNode
   onRowClick?: (row: T) => void
   rowClassName?: (row: T) => string | undefined
+  /** Group label for a row. Rows must arrive grouped; a header row is drawn where the label changes. Not for sortable tables. */
+  groupOf?: (row: T) => string
   selectedKey?: string
   defaultSort?: { key: string; dir: 'asc' | 'desc' }
   /** Make the table its own scroll box with a sticky header, e.g. '70vh'. Off: the page scrolls. */
@@ -102,6 +107,7 @@ export function DataTable<T>({
                   className={cn(
                     'whitespace-nowrap px-3 py-2 text-xs font-semibold',
                     scrollHeight && 'sticky top-0 z-10 bg-surface-2',
+                    col.sticky && 'sticky left-0 z-20 bg-surface-2',
                     col.align === 'right' ? 'text-right' : 'text-left',
                     PRIORITY_HIDE[col.priority ?? 1],
                   )}
@@ -138,8 +144,10 @@ export function DataTable<T>({
                   ))}
                 </tr>
               ))
-            : (sorted ?? []).map((row) => {
+            : (sorted ?? []).map((row, index, all) => {
                 const key = rowKey(row)
+                const group = groupOf?.(row)
+                const newGroup = group !== undefined && (index === 0 || groupOf!(all[index - 1]!) !== group)
                 const onKey = onRowClick
                   ? (e: KeyboardEvent) => {
                       if (e.target === e.currentTarget && (e.key === 'Enter' || e.key === ' ')) {
@@ -149,16 +157,23 @@ export function DataTable<T>({
                     }
                   : undefined
                 return (
+                  <Fragment key={key}>
+                  {newGroup && (
+                    <tr className="border-b bg-surface-2">
+                      <th scope="rowgroup" colSpan={columns.length} className="px-3 py-1.5 text-left text-xs font-semibold text-muted-foreground">
+                        {group}
+                      </th>
+                    </tr>
+                  )}
                   <tr
-                    key={key}
                     onClick={onRowClick ? () => onRowClick(row) : undefined}
                     onKeyDown={onKey}
                     tabIndex={onRowClick ? 0 : undefined}
                     aria-selected={selectedKey !== undefined ? key === selectedKey : undefined}
                     className={cn(
-                      'h-(--row-h) border-b last:border-b-0',
+                      'group h-(--row-h) border-b last:border-b-0',
                       onRowClick && 'cursor-pointer hover:bg-hover focus-visible:outline-offset-[-2px]',
-                      selectedKey === key && 'bg-accent',
+                      selectedKey === key && 'bg-accent [&>.sticky-col]:bg-accent',
                       rowClassName?.(row),
                     )}
                   >
@@ -169,6 +184,7 @@ export function DataTable<T>({
                           'whitespace-nowrap px-3 py-1',
                           col.align === 'right' ? 'num text-right' : 'text-left',
                           PRIORITY_HIDE[col.priority ?? 1],
+                          col.sticky && 'sticky-col sticky left-0 z-[1] bg-card' + (onRowClick ? ' group-hover:bg-hover' : ''),
                           col.className,
                         )}
                       >
@@ -176,10 +192,13 @@ export function DataTable<T>({
                       </td>
                     ))}
                   </tr>
+                  </Fragment>
                 )
               })}
         </tbody>
-        {footer && <tfoot className="border-t-2 border-foreground bg-surface-2 font-semibold">{footer}</tfoot>}
+        {footer && (
+          <tfoot className={cn('border-t-2 border-foreground bg-surface-2 font-semibold', scrollHeight && '[&_td]:sticky [&_td]:bottom-0 [&_td]:bg-surface-2')}>{footer}</tfoot>
+        )}
       </table>
     </div>
   )

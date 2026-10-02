@@ -195,10 +195,19 @@ class BalanceSheetSerializer(MoneySerializerMixin, serializers.Serializer):
         "total_liabilities_and_profit_paise",
         "net_profit_paise",
         "suspense_paise",
+        "unclassified_paise",
     )
 
     assets = LedgerBalanceSerializer(many=True)
     liabilities = LedgerBalanceSerializer(many=True)
+    unclassified = LedgerBalanceSerializer(
+        many=True,
+        help_text=(
+            "Ledgers whose group belongs on neither side of the sheet. They are in neither "
+            "total, so `balances` is false while any exist; place them in a known group."
+        ),
+    )
+    unclassified_paise = PaiseField(help_text="Net of the unclassified ledgers. Zero when there are none.")
     total_assets_paise = PaiseField()
     total_liabilities_paise = PaiseField()
     total_liabilities_and_profit_paise = PaiseField(
@@ -235,19 +244,3 @@ class BalanceCheckSerializer(MoneySerializerMixin, serializers.Serializer):
 
     def get_explanation(self, check) -> str:
         return check.explain()
-
-
-class TallyExportSerializer(serializers.Serializer):
-    """A Tally Prime import document, and what was left out of it.
-
-    ``unapproved`` is not an error. A firm exporting nine tenths of a statement
-    while three rows wait on a client's answer is a normal Tuesday -- but an
-    export that quietly included them would not be.
-    """
-
-    xml = serializers.CharField()
-    voucher_count = serializers.IntegerField()
-    ledger_count = serializers.IntegerField()
-    unapproved = serializers.IntegerField(
-        help_text="Rows classified but not approved, and therefore not exported."
-    )

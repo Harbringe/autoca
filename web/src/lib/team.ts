@@ -1,10 +1,29 @@
 // The rules of the team screens that are logic rather than layout.
 
-import type { Member, Role, TeamEvent } from '@/api/types'
+import type { Member, Person, Role, TeamEvent } from '@/api/types'
 import type { MemberPatch } from '@/api/queries/team'
 
 /** Staff and Read-only members sit on a Senior CA's team; the others lead or administer. */
 export const isTeamRole = (role: Role) => role === 'STAFF' || role === 'READ_ONLY'
+
+/**
+ * Who a person of this role may report to. A Senior CA reports to an administrator (the owner is one).
+ * Staff and Read-only report to a Senior CA, and fall back to the owner or an administrator
+ * when the firm has no Senior CA. Administrators have no manager picker.
+ */
+export function managerChoices(role: Role, people: Person[]): Person[] {
+  if (role === 'SENIOR_CA') return people.filter((p) => p.role === 'FIRM_ADMIN')
+  if (!isTeamRole(role)) return []
+  const seniors = people.filter((p) => p.role === 'SENIOR_CA')
+  return seniors.length ? seniors : people.filter((p) => p.role === 'FIRM_ADMIN')
+}
+
+export function managerHint(role: Role, choices: Person[]): string {
+  if (role === 'SENIOR_CA') return 'Senior CAs report to an administrator.'
+  return choices.some((p) => p.role === 'FIRM_ADMIN')
+    ? 'The firm has no Senior CA yet, so they report to the owner or an administrator.'
+    : 'Staff and Read-only members report to a Senior CA.'
+}
 
 export interface MemberEdit {
   role: Role

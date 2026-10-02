@@ -709,6 +709,8 @@ common case, and sending someone hunting for the first wastes an afternoon.
 
 ## Three migration traps, all found the hard way
 
+**Migrations ship before the code that needs them.** They must be backward-compatible with the previous release: new columns are nullable or have a `db_default` (a Python `default` alone leaves the column NOT NULL with no default, and the old code's INSERT fails); drops and renames are done in a later release. `core/tests/test_migration_compat.py` fails on a new `AddField` that breaks this, or on a drop or rename, unless it is in the file's commented allow-list.
+
 Both bite any new firm-scoped table, and both produce an error that names the
 tenancy layer while the fault is elsewhere.
 

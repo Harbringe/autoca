@@ -34,7 +34,7 @@ createRoot(document.getElementById('root')!).render(
       <PreferencesProvider>
         <SessionProvider>
           <RouterProvider router={router} />
-          <Toaster position="bottom-center" richColors closeButton />
+          <Toaster position="bottom-right" duration={6000} richColors closeButton />
         </SessionProvider>
       </PreferencesProvider>
     </QueryClientProvider>

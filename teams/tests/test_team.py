@@ -326,3 +326,64 @@ def test_history_records_who_changed_what(firm, admin, client_record, lead):
     http.post(f"{TEAM}/clients/{client_record.pk}/team/", {"member": str(staff.pk)}, format="json")
     kinds = [e["kind"] for e in http.get(f"{TEAM}/events/").json()["results"]]
     assert kinds[:2] == ["client.assigned", "client.lead_changed"]
+
+
+# ---------------------------------------------------------------------------
+# A firm with no Senior CA: Staff and Read-only report to the owner or an administrator
+# ---------------------------------------------------------------------------
+
+
+def test_without_a_senior_ca_an_invite_defaults_to_the_owner_then_an_administrator(firm, admin):
+    owner = member(firm, Role.FIRM_ADMIN, "owner@example.test")
+    with firm_context(firm.pk):
+        owner.is_owner = True
+        owner.save(update_fields=["is_owner"])
+
+    http = sign_in(admin.user)
+    body = http.post(f"{TEAM}/members/", {"email": "a@example.test", "role": Role.STAFF}, format="json")
+    assert body.status_code == 201, body.content
+    _, accepted = _accept(body.json()["link"].rsplit("/invite/", 1)[1], full_name="A", password=PASSWORD)
+    assert accepted.status_code == 200, accepted.content
+    with firm_context(firm.pk):
+        assert FirmMembership.objects.get(user__email="a@example.test").manager_id == owner.pk
+
+    named = http.post(
+        f"{TEAM}/members/", {"email": "b@example.test", "role": Role.READ_ONLY, "manager": str(admin.pk)}, format="json"
+    )
+    assert named.status_code == 201, named.content
+
+
+def test_with_a_senior_ca_an_invite_cannot_point_at_an_administrator(firm, admin, lead):
+    http = sign_in(admin.user)
+    refused = http.post(
+        f"{TEAM}/members/", {"email": "a@example.test", "role": Role.STAFF, "manager": str(admin.pk)}, format="json"
+    )
+    assert refused.status_code == 409
+    assert http.post(f"{TEAM}/members/", {"email": "a@example.test", "role": Role.STAFF}, format="json").status_code == 409
+    ok = http.post(
+        f"{TEAM}/members/", {"email": "a@example.test", "role": Role.STAFF, "manager": str(lead.pk)}, format="json"
+    )
+    assert ok.status_code == 201
+
+
+def test_an_administrator_moves_staff_under_an_administrator_only_while_there_is_no_senior_ca(firm, admin):
+    other_admin = member(firm, Role.FIRM_ADMIN, "admin2@example.test")
+    staff = member(firm, Role.STAFF, "s@example.test")
+    http = sign_in(admin.user)
+    url = f"{TEAM}/members/{staff.pk}/"
+
+    assert http.patch(url, {"manager": str(other_admin.pk)}, format="json").status_code == 200
+    with firm_context(firm.pk):
+        assert FirmMembership.objects.get(pk=staff.pk).manager_id == other_admin.pk
+
+    member(firm, Role.SENIOR_CA, "asha2@example.test")
+    assert http.patch(url, {"manager": str(admin.pk)}, format="json").status_code == 409
+
+
+def test_a_demoted_senior_ca_falls_back_to_an_administrator_when_no_senior_ca_is_left(firm, admin, lead):
+    http = sign_in(admin.user)
+    response = http.patch(f"{TEAM}/members/{lead.pk}/", {"role": Role.STAFF}, format="json")
+    assert response.status_code == 200, response.content
+    with firm_context(firm.pk):
+        moved = FirmMembership.objects.get(pk=lead.pk)
+    assert moved.role == Role.STAFF and moved.manager_id == admin.pk

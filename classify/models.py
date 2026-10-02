@@ -52,11 +52,13 @@ PARTY_ACCOUNT_PURPOSE = "classify.party_bank"
 
 
 class LedgerGroup(models.TextChoices):
-    """Tally's top-level groups, as far as this system needs to know them.
+    """Tally's groups, as far as this system needs to know them.
 
-    Stored on the ledger because the voucher exporter needs it: a transfer to
-    the client's own account at another bank is a Contra, and the only thing
-    that distinguishes it from a Payment is the group of the other ledger.
+    Stored on the ledger because the books depend on it: it decides which side
+    of the Balance Sheet a ledger lands on (``ledger.reports``), and a transfer
+    to the client's own account at another bank is a Contra, which only the
+    group of the other ledger tells apart from a Payment. Every value here is in
+    exactly one of the report sets in ``ledger.reports``, and a test holds it so.
     """
 
     BANK = "BANK", "Bank Accounts"
@@ -72,6 +74,18 @@ class LedgerGroup(models.TextChoices):
     INVESTMENT = "INVESTMENT", "Investments"
     CAPITAL = "CAPITAL", "Capital Account"
     SUSPENSE = "SUSPENSE", "Suspense A/c"
+    FIXED_ASSET = "FIXED_ASSET", "Fixed Assets"
+    STOCK = "STOCK", "Stock-in-Hand"
+    CURRENT_ASSET = "CURRENT_ASSET", "Current Assets"
+    LOAN_ADVANCE = "LOAN_ADVANCE", "Loans & Advances (Asset)"
+    DEPOSIT = "DEPOSIT", "Deposits (Asset)"
+    MISC_EXPENDITURE = "MISC_EXPENDITURE", "Misc. Expenses (Asset)"
+    BANK_OD = "BANK_OD", "Bank OD A/c"
+    CURRENT_LIABILITY = "CURRENT_LIABILITY", "Current Liabilities"
+    PROVISION = "PROVISION", "Provisions"
+    RESERVES = "RESERVES", "Reserves & Surplus"
+    SALES = "SALES", "Sales Accounts"
+    PURCHASE = "PURCHASE", "Purchase Accounts"
 
 
 class LedgerStatus(models.TextChoices):
@@ -88,11 +102,13 @@ class LedgerStatus(models.TextChoices):
 
 
 class LedgerAccount(UUIDModel, FirmScopedModel):
-    """A ledger in the client's Tally company.
+    """A ledger in the client's books.
 
-    ``name`` must match Tally exactly. Tally creates a ledger it does not
-    recognise rather than rejecting the import, so a typo does not fail loudly --
-    it silently splits a year of entries across "Advance Tax" and "Advance tax".
+    Two ledgers whose names differ only by case or spacing split a year of
+    entries across "Advance Tax" and "Advance tax", so a name is unique per
+    client and the Tally import matches on the normalised spelling.
+    ``tally_name``, ``alias`` and ``tally_group_path`` are what the client's own
+    Tally company called it, kept for display and for the later voucher import.
     """
 
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="ledgers")
@@ -103,6 +119,9 @@ class LedgerAccount(UUIDModel, FirmScopedModel):
     is_active = models.BooleanField(default=True)
     status = models.CharField(max_length=16, choices=LedgerStatus.choices, default=LedgerStatus.ACTIVE)
     proposal_reason = models.TextField(blank=True, default="")
+    tally_name = models.CharField(max_length=255, null=True, blank=True)
+    alias = models.CharField(max_length=255, null=True, blank=True)
+    tally_group_path = models.CharField(max_length=512, null=True, blank=True)
 
     class Meta:
         db_table = "classify_ledger_account"
@@ -119,7 +138,7 @@ class LedgerAccount(UUIDModel, FirmScopedModel):
     @property
     def is_bank_or_cash(self) -> bool:
         """True when posting against this ledger makes the voucher a Contra."""
-        return self.group in {LedgerGroup.BANK, LedgerGroup.CASH}
+        return self.group in {LedgerGroup.BANK, LedgerGroup.CASH, LedgerGroup.BANK_OD}
 
     @property
     def is_proposed(self) -> bool:
@@ -636,7 +655,7 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
     model_claimed_until = models.DateTimeField(null=True, blank=True)
     #: Claims so far. At three the row is left for a person, so a row the model cannot
     #: answer does not loop forever.
-    model_attempts = models.PositiveSmallIntegerField(default=0)
+    model_attempts = models.PositiveSmallIntegerField(default=0, db_default=0)
 
     class Meta:
         db_table = "classify_transaction_classification"

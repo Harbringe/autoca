@@ -118,3 +118,17 @@ def require_sign_off(membership: FirmMembership | None, client: Client) -> None:
 
     if not can_sign_off(membership, client):
         raise PermissionDenied(sign_off_refusal(client))
+
+
+def require_chart_import(membership: FirmMembership | None, client: Client) -> None:
+    """The object rule for importing a chart and openings from Tally.
+
+    Importing replaces what the client's books start from, so it is the client's
+    lead's or a firm administrator's, like signing off.
+    """
+    from django.core.exceptions import PermissionDenied
+
+    if not can_sign_off(membership, client):
+        raise PermissionDenied(
+            f"Only {client.name}'s lead or a firm administrator can import its chart of accounts."
+        )

@@ -32,7 +32,8 @@ from django.utils import timezone
 from classify.models import LedgerGroup
 from core.fy import fy_bounds, fy_label
 from core.money import format_inr
-from ledger.models import JournalLine
+from ledger.models import JournalLine, LedgerOpening
+from ledger.tally_parse import normal_name
 
 #: Groups whose balances belong to the Profit & Loss statement. Everything else
 #: is a balance-sheet item.
@@ -40,17 +41,46 @@ PROFIT_AND_LOSS_GROUPS = frozenset(
     {
         LedgerGroup.DIRECT_INCOME,
         LedgerGroup.INDIRECT_INCOME,
+        LedgerGroup.SALES,
         LedgerGroup.DIRECT_EXPENSE,
         LedgerGroup.INDIRECT_EXPENSE,
+        LedgerGroup.PURCHASE,
     }
 )
 
 #: Balance-sheet groups that normally carry a debit balance.
 ASSET_GROUPS = frozenset(
-    {LedgerGroup.BANK, LedgerGroup.CASH, LedgerGroup.DEBTOR, LedgerGroup.INVESTMENT}
+    {
+        LedgerGroup.BANK,
+        LedgerGroup.CASH,
+        LedgerGroup.DEBTOR,
+        LedgerGroup.INVESTMENT,
+        LedgerGroup.FIXED_ASSET,
+        LedgerGroup.STOCK,
+        LedgerGroup.CURRENT_ASSET,
+        LedgerGroup.LOAN_ADVANCE,
+        LedgerGroup.DEPOSIT,
+        LedgerGroup.MISC_EXPENDITURE,
+    }
 )
 
-INCOME_GROUPS = frozenset({LedgerGroup.DIRECT_INCOME, LedgerGroup.INDIRECT_INCOME})
+#: Balance-sheet groups that normally carry a credit balance.
+LIABILITY_GROUPS = frozenset(
+    {
+        LedgerGroup.CREDITOR,
+        LedgerGroup.DUTIES_AND_TAXES,
+        LedgerGroup.LOAN,
+        LedgerGroup.CAPITAL,
+        LedgerGroup.BANK_OD,
+        LedgerGroup.CURRENT_LIABILITY,
+        LedgerGroup.PROVISION,
+        LedgerGroup.RESERVES,
+    }
+)
+
+INCOME_GROUPS = frozenset(
+    {LedgerGroup.DIRECT_INCOME, LedgerGroup.INDIRECT_INCOME, LedgerGroup.SALES}
+)
 
 
 @dataclass(frozen=True)
@@ -171,6 +201,13 @@ class BalanceSheet:
     #: Anything sitting in Suspense. Not an error, but a balance sheet with a
     #: suspense figure on it is a balance sheet with a question on it.
     suspense_paise: int = 0
+    #: Ledgers whose group is on no side of the sheet -- a group this code does not know.
+    #: They are in neither total, so ``balances`` is False until somebody places them.
+    unclassified: tuple[LedgerBalance, ...] = ()
+
+    @property
+    def unclassified_paise(self) -> int:
+        return sum(row.net_paise for row in self.unclassified)
 
     @property
     def total_assets_paise(self) -> int:
@@ -187,7 +224,10 @@ class BalanceSheet:
 
     @property
     def balances(self) -> bool:
-        return self.total_assets_paise == self.total_liabilities_and_profit_paise
+        return (
+            self.total_assets_paise == self.total_liabilities_and_profit_paise
+            and not self.unclassified_paise
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -224,8 +264,13 @@ def balance_sheet(client, financial_year: int) -> BalanceSheet:
 
     return BalanceSheet(
         assets=tuple(r for r in standing if r.group in ASSET_GROUPS),
-        liabilities=tuple(
-            r for r in standing if r.group not in ASSET_GROUPS and r.group != LedgerGroup.SUSPENSE
+        liabilities=tuple(r for r in standing if r.group in LIABILITY_GROUPS),
+        unclassified=tuple(
+            r
+            for r in standing
+            if r.group not in ASSET_GROUPS
+            and r.group not in LIABILITY_GROUPS
+            and r.group != LedgerGroup.SUSPENSE
         ),
         net_profit_paise=trading.net_profit_paise,
         suspense_paise=sum(
@@ -245,11 +290,13 @@ def _balances(client, financial_year: int) -> tuple[tuple[LedgerBalance, ...], R
 
     Balance-sheet ledgers carry their whole history into the year; income and
     expense ledgers do not, and their earlier years' results arrive as a single
-    Profit & Loss A/c balance instead. Confirmed bank opening balances are added
-    to the bank ledgers, and since nothing else's opening balance is known, their
-    counterpart is shown -- as Tally shows it -- as a difference in opening
-    balances for a CA to allocate, usually to capital. Every line posted up to
-    the year end nets to zero, so the trial balance still balances.
+    Profit & Loss A/c balance instead. Opening balances -- a confirmed bank
+    opening, and the openings imported from Tally -- are added to their ledgers,
+    and since the rest of the books' history is not known, their counterpart is
+    shown, as Tally shows it, as a difference in opening balances for a CA to
+    allocate, usually to capital. Every line posted up to the year end nets to
+    zero, so the trial balance still balances; if the imported openings do not
+    balance themselves, the difference line is exactly what is left over.
     """
     start, end = fy_bounds(financial_year)
     in_year = Q(entry__entry_date__gte=start)
@@ -268,23 +315,30 @@ def _balances(client, financial_year: int) -> tuple[tuple[LedgerBalance, ...], R
         )
     )
 
+    bank_accounts = list(client.bank_accounts.filter(opening_balance_paise__isnull=False))
+    imported = _imported_openings(client, financial_year, {normal_name(a.ledger_name) for a in bank_accounts})
+    superseded = _history_before_openings(client, imported)
+
     balances: dict[str, dict] = {}
     earlier_results = 0
     for row in aggregated:
+        name = row["ledger_account__name"]
         group = row["ledger_account__group"]
-        before = row["before"] or 0
+        before = (row["before"] or 0) - superseded.get(name, 0)
         if group in PROFIT_AND_LOSS_GROUPS:
             earlier_results += before
             before = 0
-        balances[row["ledger_account__name"]] = {
+        balances[name] = {
             "group": group,
             "debit": row["debit"] or 0,
             "credit": row["credit"] or 0,
             "opening": before,
         }
 
-    confirmed_openings = 0
-    for account in client.bank_accounts.filter(opening_balance_paise__isnull=False):
+    # What the openings add to the books, less the history they replace. Its negative
+    # is the one balancing line; see the docstring.
+    confirmed_openings = -sum(superseded.values())
+    for account in bank_accounts:
         if account.opening_as_of and account.opening_as_of > end:
             continue
         name = account.ledger_name
@@ -292,9 +346,18 @@ def _balances(client, financial_year: int) -> tuple[tuple[LedgerBalance, ...], R
         entry["opening"] += account.opening_balance_paise
         confirmed_openings += account.opening_balance_paise
 
+    for name, group, paise, _year in imported:
+        confirmed_openings += paise
+        if group in PROFIT_AND_LOSS_GROUPS:
+            earlier_results += paise
+            continue
+        entry = balances.setdefault(name, {"group": group, "debit": 0, "credit": 0, "opening": 0})
+        entry["opening"] += paise
+
     for name, opening in ((PROFIT_BROUGHT_FORWARD, earlier_results), (OPENING_DIFFERENCE, -confirmed_openings)):
         if opening:
-            balances[name] = {"group": LedgerGroup.CAPITAL, "debit": 0, "credit": 0, "opening": opening}
+            entry = balances.setdefault(name, {"group": LedgerGroup.CAPITAL, "debit": 0, "credit": 0, "opening": 0})
+            entry["opening"] += opening
 
     rows = tuple(
         sorted(
@@ -313,6 +376,54 @@ def _balances(client, financial_year: int) -> tuple[tuple[LedgerBalance, ...], R
         )
     )
     return rows, _footer(client, financial_year, start, end)
+
+
+def _imported_openings(client, financial_year: int, bank_sourced: set[str]) -> list[tuple[str, str, int, int]]:
+    """``(ledger name, group, paise, opening's year)`` for the openings that count this year.
+
+    One opening per ledger: the latest imported at or before the year being
+    reported, because a later import is Tally's own closing figure for the
+    earlier year and replaces it. A ledger whose bank account already supplies
+    its opening is left out -- one source for one number.
+    """
+    chosen: dict = {}
+    for opening in (
+        LedgerOpening.objects.filter(
+            firm_id=client.firm_id, client=client, financial_year__lte=financial_year
+        )
+        .select_related("ledger")
+        .order_by("ledger_id", "-financial_year")
+    ):
+        chosen.setdefault(opening.ledger_id, opening)
+    return [
+        (o.ledger.name, o.ledger.group, o.signed_paise, o.financial_year)
+        for o in chosen.values()
+        if normal_name(o.ledger.name) not in bank_sourced
+    ]
+
+
+def _history_before_openings(client, imported) -> dict[str, int]:
+    """The journal's own balance, per ledger, from before the year its opening was set.
+
+    Tally's opening balance is the whole of the ledger's history up to that date, so
+    the lines this system holds from before it would count twice.
+    """
+    out: dict[str, int] = {}
+    for year in {year for *_, year in imported}:
+        names = [name for name, _, _, y in imported if y == year]
+        rows = (
+            JournalLine.objects.filter(
+                firm_id=client.firm_id,
+                entry__client=client,
+                entry__entry_date__lt=fy_bounds(year)[0],
+                ledger_account__name__in=names,
+            )
+            .values("ledger_account__name")
+            .annotate(total=Sum("signed_paise"))
+        )
+        for row in rows:
+            out[row["ledger_account__name"]] = row["total"] or 0
+    return out
 
 
 def _footer(client, financial_year: int, start, end) -> ReportFooter:

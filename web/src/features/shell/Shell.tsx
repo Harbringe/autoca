@@ -38,7 +38,7 @@ import {
 import { Dialog as Drawer } from 'radix-ui'
 import { useEffect, useState, type ReactNode } from 'react'
 import { clientDetail, reviewSummary } from '@/api/queries/clients'
-import { teamClients } from '@/api/queries/team'
+import { firmOverview } from '@/api/queries/overview'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -52,13 +52,16 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { Kbd } from '@/components/ui/kbd'
+import { useAssistantShort } from '@/features/assistant/useAssistant'
 import { Brand } from '@/features/auth/AuthLayout'
 import { fyLabel, financialYearOf } from '@/lib/format'
 import { parseFy } from '@/lib/fy'
 import { useHotkey } from '@/lib/hotkeys'
-import { FIRM_LANDING, MODULE_CLIENT_SCREEN, moduleOf, type ModuleId } from '@/lib/modules'
+import { JUMP_KEYS, moduleHref, type JumpKey } from '@/lib/jump'
+import { clientIdOf, moduleOf, type ModuleId } from '@/lib/modules'
 import { usePreferences, type Density, type Theme } from '@/lib/preferences'
 import { usePageTitle } from '@/lib/title'
+import { useRouteFocus } from './routeFocus'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { usePalette } from './CommandPalette'
@@ -87,7 +90,7 @@ const GROUPS: { label: string; items: NavEntry[] }[] = [
     label: 'Workflow',
     items: [
       { id: 'pipeline', label: 'Work pipeline', icon: <Columns3 />, permission: 'client.view' },
-      { id: 'documents', label: 'Documents', icon: <FolderOpen />, soon: true },
+      { id: 'documents', label: 'Documents', icon: <FolderOpen />, permission: 'document.view' },
     ],
   },
   {
@@ -95,8 +98,7 @@ const GROUPS: { label: string; items: NavEntry[] }[] = [
     items: [
       { id: 'bookkeeping', label: 'Bookkeeping', icon: <BookOpen />, permission: 'report.view' },
       { id: 'bank', label: 'Bank statements', icon: <Landmark />, permission: 'transaction.view' },
-      // GST has a complete API and gets its screens in wave 6; until then it is a "Soon" page.
-      { id: 'gst', label: 'GST reconciliation', icon: <FileSpreadsheet />, soon: true },
+      { id: 'gst', label: 'GST reconciliation', icon: <FileSpreadsheet />, permission: 'gst.view' },
       { id: 'taxation', label: 'Taxation / ITR', icon: <Calculator />, soon: true },
     ],
   },
@@ -126,6 +128,8 @@ const GROUPS: { label: string; items: NavEntry[] }[] = [
 ]
 
 const SCREEN_TITLE: Record<string, string> = {
+  documents: 'Documents',
+  bookkeeping: 'Books overview',
   statements: 'Statements',
   review: 'Review',
   daybook: 'Day Book',
@@ -133,29 +137,29 @@ const SCREEN_TITLE: Record<string, string> = {
   reports: 'Reports',
   books: 'Books & sign-off',
   masters: 'Parties & rules',
-  team: 'Team & details',
+  team: 'Settings & team',
 }
 
-/** The browser tab names the screen. Screens outside a client set their own title. */
+/** The browser tab names the screen. Screens outside a client, and the GST screens (which name the run), set their own title. */
 function useClientPageTitle() {
   const path = useRouterState({ select: (s) => s.location.pathname })
   const parts = path.split('/').filter(Boolean)
-  const title = parts[0] !== 'clients' ? undefined : parts.length === 1 ? 'Clients' : parts.length === 2 ? 'Overview' : (SCREEN_TITLE[parts[2]!] ?? undefined)
+  const title = parts[0] !== 'clients' ? undefined : parts.length === 1 ? 'Clients' : parts.length === 2 ? 'Client profile' : (SCREEN_TITLE[parts[2]!] ?? undefined)
   usePageTitle(title)
 }
 
 /** The small champagne chip on the dark sidebar: "Soon", or a real count. */
-const chip = 'ml-auto rounded-sm bg-[#2a2413] px-1.5 text-xs font-medium text-[#dcc488]'
+const chip = 'ml-auto rounded-sm bg-sidebar-chip px-1.5 text-xs font-medium text-sidebar-chip-foreground'
 
 function useSidebarCount(): number | undefined {
   const { can } = useSession()
   const { clientId } = useParams({ strict: false }) as { clientId?: string }
   const one = useQuery({ ...reviewSummary(clientId ?? ''), enabled: !!clientId && can('transaction.view') })
-  // The firm total comes from the team endpoint, which only people who manage the team may read.
-  const firm = useQuery({ ...teamClients(), enabled: !clientId && can('team.view') })
+  // The firm total is the overview's own total: one request, the same clients the list shows.
+  const firm = useQuery({ ...firmOverview(), enabled: !clientId })
   if (clientId) return one.data?.total
   if (!firm.data) return undefined
-  return firm.data.results.reduce((sum, c) => sum + c.unresolved + c.pending_approval, 0)
+  return firm.data.totals.unresolved + firm.data.totals.pending_approval
 }
 
 function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
@@ -169,9 +173,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const hrefFor = (entry: NavEntry): string => {
     if (entry.soon) return `/soon/${entry.id}`
     if (entry.id === 'settings') return `/${settingsHome(can)}`
-    const screen = MODULE_CLIENT_SCREEN[entry.id]
-    if (clientId && screen) return `/clients/${clientId}/${screen}`
-    return FIRM_LANDING[entry.id] ?? `/${entry.id}`
+    return moduleHref(entry.id, clientId)
   }
 
   const initials = (me?.full_name || me?.email || '?')
@@ -190,7 +192,6 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         {GROUPS.map((group) => {
           const items = group.items.filter((item) => {
             if (item.permission && !can(item.permission)) return false
-            if (item.id === 'settings' && !can('team.view') && !can('firm.manage')) return false
             if (item.soon && hideSoon) return false
             return true
           })
@@ -245,7 +246,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 function settingsHome(can: (permission: string) => boolean): string {
-  return can('team.view') ? 'settings/team' : 'settings/firm'
+  return can('team.view') ? 'settings/team' : can('firm.manage') ? 'settings/firm' : 'settings/preferences'
 }
 
 /** Who's books these are. Opens the palette, which lists clients (and "All clients") as you type. */
@@ -337,11 +338,29 @@ function PaletteTrigger() {
 }
 
 /**
- * Where the assistant's live state will show ("Assistant reading 14 rows" / "paused, 32 s"),
- * linking to Review. The queue API is not ready, so it renders nothing yet.
+ * The assistant's live state while a client is open: "Assistant reading 14 rows", "Assistant paused,
+ * 32 s". It links to Review, where the rows are, and is announced politely as it changes. Nothing
+ * shows when the assistant has nothing to do.
  */
 function AssistantIndicator() {
-  return null
+  const path = useRouterState({ select: (s) => s.location.pathname })
+  const clientId = clientIdOf(path)
+  const text = useAssistantShort(clientId)
+  return (
+    <div role="status" aria-live="polite" className="max-md:hidden">
+      {text && clientId && (
+        <Link
+          to="/clients/$clientId/review"
+          params={{ clientId }}
+          search={{ stage: 'all' }}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-info-bg px-2.5 text-[13px] font-medium text-info hover:bg-hover"
+        >
+          <Sparkles className="size-3.5" aria-hidden />
+          {text}
+        </Link>
+      )}
+    </div>
+  )
 }
 
 function UserMenu({ onShortcuts }: { onShortcuts: () => void }) {
@@ -394,6 +413,46 @@ function UserMenu({ onShortcuts }: { onShortcuts: () => void }) {
   )
 }
 
+/** `g` then a letter jumps to a module. Plain keys are ignored while a field has focus (the registry's rule). */
+function JumpKeys() {
+  const { can } = useSession()
+  const navigate = useNavigate()
+  const { clientId } = useParams({ strict: false }) as { clientId?: string }
+  return (
+    <>
+      {JUMP_KEYS.map((jump) => (
+        <JumpKeyBinding key={jump.key} jump={jump} allowed={can(jump.permission)} onGo={(to) => void navigate({ to: to as never })} clientId={clientId} />
+      ))}
+    </>
+  )
+}
+
+function JumpKeyBinding({ jump, allowed, onGo, clientId }: { jump: JumpKey; allowed: boolean; onGo: (to: string) => void; clientId?: string }) {
+  useHotkey(`g ${jump.key}`, jump.label, () => allowed && onGo(moduleHref(jump.module, clientId)), 'Go to')
+  return null
+}
+
+/** Said once, at the top, while the browser has no network: nothing typed now would be saved. */
+function OfflineStrip() {
+  const [online, setOnline] = useState(() => navigator.onLine)
+  useEffect(() => {
+    const up = () => setOnline(true)
+    const down = () => setOnline(false)
+    window.addEventListener('online', up)
+    window.addEventListener('offline', down)
+    return () => {
+      window.removeEventListener('online', up)
+      window.removeEventListener('offline', down)
+    }
+  }, [])
+  if (online) return null
+  return (
+    <div role="alert" className="no-print border-b border-accent-edge bg-accent px-4 py-2 text-center text-[13px] font-medium text-accent-foreground">
+      You are offline. Changes cannot be saved until the connection is back.
+    </div>
+  )
+}
+
 export function Shell() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
@@ -403,7 +462,7 @@ export function Shell() {
   useHotkey('?', 'Show keyboard shortcuts', () => setShortcutsOpen(true))
   const { can, me } = useSession()
   useClientPageTitle()
-  useHotkey('g c', 'Go to clients', () => void navigate({ to: '/clients' }), 'Go to')
+  useRouteFocus()
   useHotkey('g w', 'Go to staff performance', () => can('client.view') && void navigate({ to: '/staff' }), 'Go to')
   useHotkey('g t', 'Go to team & roles', () => can('team.view') && void navigate({ to: '/settings/team' }), 'Go to')
   useHotkey('g f', 'Go to firm settings', () => can('firm.manage') && void navigate({ to: '/settings/firm' }), 'Go to')
@@ -448,6 +507,7 @@ export function Shell() {
       </Drawer.Root>
 
       <div className="flex min-w-0 flex-1 flex-col">
+        <OfflineStrip />
         <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background px-3 md:gap-3 lg:px-6">
           <Button variant="ghost" size="icon" className="size-11 shrink-0 lg:hidden" aria-label="Open menu" onClick={() => setMenuOpen(true)}>
             <Menu />
@@ -468,6 +528,7 @@ export function Shell() {
         </main>
       </div>
 
+      <JumpKeys />
       <ShortcutSheet open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
     </div>
   )

@@ -15,11 +15,6 @@ interface Copy {
 }
 
 const COPY: Record<SoonModule, Copy> = {
-  documents: {
-    name: 'Documents',
-    sentence: 'A shared folder for each client’s files, with who uploaded what and when.',
-    until: { text: 'Bank statements live under', to: '/bank', label: 'Bank statements' },
-  },
   taxation: {
     name: 'Taxation / ITR',
     sentence: 'Income-tax and advance-tax workings from the closed books.',
@@ -33,7 +28,7 @@ const COPY: Record<SoonModule, Copy> = {
   compliance: {
     name: 'Compliance',
     sentence: 'A calendar of due dates per client, with reminders.',
-    until: { text: 'GST working papers will be under', to: '/soon/gst', label: 'GST reconciliation' },
+    until: { text: 'The month’s GST reconciliation is under', to: '/gst', label: 'GST reconciliation' },
   },
   ai: {
     name: 'AI assistant',
@@ -49,11 +44,6 @@ const COPY: Record<SoonModule, Copy> = {
     name: 'Notifications',
     sentence: 'Alerts for returns, sign-off requests and deadlines.',
     until: { text: 'What is waiting is listed on', to: '/clients', label: 'Clients' },
-  },
-  gst: {
-    name: 'GST reconciliation',
-    sentence: 'Match purchases in the books against GSTR-2B, decide each difference, and sign off the month.',
-    until: { text: 'Bank statements and the Day Book are ready in', to: '/bank', label: 'Bank statements' },
   },
 }
 

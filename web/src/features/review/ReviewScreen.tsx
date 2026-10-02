@@ -23,6 +23,9 @@ import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { AssistantStrip } from '@/features/assistant/AssistantStrip'
+import { useMediaQuery } from '@/lib/useMediaQuery'
 import { Checkbox, Select } from '@/components/ui/controls'
 import { Input } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
@@ -47,9 +50,9 @@ const BAND_LABEL: Record<string, { label: string; tone: 'success' | 'info' | 'wa
 }
 
 // A small coloured dot says how sure the assistant is; nothing at all means high confidence.
-const DOT: Record<string, { className: string; title: string }> = {
-  ADVISED: { className: 'bg-warning', title: 'Check: the assistant is fairly sure, but a person should look' },
-  JUDGEMENT: { className: 'bg-destructive', title: 'Decide: the assistant is unsure, this needs your judgement' },
+const DOT: Record<string, { className: string; word: string; title: string }> = {
+  ADVISED: { className: 'bg-accent-foreground', word: 'Check', title: 'Check: the assistant is fairly sure, but a person should look' },
+  JUDGEMENT: { className: 'bg-destructive', word: 'Decide', title: 'Decide: the assistant is unsure, this needs your judgement' },
 }
 
 type SortKey = 'date' | 'amount'
@@ -82,6 +85,8 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
   const [text, setText] = useState('')
   const [sort, setSort] = useState<Sort>(null)
   const tableRef = useRef<HTMLTableElement>(null)
+  const phone = useMediaQuery('(max-width: 639px)')
+  const [sheet, setSheet] = useState(false)
 
   const rows = useMemo(() => {
     const q = text.trim().toLowerCase()
@@ -124,14 +129,12 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
     mutationFn: async () => waitForJob(await raw.post<Job>(`${V1}/clients/${clientId}/review-queue/suggest/`)),
     onSuccess: async (job) => {
       await invalidate()
-      const r = job.result as { suggested?: number; declined?: number; proposed?: number; error?: string }
-      if (r?.error) toast.warning(job.message || `The assistant stopped before it finished: ${r.error}`)
-      else
-        toast.success(`The assistant suggested ledgers for ${plural(r?.suggested ?? 0, 'row')}`, {
-          description: [r?.declined ? `${r.declined} it was unsure about` : '', r?.proposed ? `${plural(r.proposed, 'new ledger')} proposed` : '']
-            .filter(Boolean)
-            .join(' · '),
-        })
+      // The reading happens a few rows at a time while this client is open; the strip above shows it.
+      const r = job.result as { waiting_for_assistant?: number }
+      const n = r?.waiting_for_assistant ?? 0
+      toast.success(n ? `${plural(n, 'row')} queued for the assistant` : 'Nothing to queue', {
+        description: n ? 'It reads them a few at a time while this client is open. They appear here as it goes.' : undefined,
+      })
     },
     onError: (e) => toast.error(messageOf(e)),
   })
@@ -157,6 +160,7 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
   useHotkey('arrowdown', 'Next row', () => move(1), 'Review')
   useHotkey('k', 'Previous row', () => move(-1), 'Review')
   useHotkey('arrowup', 'Previous row', () => move(-1), 'Review')
+  useHotkey('/', 'Search the queue', () => document.getElementById('review-search')?.focus(), 'Review')
   useHotkey('x', 'Tick the current row for posting', () => {
     if (!selected || !canPost || stage === 'unresolved' || !postable(selected)) return
     setTicked((t) => {
@@ -206,11 +210,6 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
               <Sparkles /> {suggest.isPending ? 'Asking the assistant…' : 'Ask assistant to suggest'}
             </Button>
           )}
-          {canPost && tickedRows.length > 0 && (
-            <Button onClick={() => setConfirmTicked(true)}>
-              <CheckCheck /> Post {tickedRows.length} ticked
-            </Button>
-          )}
           {canPost && highCount > 0 && (
             <Button variant={tickedRows.length ? 'outline' : 'primary'} onClick={askBulk}>
               <CheckCheck /> Post all high-confidence ({highCount})
@@ -220,6 +219,8 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
       </div>
 
       <p className="text-sm text-muted-foreground">{STAGES.find((s) => s.stage === stage)?.hint}</p>
+
+      <AssistantStrip clientId={clientId} />
 
       {proposed.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-info/30 bg-info-bg px-4 py-2.5 text-sm">
@@ -256,6 +257,7 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
         <div className="relative max-w-sm">
           <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <Input
+            id="review-search"
             type="search"
             aria-label="Search the queue by narration, payee, ledger or amount"
             placeholder="Search narration, payee, ledger, amount"
@@ -291,8 +293,19 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
       ) : (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,1fr)]">
           <Card className="max-h-[70vh] overflow-auto">
+            {canPost && tickedRows.length > 0 && (
+              <div className="sticky top-0 z-20 flex items-center gap-3 border-b bg-accent px-3 py-1.5 text-[13px]" role="status">
+                <span className="font-semibold">{tickedRows.length} selected</span>
+                <Button size="sm" onClick={() => setConfirmTicked(true)}>
+                  <CheckCheck /> Post
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => setTicked(new Set())}>
+                  Clear
+                </Button>
+              </div>
+            )}
             <table ref={tableRef} className="w-full text-left text-sm">
-              <thead className="sticky top-0 z-10 border-b bg-muted text-[13px] text-muted-foreground">
+              <thead className={cn('sticky z-10 border-b bg-surface-2 text-xs text-muted-foreground', canPost && tickedRows.length > 0 ? 'top-9' : 'top-0')}>
                 <tr>
                   {canPost && stage !== 'unresolved' && (
                     <th className="w-8 px-3 py-2">
@@ -304,10 +317,10 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
                     </th>
                   )}
                   <SortTh label="Date" sortKey="date" sort={sort} onSort={toggleSort} className="px-3" />
-                  <th className="px-3 py-2 font-medium">Narration</th>
+                  <th className="px-3 py-2 font-semibold">Narration</th>
                   <SortTh label="Withdrawal" sortKey="amount" sort={sort} onSort={toggleSort} className="w-px px-2 text-right" right />
-                  <th className="w-px px-2 py-2 text-right font-medium">Deposit</th>
-                  <th className="w-40 px-3 py-2 font-medium">Ledger</th>
+                  <th className="w-px px-2 py-2 text-right font-semibold">Deposit</th>
+                  <th className="w-44 px-3 py-2 font-semibold max-sm:hidden">Ledger</th>
                 </tr>
               </thead>
               <tbody>
@@ -315,7 +328,10 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
                   <tr
                     key={r.id}
                     id={`row-${r.id}`}
-                    onClick={() => setSelectedId(r.id)}
+                    onClick={() => {
+                      setSelectedId(r.id)
+                      if (phone) setSheet(true)
+                    }}
                     onFocus={(e) => e.target === e.currentTarget && setSelectedId(r.id)}
                     onKeyDown={(e) => {
                       // Space ticks the row from the row itself; typing in a control inside it is left alone.
@@ -332,10 +348,10 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
                     // One Tab stop for the whole table: only the selected row can be tabbed to.
                     tabIndex={r.id === selected?.id ? 0 : -1}
                     aria-selected={r.id === selected?.id}
-                    className={cn('min-h-(--row-h) cursor-pointer border-b align-top focus-visible:outline-offset-[-2px]', r.id === selected?.id ? 'bg-accent shadow-[inset_2px_0_0_var(--primary)]' : 'hover:bg-hover')}
+                    className={cn('h-(--row-h) cursor-pointer border-b focus-visible:outline-offset-[-2px]', r.id === selected?.id ? 'bg-accent shadow-[inset_3px_0_0_var(--primary)]' : 'hover:bg-hover')}
                   >
                     {canPost && stage !== 'unresolved' && (
-                      <td className="px-3 pt-2.5" onClick={(e) => e.stopPropagation()}>
+                      <td className="px-3" onClick={(e) => e.stopPropagation()}>
                         {postable(r) && (
                           <Checkbox
                             aria-label={`Select ${rowName(r)}`}
@@ -353,26 +369,26 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
                         )}
                       </td>
                     )}
-                    <td className="num whitespace-nowrap px-3 py-2">{formatDate(r.transaction.value_date)}</td>
-                    <td className="min-w-48 px-3 py-2" title={r.transaction.narration}>
-                      {r.counterparty && <div className="truncate font-medium">{r.counterparty}</div>}
-                      <div className={cn('break-words', r.counterparty ? 'line-clamp-1 text-[13px] text-muted-foreground' : 'line-clamp-2')}>
-                        {r.transaction.narration}
+                    <td className="num whitespace-nowrap px-3 py-1">{formatDate(r.transaction.value_date)}</td>
+                    <td className="min-w-40 max-w-0 px-3 py-1" title={r.transaction.narration}>
+                      <div className="truncate">
+                        {r.counterparty && <span className="font-medium text-heading">{r.counterparty} </span>}
+                        <span className="font-mono text-xs text-muted-foreground">{r.transaction.narration}</span>
                       </div>
+                      {r.ledger_name && <div className="truncate text-xs text-muted-foreground sm:hidden">{r.ledger_name}</div>}
                     </td>
-                    <td className="num whitespace-nowrap px-2 py-2 text-right">{r.transaction.is_debit ? r.transaction.amount_display : ''}</td>
-                    <td className="num whitespace-nowrap px-2 py-2 text-right">{!r.transaction.is_debit ? r.transaction.amount_display : ''}</td>
-                    <td className="px-3 py-2">
+                    <td className="num whitespace-nowrap px-2 py-1 text-right">{r.transaction.is_debit ? r.transaction.amount_display : ''}</td>
+                    <td className="num whitespace-nowrap px-2 py-1 text-right">{!r.transaction.is_debit ? r.transaction.amount_display : ''}</td>
+                    <td className="px-3 py-1 max-sm:hidden">
                       {r.ledger_name ? (
                         <span className="flex items-center gap-1.5">
-                          <span className="truncate" title={r.ledger_name}>{r.ledger_name}</span>
+                          <span className="max-w-[14ch] truncate" title={r.ledger_name}>{r.ledger_name}</span>
                           {DOT[r.review_band] && r.method !== 'REVIEWED' && (
-                            <span
-                              role="img"
-                              aria-label={DOT[r.review_band]!.title}
-                              title={DOT[r.review_band]!.title}
-                              className={cn('size-2 shrink-0 rounded-full', DOT[r.review_band]!.className)}
-                            />
+                            <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground" title={DOT[r.review_band]!.title}>
+                              <span aria-hidden className={cn('size-2 rounded-full', DOT[r.review_band]!.className)} />
+                              {DOT[r.review_band]!.word}
+                              <span className="sr-only"> confidence: {DOT[r.review_band]!.title}</span>
+                            </span>
                           )}
                         </span>
                       ) : (
@@ -385,7 +401,7 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
             </table>
           </Card>
 
-          {selected && (
+          {selected && !phone && (
             <Decision
               key={selected.id}
               clientId={clientId}
@@ -394,6 +410,23 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
               canPost={canPost}
               onDone={() => move(0)}
             />
+          )}
+          {selected && phone && (
+            <Dialog open={sheet} onOpenChange={setSheet}>
+              <DialogContent className="p-4" aria-describedby={undefined}>
+                <DialogTitle className="sr-only">Decide this row</DialogTitle>
+                <DialogDescription className="sr-only">Choose the ledger, then place and post the row.</DialogDescription>
+                <Decision
+                  key={selected.id}
+                  clientId={clientId}
+                  row={selected}
+                  ledgers={usableLedgers(ledgers.data, bankLedgerOf(selected))}
+                  canPost={canPost}
+                  flat
+                  onDone={() => move(0)}
+                />
+              </DialogContent>
+            </Dialog>
           )}
         </div>
       )}
@@ -487,12 +520,15 @@ function Decision({
   row,
   ledgers,
   canPost,
+  flat,
   onDone,
 }: {
   clientId: string
   row: Classification
   ledgers: ReturnType<typeof usableLedgers>
   canPost: boolean
+  /** Inside a sheet: no card of its own, no sticky positioning. */
+  flat?: boolean
   onDone: () => void
 }) {
   const { can } = useSession()
@@ -596,7 +632,7 @@ function Decision({
   const legs = (row.entry_legs ?? []).map((leg) => (leg.is_bank ? leg : { ...leg, ledger: chosenLedger?.name ?? null }))
   const extras = [chosenParty?.canonical_name, tds && `TDS ${tds}`, rcm && 'Reverse charge'].filter(Boolean).join(' · ')
   return (
-    <Card className="grid content-start gap-4 p-4 xl:sticky xl:top-20">
+    <Card className={cn('grid content-start gap-4 p-4', flat ? 'border-0 p-0 shadow-none' : 'xl:sticky xl:top-20 xl:max-h-[calc(100svh-6rem)] xl:overflow-auto')}>
       <div>
         <div className="flex items-baseline justify-between gap-3">
           <span className="num text-sm text-muted-foreground">{formatDate(t.value_date)}</span>
@@ -713,15 +749,15 @@ function Decision({
             </div>
           </div>
 
-          <div className="flex flex-wrap justify-end gap-2">
+          <div className="sticky bottom-0 -mx-4 flex flex-wrap justify-end gap-2 border-t bg-card px-4 py-3 max-sm:[&>*]:flex-1">
             {!alreadyPlacedByPerson && (
               <Button variant={row.ledger && unchanged ? 'outline' : 'primary'} onClick={() => void place()} disabled={busy || !ledger}>
-                {row.ledger && ledger === row.ledger ? 'Confirm ledger' : 'Place in ledger'} <Kbd className="ml-1 bg-transparent">Enter</Kbd>
+                {row.ledger && ledger === row.ledger ? 'Confirm ledger' : 'Place in ledger'} <Kbd className="ml-1 bg-transparent max-sm:hidden">Enter</Kbd>
               </Button>
             )}
             {canPost && row.ledger && unchanged && (
               <Button onClick={() => void postNow()} disabled={busy}>
-                Post entry <Kbd className="ml-1 bg-transparent text-primary-foreground/80">P</Kbd>
+                Post entry <Kbd className="ml-1 bg-transparent text-primary-foreground/80 max-sm:hidden">P</Kbd>
               </Button>
             )}
           </div>

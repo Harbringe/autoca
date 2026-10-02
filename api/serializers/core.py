@@ -5,7 +5,7 @@ from __future__ import annotations
 from rest_framework import serializers
 
 from core.access import can_post, can_sign_off
-from core.models import Client, Firm, Job, Role
+from core.models import Client, Firm, Job
 from core.rbac import PERMISSIONS
 
 
@@ -35,7 +35,7 @@ class ClientSerializer(serializers.ModelSerializer):
         read_only_fields = ["id", "created_at", "lead", "can_sign_off", "can_post", "has_entries"]
         extra_kwargs = {
             "fy_start": {
-                "help_text": "First day of the client's financial year, normally 1 April.",
+                "help_text": "First day of the client's financial year: always 1 April.",
             },
             "business_profile": {
                 "help_text": "What the client's business does, in a few sentences. Shown to the model that suggests ledgers.",
@@ -61,8 +61,11 @@ class ClientSerializer(serializers.ModelSerializer):
         return value.strip()
 
     def validate_fy_start(self, value):
-        if value.day != 1:
-            raise serializers.ValidationError("A financial year starts on the 1st of a month (normally 1 April).")
+        unchanged = self.instance is not None and value == self.instance.fy_start
+        if (value.month, value.day) != (4, 1) and not unchanged:
+            raise serializers.ValidationError(
+                "The financial year starts on 1 April. Books here always run April to March."
+            )
         if self.instance is not None and value != self.instance.fy_start:
             from ledger.models import JournalEntry
 
@@ -77,10 +80,6 @@ class ClientSerializer(serializers.ModelSerializer):
         lead = client.lead
         if lead is None:
             return None
-        request = self.context.get("request")
-        actor = getattr(request, "membership", None)
-        if actor and actor.role == Role.FIRM_ADMIN and not actor.is_owner and lead.is_owner:
-            return {"id": "", "name": "Firm owner"}
         return {"id": str(lead.pk), "name": lead.user.full_name or lead.user.email}
 
     def get_has_entries(self, client) -> bool:

@@ -385,6 +385,7 @@ def test_the_profile_puts_a_person_in_a_firm(views, operator, firm_a):
 
 def test_the_profile_moves_a_person_between_firms_in_one_step(views, operator, firm_a, firm_b):
     member(firm_a, Role.FIRM_ADMIN, "admin@a.test")
+    member(firm_b, Role.FIRM_ADMIN, "admin@b.test")
     person = member(firm_a, Role.STAFF, "mover@example.test").user
 
     response = _save_profile(sign_in(operator), person, firm=firm_b.pk, role=Role.STAFF)

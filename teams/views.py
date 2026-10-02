@@ -50,8 +50,8 @@ def _person(membership: FirmMembership | None) -> dict | None:
 def _member(actor: FirmMembership, m: FirmMembership, clients_by_member: dict) -> dict:
     admin = service.is_admin(actor)
     own_team = service.is_lead(actor) and m.manager_id == actor.pk
-    # The owner is hidden from administrators and cannot be changed in this view.
-    admin_ok = not m.is_owner
+    # Administrators are the owner's to manage; the owner is nobody's.
+    admin_ok = m.role != Role.FIRM_ADMIN or service.can_manage_admins(actor)
     untouchable = m.is_owner or m.pk == actor.pk
     manage_role = not untouchable and (
         (admin and admin_ok) or (own_team and m.role in service.TEAM_ROLES)
@@ -62,11 +62,7 @@ def _member(actor: FirmMembership, m: FirmMembership, clients_by_member: dict) -
         "email": m.user.email,
         "full_name": m.user.full_name,
         "scope_all_clients": m.scope_all_clients or m.role == Role.FIRM_ADMIN,
-        "manager": (
-            {"id": "", "name": "Firm owner", "role": Role.FIRM_ADMIN, "role_display": "Firm owner", "is_owner": True, "is_active": True}
-            if m.manager and m.manager.is_owner and not actor.is_owner
-            else _person(m.manager)
-        ),
+        "manager": _person(m.manager),
         "last_login": m.user.last_login,
         "created_at": m.created_at,
         "is_me": m.pk == actor.pk,
@@ -177,8 +173,6 @@ class MembersView(TeamView):
         leads = FirmMembership.objects.filter(
             firm_id=actor.firm_id, is_active=True, role__in=service.LEAD_ROLES
         )
-        if not actor.is_owner:
-            leads = leads.exclude(is_owner=True)
         return Response(
             {
                 "period": {"from": period.start.date(), "to": (period.end - datetime.timedelta(days=1)).date()},
@@ -322,8 +316,6 @@ class ClientsView(TeamView):
         )
         assignments: dict = {c.pk: [] for c in clients}
         for a in ClientAssignment.objects.filter(client__in=clients).select_related("membership__user"):
-            if a.membership.is_owner and not actor.is_owner:
-                continue
             assignments[a.client_id].append(
                 {**_person(a.membership), "assigned_at": a.created_at, "on_my_team": a.membership.manager_id == actor.pk}
             )
@@ -341,11 +333,7 @@ class ClientsView(TeamView):
                     {
                         "id": str(c.pk),
                         "name": c.name,
-                        "lead": (
-                            _person(c.lead)
-                            if actor.is_owner or not (c.lead and c.lead.is_owner)
-                            else {"id": "", "name": "Firm owner", "role": Role.FIRM_ADMIN, "role_display": "Firm owner", "is_owner": True, "is_active": True}
-                        ),
+                        "lead": _person(c.lead),
                         "team": sorted(assignments[c.pk], key=lambda p: p["name"].lower()),
                         **open_work[c.pk],
                     }
@@ -483,12 +471,8 @@ class FirmSettingsView(APIView):
                 "id": str(firm.pk),
                 "name": firm.name,
                 "created_at": firm.created_at,
-                "owner": (
-                    _person(owner)
-                    if actor.is_owner or owner is None
-                    else {"id": "", "name": "Firm owner", "role": Role.FIRM_ADMIN, "role_display": "Firm owner", "is_owner": True, "is_active": True}
-                ),
-                "admins": [_person(m) for m in members if m.role == Role.FIRM_ADMIN and m.is_active and (actor.is_owner or not m.is_owner)],
+                "owner": _person(owner),
+                "admins": [_person(m) for m in members if m.role == Role.FIRM_ADMIN and m.is_active],
                 "counts": {
                     "active_members": sum(1 for m in members if m.is_active),
                     "senior_cas": sum(1 for m in members if m.is_active and m.role == Role.SENIOR_CA),

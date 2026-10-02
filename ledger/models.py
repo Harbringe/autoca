@@ -315,3 +315,85 @@ class EntryChange(UUIDModel, FirmScopedModel):
 
     def __str__(self) -> str:
         return f"{self.get_action_display()} {self.voucher_type} #{self.entry_no}"
+
+
+class ImportKind(models.TextChoices):
+    CHART_OPENING = "CHART_OPENING", "Chart of accounts and opening balances"
+
+
+class ImportStatus(models.TextChoices):
+    PREVIEW = "PREVIEW", "Previewed, not applied"
+    CONFIRMED = "CONFIRMED", "Applied"
+    DISCARDED = "DISCARDED", "Discarded"
+
+
+class LedgerImportRun(UUIDModel, FirmScopedModel):
+    """One uploaded Tally masters file, staged and then, if a person chooses, applied.
+
+    Staging is mutable and the books are not (the same line the whole product
+    draws): the preview writes nothing but this row, whose ``rows`` carry only
+    what the import needs -- a name, a group, an amount -- and no file is kept.
+    Confirming applies exactly what the person chose, once.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="ledger_import_runs")
+    kind = models.CharField(max_length=16, choices=ImportKind.choices, default=ImportKind.CHART_OPENING)
+    financial_year = models.PositiveSmallIntegerField(help_text="Starting year, e.g. 2025.")
+    uploaded_by = models.ForeignKey(User, null=True, on_delete=models.SET_NULL, related_name="+")
+    file_sha256 = models.CharField(max_length=64)
+    source_format = models.CharField(max_length=8)
+    #: False when the person asked for the chart only, e.g. because the file's
+    #: balances are not at the start of the year.
+    include_openings = models.BooleanField(default=True)
+    status = models.CharField(max_length=12, choices=ImportStatus.choices, default=ImportStatus.PREVIEW)
+    books_from = models.DateField(null=True, blank=True)
+    counts = models.JSONField(default=dict)
+    rows = models.JSONField(default=list)
+    #: A fingerprint of the client's chart when the preview was made. A confirm
+    #: against a different chart is refused: the preview no longer describes it.
+    chart_stamp = models.CharField(max_length=64)
+    expires_at = models.DateTimeField()
+    result = models.JSONField(default=dict, blank=True)
+    confirmed_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "ledger_import_run"
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["firm", "client", "created_at"], name="idx_import_run_client")]
+
+    def __str__(self) -> str:
+        return f"{self.get_kind_display()} FY{self.financial_year} ({self.status})"
+
+
+class LedgerOpening(UUIDModel, FirmScopedModel):
+    """A ledger's balance at the start of a financial year, as imported.
+
+    Not a journal entry, on purpose: an opening is a starting position, not a
+    transaction. It takes no voucher number, is not in the Day Book, and can be
+    replaced by a better import until the year is signed off, where an entry
+    could only ever be reversed. ``ledger.reports`` adds it to a ledger's
+    opening, and the counterpart shows as "Difference in opening balances".
+
+    The composite foreign keys (see 0010) keep the ledger and the run in the
+    same client's books, in PostgreSQL.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="ledger_openings")
+    ledger = models.ForeignKey(LedgerAccount, on_delete=models.PROTECT, related_name="openings")
+    financial_year = models.PositiveSmallIntegerField(help_text="Starting year, e.g. 2025.")
+    #: Debits positive, credits negative, like ``JournalLine.signed_paise``.
+    signed_paise = models.BigIntegerField()
+    run = models.ForeignKey(LedgerImportRun, null=True, blank=True, on_delete=models.SET_NULL, related_name="openings")
+
+    class Meta:
+        db_table = "ledger_opening"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["firm", "client", "ledger", "financial_year"], name="uniq_opening_per_ledger_year"
+            ),
+        ]
+        indexes = [models.Index(fields=["firm", "client", "financial_year"], name="idx_opening_client_year")]
+
+    def __str__(self) -> str:
+        return f"{self.ledger_id} FY{self.financial_year} {format_inr(self.signed_paise)}"

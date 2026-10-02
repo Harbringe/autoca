@@ -1,8 +1,5 @@
-import { createFileRoute, redirect } from '@tanstack/react-router'
+import { createFileRoute } from '@tanstack/react-router'
+import { DashboardScreen } from '@/features/dashboard/DashboardScreen'
+import { fySearch } from '@/lib/fy'
 
-// Until the dashboard is built (it needs the firm overview endpoint) this lands on the client list.
-export const Route = createFileRoute('/_app/dashboard')({
-  beforeLoad: () => {
-    throw redirect({ to: '/clients', replace: true })
-  },
-})
+export const Route = createFileRoute('/_app/dashboard')({ validateSearch: fySearch, component: DashboardScreen })

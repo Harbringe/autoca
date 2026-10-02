@@ -119,7 +119,7 @@ class LedgerAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
 
     @extend_schema(
         summary="Accept a proposed ledger",
-        description="Optionally rename it to match Tally. Rows already suggested into it stay as suggestions for review.",
+        description="Optionally rename it to the spelling the client already uses. Rows already suggested into it stay as suggestions for review.",
         request=AcceptProposalSerializer,
         responses=LedgerAccountSerializer,
     )

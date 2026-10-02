@@ -122,6 +122,11 @@ describe('statement balances', () => {
     expect(closingLine(ledger(1142000, 0), 'liability')).toBe('(-) ₹11,420.00')
     expect(closingLine(ledger(1142000, 0), 'income')).toBe('₹11,420.00 Dr')
   })
+  it('leaves the rupee sign to the column header when asked', () => {
+    expect(closingLine(ledger(0, 2075370), 'asset', { symbol: false })).toBe('20,753.70 Cr')
+    expect(closingLine(ledger(1142000, 0), 'liability', { symbol: false })).toBe('(-) 11,420.00')
+    expect(sideTotal(-1075370, 'Dr', { symbol: false })).toBe('10,753.70 Cr')
+  })
   it('has nothing to write for a ledger with no closing balance', () => {
     expect(closingLine(ledger(0, 0), 'asset')).toBeNull()
   })

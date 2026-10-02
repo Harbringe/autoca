@@ -1,8 +1,8 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { PickClient } from '@/features/shell/PickClient'
+import { ModuleClientTable } from '@/features/shell/ModuleClientTable'
 import { parseFy } from '@/lib/fy'
 
 export const Route = createFileRoute('/_app/reports')({
   validateSearch: (search: Record<string, unknown>): { fy?: number } => ({ fy: parseFy(search.fy) }),
-  component: () => <PickClient title="Reports" description="Trial Balance, Profit and Loss, Balance Sheet and bank reconciliation." />,
+  component: () => <ModuleClientTable module="reports" />,
 })

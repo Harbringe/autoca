@@ -27,14 +27,14 @@ export function ClientTeamScreen({ clientId, justCreated }: { clientId: string; 
   if (client.isPending) return <Spinner label="Loading…" />
   if (client.error) return <ErrorState error={client.error} retry={() => void client.refetch()} />
   return (
-    <div className="grid max-w-3xl gap-8">
+    <div className="grid max-w-5xl items-start gap-4 lg:grid-cols-2">
       {can('team.view') && <People clientId={clientId} justCreated={justCreated} />}
       {can('client.update') && <Details client={client.data} />}
     </div>
   )
 }
 
-function People({ clientId, justCreated }: { clientId: string; justCreated: boolean }) {
+export function People({ clientId, justCreated }: { clientId: string; justCreated: boolean }) {
   const clients = useQuery(teamClients())
   const members = useQuery(teamMembers())
   const setLead = useSetLead()
@@ -71,8 +71,8 @@ function People({ clientId, justCreated }: { clientId: string; justCreated: bool
   }
 
   return (
-    <section aria-labelledby="ct-people" className="grid gap-5">
-      <h2 id="ct-people" className="text-base font-semibold">
+    <section aria-labelledby="ct-people" className="grid gap-5 rounded-lg border bg-card p-5">
+      <h2 id="ct-people" className="text-[15px] font-semibold text-heading">
         Senior CA and team
       </h2>
       {needsLead && (
@@ -95,7 +95,7 @@ function People({ clientId, justCreated }: { clientId: string; justCreated: bool
               void run(() => setLead.mutateAsync({ clientId, lead }), lead ? 'Senior CA set' : 'Senior CA removed')
             }}
           >
-            <option value="">{row.lead?.is_owner && !row.lead.id ? 'Firm owner (details hidden)' : 'Not assigned'}</option>
+            <option value="">Not assigned</option>
             {leads.map((l) => (
               <option key={l.id} value={l.id}>
                 {l.name} ({l.role_display})
@@ -106,7 +106,7 @@ function People({ clientId, justCreated }: { clientId: string; justCreated: bool
       </Field>
 
       <div>
-        <h3 className="mb-2 text-sm font-medium">People working on this client</h3>
+        <h3 className="mb-2 text-[13px] font-semibold text-heading">People working on this client</h3>
         {row.team.length === 0 ? (
           <p className="text-sm text-muted-foreground">Nobody is assigned yet. People with access to every client can still open it.</p>
         ) : (
@@ -208,8 +208,8 @@ function Details({ client }: { client: Client }) {
   }
 
   return (
-    <section aria-labelledby="ct-details">
-      <h2 id="ct-details" className="mb-3 text-base font-semibold">
+    <section aria-labelledby="ct-details" className="rounded-lg border bg-card p-5">
+      <h2 id="ct-details" className="mb-3 text-[15px] font-semibold text-heading">
         Client details
       </h2>
       <form onSubmit={submit} className="grid gap-4" noValidate>

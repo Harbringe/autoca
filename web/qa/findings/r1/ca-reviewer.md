@@ -140,7 +140,10 @@ Covered: as admin, senior, staff and reader on my own clients (QA CA Ashok Enter
 - **Actual:** created with "Financial year starts 01-01-2026" shown in the client list and details, but every report and the year selector still run April to March (FY 2026-27, 01-04-2026 to 31-03-2027). The field promises something the books do not do.
 - **Evidence:** client faff5c57-d670-4488-bf7e-1371952b8c92 (left in place, prefixed QA CA), reports empty state text
 - **Owner:** backend-dev
-- **Status:** open
+- **Status:** fixed
+- **Files:** api/serializers/core.py, api/tests/test_client_fy.py
+- **Change:** the client serializer accepts only 1 April as `fy_start` (new and edited clients), message "The financial year starts on 1 April. Books here always run April to March."; an existing client whose stored date is another day can still be edited as long as that field is left unchanged. Existing rows untouched.
+- **Verify:** POST /api/v1/clients/ with fy_start 2026-01-01 answers 400; 2026-04-01 answers 201; PATCH to a non-April date answers 400. CONTRACT CHANGE: client create/update validation only.
 
 ### CA-013 · minor · Reports at 390px wide, the whole page scrolls sideways
 - **Role / area:** admin, Reports > Trial Balance at 390px

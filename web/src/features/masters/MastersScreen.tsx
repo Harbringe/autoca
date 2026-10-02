@@ -14,13 +14,14 @@ import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
 import { journal, ledgers as ledgersQuery, parties as partiesQuery, rules as rulesQuery } from '@/api/queries/books'
 import { clientDetail, useInvalidateClient, V1 } from '@/api/queries/clients'
-import { GROUP_LABEL, LEDGER_GROUPS, TDS_SECTIONS, type LedgerAccount, type Party, type Rule } from '@/api/types'
+import { GROUP_LABEL, LEDGER_GROUPS, TDS_SECTIONS, type JournalEntry, type LedgerAccount, type Party, type Rule } from '@/api/types'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Checkbox, Select, tbl } from '@/components/ui/controls'
+import { Checkbox, Select } from '@/components/ui/controls'
 import { Money } from '@/components/ca/Money'
+import { DataTable } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
@@ -30,6 +31,14 @@ import { useFy } from '@/features/shell/useFy'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 
+const LEDGER_GROUP_LABEL = new Map<string, string>(LEDGER_GROUPS)
+
+/** The Dr or Cr total a voucher puts on one ledger, as money, or a dash. */
+function sideOf(entry: JournalEntry, ledgerId: string, side: 'DR' | 'CR') {
+  const paise = entry.lines.filter((l) => l.ledger_account === ledgerId && l.direction === side).reduce((sum, l) => sum + l.amount_paise, 0)
+  return paise > 0 ? <Money paise={paise} /> : <span className="text-faint" aria-hidden>–</span>
+}
+
 export type MasterTab = 'ledgers' | 'parties' | 'rules'
 
 export function MastersScreen({ clientId, tab }: { clientId: string; tab: MasterTab }) {
@@ -37,28 +46,25 @@ export function MastersScreen({ clientId, tab }: { clientId: string; tab: Master
     { tab: 'parties', label: 'Parties' },
     { tab: 'rules', label: 'Rules' },
   ]
+  // Ledgers is a tab of Bookkeeping in its own right; Parties and Rules share the "Parties & rules" tab.
   return (
     <div className="grid gap-4">
-      <nav aria-label="Masters" className="flex w-fit gap-1 rounded-lg bg-muted p-1">
-        <Link
-          to="/clients/$clientId/ledgers"
-          params={{ clientId }}
-          className={cn('rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground', tab === 'ledgers' && 'bg-card text-foreground shadow-xs')}
-        >
-          Ledgers
-        </Link>
-        {tabs.map((t) => (
-          <Link
-            key={t.tab}
-            to="/clients/$clientId/masters"
-            params={{ clientId }}
-            search={{ tab: t.tab }}
-            className={cn('rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground', tab === t.tab && 'bg-card text-foreground shadow-xs')}
-          >
-            {t.label}
-          </Link>
-        ))}
-      </nav>
+      {tab !== 'ledgers' && (
+        <nav aria-label="Parties and rules" className="flex w-fit gap-1 rounded-lg bg-muted p-1">
+          {tabs.map((t) => (
+            <Link
+              key={t.tab}
+              to="/clients/$clientId/masters"
+              params={{ clientId }}
+              search={{ tab: t.tab }}
+              aria-current={tab === t.tab ? 'page' : undefined}
+              className={cn('rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground', tab === t.tab && 'bg-card text-foreground shadow-xs')}
+            >
+              {t.label}
+            </Link>
+          ))}
+        </nav>
+      )}
       {tab === 'ledgers' && <Ledgers clientId={clientId} />}
       {tab === 'parties' && <Parties clientId={clientId} />}
       {tab === 'rules' && <Rules clientId={clientId} />}
@@ -104,6 +110,7 @@ function Ledgers({ clientId }: { clientId: string }) {
       entryStats.set(line.ledger_account, stats)
     }
   }
+  const grouped = LEDGER_GROUPS.flatMap(([group]) => active.filter((l) => l.group === group))
   const selected = all.data.find((ledger) => ledger.id === selectedLedger) ?? null
   const q = entrySearch.trim().toLowerCase()
   const selectedEntries = selected
@@ -134,36 +141,28 @@ function Ledgers({ clientId }: { clientId: string }) {
               ? 'Accept each with the exact name it has in Tally, merge it into a ledger that already exists, or reject it. Rows suggested into it wait until you decide.'
               : 'A senior CA who leads this client decides these.'}
           </p>
-          <div className={tbl.wrap}>
-            <table className={tbl.table}>
-              <thead className={tbl.head}>
-                <tr>
-                  <th className={tbl.th}>Proposed name</th>
-                  <th className={tbl.th}>Group</th>
-                  <th className={tbl.th}>Why</th>
-                  <th className={tbl.thNum}>Rows</th>
-                  <th className={tbl.th}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {proposed.map((l) => (
-                  <tr key={l.id} className={tbl.row}>
-                    <td className={`${tbl.td} font-medium`}>{l.name}</td>
-                    <td className={tbl.td}>{GROUP_LABEL[l.group ?? ''] ?? l.group}</td>
-                    <td className={`${tbl.td} max-w-md text-muted-foreground`}>{l.proposal_reason}</td>
-                    <td className={tbl.tdNum}>{l.row_count}</td>
-                    <td className={`${tbl.td} text-right`}>
-                      {mayDecide && (
-                        <Button size="sm" variant="outline" onClick={() => setDeciding(l)}>
-                          Decide
-                        </Button>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <DataTable
+            caption="Ledgers the assistant proposed"
+            rows={proposed}
+            rowKey={(l) => l.id}
+            columns={[
+              { key: 'name', header: 'Proposed name', cell: (l) => <span className="font-medium text-heading">{l.name}</span> },
+              { key: 'group', header: 'Group', priority: 2, cell: (l) => GROUP_LABEL[l.group ?? ''] ?? l.group },
+              { key: 'why', header: 'Why', priority: 3, className: 'max-w-md truncate text-muted-foreground', cell: (l) => l.proposal_reason },
+              { key: 'rows', header: 'Rows', align: 'right', cell: (l) => l.row_count },
+              {
+                key: 'act',
+                header: <span className="sr-only">Actions</span>,
+                align: 'right',
+                cell: (l) =>
+                  mayDecide && (
+                    <Button size="sm" variant="outline" onClick={() => setDeciding(l)} aria-label={`Decide on ${l.name}`}>
+                      Decide
+                    </Button>
+                  ),
+              },
+            ]}
+          />
         </Card>
       )}
 
@@ -181,62 +180,56 @@ function Ledgers({ clientId }: { clientId: string }) {
         </div>
       </div>
 
-      <div className={tbl.wrap}>
-        <table className={tbl.table}>
-          <thead className={tbl.head}>
-            <tr>
-              <th className={tbl.th}>Ledger</th>
-              <th className={tbl.thNum}>Rows placed</th>
-              <th className={tbl.thNum}>FY {fyLabel(fy)} entries</th>
-              <th className={tbl.th}></th>
-            </tr>
-          </thead>
-          {LEDGER_GROUPS.map(([group, label]) => {
-            const inGroup = active.filter((l) => l.group === group)
-            if (!inGroup.length) return null
-            return (
-              <tbody key={group}>
-                <tr className="bg-muted/40">
-                  <th colSpan={4} className="px-3 py-1.5 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                    {label}
-                  </th>
-                </tr>
-                {inGroup.map((l) => (
-                  <tr key={l.id} className={tbl.row}>
-                    <td className={cn(tbl.td, 'pl-6')}>
-                      <button type="button" className="font-medium text-link underline-offset-2 hover:underline" onClick={() => setSelectedLedger(l.id)}>{l.name}</button>
-                      {!l.is_active && <Badge className="ml-2">Inactive</Badge>}
-                    </td>
-                    <td className={tbl.tdNum}>{l.row_count}</td>
-                    <td className={tbl.tdNum}>{entryStats.get(l.id)?.count ?? 0}</td>
-                    <td className={`${tbl.td} text-right`}>
-                      {manage && group !== 'BANK' && (
-                        <span className="flex justify-end gap-1">
-                          <Button size="sm" variant="ghost" onClick={() => setEditing(l)} aria-label={`Edit ${l.name}`}>
-                            Edit
-                          </Button>
-                          {l.row_count === 0 && (
-                            <Button size="sm" variant="ghost" onClick={() => void remove(l)} aria-label={`Delete ${l.name}`}>
-                              <Trash2 />
-                            </Button>
-                          )}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            )
-          })}
-        </table>
-      </div>
+      <DataTable
+        caption="Ledgers by Tally group"
+        rows={grouped}
+        rowKey={(l) => l.id}
+        groupOf={(l) => LEDGER_GROUP_LABEL.get(l.group ?? '') ?? l.group ?? 'Other'}
+        empty={<EmptyState title="No ledgers to show">Tick “Show inactive” or add a ledger.</EmptyState>}
+        columns={[
+          {
+            key: 'name',
+            header: 'Ledger',
+            className: 'pl-6',
+            cell: (l) => (
+              <>
+                <button type="button" className="font-medium text-link underline-offset-2 hover:underline" onClick={() => setSelectedLedger(l.id)}>
+                  {l.name}
+                </button>
+                {!l.is_active && <Badge className="ml-2">Inactive</Badge>}
+              </>
+            ),
+          },
+          { key: 'placed', header: 'Rows placed', align: 'right', priority: 2, cell: (l) => l.row_count },
+          { key: 'entries', header: `FY ${fyLabel(fy)} entries`, align: 'right', cell: (l) => entryStats.get(l.id)?.count ?? 0 },
+          {
+            key: 'act',
+            header: <span className="sr-only">Actions</span>,
+            align: 'right',
+            cell: (l) =>
+              manage &&
+              l.group !== 'BANK' && (
+                <span className="flex justify-end gap-1">
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(l)} aria-label={`Edit ${l.name}`}>
+                    Edit
+                  </Button>
+                  {l.row_count === 0 && (
+                    <Button size="sm" variant="ghost" onClick={() => void remove(l)} aria-label={`Delete ${l.name}`}>
+                      <Trash2 />
+                    </Button>
+                  )}
+                </span>
+              ),
+          },
+        ]}
+      />
 
       {selected && (
         <Card className="grid gap-4 p-4" aria-label={`${selected.name} ledger details`}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Ledger detail · FY {fyLabel(fy)}</div>
-              <h2 className="mt-1 text-lg font-semibold">{selected.name}</h2>
+              <div className="text-xs font-medium text-muted-foreground">Ledger detail, FY {fyLabel(fy)}</div>
+              <h2 className="mt-1 text-[15px] font-semibold text-heading">{selected.name}</h2>
               <p className="text-sm text-muted-foreground">{GROUP_LABEL[selected.group ?? ''] ?? selected.group} · {plural(selectedEntries.length, 'voucher')}</p>
             </div>
             <div className="flex items-center gap-2">
@@ -250,23 +243,18 @@ function Ledgers({ clientId }: { clientId: string }) {
           </div>
           <Input aria-label="Search ledger entries" placeholder="Search narration or voucher number" value={entrySearch} onChange={(e) => setEntrySearch(e.target.value)} />
           {selectedEntries.length === 0 ? <p className="py-5 text-center text-sm text-muted-foreground">No posted entries for this ledger in FY {fyLabel(fy)}{q ? ' match this search.' : '.'}</p> : (
-            <div className={tbl.wrap}>
-              <table className={tbl.table}>
-                <thead className={tbl.head}><tr><th className={tbl.th}>Date</th><th className={tbl.th}>Voucher</th><th className={tbl.th}>Narration</th><th className={tbl.thNum}>Debit</th><th className={tbl.thNum}>Credit</th></tr></thead>
-                <tbody>{selectedEntries.map((entry) => {
-                  const matching = entry.lines.filter((item) => item.ledger_account === selected.id)
-                  const debit = matching.filter((line) => line.direction === 'DR').reduce((sum, line) => sum + line.amount_paise, 0)
-                  const credit = matching.filter((line) => line.direction === 'CR').reduce((sum, line) => sum + line.amount_paise, 0)
-                  return <tr key={entry.id} className={tbl.row}>
-                    <td className={`${tbl.td} num whitespace-nowrap`}>{formatDate(entry.entry_date)}</td>
-                    <td className={tbl.td}>{entry.voucher_type} · {entry.entry_no}</td>
-                    <td className={`${tbl.td} max-w-lg truncate`} title={entry.narration}>{entry.narration}</td>
-                    <td className={tbl.tdNum}>{debit > 0 && <Money paise={debit} />}</td>
-                    <td className={tbl.tdNum}>{credit > 0 && <Money paise={credit} />}</td>
-                  </tr>
-                })}</tbody>
-              </table>
-            </div>
+            <DataTable
+              caption={`${selected.name}: posted entries`}
+              rows={selectedEntries}
+              rowKey={(entry) => entry.id}
+              columns={[
+                { key: 'date', header: 'Date', align: 'right', cell: (entry) => formatDate(entry.entry_date) },
+                { key: 'vch', header: 'Voucher', priority: 2, cell: (entry) => `${entry.voucher_type} · ${entry.entry_no}` },
+                { key: 'narr', header: 'Narration', className: 'max-w-0 w-full truncate', cell: (entry) => <span title={entry.narration}>{entry.narration}</span> },
+                { key: 'dr', header: 'Debit', align: 'right', cell: (entry) => sideOf(entry, selected.id, 'DR') },
+                { key: 'cr', header: 'Credit', align: 'right', cell: (entry) => sideOf(entry, selected.id, 'CR') },
+              ]}
+            />
           )}
         </Card>
       )}
@@ -443,39 +431,39 @@ function Parties({ clientId }: { clientId: string }) {
       {list.data.length === 0 ? (
         <EmptyState title="No parties yet">Parties are the people and businesses the client pays or is paid by. They are added as you confirm payees in Review.</EmptyState>
       ) : (
-        <div className={tbl.wrap}>
-          <table className={tbl.table}>
-            <thead className={tbl.head}>
-              <tr>
-                <th className={tbl.th}>Name</th>
-                <th className={tbl.th}>GSTIN</th>
-                <th className={tbl.th}>TDS</th>
-                <th className={tbl.th}>RCM</th>
-                <th className={tbl.th}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {shown.map((p) => (
-                <tr key={p.id} className={tbl.row}>
-                  <td className={`${tbl.td} font-medium`}>
-                    {p.canonical_name}
-                    {p.is_active === false && <Badge className="ml-2">Inactive</Badge>}
-                  </td>
-                  <td className={`${tbl.td} font-mono text-xs`}>{p.gstin || '—'}</td>
-                  <td className={tbl.td}>{p.tds_section || '—'}</td>
-                  <td className={tbl.td}>{p.rcm_default ? 'Yes' : '—'}</td>
-                  <td className={`${tbl.td} text-right`}>
-                    {can('party.manage') && (
-                      <Button size="sm" variant="ghost" onClick={() => setEditing(p)} aria-label={`Edit ${p.canonical_name}`}>
-                        Edit
-                      </Button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          caption="Parties"
+          rows={shown}
+          rowKey={(p) => p.id}
+          empty={<EmptyState title="No party matches">Clear the search box to see them all.</EmptyState>}
+          columns={[
+            {
+              key: 'name',
+              header: 'Name',
+              sortValue: (p) => p.canonical_name.toLowerCase(),
+              cell: (p) => (
+                <>
+                  <span className="font-medium text-heading">{p.canonical_name}</span>
+                  {p.is_active === false && <Badge className="ml-2">Inactive</Badge>}
+                </>
+              ),
+            },
+            { key: 'gstin', header: 'GSTIN', priority: 2, className: 'font-mono text-xs', cell: (p) => p.gstin || '—' },
+            { key: 'tds', header: 'TDS', priority: 2, cell: (p) => p.tds_section || '—' },
+            { key: 'rcm', header: 'RCM', priority: 3, cell: (p) => (p.rcm_default ? 'Yes' : '—') },
+            {
+              key: 'act',
+              header: <span className="sr-only">Actions</span>,
+              align: 'right',
+              cell: (p) =>
+                can('party.manage') && (
+                  <Button size="sm" variant="ghost" onClick={() => setEditing(p)} aria-label={`Edit ${p.canonical_name}`}>
+                    Edit
+                  </Button>
+                ),
+            },
+          ]}
+        />
       )}
       {editing && <PartyForm clientId={clientId} party={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
     </div>
@@ -597,47 +585,54 @@ function Rules({ clientId }: { clientId: string }) {
           </Button>
         )}
       </div>
-      <div className={tbl.wrap}>
-        <table className={tbl.table}>
-          <thead className={tbl.head}>
-            <tr>
-              <th className={tbl.th}>When</th>
-              <th className={tbl.th}>Direction</th>
-              <th className={tbl.th}>Place in</th>
-              <th className={tbl.th}>Source</th>
-              <th className={tbl.thNum}>Used</th>
-              <th className={tbl.th}>Last used</th>
-              <th className={tbl.th}>Active</th>
-              <th className={tbl.th}></th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((r) => (
-              <tr key={r.id} className={cn(tbl.row, !r.is_active && 'text-muted-foreground')}>
-                <td className={tbl.td}>
-                  <span className="text-muted-foreground">{MATCH_LABEL[r.match_type ?? ''] ?? r.match_type} </span>
-                  <span className="font-medium">{r.pattern}</span>
-                </td>
-                <td className={tbl.td}>{DIRECTION_LABEL[r.direction ?? 'ANY']}</td>
-                <td className={tbl.td}>{r.ledger_name}</td>
-                <td className={tbl.td}>{SOURCE_LABEL[r.source] ?? r.source}</td>
-                <td className={tbl.tdNum}>{r.hit_count}</td>
-                <td className={`${tbl.td} num`}>{r.last_hit_at ? formatDate(r.last_hit_at.slice(0, 10)) : '—'}</td>
-                <td className={tbl.td}>
-                  <Checkbox aria-label={`Active: ${MATCH_LABEL[r.match_type ?? ''] ?? r.match_type} ${r.pattern}, ${DIRECTION_LABEL[r.direction ?? 'ANY']}, to ${r.ledger_name}`} checked={!!r.is_active} disabled={!manage} onChange={() => void toggle(r)} />
-                </td>
-                <td className={`${tbl.td} text-right`}>
-                  {manage && r.source !== 'SEED' && (
-                    <Button size="sm" variant="ghost" onClick={() => void remove(r)} aria-label={`Delete rule: ${MATCH_LABEL[r.match_type ?? ''] ?? r.match_type} ${r.pattern} to ${r.ledger_name}`}>
-                      <Trash2 />
-                    </Button>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      <DataTable
+        caption="Rules"
+        rows={sorted}
+        rowKey={(r) => r.id}
+        rowClassName={(r) => (r.is_active ? undefined : 'text-muted-foreground')}
+        empty={<EmptyState title="No rules yet">Rules appear here as you place rows in Review with “Remember this” ticked.</EmptyState>}
+        columns={[
+          {
+            key: 'when',
+            header: 'When',
+            cell: (r) => (
+              <>
+                <span className="text-muted-foreground">{MATCH_LABEL[r.match_type ?? ''] ?? r.match_type} </span>
+                <span className="font-medium">{r.pattern}</span>
+              </>
+            ),
+          },
+          { key: 'dir', header: 'Direction', priority: 2, cell: (r) => DIRECTION_LABEL[r.direction ?? 'ANY'] },
+          { key: 'ledger', header: 'Place in', cell: (r) => r.ledger_name },
+          { key: 'source', header: 'Source', priority: 3, cell: (r) => SOURCE_LABEL[r.source] ?? r.source },
+          { key: 'used', header: 'Used', align: 'right', priority: 2, cell: (r) => r.hit_count },
+          { key: 'last', header: 'Last used', align: 'right', priority: 3, cell: (r) => (r.last_hit_at ? formatDate(r.last_hit_at.slice(0, 10)) : '—') },
+          {
+            key: 'active',
+            header: 'Active',
+            cell: (r) => (
+              <Checkbox
+                aria-label={`Active: ${MATCH_LABEL[r.match_type ?? ''] ?? r.match_type} ${r.pattern}, ${DIRECTION_LABEL[r.direction ?? 'ANY']}, to ${r.ledger_name}`}
+                checked={!!r.is_active}
+                disabled={!manage}
+                onChange={() => void toggle(r)}
+              />
+            ),
+          },
+          {
+            key: 'act',
+            header: <span className="sr-only">Actions</span>,
+            align: 'right',
+            cell: (r) =>
+              manage &&
+              r.source !== 'SEED' && (
+                <Button size="sm" variant="ghost" onClick={() => void remove(r)} aria-label={`Delete rule: ${MATCH_LABEL[r.match_type ?? ''] ?? r.match_type} ${r.pattern} to ${r.ledger_name}`}>
+                  <Trash2 />
+                </Button>
+              ),
+          },
+        ]}
+      />
       {creating && <RuleForm clientId={clientId} ledgers={(ledgers.data ?? []).filter((l) => l.status === 'ACTIVE' && l.is_active)} onClose={() => setCreating(false)} />}
     </div>
   )

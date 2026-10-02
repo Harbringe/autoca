@@ -23,8 +23,10 @@ export type ModuleId =
 
 /** The client-scoped screens and the module each one belongs to. */
 export const CLIENT_SCREEN_MODULE: Record<string, ModuleId> = {
+  documents: 'documents',
   statements: 'bank',
   review: 'bank',
+  bookkeeping: 'bookkeeping',
   daybook: 'bookkeeping',
   ledgers: 'bookkeeping',
   masters: 'bookkeeping',
@@ -36,13 +38,15 @@ export const CLIENT_SCREEN_MODULE: Record<string, ModuleId> = {
 
 /** Where a module opens for one client, and for the whole firm. */
 export const MODULE_CLIENT_SCREEN: Partial<Record<ModuleId, string>> = {
+  documents: 'documents',
   bank: 'statements',
-  bookkeeping: 'daybook',
+  bookkeeping: 'bookkeeping',
   reports: 'reports',
   gst: 'gst',
 }
 
 export const FIRM_LANDING: Partial<Record<ModuleId, string>> = {
+  documents: '/documents',
   bank: '/bank',
   bookkeeping: '/bookkeeping',
   reports: '/reports',
@@ -50,11 +54,12 @@ export const FIRM_LANDING: Partial<Record<ModuleId, string>> = {
 }
 
 /** Modules that have no screen yet; each has a page at /soon/<slug>. */
-export const SOON_MODULES = ['documents', 'taxation', 'audit', 'compliance', 'ai', 'analytics', 'notifications', 'gst'] as const
+export const SOON_MODULES = ['taxation', 'audit', 'compliance', 'ai', 'analytics', 'notifications'] as const
 export type SoonModule = (typeof SOON_MODULES)[number]
 
 const SEGMENT_MODULE: Record<string, ModuleId> = {
   dashboard: 'dashboard',
+  documents: 'documents',
   clients: 'clients',
   pipeline: 'pipeline',
   bookkeeping: 'bookkeeping',
@@ -99,7 +104,6 @@ export function switchClientPath(pathname: string, clientId: string | null): str
   }
   if (parts[0] === 'clients' && parts[1] && parts[2]) return `/clients/${clientId}/${parts[2]}`
   const screen = module && MODULE_CLIENT_SCREEN[module]
-  // The client's GST screen does not exist yet, so a GST landing falls back to the profile.
-  if (screen && module !== 'gst' && FIRM_LANDING[module] === `/${parts[0]}`) return `/clients/${clientId}/${screen}`
+  if (screen && FIRM_LANDING[module] === `/${parts[0]}`) return `/clients/${clientId}/${screen}`
   return `/clients/${clientId}`
 }

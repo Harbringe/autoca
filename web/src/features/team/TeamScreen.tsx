@@ -1,7 +1,7 @@
 // Team & roles: who is in the firm, what each may do, who has been invited, and what changed lately.
 //
 // Everything offered comes from the server's own `can` flags. The owner sees the whole firm;
-// administrators see and manage everyone except the owner; Senior CAs manage their own team.
+// administrators see the whole firm, the owner included, but only the owner changes an administrator or the owner; Senior CAs manage their own team.
 // The server checks every change again.
 
 import { useQuery } from '@tanstack/react-query'
@@ -15,7 +15,7 @@ import { Confirm } from '@/components/ca/Confirm'
 import { EmptyState, ErrorState, PageHeader } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { tbl } from '@/components/ui/controls'
+import { DataTable, type Column } from '@/components/ui/table'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDate, formatDateTime, plural } from '@/lib/format'
 import { useHotkey } from '@/lib/hotkeys'
@@ -60,26 +60,13 @@ export function TeamScreen() {
             )
           }
         />
-        <div className={tbl.wrap}>
-          <table className={tbl.table}>
-            <caption className="sr-only">People in the firm</caption>
-            <thead className={tbl.head}>
-              <tr>
-                <th scope="col" className={tbl.th}>Person</th>
-                <th scope="col" className={tbl.th}>Role</th>
-                <th scope="col" className={tbl.th}>Reports to</th>
-                <th scope="col" className={tbl.th}>Clients</th>
-                <th scope="col" className={tbl.th}>Last signed in</th>
-                <th scope="col" className={tbl.th}><span className="sr-only">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((m) => (
-                <MemberRow key={m.id} m={m} onEdit={() => setEditing(m)} onSwitch={() => setSwitching(m)} />
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          caption="People in the firm"
+          columns={memberColumns(setEditing, setSwitching)}
+          rows={rows}
+          rowKey={(m) => m.id}
+          rowClassName={(m) => (m.is_active ? undefined : 'text-muted-foreground')}
+        />
         {!info.can.manage && (
           <p className="mt-2 text-[13px] text-muted-foreground">
             You can change Staff and Read-only roles on your team, invite team members, and switch their access off and on. Administrators manage reporting lines and wider firm access.
@@ -97,64 +84,89 @@ export function TeamScreen() {
   )
 }
 
-function MemberRow({ m, onEdit, onSwitch }: { m: Member; onEdit: () => void; onSwitch: () => void }) {
-  const shown = m.clients.slice(0, 3)
-  return (
-    <tr className={`${tbl.row} ${m.is_active ? '' : 'text-muted-foreground'}`}>
-      <td className={tbl.td}>
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="font-medium">{m.name}</span>
-          {m.is_me && <Badge>You</Badge>}
-          {m.is_owner && <Badge tone="info">Owner</Badge>}
-          {!m.is_active && <Badge tone="warning">Deactivated</Badge>}
+function memberColumns(onEdit: (m: Member) => void, onSwitch: (m: Member) => void): Column<Member>[] {
+  return [
+    {
+      key: 'person',
+      header: 'Person',
+      cell: (m) => (
+        <div>
+          <div className="flex flex-wrap items-center gap-1.5">
+            <span className="font-medium text-heading">{m.name}</span>
+            {m.is_me && <Badge>You</Badge>}
+            {m.is_owner && <Badge tone="info">Owner</Badge>}
+            {!m.is_active && <Badge tone="attention">Deactivated</Badge>}
+          </div>
+          <div className="text-[13px] text-muted-foreground">{m.email}</div>
         </div>
-        <div className="text-[13px] text-muted-foreground">{m.email}</div>
-      </td>
-      <td className={`${tbl.td} whitespace-nowrap`}>
-        {m.role_display}
-        {m.scope_all_clients && m.role !== 'FIRM_ADMIN' && <div className="text-[13px] text-muted-foreground">Every client</div>}
-      </td>
-      <td className={tbl.td}>{m.manager?.name ?? <span className="text-muted-foreground">—</span>}</td>
-      <td className={`${tbl.td} max-w-64`}>
-        {m.role === 'FIRM_ADMIN' ? (
-          <span className="text-muted-foreground">Every client</span>
-        ) : shown.length ? (
-          <span className="flex flex-wrap gap-x-2 text-[13px]">
-            {shown.map((c) => (
-              <Link key={c.id + c.how} to="/clients/$clientId" params={{ clientId: c.id }} className="hover:underline" title={c.how === 'leads' ? 'Senior CA of this client' : 'Assigned'}>
-                {c.name}
-                {c.how === 'leads' && <span className="text-muted-foreground"> (lead)</span>}
-              </Link>
-            ))}
-            {m.clients.length > shown.length && (
-              <span className="text-muted-foreground" title={m.clients.map((c) => c.name).join(', ')}>
-                +{m.clients.length - shown.length} more
-              </span>
-            )}
-          </span>
-        ) : (
-          <span className="text-muted-foreground">None</span>
-        )}
-      </td>
-      <td className={`${tbl.td} num whitespace-nowrap text-muted-foreground`}>{m.last_login ? formatDateTime(m.last_login) : 'Never'}</td>
-      <td className={`${tbl.td} whitespace-nowrap text-right`}>
-        <Button variant="ghost" size="sm" asChild>
-          <Link to="/staff" search={{ member: m.id }}>
-            Work
-          </Link>
-        </Button>
-        {(m.can.manage || m.can.manage_role) && (
-          <Button variant="ghost" size="sm" onClick={onEdit} aria-label={`Edit ${m.name}`}>
-            Edit
+      ),
+    },
+    {
+      key: 'role',
+      header: 'Role',
+      cell: (m) => (
+        <div className="whitespace-nowrap">
+          {m.role_display}
+          {m.scope_all_clients && m.role !== 'FIRM_ADMIN' && <div className="text-[13px] text-muted-foreground">Every client</div>}
+        </div>
+      ),
+    },
+    { key: 'manager', header: 'Reports to', priority: 2, cell: (m) => m.manager?.name ?? <span className="text-muted-foreground">—</span> },
+    { key: 'clients', header: 'Clients', priority: 3, cell: (m) => <ClientsCell m={m} /> },
+    {
+      key: 'login',
+      header: 'Last signed in',
+      priority: 3,
+      cell: (m) => <span className="num whitespace-nowrap text-muted-foreground">{m.last_login ? formatDateTime(m.last_login) : 'Never'}</span>,
+    },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Actions</span>,
+      align: 'right',
+      cell: (m) => (
+        <div className="whitespace-nowrap">
+          <Button variant="ghost" size="sm" asChild>
+            <Link to="/staff" search={{ member: m.id }} aria-label={`See ${m.name}’s work`}>
+              Work
+            </Link>
           </Button>
-        )}
-        {m.can.set_active && (
-          <Button variant="ghost" size="sm" onClick={onSwitch} aria-label={`${m.is_active ? 'Deactivate' : 'Reactivate'} ${m.name}`}>
-            {m.is_active ? 'Deactivate' : 'Reactivate'}
-          </Button>
-        )}
-      </td>
-    </tr>
+          {!m.can.manage && !m.can.manage_role && !m.can.set_active && m.role === 'FIRM_ADMIN' && (
+            <span className="ml-1 text-xs text-muted-foreground">{m.is_owner ? 'Changed by handing over ownership' : 'Only the owner can change this'}</span>
+          )}
+          {(m.can.manage || m.can.manage_role) && (
+            <Button variant="ghost" size="sm" onClick={() => onEdit(m)} aria-label={`Edit ${m.name}`}>
+              Edit
+            </Button>
+          )}
+          {m.can.set_active && (
+            <Button variant="ghost" size="sm" onClick={() => onSwitch(m)} aria-label={`${m.is_active ? 'Deactivate' : 'Reactivate'} ${m.name}`}>
+              {m.is_active ? 'Deactivate' : 'Reactivate'}
+            </Button>
+          )}
+        </div>
+      ),
+    },
+  ]
+}
+
+function ClientsCell({ m }: { m: Member }) {
+  const shown = m.clients.slice(0, 3)
+  if (m.role === 'FIRM_ADMIN') return <span className="text-muted-foreground">Every client</span>
+  if (!shown.length) return <span className="text-muted-foreground">None</span>
+  return (
+    <span className="flex max-w-64 flex-wrap gap-x-2 text-[13px]">
+      {shown.map((c) => (
+        <Link key={c.id + c.how} to="/clients/$clientId" params={{ clientId: c.id }} className="hover:underline" title={c.how === 'leads' ? 'Senior CA of this client' : 'Assigned'}>
+          {c.name}
+          {c.how === 'leads' && <span className="text-muted-foreground"> (lead)</span>}
+        </Link>
+      ))}
+      {m.clients.length > shown.length && (
+        <span className="text-muted-foreground" title={m.clients.map((c) => c.name).join(', ')}>
+          +{m.clients.length - shown.length} more
+        </span>
+      )}
+    </span>
   )
 }
 
@@ -192,9 +204,9 @@ function Invites() {
   const [target, setTarget] = useState<Invite | null>(null)
   return (
     <section aria-labelledby="pending-invites">
-      <h2 id="pending-invites" className="mb-2 text-base font-semibold">
+      <h3 id="pending-invites" className="mb-2 text-[15px] font-semibold text-heading">
         Pending invitations
-      </h2>
+      </h3>
       {invites.isPending ? (
         <Spinner label="Loading invitations…" />
       ) : invites.error ? (
@@ -202,39 +214,12 @@ function Invites() {
       ) : invites.data.results.length === 0 ? (
         <p className="text-sm text-muted-foreground">No invitations waiting. People who have not yet accepted appear here for seven days.</p>
       ) : (
-        <div className={tbl.wrap}>
-          <table className={tbl.table}>
-            <thead className={tbl.head}>
-              <tr>
-                <th scope="col" className={tbl.th}>Email</th>
-                <th scope="col" className={tbl.th}>Role</th>
-                <th scope="col" className={tbl.th}>Team of</th>
-                <th scope="col" className={tbl.th}>Invited by</th>
-                <th scope="col" className={tbl.th}>Expires</th>
-                <th scope="col" className={tbl.th}><span className="sr-only">Actions</span></th>
-              </tr>
-            </thead>
-            <tbody>
-              {invites.data.results.map((i) => (
-                <tr key={i.id} className={tbl.row}>
-                  <td className={tbl.td}>
-                    <div className="font-medium">{i.email}</div>
-                    {i.full_name && <div className="text-[13px] text-muted-foreground">{i.full_name}</div>}
-                  </td>
-                  <td className={tbl.td}>{i.role_display}</td>
-                  <td className={tbl.td}>{i.manager?.name ?? <span className="text-muted-foreground">—</span>}</td>
-                  <td className={`${tbl.td} text-muted-foreground`}>{i.created_by ?? '—'}</td>
-                  <td className={`${tbl.td} num`}>{formatDate(i.expires_at)}</td>
-                  <td className={`${tbl.td} text-right`}>
-                    <Button variant="ghost" size="sm" onClick={() => setTarget(i)} aria-label={`Revoke the invitation to ${i.email}`}>
-                      Revoke
-                    </Button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <DataTable
+          caption="Pending invitations"
+          columns={inviteColumns(setTarget)}
+          rows={invites.data.results}
+          rowKey={(i) => i.id}
+        />
       )}
       <Confirm
         open={!!target}
@@ -253,6 +238,35 @@ function Invites() {
   )
 }
 
+function inviteColumns(onRevoke: (i: Invite) => void): Column<Invite>[] {
+  return [
+    {
+      key: 'email',
+      header: 'Email',
+      cell: (i) => (
+        <div>
+          <div className="font-medium text-heading">{i.email}</div>
+          {i.full_name && <div className="text-[13px] text-muted-foreground">{i.full_name}</div>}
+        </div>
+      ),
+    },
+    { key: 'role', header: 'Role', cell: (i) => i.role_display },
+    { key: 'manager', header: 'Team of', priority: 2, cell: (i) => i.manager?.name ?? <span className="text-muted-foreground">—</span> },
+    { key: 'by', header: 'Invited by', priority: 3, cell: (i) => <span className="text-muted-foreground">{i.created_by ?? '—'}</span> },
+    { key: 'expires', header: 'Expires', priority: 2, cell: (i) => <span className="num">{formatDate(i.expires_at)}</span> },
+    {
+      key: 'actions',
+      header: <span className="sr-only">Actions</span>,
+      align: 'right',
+      cell: (i) => (
+        <Button variant="ghost" size="sm" onClick={() => onRevoke(i)} aria-label={`Revoke the invitation to ${i.email}`}>
+          Revoke
+        </Button>
+      ),
+    },
+  ]
+}
+
 const HISTORY_STEP = 15
 
 function History() {
@@ -261,9 +275,9 @@ function History() {
   const rows = events.data?.results ?? []
   return (
     <section aria-labelledby="team-history">
-      <h2 id="team-history" className="mb-2 text-base font-semibold">
+      <h3 id="team-history" className="mb-2 text-[15px] font-semibold text-heading">
         Recent changes
-      </h2>
+      </h3>
       {events.isPending ? (
         <Spinner label="Loading history…" />
       ) : events.error ? (

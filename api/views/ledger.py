@@ -1,4 +1,4 @@
-"""Approval, corrections, reports, reconciliation and the Tally export."""
+"""Approval, corrections, reports and reconciliation."""
 
 from __future__ import annotations
 
@@ -23,10 +23,9 @@ from api.serializers.ledger import (
     CorrectionSerializer,
     JournalEntrySerializer,
     ProfitAndLossSerializer,
-    TallyExportSerializer,
     TrialBalanceSerializer,
 )
-from banking.models import BankAccount, Statement
+from banking.models import BankAccount
 from classify.engine import pending_approval
 from classify.models import LedgerAccount, Party
 from classify.treatment import Treatment
@@ -37,7 +36,6 @@ from ledger.editing import remove_entry
 from ledger.models import EntryChange, JournalEntry
 from ledger.reconciliation import check_balance
 from ledger.reports import balance_sheet, profit_and_loss, trial_balance
-from ledger.tally import export_statement
 
 FY_PARAM = OpenApiParameter(
     "fy", int, description="Financial year by its starting year: 2025 means FY2025-26."
@@ -339,39 +337,3 @@ class ReconciliationView(viewsets.GenericViewSet):
             raise serializers.ValidationError({"as_of": f"Not a date: {raw!r}."}) from exc
 
         return Response(BalanceCheckSerializer(check_balance(account, as_of)).data)
-
-
-@extend_schema(tags=["reports"])
-class TallyExportView(viewsets.GenericViewSet):
-    """The Tally Prime import document for a statement."""
-
-    permission_classes = [HasFirmPermission]
-    required_permission = "report.view"
-    serializer_class = TallyExportSerializer
-    queryset = Statement.objects.none()
-
-    @extend_schema(
-        summary="Export approved entries as Tally XML",
-        description=(
-            "Only what has been **approved**. A classification is a suggestion, and "
-            "an export that quietly included one would put work nobody signed off "
-            "into a client's books.\n\n"
-            "Each voucher carries a stable `REMOTEID`, so re-exporting after a "
-            "correction updates in Tally rather than duplicating. Superseded "
-            "entries are left out: their correction carries both the reversal and "
-            "the corrected position, so including them would double-count."
-        ),
-        responses=TallyExportSerializer,
-    )
-    @action(detail=True, methods=["get"], url_path="tally-export")
-    def tally_export(self, request, pk=None):
-        statement = get_object_or_404(
-            Statement.objects.select_related("bank_account__client"),
-            pk=pk,
-            firm_id=request.firm.pk,
-            bank_account__client__in=visible_client_ids(request.membership),
-        )
-        result = export_statement(
-            statement, company_name=statement.bank_account.client.name
-        )
-        return Response(TallyExportSerializer(result).data)

@@ -12,7 +12,7 @@ import type { components } from './schema'
 type Schemas = components['schemas']
 
 export type Me = Schemas['Me']
-export type Client = Schemas['Client'] & { lead: Person | null }
+export type Client = Omit<Schemas['Client'], 'lead'> & { lead: Person | null }
 export type Job = Schemas['Job']
 export type Statement = Schemas['Statement']
 export type StatementTransaction = Schemas['StatementTransaction']
@@ -23,6 +23,7 @@ export type Rule = Schemas['ClassificationRule']
 export type JournalEntry = Schemas['JournalEntry']
 export type JournalLine = Schemas['JournalLine']
 export type EntryChange = Schemas['EntryChange']
+export type NextBatch = Schemas['NextBatch']
 export type ReviewSummary = Schemas['ReviewSummary']
 export type BooksStatus = Schemas['BooksStatus']
 export type TrialBalance = Schemas['TrialBalance']
@@ -68,10 +69,8 @@ export interface IngestResult {
   needs_opening_confirmation: boolean
   suggested: number
   queued_for_review: number
-  model_suggested: number
-  model_declined: number
-  model_proposed: number
-  model_error: string
+  /** Rows left for the assistant, which reads them a few at a time after the upload. */
+  waiting_for_assistant: number
   auto_posted: number
   /** Where this statement's rows stand now. The three add up to the rows in the statement. */
   rows_posted?: number
@@ -142,110 +141,35 @@ export interface InviteDescription {
   has_account: boolean
 }
 
-// --- team -------------------------------------------------------------------
+// --- team (generated) -------------------------------------------------------
 
-export interface Person {
-  id: string
-  name: string
-  role: Role
-  role_display: string
-  is_owner: boolean
-  is_active: boolean
-}
-
-export type MetricKey =
-  | 'statements_uploaded'
-  | 'rows_placed'
-  | 'entries_approved'
-  | 'entries_corrected'
-  | 'ledgers_created'
-  | 'rules_written'
-  | 'proposals_decided'
-  | 'model_runs'
-
-export interface Metric {
-  key: MetricKey
-  label: string
-}
-
-export interface Member extends Person {
-  user_id: string
-  email: string
-  full_name: string
-  scope_all_clients: boolean
-  manager: Person | null
-  last_login: string | null
-  created_at: string
-  is_me: boolean
-  clients: { id: string; name: string; how: 'assigned' | 'leads' }[]
-  can: { manage: boolean; manage_role: boolean; set_active: boolean }
-}
-
-export interface MembersResponse {
-  period: { from: string; to: string }
+export type Person = Schemas['Person']
+export type MetricKey = keyof Schemas['WorkTotals']
+/** The schema types `key` as a string; the server only ever sends the keys of `WorkTotals`. */
+export type Metric = Omit<Schemas['Metric'], 'key'> & { key: MetricKey }
+export type WorkTotals = Schemas['WorkTotals']
+export type Member = Schemas['Member']
+export type MemberWithWork = Schemas['MemberWithWork']
+export type MembersResponse = Omit<Schemas['MembersResponse'], 'metrics' | 'can'> & {
   metrics: Metric[]
-  can: { invite: boolean; invite_roles: Role[]; role_options: Role[]; manage: boolean; manage_admins: boolean }
-  leads: Person[]
-  results: (Member & { work: Record<MetricKey, number> })[]
+  can: Omit<Schemas['MembersCan'], 'invite_roles' | 'role_options'> & { invite_roles: Role[]; role_options: Role[] }
 }
+export type MemberWork = Omit<Schemas['MemberWorkResponse'], 'metrics'> & { metrics: Metric[] }
+export type Invite = Schemas['InviteRecord']
+export type TeamClients = Schemas['TeamClientsResponse']
+export type TeamClient = Schemas['TeamClient']
+export type TeamEvent = Schemas['TeamEvent']
 
-export interface MemberWork {
-  member: Person
-  period: { from: string; to: string }
-  metrics: Metric[]
-  totals: Record<MetricKey, number>
-  by_client: ({ id: string | null; name: string } & Record<MetricKey, number>)[]
-  by_day: { date: string; count: number }[]
-  open_work: { id: string; name: string; unresolved: number; pending_approval: number }[]
-}
+// --- firm overview (generated) ----------------------------------------------
 
-export interface Invite {
-  id: string
-  email: string
-  full_name: string
-  role: Role
-  role_display: string
-  manager: Person | null
-  expires_at: string
-  created_at: string
-  created_by: string | null
-}
-
-export interface TeamClients {
-  can: { set_lead: boolean }
-  assignable: Person[]
-  results: {
-    id: string
-    name: string
-    lead: Person | null
-    team: (Person & { assigned_at: string; on_my_team: boolean })[]
-    unresolved: number
-    pending_approval: number
-  }[]
-}
-
-export interface TeamEvent {
-  id: string
-  kind: string
-  kind_display: string
-  /** A snapshot of the names at the time: actor, member, client, from, to, email, role ... */
-  detail: Record<string, unknown>
-  member_id: string | null
-  client_id: string | null
-  at: string
-}
+export type FirmOverview = Schemas['FirmOverview']
+export type OverviewClient = Schemas['OverviewClient']
+export type OverviewTotals = Schemas['OverviewTotals']
+export type Stage = Schemas['StageEnum']
 
 // --- firm and audit ---------------------------------------------------------
 
-export interface FirmSettings {
-  id: string
-  name: string
-  created_at: string
-  owner: Person | null
-  admins: Person[]
-  counts: { active_members: number; senior_cas: number; staff: number; clients: number }
-  can: { rename: boolean; transfer: boolean }
-}
+export type FirmSettings = Schemas['FirmResponse']
 
 export interface AuditRow {
   id: string
@@ -265,3 +189,23 @@ export interface Page<T> {
   previous: string | null
   results: T[]
 }
+
+// --- GST reconciliation (generated) -----------------------------------------
+
+export type GstRegistration = Schemas['Registration']
+export type GstRun = Schemas['RunListItem']
+export type GstReport = Schemas['RunReport']
+export type GstGroup = Schemas['ReportGroup']
+export type GstRow = Schemas['ReportRow']
+export type GstInvoice = Schemas['ReportInvoice']
+export type GstGstr3bLine = Schemas['ReportGstr3bLine']
+export type GstGroupKind = Schemas['ReportGroupKindEnum']
+export type GstDecisionKind = Schemas['ReportDecisionKindEnum']
+export type GstItcStatus = Schemas['ItcStatusEnum']
+
+// --- firm metrics (generated) -----------------------------------------------
+
+export type FirmMetrics = Schemas['FirmMetrics']
+export type MetricsClient = Schemas['MetricsClient']
+export type MetricsTurnaround = Schemas['MetricsTurnaround']
+export type AttentionReason = Schemas['AttentionReason']

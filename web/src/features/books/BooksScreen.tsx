@@ -18,6 +18,7 @@ import { ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { StatCard } from '@/components/ui/stat-card'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDate, formatDateTime, plural } from '@/lib/format'
 import { useSession } from '@/session/session'
@@ -61,14 +62,11 @@ export function BooksScreen({ clientId }: { clientId: string }) {
             <span className="text-sm text-muted-foreground">{BOOKS_STATE_HINT[state]}</span>
           </div>
 
-          <dl className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-1.5 text-sm">
-            <dt>Transactions still waiting for a decision or posting</dt>
-            <dd className="num text-right font-medium">{b.waiting}</dd>
-            <dt>Entries posted by the assistant that nobody has checked</dt>
-            <dd className="num text-right font-medium">{b.ai_posted}</dd>
-            <dt>Entries the assistant changed after a correction</dt>
-            <dd className="num text-right font-medium">{b.ai_revised}</dd>
-          </dl>
+          <div className="grid gap-3 sm:grid-cols-3">
+            <StatCard label="Waiting for a decision or posting" value={b.waiting} to="/clients/$clientId/review" params={{ clientId }} search={{ stage: 'all' }} />
+            <StatCard label="Assistant entries not yet checked" value={b.ai_posted} tone={b.ai_posted > 0 ? 'attention' : 'plain'} to="/clients/$clientId/daybook" params={{ clientId }} />
+            <StatCard label="Changed by the assistant after a correction" value={b.ai_revised} tone={b.ai_revised > 0 ? 'attention' : 'plain'} to="/clients/$clientId/daybook" params={{ clientId }} />
+          </div>
 
           {unchecked > 0 && (
             <div className="rounded-md border border-accent-edge bg-accent p-3 text-sm" role="status">

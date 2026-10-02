@@ -12,8 +12,8 @@ application logic.
 ## Status
 
 Phase 1 works end to end: a bank statement PDF goes in, and approved, permanent
-journal entries come out -- with Tally import XML and the standard reports on
-top of them.
+journal entries come out -- with the standard reports on top of them, and a client's
+chart and opening balances brought in from Tally.
 
 ```
 statement.pdf -> registered, hashed, deduplicated
@@ -23,7 +23,7 @@ statement.pdf -> registered, hashed, deduplicated
               -> rules applied, each with a confidence; the rest queued
               -> a person reviews; every decision teaches a rule
               -> a senior CA approves -> immutable journal entry
-              -> Tally XML, Trial Balance, P&L, Balance Sheet
+              -> Trial Balance, P&L, Balance Sheet
               -> month-end: does the bank ledger match the bank?
 ```
 
@@ -245,7 +245,7 @@ documents/       every uploaded file, whatever kind, in one registry
 banking/         statement parsing, ingestion, deduplication, continuity
   parsers/       generic (any bank) plus dedicated ones; all prove their arithmetic
 classify/        narration analysis, rules, vendors, the review queue
-ledger/          approval, the immutable journal, Tally XML, reports
+ledger/          approval, the immutable journal, Tally chart import, reports
 gst/             placeholder, no logic yet
 scripts/         database role bootstrap, Supabase keepalive
 ```

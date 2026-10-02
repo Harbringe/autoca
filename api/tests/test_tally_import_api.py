@@ -154,7 +154,9 @@ def test_the_permission_matrix(api, staff_api, firm, client_record, admin, lead,
         )
 
     assert outcomes["admin"][:3] == (200, 200, 200)
-    assert outcomes["lead"][:3] == (200, 200, 200)
+    # The admin's own confirm (the fourth call above) closed that preview, so the lead's upload of the
+    # same file starts a fresh one: 201, not a reuse.
+    assert outcomes["lead"][:3] == (200, 200, 201)
     # A senior who is not this client's lead may not change what its books start from.
     assert outcomes["senior_not_lead"][2] == 403 and outcomes["senior_not_lead"][3] == 403
     assert outcomes["staff"] == (403, 403, 403, 403)

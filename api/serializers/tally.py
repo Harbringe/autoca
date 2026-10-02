@@ -9,6 +9,7 @@ the upload; ``confirm`` applies exactly the choices sent with it.
 from __future__ import annotations
 
 from django.conf import settings
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from api.fields import MoneySerializerMixin, PaiseField
@@ -204,12 +205,12 @@ class TallyImportSummarySerializer(serializers.Serializer):
     expires_at = serializers.DateTimeField(help_text="A preview that is not confirmed by then cannot be.")
     confirmed_at = serializers.DateTimeField(allow_null=True)
     counts = TallyCountsSerializer()
-    result = TallyResultSerializer(allow_null=True, help_text="Present once confirmed.")
+    result = serializers.SerializerMethodField(help_text="Present once confirmed.")
 
-    def to_representation(self, run):
-        data = super().to_representation(run)
-        data["result"] = TallyResultSerializer(run.result).data if run.result else None
-        return data
+    @extend_schema_field(TallyResultSerializer(allow_null=True))
+    def get_result(self, run):
+        # An unconfirmed run stores an empty dict, which is "no result yet", not a result of zeros.
+        return TallyResultSerializer(run.result).data if run.result else None
 
 
 class TallyImportDetailSerializer(TallyImportSummarySerializer):

@@ -141,7 +141,8 @@ def _normalise(data, exc):
     the shape of the body. Field errors keep their structure under ``fields``,
     because losing which field was wrong would be worse than consistency.
     """
-    code = getattr(exc, "default_code", "error")
+    # Django's Http404 carries no code of its own; without this it would be reported as "error".
+    code = "not_found" if isinstance(exc, Http404) else getattr(exc, "default_code", "error")
     if isinstance(data, dict) and "detail" in data and len(data) == 1:
         return {"code": code, "detail": str(data["detail"])}
     if isinstance(data, dict):

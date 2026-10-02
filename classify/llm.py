@@ -214,7 +214,10 @@ def recategorize(client, *, statement=None, batch_size: int | None = None) -> Su
 
 
 def _suggest(client, classifications, *, batch_size, replace: bool) -> SuggestResult:
-    llm = get_llm()
+    # Called from a web request, so it must never sit in a rate-limit backoff: the proxy in front
+    # of the app gives up after a couple of minutes and the user is shown a 502. What the model
+    # cannot be asked inside the allowance stays unplaced for a person.
+    llm = get_llm().without_waiting()
     if not llm.is_available:
         return SuggestResult(considered=0, suggested=0, declined=0)
 
@@ -375,10 +378,13 @@ def _ask_splitting(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]
             raise
         logger.info("model reply unusable for %d rows (%s); splitting the batch", len(batch), exc)
         middle = len(batch) // 2
-        return {
-            **_ask_splitting(llm, batch[:middle], chart, pseudonymiser, context),
-            **_ask_splitting(llm, batch[middle:], chart, pseudonymiser, context),
-        }
+        first = _ask_splitting(llm, batch[:middle], chart, pseudonymiser, context)
+        try:
+            second = _ask_splitting(llm, batch[middle:], chart, pseudonymiser, context)
+        except LLMRateLimited:
+            # The first half is already answered; the rest is left unplaced rather than lost with it.
+            second = {}
+        return {**first, **second}
 
 
 def _ask(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]:

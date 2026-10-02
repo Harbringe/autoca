@@ -43,6 +43,7 @@ inference is a change to LLM_BACKEND and one new file here.
 
 from __future__ import annotations
 
+import copy
 import json
 import logging
 import re
@@ -50,7 +51,7 @@ import time
 import urllib.error
 import urllib.request
 
-from .base import LLMAdapter, LLMError, LLMResponse
+from .base import LLMAdapter, LLMError, LLMRateLimited, LLMResponse
 
 logger = logging.getLogger("autoca.llm")
 
@@ -67,6 +68,11 @@ RATE_LIMIT_CODE = "rate_limit_exceeded"
 TOO_LARGE = "the request is larger than the plan allows in a minute (request_too_large)"
 #: A JSON request runs about three characters to a token; erring high only means waiting sooner.
 CHARS_PER_TOKEN = 3
+#: In no-wait mode a call is one attempt with this timeout, so it cannot sit in a backoff.
+NO_WAIT_TIMEOUT_SECONDS = 15.0
+#: A retry-after longer than this is the day's allowance, not this minute's.
+DAILY_RETRY_AFTER_SECONDS = 600.0
+_DAILY_LIMIT = re.compile(r"per day|\((?:TPD|RPD)\)", re.IGNORECASE)
 
 
 class GroqLLMAdapter(LLMAdapter):
@@ -89,6 +95,23 @@ class GroqLLMAdapter(LLMAdapter):
         # What the last reply said about this minute's token budget; None until one has.
         self._tokens_left: int | None = None
         self._budget_refills_at = 0.0
+        self._waits = True
+        self._no_wait_twin: GroqLLMAdapter | None = None
+
+    def without_waiting(self) -> GroqLLMAdapter:
+        """The same adapter that never sleeps: one attempt, a short timeout, a typed rate-limit error.
+
+        Kept as one twin per adapter so what it learns about this minute's budget
+        outlives a single call.
+        """
+        if self._no_wait_twin is None:
+            twin = copy.copy(self)
+            twin._waits = False
+            twin.max_attempts = 1
+            twin.timeout = min(self.timeout, NO_WAIT_TIMEOUT_SECONDS)
+            twin._no_wait_twin = twin
+            self._no_wait_twin = twin
+        return self._no_wait_twin
 
     def complete_json(self, system: str, user: str, *, max_tokens: int = 2048) -> LLMResponse:
         body = json.dumps(
@@ -139,7 +162,7 @@ class GroqLLMAdapter(LLMAdapter):
         )
         delay = 1.0
         last_error: Exception | None = None
-        attempts = max(self.max_attempts, RATE_LIMIT_ATTEMPTS)
+        attempts = max(self.max_attempts, RATE_LIMIT_ATTEMPTS) if self._waits else 1
         for attempt in range(1, attempts + 1):
             wait = delay
             self._wait_for_budget(len(body) // CHARS_PER_TOKEN)
@@ -149,13 +172,20 @@ class GroqLLMAdapter(LLMAdapter):
                     return json.loads(response.read().decode())
             except urllib.error.HTTPError as exc:
                 last_error = exc
-                code = _error_code(exc)  # reads the body, which can be read only once
+                error = _error_body(exc)  # reads the body, which can be read only once
+                code = _describe(*error)
                 if exc.code == 413 and _larger_than_the_limit(code):
                     # No amount of waiting fits this request into a minute; only a smaller one will.
                     raise LLMError(f"Groq answered HTTP 413{code}; {TOO_LARGE}.") from exc
                 # A rate limit resets on Groq's clock, not ours: wait as long as it says,
                 # and allow more attempts, since a busy minute is not a failure.
                 rate_limited = exc.code == 429 or (exc.code == 413 and RATE_LIMIT_CODE in code)
+                if rate_limited and not self._waits:
+                    self._tokens_left = None
+                    retry_after, daily = _limit_wait(exc, error[1])
+                    raise LLMRateLimited(
+                        f"Groq answered HTTP {exc.code}{code}.", retry_after=retry_after, daily=daily
+                    ) from exc
                 limit = RATE_LIMIT_ATTEMPTS if rate_limited else self.max_attempts
                 if not (rate_limited or exc.code in RETRY_STATUSES) or attempt >= limit:
                     raise LLMError(f"Groq answered HTTP {exc.code}{code}.") from exc
@@ -189,6 +219,10 @@ class GroqLLMAdapter(LLMAdapter):
         if self._tokens_left is None or self._tokens_left >= tokens_needed:
             return
         wait = self._budget_refills_at - time.monotonic()
+        if wait > 0 and not self._waits:
+            raise LLMRateLimited(
+                "Groq's token budget for this minute is spent.", retry_after=wait, daily=False
+            )
         if wait > 0:
             logger.info(
                 "groq budget has %d tokens left this minute, about %d needed; waiting %.0fs",
@@ -220,20 +254,48 @@ def _retry_after(exc: urllib.error.HTTPError, *, default: float) -> float:
     return min(max(seconds, 1.0), MAX_RETRY_AFTER_SECONDS)
 
 
-def _error_code(exc: urllib.error.HTTPError) -> str:
-    """Groq's machine-readable error code, never its message: that can quote the request.
+def _error_body(exc: urllib.error.HTTPError) -> tuple[str, str]:
+    """Groq's machine-readable error code and its message, read once. Empty when unreadable.
 
-    The one exception is the token counts in a rate-limit message ("Limit 8000, Used 0,
-    Requested 9120"), which are only numbers and are what tells a spent minute apart from
-    a request that is bigger than the whole minute allows.
+    The message can quote the request, so it never goes into an error or a log; it
+    is read only to tell the day's allowance from the minute's, and for the token
+    counts in a rate-limit message.
     """
     try:
         error = json.loads(exc.read().decode()).get("error", {})
         code = error.get("code")
         message = str(error.get("message") or "")
     except (ValueError, AttributeError, OSError):
-        return ""
+        return "", ""
     if not (isinstance(code, str) and code.isidentifier()):
+        return "", message
+    return code, message
+
+
+def _describe(code: str, message: str) -> str:
+    """The code for an error text, with the token counts of a rate-limit message.
+
+    The counts ("Limit 8000, Used 0, Requested 9120") are only numbers and are what
+    tells a spent minute apart from a request bigger than the whole minute allows.
+    """
+    if not code:
         return ""
     counts = re.findall(r"\b(Limit|Used|Requested)\s+(\d+)", message)
     return f" ({code}: {', '.join(f'{k.lower()} {v}' for k, v in counts)})" if counts else f" ({code})"
+
+
+def _error_code(exc: urllib.error.HTTPError) -> str:
+    return _describe(*_error_body(exc))
+
+
+def _limit_wait(exc: urllib.error.HTTPError, message: str) -> tuple[float, bool]:
+    """Seconds until Groq will take another request, uncapped, and whether it is the day's limit."""
+    try:
+        seconds = float(exc.headers.get("retry-after", ""))
+    except (TypeError, ValueError, AttributeError):
+        try:
+            seconds = _duration(message.split("try again in", 1)[1].split()[0]) if "try again in" in message else 0.0
+        except IndexError:
+            seconds = 0.0
+    seconds = seconds or MAX_RETRY_AFTER_SECONDS
+    return max(seconds, 1.0), bool(_DAILY_LIMIT.search(message)) or seconds > DAILY_RETRY_AFTER_SECONDS

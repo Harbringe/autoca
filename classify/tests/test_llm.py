@@ -15,7 +15,7 @@ from classify.seeds import seed_client
 from classify.treatment import ReviewBand
 from core.db.session import firm_context
 from core.provisioning import create_client, create_firm
-from integrations.llm.base import LLMAdapter, LLMError, LLMResponse
+from integrations.llm.base import LLMAdapter, LLMError, LLMRateLimited, LLMResponse
 from integrations.registry import reset_adapter_cache
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("fixture_adapters")]
@@ -440,3 +440,34 @@ def test_a_spent_minute_budget_is_not_split_into_more_requests(client, classifie
     assert outcome.failed
     assert "rate_limit_exceeded" in outcome.error
     assert len(asked) == 1
+
+
+def test_a_rate_limit_keeps_what_was_answered_and_never_waits(client, classified, scripted, settings):
+    """Run from a web request, so a spent minute stops the run instead of sleeping through it. The
+    rows already answered are kept; the rest stay for a person."""
+    settings.LLM_BATCH_SIZE = 50
+    original = ScriptedLLM.complete_json
+    calls = []
+    answered = []
+
+    def limited(self, system, user, *, max_tokens=2048):
+        rows = len(json.loads(user)["transactions"])
+        calls.append(rows)
+        if rows > 10:
+            raise LLMError(
+                "Groq answered HTTP 413 (rate_limit_exceeded: limit 8000, requested 8325); "
+                "the request is larger than the plan allows in a minute (request_too_large)."
+            )
+        if answered:
+            raise LLMRateLimited("spent", retry_after=45)
+        answered.append(rows)
+        return original(self, system, user, max_tokens=max_tokens)
+
+    scripted.script = {"*": {"ledger": "Electricity", "confidence": 0.9}}
+    ScriptedLLM.complete_json = limited
+    try:
+        with firm_context(client.firm_id):
+            outcome = suggest_unresolved(client)
+    finally:
+        ScriptedLLM.complete_json = original
+    assert 0 < outcome.suggested < outcome.considered

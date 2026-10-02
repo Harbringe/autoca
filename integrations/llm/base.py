@@ -30,6 +30,20 @@ class LLMUnavailable(LLMError):
     """No provider is configured. Callers degrade rather than fail."""
 
 
+class LLMRateLimited(LLMError):
+    """The provider's allowance is spent. Nothing was slept through to find that out.
+
+    ``retry_after`` is seconds until it is worth asking again. ``daily`` is True
+    when it is the day's allowance rather than this minute's, so the caller
+    should stop asking for a long while instead of a few seconds.
+    """
+
+    def __init__(self, message: str, *, retry_after: float, daily: bool = False):
+        super().__init__(message)
+        self.retry_after = float(retry_after)
+        self.daily = daily
+
+
 @dataclass(frozen=True)
 class LLMResponse:
     #: The model's reply. For :meth:`LLMAdapter.complete_json` this is a JSON
@@ -53,6 +67,14 @@ class LLMAdapter(abc.ABC):
         reply that is not JSON. Never raises anything else: the caller's job is
         to degrade gracefully, and it can only do that against one exception.
         """
+
+    def without_waiting(self) -> LLMAdapter:
+        """An adapter for a caller that must not sit in a backoff.
+
+        One attempt, a short timeout, and :class:`LLMRateLimited` instead of
+        sleeping. An adapter that never sleeps is its own answer.
+        """
+        return self
 
     @property
     def name(self) -> str:

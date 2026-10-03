@@ -31,8 +31,10 @@ class S3CompatibleStorageAdapter(StorageAdapter):
         self.bucket = bucket
         self.endpoint_url = endpoint_url
         self.region = region or "auto"
-        self._access_key_id = access_key_id
-        self._secret_access_key = secret_access_key
+        # Empty means "not set": boto3 treats an empty string as a real (and wrong) credential, whereas
+        # None lets it use the instance's role, which is how a deployment on AWS carries no keys at all.
+        self._access_key_id = access_key_id or None
+        self._secret_access_key = secret_access_key or None
         self._client = None
 
     @property

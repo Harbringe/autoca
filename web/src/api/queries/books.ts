@@ -14,6 +14,7 @@ import type {
   EntryChange,
   JournalEntry,
   LedgerAccount,
+  LedgerRow,
   Page,
   Party,
   ProfitAndLoss,
@@ -34,6 +35,8 @@ export async function allPages<T>(path: string, query: Record<string, string | n
 }
 
 export type Stage = 'unresolved' | 'pending_approval' | 'all'
+/** The review screen's tabs: the three queues of waiting rows, and what has already been posted. */
+export type ReviewTab = Stage | 'posted'
 
 export const reviewQueue = (clientId: string, stage: Stage) =>
   queryOptions({
@@ -46,6 +49,13 @@ export const ledgers = (clientId: string) =>
   queryOptions({
     queryKey: clientKeys.part(clientId, 'ledgers'),
     queryFn: () => allPages<LedgerAccount>(`${V1}/clients/${clientId}/ledgers/`),
+  })
+
+/** Every row placed in one ledger, in any year, and whether each has been posted yet. */
+export const ledgerRows = (clientId: string, ledgerId: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'ledgers', ledgerId, 'rows'),
+    queryFn: () => allPages<LedgerRow>(`${V1}/clients/${clientId}/ledgers/${ledgerId}/rows/`),
   })
 
 export const parties = (clientId: string) =>

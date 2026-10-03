@@ -141,18 +141,6 @@ export function BooksScreen({ clientId }: { clientId: string }) {
             </p>
           )}
         </Card>
-
-        <Card className="grid gap-2 p-5 text-sm">
-          <div className="font-medium">Export to Tally</div>
-          <p className="text-muted-foreground">
-            Each statement’s posted vouchers export as a Tally XML file from the{' '}
-            <Link to="/clients/$clientId/statements" params={{ clientId }} className="underline">
-              Statements
-            </Link>{' '}
-            tab. Import it in Tally under Gateway of Tally › Import › Vouchers. Importing the same file again updates the vouchers; it does not
-            duplicate them. Ledger names must match the client’s Tally company exactly.
-          </p>
-        </Card>
       </div>
 
       <Card className="content-start p-5">

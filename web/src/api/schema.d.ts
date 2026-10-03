@@ -641,7 +641,7 @@ export interface paths {
         put?: never;
         /**
          * Accept a proposed ledger
-         * @description Optionally rename it to match Tally. Rows already suggested into it stay as suggestions for review.
+         * @description Optionally rename it to the spelling the client already uses. Rows already suggested into it stay as suggestions for review.
          */
         post: operations["clients_ledgers_accept_create"];
         delete?: never;
@@ -684,6 +684,26 @@ export interface paths {
          * @description Its rows return to the queue unresolved. The name is remembered so it is not proposed again.
          */
         post: operations["clients_ledgers_reject_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/ledgers/{id}/rows/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Rows placed in a ledger
+         * @description Every statement row currently placed in this ledger, in any financial year, newest first, each saying whether it has been posted to the books yet. The ledger list's "rows placed" counts these; the books only hold the posted ones.
+         */
+        get: operations["clients_ledgers_rows_list"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -1094,6 +1114,76 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/tally-imports/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Earlier Tally imports for a client
+         * @description Newest first, the last 50, without their rows.
+         */
+        get: operations["clients_tally_imports_list"];
+        put?: never;
+        /**
+         * Upload a Tally masters export and preview the import
+         * @description Reads the file and returns a **preview**; nothing is changed. Ledgers in the file are compared with the client's chart by name (case, spacing and Unicode form ignored): each row is a `create`, a `match`, a `conflict` the person must settle, a `needs_group` (one of the firm's own Tally groups), or `skipped` with a reason. Opening balances are Debits positive.
+         *
+         *     Accepts `.xml` (Tally's own export, UTF-8 or UTF-16), `.xlsx` or `.csv`, up to 10 MB; the kind is decided from the contents, not the name. The same file for the same year, with the chart unchanged, returns the existing preview with **200** instead of a new one.
+         *
+         *     Firm administrators and Senior CAs (`ledger.import`), and only the client's lead or a firm administrator. Refused with `entry_locked` when the books are signed off through the start of the year.
+         */
+        post: operations["clients_tally_imports_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/tally-imports/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One Tally import, with its rows
+         * @description Bring a client's ledgers and opening balances in from Tally.
+         */
+        get: operations["clients_tally_imports_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/tally-imports/{id}/confirm/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Apply a previewed Tally import
+         * @description Applies exactly what the person chose, in one transaction: creates the ledgers, applies the choices on conflicts, stores the opening balances (a bank account's opening goes to the bank account, once). **Idempotent**: confirming a run that was already applied returns it unchanged.
+         *
+         *     Every row whose `action` is `conflict` or `needs_group`, and every `bank` panel with status `conflict`, needs a resolution; otherwise `409 tally_conflicts_unresolved` and nothing is written. `409 tally_run_stale` when the client's ledgers or openings changed since the preview (upload again). `409 entry_locked` when the books are signed off through the start of the year. A group cannot be changed on a ledger with posted lines (`409 tally_rule`).
+         */
+        post: operations["clients_tally_imports_confirm_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{id}/": {
         parameters: {
             query?: never;
@@ -1112,6 +1202,38 @@ export interface paths {
         head?: never;
         /** @description The firm's clients. */
         patch: operations["clients_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/documents/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["documents_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{id}/download/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["documents_download_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/firm/": {
@@ -1385,28 +1507,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/statements/{id}/tally-export/": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /**
-         * Export approved entries as Tally XML
-         * @description Only what has been **approved**. A classification is a suggestion, and an export that quietly included one would put work nobody signed off into a client's books.
-         *
-         *     Each voucher carries a stable `REMOTEID`, so re-exporting after a correction updates in Tally rather than duplicating. Superseded entries are left out: their correction carries both the reversal and the corrected position, so including them would double-count.
-         */
-        get: operations["statements_tally_export_retrieve"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/team/clients/": {
         parameters: {
             query?: never;
@@ -1623,9 +1723,9 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         AcceptProposalRequest: {
-            /** @description Rename to match the client's Tally company exactly. */
+            /** @description Rename the ledger as it is accepted, e.g. to the spelling the client already uses. */
             name?: string;
-            group?: components["schemas"]["GroupEnum"];
+            group?: components["schemas"]["LedgerGroupEnum"];
         };
         /**
          * @description Post reviewed rows to the immutable journal.
@@ -1737,6 +1837,10 @@ export interface components {
         BalanceSheet: {
             assets: components["schemas"]["LedgerBalance"][];
             liabilities: components["schemas"]["LedgerBalance"][];
+            /** @description Ledgers whose group belongs on neither side of the sheet. They are in neither total, so `balances` is false while any exist; place them in a known group. */
+            unclassified: components["schemas"]["LedgerBalance"][];
+            /** @description Net of the unclassified ledgers. Zero when there are none. */
+            unclassified_paise: number;
             /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
             total_assets_paise: number;
             /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
@@ -1759,6 +1863,8 @@ export interface components {
             readonly net_profit_display: string | null;
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly suspense_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly unclassified_display: string | null;
         };
         /**
          * @description * `HIGH` - HIGH
@@ -1817,6 +1923,13 @@ export interface components {
         BankAccountRequest: {
             ledger_name?: string;
         };
+        /**
+         * @description * `use_tally` - use_tally
+         *     * `keep_bank` - keep_bank
+         *     * `skip` - skip
+         * @enum {string}
+         */
+        BankEnum: "use_tally" | "keep_bank" | "skip";
         /** @enum {unknown} */
         BlankEnum: "";
         BooksEvent: {
@@ -1881,6 +1994,16 @@ export interface components {
             date: string;
             count: number;
         };
+        /**
+         * @description * `keep_ours` - keep_ours
+         *     * `take_tally` - take_tally
+         *     * `use_tally_name` - use_tally_name
+         *     * `use_this_spelling` - use_this_spelling
+         *     * `skip` - skip
+         *     * `group` - group
+         * @enum {string}
+         */
+        ChoiceEnum: "keep_ours" | "take_tally" | "use_tally_name" | "use_this_spelling" | "skip" | "group";
         /** @description A row awaiting a decision, with everything needed to make it. */
         Classification: {
             /** Format: uuid */
@@ -2049,35 +2172,17 @@ export interface components {
         Document: {
             /** Format: uuid */
             readonly id: string;
-            readonly kind: components["schemas"]["DocumentKindEnum"];
+            readonly kind: components["schemas"]["Kind372Enum"];
             readonly original_filename: string;
             readonly sha256: string;
             readonly byte_size: number;
             readonly page_count: number;
             readonly pipeline_tier: components["schemas"]["PipelineTierEnum"];
-            readonly status: components["schemas"]["DocumentStatusEnum"];
+            readonly status: components["schemas"]["Status58cEnum"];
             readonly failure_reason: string;
             /** Format: date-time */
             readonly created_at: string;
         };
-        /**
-         * @description * `BANK_STATEMENT` - Bank statement
-         *     * `PURCHASE_INVOICE` - Purchase invoice
-         *     * `SALES_INVOICE` - Sales invoice
-         *     * `GSTR2B` - GSTR-2B extract
-         *     * `REGISTER` - Purchase or sales register
-         *     * `TALLY_EXPORT` - Tally export
-         *     * `OTHER` - Other
-         * @enum {string}
-         */
-        DocumentKindEnum: "BANK_STATEMENT" | "PURCHASE_INVOICE" | "SALES_INVOICE" | "GSTR2B" | "REGISTER" | "TALLY_EXPORT" | "OTHER";
-        /**
-         * @description * `RECEIVED` - Received
-         *     * `PARSED` - Parsed
-         *     * `FAILED` - Could not be read
-         * @enum {string}
-         */
-        DocumentStatusEnum: "RECEIVED" | "PARSED" | "FAILED";
         EntryChange: {
             /** Format: uuid */
             readonly id: string;
@@ -2121,6 +2226,25 @@ export interface components {
             staff: number;
             clients: number;
         };
+        FirmDocument: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly client_id: string;
+            readonly client_name: string;
+            kind: components["schemas"]["Kind372Enum"];
+            readonly kind_display: string;
+            original_filename?: string;
+            /** Format: int64 */
+            byte_size?: number;
+            page_count?: number;
+            status?: components["schemas"]["Status58cEnum"];
+            readonly status_display: string;
+            failure_reason?: string;
+            readonly uploaded_by_name: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
         FirmMetrics: {
             period: components["schemas"]["MetricsPeriod"];
             /** @description The minutes a person is assumed to need per row (setting ASSUMED_MINUTES_PER_ROW). */
@@ -2154,23 +2278,6 @@ export interface components {
             counts: components["schemas"]["FirmCounts"];
             can: components["schemas"]["FirmCan"];
         };
-        /**
-         * @description * `BANK` - Bank Accounts
-         *     * `CASH` - Cash-in-Hand
-         *     * `DEBTOR` - Sundry Debtors
-         *     * `CREDITOR` - Sundry Creditors
-         *     * `INDIRECT_EXPENSE` - Indirect Expenses
-         *     * `DIRECT_EXPENSE` - Direct Expenses
-         *     * `INDIRECT_INCOME` - Indirect Incomes
-         *     * `DIRECT_INCOME` - Direct Incomes
-         *     * `DUTIES_AND_TAXES` - Duties & Taxes
-         *     * `LOAN` - Loans (Liability)
-         *     * `INVESTMENT` - Investments
-         *     * `CAPITAL` - Capital Account
-         *     * `SUSPENSE` - Suspense A/c
-         * @enum {string}
-         */
-        GroupEnum: "BANK" | "CASH" | "DEBTOR" | "CREDITOR" | "INDIRECT_EXPENSE" | "DIRECT_EXPENSE" | "INDIRECT_INCOME" | "DIRECT_INCOME" | "DUTIES_AND_TAXES" | "LOAN" | "INVESTMENT" | "CAPITAL" | "SUSPENSE";
         GstError: {
             /** @description Stable code: gst_rule (409), gst_file_unreadable (422), invalid (400), not_found (404), forbidden (403). */
             code: string;
@@ -2325,6 +2432,22 @@ export interface components {
          * @enum {string}
          */
         JournalLineDirectionEnum: "DR" | "CR";
+        /**
+         * @description * `BANK_STATEMENT` - Bank statement
+         *     * `PURCHASE_INVOICE` - Purchase invoice
+         *     * `SALES_INVOICE` - Sales invoice
+         *     * `GSTR2B` - GSTR-2B extract
+         *     * `REGISTER` - Purchase or sales register
+         *     * `TALLY_EXPORT` - Tally export
+         *     * `OTHER` - Other
+         * @enum {string}
+         */
+        Kind372Enum: "BANK_STATEMENT" | "PURCHASE_INVOICE" | "SALES_INVOICE" | "GSTR2B" | "REGISTER" | "TALLY_EXPORT" | "OTHER";
+        /**
+         * @description * `CHART_OPENING` - Chart of accounts and opening balances
+         * @enum {string}
+         */
+        KindBd8Enum: "CHART_OPENING";
         LeadRequest: {
             /** Format: uuid */
             lead: string | null;
@@ -2337,9 +2460,9 @@ export interface components {
         LedgerAccount: {
             /** Format: uuid */
             readonly id: string;
-            /** @description Must match the ledger name in the client's Tally company exactly. Tally creates an unrecognised name rather than rejecting it, so a near-miss silently splits a year across two ledgers. */
+            /** @description The ledger's name in this client's books. Unique per client, ignoring case and spacing: "Advance Tax" and "Advance tax" would split a year across two ledgers, so the second is refused. */
             name: string;
-            group?: components["schemas"]["GroupEnum"];
+            group?: components["schemas"]["LedgerGroupEnum"];
             readonly is_bank_or_cash: boolean;
             is_active?: boolean;
             readonly status: components["schemas"]["LedgerAccountStatusEnum"];
@@ -2353,9 +2476,9 @@ export interface components {
             readonly created_at: string;
         };
         LedgerAccountRequest: {
-            /** @description Must match the ledger name in the client's Tally company exactly. Tally creates an unrecognised name rather than rejecting it, so a near-miss silently splits a year across two ledgers. */
+            /** @description The ledger's name in this client's books. Unique per client, ignoring case and spacing: "Advance Tax" and "Advance tax" would split a year across two ledgers, so the second is refused. */
             name: string;
-            group?: components["schemas"]["GroupEnum"];
+            group?: components["schemas"]["LedgerGroupEnum"];
             is_active?: boolean;
         };
         /**
@@ -2389,6 +2512,62 @@ export interface components {
             readonly closing_debit_display: string | null;
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly closing_credit_display: string | null;
+        };
+        /**
+         * @description * `BANK` - Bank Accounts
+         *     * `CASH` - Cash-in-Hand
+         *     * `DEBTOR` - Sundry Debtors
+         *     * `CREDITOR` - Sundry Creditors
+         *     * `INDIRECT_EXPENSE` - Indirect Expenses
+         *     * `DIRECT_EXPENSE` - Direct Expenses
+         *     * `INDIRECT_INCOME` - Indirect Incomes
+         *     * `DIRECT_INCOME` - Direct Incomes
+         *     * `DUTIES_AND_TAXES` - Duties & Taxes
+         *     * `LOAN` - Loans (Liability)
+         *     * `INVESTMENT` - Investments
+         *     * `CAPITAL` - Capital Account
+         *     * `SUSPENSE` - Suspense A/c
+         *     * `FIXED_ASSET` - Fixed Assets
+         *     * `STOCK` - Stock-in-Hand
+         *     * `CURRENT_ASSET` - Current Assets
+         *     * `LOAN_ADVANCE` - Loans & Advances (Asset)
+         *     * `DEPOSIT` - Deposits (Asset)
+         *     * `MISC_EXPENDITURE` - Misc. Expenses (Asset)
+         *     * `BANK_OD` - Bank OD A/c
+         *     * `CURRENT_LIABILITY` - Current Liabilities
+         *     * `PROVISION` - Provisions
+         *     * `RESERVES` - Reserves & Surplus
+         *     * `SALES` - Sales Accounts
+         *     * `PURCHASE` - Purchase Accounts
+         * @enum {string}
+         */
+        LedgerGroupEnum: "BANK" | "CASH" | "DEBTOR" | "CREDITOR" | "INDIRECT_EXPENSE" | "DIRECT_EXPENSE" | "INDIRECT_INCOME" | "DIRECT_INCOME" | "DUTIES_AND_TAXES" | "LOAN" | "INVESTMENT" | "CAPITAL" | "SUSPENSE" | "FIXED_ASSET" | "STOCK" | "CURRENT_ASSET" | "LOAN_ADVANCE" | "DEPOSIT" | "MISC_EXPENDITURE" | "BANK_OD" | "CURRENT_LIABILITY" | "PROVISION" | "RESERVES" | "SALES" | "PURCHASE";
+        /**
+         * @description A row placed in a ledger, and whether it has reached the books yet.
+         *
+         *     The ledger list counts every row placed in it, but the books only hold what has been
+         *     posted, in one financial year at a time. This is the list that reconciles the two.
+         */
+        LedgerRow: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly transaction: string;
+            /** Format: date */
+            readonly value_date: string;
+            readonly financial_year: number;
+            readonly narration: string;
+            readonly book_narration: string;
+            readonly counterparty: string;
+            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            readonly amount_paise: number;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly amount_display: string;
+            readonly is_debit: boolean;
+            readonly is_posted: boolean;
+            readonly needs_review: boolean;
+            readonly method: components["schemas"]["MethodEnum"];
+            readonly method_display: string;
         };
         /**
          * @description * `AI_POSTED` - AI_POSTED
@@ -2682,6 +2861,8 @@ export interface components {
             /** @default  */
             note: string;
         };
+        /** @enum {unknown} */
+        NullEnum: null;
         OpenWork: {
             /** @description Rows nobody has placed in a ledger yet. */
             unresolved: number;
@@ -2851,6 +3032,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["Client"][];
         };
+        PaginatedFirmDocumentList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["FirmDocument"][];
+        };
         PaginatedJobList: {
             /** @example 123 */
             count: number;
@@ -2895,6 +3091,21 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["LedgerAccount"][];
+        };
+        PaginatedLedgerRowList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["LedgerRow"][];
         };
         PaginatedPartyList: {
             /** @example 123 */
@@ -2955,6 +3166,21 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["StatementTransaction"][];
+        };
+        PaginatedTallyImportSummaryList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["TallyImportSummary"][];
         };
         Party: {
             /** Format: uuid */
@@ -3018,9 +3244,9 @@ export interface components {
             name?: string;
         };
         PatchedLedgerAccountRequest: {
-            /** @description Must match the ledger name in the client's Tally company exactly. Tally creates an unrecognised name rather than rejecting it, so a near-miss silently splits a year across two ledgers. */
+            /** @description The ledger's name in this client's books. Unique per client, ignoring case and spacing: "Advance Tax" and "Advance tax" would split a year across two ledgers, so the second is refused. */
             name?: string;
-            group?: components["schemas"]["GroupEnum"];
+            group?: components["schemas"]["LedgerGroupEnum"];
             is_active?: boolean;
         };
         PatchedMemberUpdateRequest: {
@@ -3501,25 +3727,332 @@ export interface components {
             allow_gap: boolean;
         };
         /**
+         * @description * `PREVIEW` - Previewed, not applied
+         *     * `CONFIRMED` - Applied
+         *     * `DISCARDED` - Discarded
+         * @enum {string}
+         */
+        Status105Enum: "PREVIEW" | "CONFIRMED" | "DISCARDED";
+        /**
          * @description * `draft` - Draft
          *     * `signed_off` - Signed off
          * @enum {string}
          */
         Status42dEnum: "draft" | "signed_off";
         /**
-         * @description A Tally Prime import document, and what was left out of it.
-         *
-         *     ``unapproved`` is not an error. A firm exporting nine tenths of a statement
-         *     while three rows wait on a client's answer is a normal Tuesday -- but an
-         *     export that quietly included them would not be.
+         * @description * `RECEIVED` - Received
+         *     * `PARSED` - Parsed
+         *     * `FAILED` - Could not be read
+         * @enum {string}
          */
-        TallyExport: {
-            xml: string;
-            voucher_count: number;
-            ledger_count: number;
-            /** @description Rows classified but not approved, and therefore not exported. */
-            unapproved: number;
+        Status58cEnum: "RECEIVED" | "PARSED" | "FAILED";
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
+        TallyBankPanel: {
+            /** Format: uuid */
+            account_id: string;
+            label: string;
+            /** @description The opening already confirmed on the bank account, or null. */
+            ours_paise: number | null;
+            /** @description Tally's opening for this ledger. Debits positive. */
+            tally_paise: number;
+            /**
+             * @description `propose`: no opening is confirmed yet, so Tally's will be written to the bank account. `agree`: the same figure, nothing to do. `conflict`: two different figures; choose one in `bank`. `nothing`: no opening confirmed and none in the file. The ledger never gets a second copy of the number.
+             *
+             *     * `propose` - propose
+             *     * `agree` - agree
+             *     * `conflict` - conflict
+             *     * `nothing` - nothing
+             */
+            status: components["schemas"]["TallyBankPanelStatusEnum"];
+            choices: string[];
+            default: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly ours_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly tally_display: string | null;
         };
+        /**
+         * @description * `propose` - propose
+         *     * `agree` - agree
+         *     * `conflict` - conflict
+         *     * `nothing` - nothing
+         * @enum {string}
+         */
+        TallyBankPanelStatusEnum: "propose" | "agree" | "conflict" | "nothing";
+        TallyConfirmRequest: {
+            resolutions?: components["schemas"]["TallyResolutionRequest"][];
+        };
+        TallyConflict: {
+            kind: components["schemas"]["TallyConflictKindEnum"];
+            /** @description What the person may choose. `keep_ours`, `take_tally` (take Tally's group), `use_tally_name` (rename ours to Tally's spelling, entries move with it), `use_this_spelling` (this duplicate replaces the first one), `group` (name one of our groups in `group`), `skip` (leave this line out). */
+            choices: string[];
+            /** @description What a screen may pre-select. Null means the person must choose; nothing is assumed. */
+            default: string | null;
+            /** @description For `duplicate_in_file`: the first row it duplicates. */
+            pair_row?: number | null;
+        };
+        /**
+         * @description * `group_differs` - group_differs
+         *     * `name_variant` - name_variant
+         *     * `duplicate_in_file` - duplicate_in_file
+         *     * `needs_group` - needs_group
+         * @enum {string}
+         */
+        TallyConflictKindEnum: "group_differs" | "name_variant" | "duplicate_in_file" | "needs_group";
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
+        TallyCounts: {
+            create: number;
+            match: number;
+            conflict: number;
+            needs_group: number;
+            skipped: number;
+            with_opening: number;
+            bank_conflicts: number;
+            /** @description Total of the debit openings in the file, if every default is taken. */
+            debit_paise: number;
+            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            credit_paise: number;
+            /** @description Debits less credits. Zero when the file's openings balance; otherwise exactly what the reports show as Difference in opening balances. */
+            difference_paise: number;
+            /** @description Entries already posted in that year. The Trial Balance changes by the openings. */
+            entries_in_year: number;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly debit_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly credit_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly difference_display: string | null;
+        };
+        TallyError: {
+            /** @description Stable code: tally_file_unreadable (422), tally_file_too_large (413), tally_year_mismatch (422), tally_run_stale (409), tally_conflicts_unresolved (409), tally_rule (409), entry_locked (409), ledger_name_taken (409), invalid (400), forbidden (403), not_found (404). */
+            code: string;
+            /** @description A sentence for a person; show it as it is. */
+            detail: string;
+        };
+        TallyImportDetail: {
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["KindBd8Enum"];
+            status: components["schemas"]["Status105Enum"];
+            financial_year: number;
+            source_format: string;
+            include_openings: boolean;
+            /**
+             * Format: date
+             * @description The date the file says the company's books begin, if it does.
+             */
+            books_from: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description A preview that is not confirmed by then cannot be.
+             */
+            expires_at: string;
+            /** Format: date-time */
+            confirmed_at: string | null;
+            counts: components["schemas"]["TallyCounts"];
+            /** @description Present once confirmed. */
+            readonly result: components["schemas"]["TallyResult"] | null;
+            rows: components["schemas"]["TallyRow"][];
+        };
+        TallyImportSummary: {
+            /** Format: uuid */
+            id: string;
+            kind: components["schemas"]["KindBd8Enum"];
+            status: components["schemas"]["Status105Enum"];
+            financial_year: number;
+            source_format: string;
+            include_openings: boolean;
+            /**
+             * Format: date
+             * @description The date the file says the company's books begin, if it does.
+             */
+            books_from: string | null;
+            /** Format: date-time */
+            created_at: string;
+            /**
+             * Format: date-time
+             * @description A preview that is not confirmed by then cannot be.
+             */
+            expires_at: string;
+            /** Format: date-time */
+            confirmed_at: string | null;
+            counts: components["schemas"]["TallyCounts"];
+            /** @description Present once confirmed. */
+            readonly result: components["schemas"]["TallyResult"] | null;
+        };
+        TallyImportUploadRequest: {
+            /**
+             * Format: binary
+             * @description The ledger masters exported from Tally: .xml (preferred), .xlsx or .csv.
+             */
+            file: string;
+            /** @description The year the opening balances are as at the start of: 2025 means 1 April 2025. */
+            financial_year: number;
+            /**
+             * @description False imports the chart of accounts only. Use it when the file's balances are not those at the start of the year (`tally_year_mismatch`).
+             * @default true
+             */
+            include_openings: boolean;
+        };
+        TallyResolutionRequest: {
+            /** @description The preview row's `row` number. */
+            row: number;
+            /**
+             * @description One of that row's `conflict.choices`.
+             *
+             *     * `keep_ours` - keep_ours
+             *     * `take_tally` - take_tally
+             *     * `use_tally_name` - use_tally_name
+             *     * `use_this_spelling` - use_this_spelling
+             *     * `skip` - skip
+             *     * `group` - group
+             */
+            choice?: components["schemas"]["ChoiceEnum"];
+            /**
+             * @description With `choice: group`: which of our groups a group of the firm's own belongs to.
+             *
+             *     * `BANK` - Bank Accounts
+             *     * `CASH` - Cash-in-Hand
+             *     * `DEBTOR` - Sundry Debtors
+             *     * `CREDITOR` - Sundry Creditors
+             *     * `INDIRECT_EXPENSE` - Indirect Expenses
+             *     * `DIRECT_EXPENSE` - Direct Expenses
+             *     * `INDIRECT_INCOME` - Indirect Incomes
+             *     * `DIRECT_INCOME` - Direct Incomes
+             *     * `DUTIES_AND_TAXES` - Duties & Taxes
+             *     * `LOAN` - Loans (Liability)
+             *     * `INVESTMENT` - Investments
+             *     * `CAPITAL` - Capital Account
+             *     * `SUSPENSE` - Suspense A/c
+             *     * `FIXED_ASSET` - Fixed Assets
+             *     * `STOCK` - Stock-in-Hand
+             *     * `CURRENT_ASSET` - Current Assets
+             *     * `LOAN_ADVANCE` - Loans & Advances (Asset)
+             *     * `DEPOSIT` - Deposits (Asset)
+             *     * `MISC_EXPENDITURE` - Misc. Expenses (Asset)
+             *     * `BANK_OD` - Bank OD A/c
+             *     * `CURRENT_LIABILITY` - Current Liabilities
+             *     * `PROVISION` - Provisions
+             *     * `RESERVES` - Reserves & Surplus
+             *     * `SALES` - Sales Accounts
+             *     * `PURCHASE` - Purchase Accounts
+             */
+            group?: components["schemas"]["LedgerGroupEnum"];
+            /**
+             * @description For a row whose `bank` panel needs a decision: one of `bank.choices`.
+             *
+             *     * `use_tally` - use_tally
+             *     * `keep_bank` - keep_bank
+             *     * `skip` - skip
+             */
+            bank?: components["schemas"]["BankEnum"];
+        };
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
+        TallyResult: {
+            /** @description Ledgers created. */
+            created: number;
+            /** @description Existing ledgers the file matched. */
+            matched: number;
+            renamed: number;
+            regrouped: number;
+            /** @description Ledger openings stored. */
+            openings: number;
+            /** @description Openings written to a bank account instead. */
+            bank_openings: number;
+            skipped: number;
+            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            debit_paise: number;
+            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            credit_paise: number;
+            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            difference_paise: number;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly debit_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly credit_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly difference_display: string | null;
+        };
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
+        TallyRow: {
+            /** @description The number to quote in a resolution. Zero-based. */
+            row: number;
+            /** @description The line's position in the file (the sheet row, in a spreadsheet). */
+            ordinal: number;
+            /** @description As Tally spells it, whitespace tidied. */
+            name: string;
+            alias: string | null;
+            /** @description The group the file puts it under, as written. */
+            tally_group: string;
+            tally_group_path: string | null;
+            /**
+             * @description Null when the group is one of the firm's own and needs `choice: group`.
+             *
+             *     * `BANK` - Bank Accounts
+             *     * `CASH` - Cash-in-Hand
+             *     * `DEBTOR` - Sundry Debtors
+             *     * `CREDITOR` - Sundry Creditors
+             *     * `INDIRECT_EXPENSE` - Indirect Expenses
+             *     * `DIRECT_EXPENSE` - Direct Expenses
+             *     * `INDIRECT_INCOME` - Indirect Incomes
+             *     * `DIRECT_INCOME` - Direct Incomes
+             *     * `DUTIES_AND_TAXES` - Duties & Taxes
+             *     * `LOAN` - Loans (Liability)
+             *     * `INVESTMENT` - Investments
+             *     * `CAPITAL` - Capital Account
+             *     * `SUSPENSE` - Suspense A/c
+             *     * `FIXED_ASSET` - Fixed Assets
+             *     * `STOCK` - Stock-in-Hand
+             *     * `CURRENT_ASSET` - Current Assets
+             *     * `LOAN_ADVANCE` - Loans & Advances (Asset)
+             *     * `DEPOSIT` - Deposits (Asset)
+             *     * `MISC_EXPENDITURE` - Misc. Expenses (Asset)
+             *     * `BANK_OD` - Bank OD A/c
+             *     * `CURRENT_LIABILITY` - Current Liabilities
+             *     * `PROVISION` - Provisions
+             *     * `RESERVES` - Reserves & Surplus
+             *     * `SALES` - Sales Accounts
+             *     * `PURCHASE` - Purchase Accounts
+             */
+            our_group: (components["schemas"]["LedgerGroupEnum"] | components["schemas"]["NullEnum"]) | null;
+            /** @description Debits positive, credits negative. Zero when the file gives none. */
+            opening_paise: number;
+            /**
+             * @description `create` a new ledger; `match` an existing one (same name, same group); `conflict` the person must choose (see `conflict`); `needs_group` a group of the firm's own, choose one of ours; `skipped` not imported, with the reason.
+             *
+             *     * `create` - create
+             *     * `match` - match
+             *     * `conflict` - conflict
+             *     * `needs_group` - needs_group
+             *     * `skipped` - skipped
+             */
+            action: components["schemas"]["TallyRowActionEnum"];
+            reason: string;
+            /**
+             * Format: uuid
+             * @description Our ledger this line matches or collides with.
+             */
+            ledger_id: string | null;
+            ledger_name: string | null;
+            ledger_group: (components["schemas"]["LedgerGroupEnum"] | components["schemas"]["NullEnum"]) | null;
+            /** @description Journal lines already posted to our ledger. */
+            posted_lines: number;
+            conflict: components["schemas"]["TallyConflict"] | null;
+            bank: components["schemas"]["TallyBankPanel"] | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly opening_display: string | null;
+        };
+        /**
+         * @description * `create` - create
+         *     * `match` - match
+         *     * `conflict` - conflict
+         *     * `needs_group` - needs_group
+         *     * `skipped` - skipped
+         * @enum {string}
+         */
+        TallyRowActionEnum: "create" | "match" | "conflict" | "needs_group" | "skipped";
         /**
          * @description * `192` - 192 -- Salary
          *     * `194A` - 194A -- Interest other than securities
@@ -5036,6 +5569,33 @@ export interface operations {
             };
         };
     };
+    clients_ledgers_rows_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Up to 500. Defaults to 50. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedLedgerRowList"];
+                };
+            };
+        };
+    };
     clients_parties_list: {
         parameters: {
             query?: {
@@ -5636,6 +6196,245 @@ export interface operations {
             };
         };
     };
+    clients_tally_imports_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedTallyImportSummaryList"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+        };
+    };
+    clients_tally_imports_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["TallyImportUploadRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TallyImportUploadRequest"];
+                "application/json": components["schemas"]["TallyImportUploadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyImportDetail"];
+                };
+            };
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyImportDetail"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+        };
+    };
+    clients_tally_imports_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyImportDetail"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+        };
+    };
+    clients_tally_imports_confirm_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": components["schemas"]["TallyConfirmRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TallyConfirmRequest"];
+                "application/json": components["schemas"]["TallyConfirmRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyImportDetail"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+        };
+    };
     clients_retrieve: {
         parameters: {
             query?: never;
@@ -5728,6 +6527,50 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Client"];
                 };
+            };
+        };
+    };
+    documents_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedFirmDocumentList"];
+                };
+            };
+        };
+    };
+    documents_download_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -6046,27 +6889,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Me"];
-                };
-            };
-        };
-    };
-    statements_tally_export_retrieve: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TallyExport"];
                 };
             };
         };

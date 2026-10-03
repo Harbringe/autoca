@@ -1,10 +1,10 @@
 import { createFileRoute } from '@tanstack/react-router'
-import type { Stage } from '@/api/queries/books'
+import type { ReviewTab } from '@/api/queries/books'
 import { ReviewScreen } from '@/features/review/ReviewScreen'
 
 export const Route = createFileRoute('/_app/clients/$clientId/review')({
-  validateSearch: (search: Record<string, unknown>): { stage?: Stage } => ({
-    stage: (['unresolved', 'pending_approval', 'all'] as const).includes(search.stage as Stage) ? (search.stage as Stage) : undefined,
+  validateSearch: (search: Record<string, unknown>): { stage?: ReviewTab } => ({
+    stage: (['unresolved', 'pending_approval', 'all', 'posted'] as const).includes(search.stage as ReviewTab) ? (search.stage as ReviewTab) : undefined,
   }),
   component: Screen,
 })

@@ -12,6 +12,7 @@ import re
 
 from rest_framework import serializers
 
+from api.fields import MoneySerializerMixin, PaiseField
 from api.serializers.banking import StatementTransactionSerializer
 from classify.models import (
     ClassificationRule,
@@ -22,7 +23,9 @@ from classify.models import (
     Party,
 )
 from classify.treatment import ReviewBand, TdsSection
+from core.fy import financial_year
 from core.identifiers import is_valid_gstin
+from core.money import format_inr
 
 #: A quantifier applied to a group that itself contains a quantifier --
 #: ``(a+)+``, ``(\w*)*`` -- is the shape that makes a regex engine backtrack
@@ -401,9 +404,66 @@ class ClassificationSerializer(serializers.ModelSerializer):
         return voucher_type_for(obj)
 
     def get_is_posted(self, obj) -> bool:
-        if obj.mirrored_entry_id:
-            return True
-        return any(not entry.is_superseded for entry in obj.transaction.journal_entries.all())
+        return row_is_posted(obj)
+
+
+def row_is_posted(obj) -> bool:
+    """True when the row has a live entry in the books.
+
+    A row whose entries were all corrected since counts as unposted; a mirrored row shows
+    the entry its twin on the other account wrote. Callers listing many rows prefetch
+    ``transaction__journal_entries__superseded_by_set`` so this costs no query per row.
+    """
+    if obj.mirrored_entry_id:
+        return True
+    return any(not entry.is_superseded for entry in obj.transaction.journal_entries.all())
+
+
+class LedgerRowSerializer(serializers.ModelSerializer):
+    """A row placed in a ledger, and whether it has reached the books yet.
+
+    The ledger list counts every row placed in it, but the books only hold what has been
+    posted, in one financial year at a time. This is the list that reconciles the two.
+    """
+
+    transaction = serializers.UUIDField(source="transaction_id", read_only=True)
+    value_date = serializers.DateField(source="transaction.value_date", read_only=True)
+    financial_year = serializers.SerializerMethodField()
+    narration = serializers.CharField(source="transaction.narration", read_only=True)
+    amount_paise = PaiseField(source="transaction.amount_paise", read_only=True)
+    amount_display = serializers.SerializerMethodField(help_text="The amount with Indian digit grouping, e.g. ₹6,03,490.57.")
+    is_debit = serializers.BooleanField(source="transaction.is_debit", read_only=True)
+    is_posted = serializers.SerializerMethodField()
+    method_display = serializers.CharField(source="get_method_display", read_only=True)
+
+    class Meta:
+        model = TransactionClassification
+        fields = [
+            "id",
+            "transaction",
+            "value_date",
+            "financial_year",
+            "narration",
+            "book_narration",
+            "counterparty",
+            "amount_paise",
+            "amount_display",
+            "is_debit",
+            "is_posted",
+            "needs_review",
+            "method",
+            "method_display",
+        ]
+        read_only_fields = fields
+
+    def get_financial_year(self, obj) -> int:
+        return financial_year(obj.transaction.value_date)
+
+    def get_amount_display(self, obj) -> str:
+        return format_inr(obj.transaction.amount_paise)
+
+    def get_is_posted(self, obj) -> bool:
+        return row_is_posted(obj)
 
 
 class ReviewSummarySerializer(serializers.Serializer):

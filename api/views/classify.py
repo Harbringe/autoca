@@ -27,6 +27,7 @@ from api.serializers.classify import (
     ClassificationSerializer,
     ConfirmPartySerializer,
     LedgerAccountSerializer,
+    LedgerRowSerializer,
     PlacementResultSerializer,
     RecategorizeSerializer,
     ReviewSummarySerializer,
@@ -116,6 +117,32 @@ class LedgerAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
                 f"Only {self.client.name}'s lead or a firm administrator can decide its proposed ledgers."
             )
         return self.get_object()
+
+    @extend_schema(
+        summary="Rows placed in a ledger",
+        description=(
+            "Every statement row currently placed in this ledger, in any financial year, newest "
+            "first, each saying whether it has been posted to the books yet. The ledger list's "
+            "\"rows placed\" counts these; the books only hold the posted ones."
+        ),
+        parameters=[OpenApiParameter("page_size", int, description="Up to 500. Defaults to 50.")],
+        responses=LedgerRowSerializer(many=True),
+    )
+    @action(detail=True, methods=["get"])
+    def rows(self, request, client_id=None, pk=None):
+        ledger = self.get_object()
+        # These are bank transactions with their narrations, which the ledger list itself does not show.
+        if not has_permission(request.membership, "transaction.view"):
+            raise PermissionDenied("Reading the transactions placed in a ledger needs permission to view transactions.")
+        placed = (
+            TransactionClassification.objects.filter(firm_id=request.firm.pk, ledger=ledger)
+            .select_related("transaction__bank_account")
+            # row_is_posted reads these; fetched here so a long ledger is a handful of queries, not hundreds.
+            .prefetch_related("transaction__journal_entries__superseded_by_set")
+            .order_by("-transaction__value_date", "-transaction__row_number", "pk")
+        )
+        page = self.paginate_queryset(placed)
+        return self.get_paginated_response(LedgerRowSerializer(page, many=True).data)
 
     @extend_schema(
         summary="Accept a proposed ledger",

@@ -22,6 +22,7 @@ export type Party = Schemas['Party']
 export type Rule = Schemas['ClassificationRule']
 export type JournalEntry = Schemas['JournalEntry']
 export type JournalLine = Schemas['JournalLine']
+export type LedgerRow = Schemas['LedgerRow']
 export type EntryChange = Schemas['EntryChange']
 export type NextBatch = Schemas['NextBatch']
 export type ReviewSummary = Schemas['ReviewSummary']
@@ -32,7 +33,6 @@ export type BalanceSheet = Schemas['BalanceSheet']
 export type LedgerBalance = Schemas['LedgerBalance']
 export type ReportFooter = Schemas['ReportFooter']
 export type BalanceCheck = Schemas['BalanceCheck']
-export type TallyExport = Schemas['TallyExport']
 
 /** One side of the entry a row makes, as the server describes it for display. */
 export interface EntryLeg {

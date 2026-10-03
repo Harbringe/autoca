@@ -14,7 +14,7 @@ import { toast } from 'sonner'
 import { raw } from '@/api/client'
 import { messageOf } from '@/api/errors'
 import { waitForJob } from '@/api/jobs'
-import { ledgers as ledgersQuery, parties as partiesQuery, reviewQueue, rules as rulesQuery, type Stage } from '@/api/queries/books'
+import { ledgers as ledgersQuery, parties as partiesQuery, reviewQueue, rules as rulesQuery, type ReviewTab, type Stage } from '@/api/queries/books'
 import { bankAccounts, clientDetail, reviewSummary, useInvalidateClient, V1 } from '@/api/queries/clients'
 import { TDS_SECTIONS, type Classification, type Job, type JournalEntry, type PlacementResult } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
@@ -36,12 +36,9 @@ import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { summariseBulk, type BulkSummary } from './bulkPost'
 import { LedgerPicker, usableLedgers } from './LedgerPicker'
+import { PostedEntries } from './PostedEntries'
+import { StageNav, STAGES } from './StageNav'
 
-const STAGES: { stage: Stage; label: string; hint: string }[] = [
-  { stage: 'unresolved', label: 'Needs a ledger', hint: 'No ledger yet. Decide where each one goes.' },
-  { stage: 'pending_approval', label: 'Ready to post', hint: 'Placed in a ledger, not yet in the books. Check and post.' },
-  { stage: 'all', label: 'All waiting', hint: 'Everything not yet posted.' },
-]
 
 const BAND_LABEL: Record<string, { label: string; tone: 'success' | 'info' | 'warning' }> = {
   HIGH: { label: 'High', tone: 'success' },
@@ -64,7 +61,13 @@ function rowName(r: Classification): string {
   return `${formatDate(r.transaction.value_date)} ${r.transaction.amount_display} ${narration.length > 60 ? `${narration.slice(0, 60)}…` : narration}`
 }
 
-export function ReviewScreen({ clientId, stage: asked }: { clientId: string; stage?: Stage }) {
+/** The review screen: the queues of waiting rows, or Posted, which lists the entries already in the books. */
+export function ReviewScreen({ clientId, stage }: { clientId: string; stage?: ReviewTab }) {
+  if (stage === 'posted') return <PostedEntries clientId={clientId} />
+  return <ReviewQueue clientId={clientId} stage={stage} />
+}
+
+function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Stage }) {
   const { can } = useSession()
   const client = useQuery(clientDetail(clientId))
   const summary = useQuery(reviewSummary(clientId))
@@ -184,26 +187,7 @@ export function ReviewScreen({ clientId, stage: asked }: { clientId: string; sta
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <nav aria-label="Review stage" className="flex flex-wrap gap-1 rounded-lg bg-muted p-1">
-          {STAGES.map((s) => {
-            const count =
-              s.stage === 'unresolved' ? summary.data?.unresolved : s.stage === 'pending_approval' ? summary.data?.pending_approval : summary.data?.total
-            return (
-              <Link
-                key={s.stage}
-                to="/clients/$clientId/review"
-                params={{ clientId }}
-                search={{ stage: s.stage }}
-                className={cn(
-                  'rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground',
-                  stage === s.stage && 'bg-card text-foreground shadow-xs',
-                )}
-              >
-                {s.label} <span className="num ml-1 text-xs">{count ?? '…'}</span>
-              </Link>
-            )
-          })}
-        </nav>
+        <StageNav clientId={clientId} active={stage} />
         <div className="flex flex-wrap gap-2">
           {can('transaction.classify') && (
             <Button variant="outline" onClick={() => suggest.mutate()} disabled={suggest.isPending || !summary.data?.unresolved}>

@@ -7,14 +7,14 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Download, Eye, FileUp, Pencil, Trash2 } from 'lucide-react'
+import { Eye, FileUp, Pencil, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
 import { messageOf } from '@/api/errors'
 import { statementRows } from '@/api/queries/books'
 import { bankAccounts, reviewSummary, statements, useInvalidateClient, V1 } from '@/api/queries/clients'
-import type { BankAccount, Statement, TallyExport } from '@/api/types'
+import type { BankAccount, Statement } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
 import { Money } from '@/components/ca/Money'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
@@ -28,7 +28,6 @@ import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDate, plural } from '@/lib/format'
-import { saveText } from '@/platform/download'
 import { useSession } from '@/session/session'
 import { OpeningBalance, useUpload } from './UploadDialog'
 
@@ -42,20 +41,6 @@ export function StatementsScreen({ clientId }: { clientId: string }) {
   const [viewing, setViewing] = useState<Statement | null>(null)
   const [removing, setRemoving] = useState<Statement | null>(null)
   const invalidate = useInvalidateClient(clientId)
-
-  async function exportTally(s: Statement) {
-    try {
-      const out = await raw.get<TallyExport>(`${V1}/statements/${s.id}/tally-export/`)
-      await saveText(`tally-${s.bank_account_label.replace(/\W+/g, '-')}-${s.period_start}-to-${s.period_end}.xml`, out.xml, 'application/xml')
-      toast.success(`Exported ${plural(out.voucher_count, 'voucher')} for Tally`, {
-        description: out.unapproved
-          ? `${plural(out.unapproved, 'row')} from this statement ${out.unapproved === 1 ? 'is' : 'are'} not posted yet and ${out.unapproved === 1 ? 'is' : 'are'} not in the file.`
-          : 'Import it in Tally under Gateway › Import › Vouchers. Re-importing updates, it does not duplicate.',
-      })
-    } catch (e) {
-      toast.error(messageOf(e))
-    }
-  }
 
   const summary = useQuery({ ...reviewSummary(clientId), enabled: can('transaction.view') })
   const rowsOnFile = (stmts.data?.results ?? []).reduce((n, s) => n + s.transaction_count, 0)
@@ -123,11 +108,6 @@ export function StatementsScreen({ clientId }: { clientId: string }) {
           <Button size="sm" variant="ghost" onClick={() => setViewing(s)}>
             <Eye /> Rows
           </Button>
-          {can('report.view') && (
-            <Button size="sm" variant="ghost" onClick={() => void exportTally(s)}>
-              <Download /> Tally XML
-            </Button>
-          )}
           {can('statement.delete') && (
             <Button size="sm" variant="ghost" onClick={() => setRemoving(s)} aria-label={`Remove the statement ${formatDate(s.period_start)} to ${formatDate(s.period_end)}`}>
               <Trash2 />

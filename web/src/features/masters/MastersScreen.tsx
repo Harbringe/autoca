@@ -12,7 +12,7 @@ import { useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
-import { journal, ledgers as ledgersQuery, parties as partiesQuery, rules as rulesQuery } from '@/api/queries/books'
+import { journal, ledgerRows, ledgers as ledgersQuery, parties as partiesQuery, rules as rulesQuery } from '@/api/queries/books'
 import { clientDetail, useInvalidateClient, V1 } from '@/api/queries/clients'
 import { GROUP_LABEL, LEDGER_GROUPS, TDS_SECTIONS, type JournalEntry, type LedgerAccount, type Party, type Rule } from '@/api/types'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
@@ -27,6 +27,7 @@ import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDate, fyLabel, plural } from '@/lib/format'
+import { summariseRows, whyNoEntries } from '@/lib/ledgerRows'
 import { useFy } from '@/features/shell/useFy'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
@@ -76,7 +77,7 @@ export function MastersScreen({ clientId, tab }: { clientId: string; tab: Master
 
 function Ledgers({ clientId }: { clientId: string }) {
   const { can } = useSession()
-  const { fy } = useFy()
+  const { fy, setFy } = useFy()
   const client = useQuery(clientDetail(clientId))
   const all = useQuery(ledgersQuery(clientId))
   const entries = useQuery(journal(clientId))
@@ -86,6 +87,9 @@ function Ledgers({ clientId }: { clientId: string }) {
   const [showInactive, setShowInactive] = useState(false)
   const [selectedLedger, setSelectedLedger] = useState<string | null>(null)
   const [entrySearch, setEntrySearch] = useState('')
+  // Rows placed in the open ledger, in every year and posted or not: the ledger list counts these,
+  // while the entries below are only what has been posted, in the year on screen.
+  const placed = useQuery({ ...ledgerRows(clientId, selectedLedger ?? ''), enabled: !!selectedLedger && can('transaction.view') })
 
   if (all.isPending || entries.isPending) return <Spinner />
   if (all.error) return <ErrorState error={all.error} retry={() => void all.refetch()} />
@@ -118,6 +122,10 @@ function Ledgers({ clientId }: { clientId: string }) {
         (!q || entry.narration.toLowerCase().includes(q) || String(entry.entry_no).includes(q)))
         .sort((a, b) => b.entry_date.localeCompare(a.entry_date) || b.entry_no - a.entry_no)
     : []
+  const rowSummary = placed.data ? summariseRows(placed.data) : null
+  const placedRows = (placed.data ?? []).filter(
+    (r) => !q || r.narration.toLowerCase().includes(q) || r.book_narration.toLowerCase().includes(q) || r.counterparty.toLowerCase().includes(q),
+  )
 
   async function remove(l: LedgerAccount) {
     try {
@@ -200,7 +208,7 @@ function Ledgers({ clientId }: { clientId: string }) {
               </>
             ),
           },
-          { key: 'placed', header: 'Rows placed', align: 'right', priority: 2, cell: (l) => l.row_count },
+          { key: 'placed', header: 'Rows placed (all years)', align: 'right', priority: 2, cell: (l) => l.row_count },
           { key: 'entries', header: `FY ${fyLabel(fy)} entries`, align: 'right', cell: (l) => entryStats.get(l.id)?.count ?? 0 },
           {
             key: 'act',
@@ -241,8 +249,35 @@ function Ledgers({ clientId }: { clientId: string }) {
             <Card className="p-3"><div className="text-xs text-muted-foreground">Debits in FY {fyLabel(fy)}</div><Money paise={entryStats.get(selected.id)?.debit ?? 0} /></Card>
             <Card className="p-3"><div className="text-xs text-muted-foreground">Credits in FY {fyLabel(fy)}</div><Money paise={entryStats.get(selected.id)?.credit ?? 0} /></Card>
           </div>
+          {rowSummary && rowSummary.total > 0 && (
+            <div className="grid gap-2 text-sm">
+              <p>
+                <span className="font-medium text-heading">{plural(rowSummary.total, 'row')} placed in this ledger</span>
+                {' '}across all years: {rowSummary.posted} posted, {rowSummary.awaiting} not posted yet.
+              </p>
+              <div className="flex flex-wrap gap-2" role="group" aria-label="Financial years that have rows in this ledger">
+                {rowSummary.years.map((y) => (
+                  <Button key={y.fy} size="sm" variant={y.fy === fy ? 'outline' : 'ghost'} aria-pressed={y.fy === fy} onClick={() => setFy(y.fy)}>
+                    FY {fyLabel(y.fy)} · {plural(y.posted + y.awaiting, 'row')}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          )}
           <Input aria-label="Search ledger entries" placeholder="Search narration or voucher number" value={entrySearch} onChange={(e) => setEntrySearch(e.target.value)} />
-          {selectedEntries.length === 0 ? <p className="py-5 text-center text-sm text-muted-foreground">No posted entries for this ledger in FY {fyLabel(fy)}{q ? ' match this search.' : '.'}</p> : (
+          {selectedEntries.length === 0 ? (
+            <div className="grid gap-1 py-5 text-center text-sm text-muted-foreground">
+              <p>No posted entries for this ledger in FY {fyLabel(fy)}{q ? ' match this search.' : '.'}</p>
+              {!q && rowSummary && whyNoEntries(rowSummary, fy).map((reason) => <p key={reason}>{reason}</p>)}
+              {!q && rowSummary && rowSummary.awaiting > 0 && (
+                <p>
+                  <Link to="/clients/$clientId/review" params={{ clientId }} search={{ stage: 'pending_approval' }} className="underline">
+                    Open Review to check and post them
+                  </Link>
+                </p>
+              )}
+            </div>
+          ) : (
             <DataTable
               caption={`${selected.name}: posted entries`}
               rows={selectedEntries}
@@ -255,6 +290,37 @@ function Ledgers({ clientId }: { clientId: string }) {
                 { key: 'cr', header: 'Credit', align: 'right', cell: (entry) => sideOf(entry, selected.id, 'CR') },
               ]}
             />
+          )}
+          {rowSummary && rowSummary.total > 0 && (
+            <div className="grid gap-2">
+              <h3 className="text-sm font-semibold text-heading">Rows placed in this ledger, all years</h3>
+              {placedRows.length === 0 ? (
+                <p className="py-3 text-center text-sm text-muted-foreground">No placed rows match this search.</p>
+              ) : (
+                <DataTable
+                  caption={`${selected.name}: rows placed, all years`}
+                  rows={placedRows}
+                  rowKey={(r) => r.id}
+                  columns={[
+                    { key: 'date', header: 'Date', align: 'right', cell: (r) => formatDate(r.value_date) },
+                    { key: 'fy', header: 'Year', priority: 2, cell: (r) => `FY ${fyLabel(r.financial_year)}` },
+                    {
+                      key: 'narr',
+                      header: 'Narration',
+                      className: 'max-w-0 w-full truncate',
+                      cell: (r) => <span title={r.narration}>{r.book_narration || r.counterparty || r.narration}</span>,
+                    },
+                    { key: 'dr', header: 'Debit', align: 'right', cell: (r) => (r.is_debit ? <Money display={r.amount_display} /> : <span className="text-faint" aria-hidden>–</span>) },
+                    { key: 'cr', header: 'Credit', align: 'right', cell: (r) => (!r.is_debit ? <Money display={r.amount_display} /> : <span className="text-faint" aria-hidden>–</span>) },
+                    {
+                      key: 'state',
+                      header: 'In the books',
+                      cell: (r) => (r.is_posted ? <Badge tone="success">Posted</Badge> : <Badge tone="warning">Not posted yet</Badge>),
+                    },
+                  ]}
+                />
+              )}
+            </div>
           )}
         </Card>
       )}

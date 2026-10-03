@@ -1,0 +1,20 @@
+# The one thing that faces the internet. Caddy gets a certificate for API_HOST from Let's Encrypt
+# by itself, renews it, redirects http to https, and forwards to the app on the private network.
+# It sets X-Forwarded-For and X-Forwarded-Proto, so TRUSTED_PROXY_COUNT is 1.
+#
+# Changing the name later (a different domain) is a change to API_HOST in .env.prod, a new DNS
+# record, and DJANGO_ALLOWED_HOSTS. Nothing in this file changes.
+
+{$API_HOST} {
+	encode zstd gzip
+
+	# A statement is a few megabytes and the app refuses above 25 MB anyway; stop anything larger here.
+	request_body {
+		max_size 26MB
+	}
+
+	# Job progress is streamed (server-sent events); never hold those responses back to batch them.
+	reverse_proxy web:8000 {
+		flush_interval -1
+	}
+}

@@ -1,0 +1,73 @@
+# Production on one AWS instance. The database is NOT in here: it is whatever DATABASE_URL points at
+# (Supabase for now, in Mumbai beside the instance), so moving the database later is a change to
+# .env.prod and not to this file.
+#
+#   cp deploy/prod.env.example .env.prod        # then fill in the secrets; see the notes in it
+#   docker compose --env-file .env.prod -f compose.prod.yaml build
+#   docker compose --env-file .env.prod -f compose.prod.yaml up -d
+#
+# --env-file is what lets compose read API_HOST for Caddy; the services read the same file themselves.
+# The app is never published to the network. Caddy is the only service with open ports (80 and 443),
+# and it reaches the app over the private compose network.
+
+name: autoca
+
+services:
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  # Runs once per deploy. Migrations use the owner role, which the web process never holds. The final
+  # check refuses to start a deployment whose settings are unsafe (see core/checks.py).
+  migrate:
+    build: .
+    image: autoca-app:prod
+    env_file: .env.prod
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+    command: >
+      sh -c "python manage.py migrate --database=owner --noinput
+             && python manage.py grant_app_role --database=owner
+             && python manage.py check --deploy --database default"
+    restart: "no"
+
+  web:
+    image: autoca-app:prod
+    env_file: .env.prod
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      CACHE_URL: redis://redis:6379/1
+    expose:
+      - "8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    environment:
+      API_HOST: ${API_HOST:?set API_HOST in .env.prod}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      # The certificate and its account live here. Losing it only means asking Let's Encrypt again.
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - web
+    restart: unless-stopped
+
+volumes:
+  caddy_data:
+  caddy_config:

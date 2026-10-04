@@ -59,12 +59,15 @@ services:
       - .env.owner
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
+    # grant_app_role runs BEFORE migrate as well as after. On a brand-new database a data migration reads a
+    # table through the app role (superadmin 0004 does), and the app role has no permission on tables until
+    # the grants and default privileges exist. After a migrate it covers anything the migrations created.
     # A list, not a folded block: a folded block keeps the line breaks of its more-indented lines, which
     # puts '&&' at the start of a shell line and fails with a syntax error.
     command:
       - sh
       - -c
-      - python manage.py migrate --database=owner --noinput && python manage.py grant_app_role --database=owner && python manage.py check --deploy --database default
+      - python manage.py grant_app_role --database=owner && python manage.py migrate --database=owner --noinput && python manage.py grant_app_role --database=owner && python manage.py check --deploy --database default
     depends_on:
       db:
         condition: service_healthy

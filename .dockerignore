@@ -1,0 +1,29 @@
+# What the backend image must NOT contain. The Dockerfile does `COPY . .`, so anything not listed here
+# ends up inside the image, readable by the web process and kept in the image layers.
+
+# Secrets: the production settings files (.env.prod, .env.owner with the database owner's login,
+# .env.db with the superuser's) and any local .env. Only the example is allowed through.
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+
+# Never needed to run the API
+.git
+.github
+.venv
+**/__pycache__
+**/*.pyc
+.pytest_cache
+.devdata
+.claude
+docs
+pixel-agents
+
+# The web app is a separate static build with its own image (web/Dockerfile.caddy), not part of this one
+web
+
+# Local clutter
+*.log
+*.sqlite3

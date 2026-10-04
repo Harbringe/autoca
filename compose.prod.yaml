@@ -1,21 +1,39 @@
-# Production on one AWS instance: the app, its database, redis, and Caddy for HTTPS.
+# Production on one AWS instance: the app, its database, redis, and Caddy serving the web app over HTTPS.
 #
-#   deploy/init-env.sh api.example.in my-bucket   # writes .env.prod, .env.owner, .env.db; fill the secrets it lists
+#   deploy/init-env.sh app.example.in api.example.in my-bucket   # writes .env.prod, .env.owner, .env.db
 #   docker compose --env-file .env.prod -f compose.prod.yaml build
 #   docker compose --env-file .env.prod -f compose.prod.yaml up -d
 #
 # Three env files, so each container receives only the credentials it needs (deploy/init-env.sh writes them):
 #   .env.prod   the app's settings: read by web and migrate. Holds the app role's login, nothing that can
-#               change the schema or bypass row-level security. --env-file reads API_HOST from it for Caddy.
+#               change the schema or bypass row-level security. --env-file reads APP_HOST and API_HOST from
+#               it for Caddy.
 #   .env.owner  the owner role's login: read by migrate ONLY. The web process never holds it.
 #   .env.db     the database's bootstrap passwords (superuser and both roles): read by db ONLY.
+# The backend image is built with deploy-time secrets kept OUT of it (see .dockerignore); a secret that is
+# copied into an image is readable by whatever runs from it.
+#
 # Only Caddy has open ports (80 and 443). The database and the app are reachable only over the private
-# compose network.
+# compose network. Caddy serves the built web app and forwards /api, /auth and /admin to Django on the same
+# host, so the browser only ever talks to one origin.
 #
 # Moving the database to RDS later is a change to DATABASE_URL (.env.prod) and DATABASE_OWNER_URL
 # (.env.owner), and removing the `db` service; nothing else in this file changes.
 
 name: autoca
+
+# Every container's output goes to CloudWatch Logs (group /autoca/prod, in the instance's own account), and
+# `docker compose logs` keeps working beside it. The group and the instance role's permission to write to it
+# must exist BEFORE containers start with this driver, or they refuse to start. Non-blocking, so that if
+# CloudWatch is unreachable the app drops log lines instead of stalling on them.
+x-logging: &cloudwatch
+  driver: awslogs
+  options:
+    awslogs-region: ap-south-1
+    awslogs-group: /autoca/prod
+    tag: "{{.Name}}"
+    mode: non-blocking
+    max-buffer-size: 4m
 
 services:
   db:
@@ -36,6 +54,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    logging: *cloudwatch
     restart: unless-stopped
 
   redis:
@@ -46,6 +65,7 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    logging: *cloudwatch
     restart: unless-stopped
 
   # Runs once per deploy. Migrations use the owner role, which the web process never holds. The final
@@ -71,6 +91,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
+    logging: *cloudwatch
     restart: "no"
 
   web:
@@ -99,22 +120,30 @@ services:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
+    logging: *cloudwatch
     restart: unless-stopped
 
+  # Caddy with the built web app inside (web/Dockerfile.caddy builds it). Its context is web/, so nothing
+  # from the backend, and none of the .env files, can end up in it.
   caddy:
-    image: caddy:2-alpine
+    build:
+      context: ./web
+      dockerfile: Dockerfile.caddy
+    image: autoca-caddy:prod
     environment:
+      APP_HOST: ${APP_HOST:?set APP_HOST in .env.prod}
       API_HOST: ${API_HOST:?set API_HOST in .env.prod}
     ports:
       - "80:80"
       - "443:443"
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
-      # The certificate and its account live here. Losing it only means asking Let's Encrypt again.
+      # The certificates and their account live here. Losing them only means asking Let's Encrypt again.
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
       - web
+    logging: *cloudwatch
     restart: unless-stopped
 
 volumes:

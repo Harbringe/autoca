@@ -1,0 +1,13 @@
+# The web app and the proxy that serves it: Caddy, with the built single-page app inside.
+#
+# Stage 1 builds the app (typecheck, then vite build). Stage 2 is just Caddy plus the finished files, so
+# no Node, no source and no node_modules end up on the server's running image.
+FROM node:22-alpine AS build
+WORKDIR /w
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+RUN npm run build
+
+FROM caddy:2-alpine
+COPY --from=build /w/dist /srv/app

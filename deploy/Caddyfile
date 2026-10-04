@@ -1,11 +1,13 @@
-# The one thing that faces the internet. Caddy gets a certificate for API_HOST from Let's Encrypt
-# by itself, renews it, redirects http to https, and forwards to the app on the private network.
-# It sets X-Forwarded-For and X-Forwarded-Proto, so TRUSTED_PROXY_COUNT is 1.
+# The one thing that faces the internet. It serves the built web app and forwards the API to Django, on
+# ONE host, so the browser only ever talks to a single origin (first-party session cookie, ordinary
+# same-site CSRF, no CORS). Caddy gets the certificates itself from Let's Encrypt, renews them, and
+# redirects http to https. It sets X-Forwarded-For and X-Forwarded-Proto, so TRUSTED_PROXY_COUNT is 1.
 #
-# Changing the name later (a different domain) is a change to API_HOST in .env.prod, a new DNS
-# record, and DJANGO_ALLOWED_HOSTS. Nothing in this file changes.
+# APP_HOST is the name people use; API_HOST answers the same way, so the older name keeps working.
+# Changing the name later is a change to these two in .env.prod, a new DNS record and the allowed hosts;
+# nothing in this file changes.
 
-{$API_HOST} {
+{$APP_HOST}, {$API_HOST} {
 	encode zstd gzip
 
 	# A statement is a few megabytes and the app refuses above 25 MB anyway; stop anything larger here.
@@ -13,8 +15,44 @@
 		max_size 26MB
 	}
 
-	# Job progress is streamed (server-sent events); never hold those responses back to batch them.
-	reverse_proxy web:8000 {
-		flush_interval -1
+	# The paths the dev server also forwards (web/vite.config.ts): the API, sign-in and MFA, the platform
+	# owner's admin panel and its static files, and the health check.
+	@backend path /api/* /auth/* /admin/* /static/* /healthz
+	handle @backend {
+		# Job progress is streamed (server-sent events); never hold those responses back to batch them.
+		reverse_proxy web:8000 {
+			flush_interval -1
+		}
+	}
+
+	# Source maps are for debugging the build; there is no reason to publish the source to everyone.
+	@maps path *.map
+	handle @maps {
+		respond 404
+	}
+
+	# Everything else is the web app. An address the files don't have (a deep link, a refresh) gets the app's
+	# entry page, which draws the right screen itself.
+	handle {
+		root * /srv/app
+
+		header {
+			# Django sends its own headers on API responses; these are the static app's.
+			Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+			X-Content-Type-Options "nosniff"
+			X-Frame-Options "DENY"
+			Referrer-Policy "same-origin"
+			Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+			Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		}
+
+		# Built files carry a hash in their name, so they never change; the entry page must always be re-read.
+		@hashed path /assets/*
+		header @hashed Cache-Control "public, max-age=31536000, immutable"
+		@entry path / /index.html
+		header @entry Cache-Control "no-cache"
+
+		try_files {path} /index.html
+		file_server
 	}
 }

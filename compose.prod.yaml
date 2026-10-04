@@ -1,18 +1,41 @@
-# Production on one AWS instance. The database is NOT in here: it is whatever DATABASE_URL points at
-# (Supabase for now, in Mumbai beside the instance), so moving the database later is a change to
-# .env.prod and not to this file.
+# Production on one AWS instance: the app, its database, redis, and Caddy for HTTPS.
 #
-#   cp deploy/prod.env.example .env.prod        # then fill in the secrets; see the notes in it
+#   deploy/init-env.sh api.example.in my-bucket   # writes .env.prod; then fill the secrets it lists
 #   docker compose --env-file .env.prod -f compose.prod.yaml build
 #   docker compose --env-file .env.prod -f compose.prod.yaml up -d
 #
-# --env-file is what lets compose read API_HOST for Caddy; the services read the same file themselves.
-# The app is never published to the network. Caddy is the only service with open ports (80 and 443),
-# and it reaches the app over the private compose network.
+# --env-file is what lets compose read the passwords and API_HOST below; the services read the same
+# file themselves. Only Caddy has open ports (80 and 443). The database and the app are reachable
+# only over the private compose network.
+#
+# Moving the database to RDS later is a change to DATABASE_URL and DATABASE_OWNER_URL in .env.prod
+# and removing the `db` service; nothing else in this file changes.
 
 name: autoca
 
 services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: autoca
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}
+      AUTOCA_OWNER_PASSWORD: ${AUTOCA_OWNER_PASSWORD:?set AUTOCA_OWNER_PASSWORD in .env.prod}
+      AUTOCA_WEB_PASSWORD: ${AUTOCA_WEB_PASSWORD:?set AUTOCA_WEB_PASSWORD in .env.prod}
+    # Sized for a 2 GB server shared with the app: the defaults assume a machine that does nothing else.
+    command: ["postgres", "-c", "shared_buffers=192MB", "-c", "effective_cache_size=768MB", "-c", "max_connections=60"]
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Creates the owner and app roles on first start, with the passwords above. Runs once.
+      - ./scripts/bootstrap_db_roles.sql:/bootstrap_db_roles.sql:ro
+      - ./deploy/init-roles.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d autoca"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
   redis:
     image: redis:7-alpine
     command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "128mb", "--maxmemory-policy", "allkeys-lru"]
@@ -35,6 +58,9 @@ services:
       sh -c "python manage.py migrate --database=owner --noinput
              && python manage.py grant_app_role --database=owner
              && python manage.py check --deploy --database default"
+    depends_on:
+      db:
+        condition: service_healthy
     restart: "no"
 
   web:
@@ -69,5 +95,6 @@ services:
     restart: unless-stopped
 
 volumes:
+  pgdata:
   caddy_data:
   caddy_config:

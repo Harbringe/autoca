@@ -42,6 +42,17 @@ ac up -d --force-recreate web              # apply it
 - **Do not change** `DJANGO_SECRET_KEY` (signs everyone out), `KMS_LOCAL_MASTER_KEY` or `BLIND_INDEX_KEY` (stored bank account numbers become unreadable) on a deployment that has data.
 - The database passwords are set once, when the database is first created. Changing the files does not change the passwords inside the database.
 
+## The three permanent keys
+
+`DJANGO_SECRET_KEY`, `KMS_LOCAL_MASTER_KEY` and `BLIND_INDEX_KEY` are generated once. The last two protect stored bank account numbers, so a copy outside this server (a password manager) is essential.
+
+```
+sh deploy/show-keys.sh      # shows them once, waits while you copy them, then wipes the screen and scrollback
+sh deploy/new-keys.sh       # replaces all three; ONLY while no firm exists (it refuses otherwise)
+```
+
+Do not `cat` or `grep` them on screen and then copy the terminal into a chat, ticket or email: the whole screen comes with them. If a key is ever exposed after data exists, it cannot simply be replaced (that would make stored account numbers unreadable); it needs a planned re-encryption.
+
 ## Update to new code
 
 ```

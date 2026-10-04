@@ -48,10 +48,12 @@ services:
       DATABASE_OWNER_URL: postgresql://autoca_owner:${AUTOCA_OWNER_PASSWORD:?set AUTOCA_OWNER_PASSWORD}@db:5432/autoca
       DATABASE_SSL_REQUIRE: "0"
       DATABASE_IS_POOLED: "0"
-    command: >
-      sh -c "python manage.py migrate --database=owner --noinput
-             && python manage.py grant_app_role --database=owner
-             && python manage.py check --deploy --database default"
+    # A list, not a folded block: a folded block keeps the line breaks of its more-indented lines, which
+    # puts '&&' at the start of a shell line and fails with a syntax error.
+    command:
+      - sh
+      - -c
+      - python manage.py migrate --database=owner --noinput && python manage.py grant_app_role --database=owner && python manage.py check --deploy --database default
     depends_on:
       db:
         condition: service_healthy

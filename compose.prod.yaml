@@ -29,7 +29,7 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
       # Creates the owner and app roles on first start, with the passwords above. Runs once.
-      - ./scripts/bootstrap_db_roles.sql:/bootstrap_db_roles.sql:ro
+      - ./scripts/bootstrap_db_roles_prod.sql:/bootstrap_db_roles.sql:ro
       - ./deploy/init-roles.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d autoca"]
@@ -59,10 +59,12 @@ services:
       - .env.owner
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
-    command: >
-      sh -c "python manage.py migrate --database=owner --noinput
-             && python manage.py grant_app_role --database=owner
-             && python manage.py check --deploy --database default"
+    # A list, not a folded block: a folded block keeps the line breaks of its more-indented lines, which
+    # puts '&&' at the start of a shell line and fails with a syntax error.
+    command:
+      - sh
+      - -c
+      - python manage.py migrate --database=owner --noinput && python manage.py grant_app_role --database=owner && python manage.py check --deploy --database default
     depends_on:
       db:
         condition: service_healthy

@@ -81,6 +81,19 @@ services:
       CACHE_URL: redis://redis:6379/1
     expose:
       - "8000"
+    # The image's own probe asks for http://127.0.0.1:8000/healthz, which production correctly refuses
+    # (that is not a host the app answers to, and it forces https). This asks the way Caddy does: for the
+    # real host, saying it arrived over https.
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/healthz', headers={'Host': '${API_HOST}', 'X-Forwarded-Proto': 'https'}), timeout=4)"
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
     depends_on:
       migrate:
         condition: service_completed_successfully

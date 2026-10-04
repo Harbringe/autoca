@@ -13,12 +13,19 @@ set -eu
 cd "$(dirname "$0")/.."
 [ -f .env.prod ] || { echo "new-keys: .env.prod not found" >&2; exit 1; }
 
-compose() { sudo docker compose --env-file .env.prod -f compose.prod.yaml "$@"; }
-
-firms="$(compose exec -T db psql -U postgres -d autoca -tAc "select count(*) from core_firm" 2>/dev/null || echo '?')"
-firms="$(printf '%s' "$firms" | tr -d '[:space:]')"
+# Count the firms as the database's own superuser (it is not subject to row-level security). The real
+# reason is kept if this fails, the check cannot hang, and it never reads from the terminal.
+rc=0
+out="$(timeout 30 sudo docker compose --env-file .env.prod -f compose.prod.yaml exec -T db psql -U postgres -d autoca -tAc "select count(*) from core_firm" </dev/null 2>&1)" || rc=$?
+firms="$(printf '%s' "$out" | tr -d '[:space:]')"
+if [ "$rc" -ne 0 ]; then
+    echo "new-keys: refusing, because the database could not be read (exit $rc):" >&2
+    printf '%s
+' "$out" >&2
+    exit 1
+fi
 if [ "$firms" != "0" ]; then
-    echo "new-keys: refusing. The database has '$firms' firm(s) (or could not be read)." >&2
+    echo "new-keys: refusing. The database has '$firms' firm(s)." >&2
     echo "Replacing the keys now would make stored bank account numbers unreadable." >&2
     exit 1
 fi

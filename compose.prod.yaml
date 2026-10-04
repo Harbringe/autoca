@@ -1,27 +1,29 @@
 # Production on one AWS instance: the app, its database, redis, and Caddy for HTTPS.
 #
-#   deploy/init-env.sh api.example.in my-bucket   # writes .env.prod; then fill the secrets it lists
+#   deploy/init-env.sh api.example.in my-bucket   # writes .env.prod, .env.owner, .env.db; fill the secrets it lists
 #   docker compose --env-file .env.prod -f compose.prod.yaml build
 #   docker compose --env-file .env.prod -f compose.prod.yaml up -d
 #
-# --env-file is what lets compose read the passwords and API_HOST below; the services read the same
-# file themselves. Only Caddy has open ports (80 and 443). The database and the app are reachable
-# only over the private compose network.
+# Three env files, so each container receives only the credentials it needs (deploy/init-env.sh writes them):
+#   .env.prod   the app's settings: read by web and migrate. Holds the app role's login, nothing that can
+#               change the schema or bypass row-level security. --env-file reads API_HOST from it for Caddy.
+#   .env.owner  the owner role's login: read by migrate ONLY. The web process never holds it.
+#   .env.db     the database's bootstrap passwords (superuser and both roles): read by db ONLY.
+# Only Caddy has open ports (80 and 443). The database and the app are reachable only over the private
+# compose network.
 #
-# Moving the database to RDS later is a change to DATABASE_URL and DATABASE_OWNER_URL in .env.prod
-# and removing the `db` service; nothing else in this file changes.
+# Moving the database to RDS later is a change to DATABASE_URL (.env.prod) and DATABASE_OWNER_URL
+# (.env.owner), and removing the `db` service; nothing else in this file changes.
 
 name: autoca
 
 services:
   db:
     image: postgres:16
+    env_file: .env.db
     environment:
       POSTGRES_DB: autoca
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env.prod}
-      AUTOCA_OWNER_PASSWORD: ${AUTOCA_OWNER_PASSWORD:?set AUTOCA_OWNER_PASSWORD in .env.prod}
-      AUTOCA_WEB_PASSWORD: ${AUTOCA_WEB_PASSWORD:?set AUTOCA_WEB_PASSWORD in .env.prod}
     # Sized for a 2 GB server shared with the app: the defaults assume a machine that does nothing else.
     command: ["postgres", "-c", "shared_buffers=192MB", "-c", "effective_cache_size=768MB", "-c", "max_connections=60"]
     volumes:
@@ -51,7 +53,10 @@ services:
   migrate:
     build: .
     image: autoca-app:prod
-    env_file: .env.prod
+    # The only service that receives the owner role's login.
+    env_file:
+      - .env.prod
+      - .env.owner
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
     command: >

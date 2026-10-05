@@ -34,6 +34,10 @@ class EntryLockedError(RuntimeError):
     """The entry is inside books a senior has signed off."""
 
 
+class MachineEditRefusedError(RuntimeError):
+    """The machine, applying a learned lesson, tried to do something only a person may decide."""
+
+
 class WrongEntryKindError(RuntimeError):
     """A bank-row edit was attempted on an entry that did not come from a bank row."""
 
@@ -157,6 +161,19 @@ def revise_in_place(
     entry = JournalEntry.objects.select_for_update().get(pk=entry.pk)
     require_bank_entry(entry)
     require_editable(entry)
+    if actor is None:
+        # The machine, applying a lesson. What a payment on a party's account settles is a person's decision, so the
+        # machine may neither move an entry onto a party's account nor undo what a person settled. (A person editing an
+        # entry may do both: the allocations are cleared and recorded, and they settle it again.)
+        if treatment.ledger.is_party_account:
+            raise MachineEditRefusedError(
+                f"{treatment.ledger.name!r} is a party's own account, so a payment is moved onto it by a person who "
+                f"says which bills it settles, never by a learned rule."
+            )
+        if BillAllocation.objects.filter(line__entry=entry).exists():
+            raise MachineEditRefusedError(
+                "This payment settles bills a person allocated, so a learned rule may not change it."
+            )
     approval._require_ledger_in_use(treatment.ledger)
     approval.require_not_own_bank_ledger(entry, treatment.ledger)
 

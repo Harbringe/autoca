@@ -301,3 +301,64 @@ def test_the_model_is_never_offered_a_partys_account(client, statement, senior):
 def test_the_bank_and_ordinary_ledgers_are_not_party_accounts(client, statement, senior):
     assert not ledger(client, "Office Expenses").is_party_account
     assert not statement.bank_account.client.ledgers.filter(name=statement.bank_account.ledger_name).first().is_party_account
+
+
+# ---------------------------------------------------------------------------
+# A lesson learned from a party account is never the machine's to apply
+# ---------------------------------------------------------------------------
+
+
+def test_a_lesson_learned_from_a_party_account_never_moves_the_ais_other_entries_onto_it(client, statement, senior):
+    """The learning path re-treats the AI's earlier posted entries when a person corrects a similar one. If the lesson is
+    "this payee belongs on the supplier's account", that would put payments on a party's account with no decision about
+    which bills they settle, so it must leave them where they are."""
+    from classify.models import ClassificationRule, MatchType, RuleSource
+    from classify.models import Direction as RuleDirection
+    from classify.narration import normalise
+    from ledger.learning import apply_learned_rule
+
+    row, amount = the_payment(client)
+    classification = review(row, ledger(client, "Office Expenses"), learn=False)[0]
+    entry = approve(classification, membership=senior).entry
+    classification.refresh_from_db()
+    classification.method = ClassificationMethod.RULE  # the AI placed it, not a person
+    classification.counterparty = "RAVI TRADERS"
+    classification.save()
+    bill = supplier_bill(client, senior, amount)
+    bill.party.refresh_from_db()
+    rule = ClassificationRule.objects.create(
+        firm_id=client.firm_id, client=client, ledger=bill.party.ledger, party=bill.party,
+        match_type=MatchType.PARTY_EQUALS, pattern=normalise("RAVI TRADERS"), direction=RuleDirection.ANY,
+        source=RuleSource.LEARNED, priority=200, confidence=0.9,
+    )
+
+    assert apply_learned_rule(client, rule) == 0
+
+    assert "Office Expenses" in [name for name, _, _ in lines_of(entry)]
+    assert bill.party.ledger.name not in [name for name, _, _ in lines_of(entry)]
+
+
+def test_the_machine_may_not_move_an_entry_onto_a_party_account_or_undo_a_settlement(client, statement, senior):
+    entry, bill, amount = settled_entry(client, senior)
+    expense = ledger(client, "Office Expenses")
+
+    with pytest.raises(editing.MachineEditRefusedError, match="a person allocated"):
+        editing.revise_in_place(entry, Treatment(ledger=expense), actor=None, method=ClassificationMethod.RULE)
+    assert billing.open_amount(bill) == bill.total_paise - amount
+
+    other_row = review_queue(client).exclude(transaction=entry.source_transaction).first()
+    other = approve(review(other_row, expense, learn=False)[0], membership=senior).entry
+    bill.party.refresh_from_db()
+    with pytest.raises(editing.MachineEditRefusedError, match="own account"):
+        editing.revise_in_place(other, Treatment(ledger=bill.party.ledger), actor=None, method=ClassificationMethod.RULE)
+
+
+def test_a_person_may_still_move_an_entry_onto_a_party_account(client, statement, senior):
+    row, amount = the_payment(client)
+    bill = supplier_bill(client, senior, amount)
+    bill.party.refresh_from_db()
+    entry = approve(review(row, ledger(client, "Office Expenses"), learn=False)[0], membership=senior).entry
+
+    editing.revise_in_place(entry, Treatment(ledger=bill.party.ledger), actor=senior.user)
+
+    assert bill.party.ledger.name in [name for name, _, _ in lines_of(entry)]

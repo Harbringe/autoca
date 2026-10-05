@@ -27,7 +27,7 @@ from __future__ import annotations
 from classify.models import ClassificationMethod, MatchType, TransactionClassification
 from classify.narration import normalise
 from ledger import editing
-from ledger.models import ChangeAction, EntryMarker, JournalEntry
+from ledger.models import BillAllocation, ChangeAction, EntryMarker, JournalEntry
 
 
 def _live_entry(transaction_row):
@@ -67,6 +67,10 @@ def apply_learned_rule(client, rule, *, except_pk=None) -> int:
         entry = _live_entry(row.transaction)
         if entry is not None:
             if editing.is_locked(entry):
+                continue
+            # A payment on a party's account is a person's decision about which bills it settles. A lesson learned
+            # from one payee never moves the AI's other entries onto that account, nor undoes a settlement.
+            if rule.ledger.is_party_account or BillAllocation.objects.filter(line__entry=entry).exists():
                 continue
             editing.revise_in_place(
                 entry,

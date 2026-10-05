@@ -44,11 +44,6 @@ jobs:
         && github.event.workflow_run.head_repository.full_name == github.repository)
       || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/prod')
     steps:
-      # TEMPORARY: print the identity claims GitHub sends (labels only, not the token), to match the AWS trust rule.
-      - name: Show OIDC claims
-        run: |
-          tok="$(curl -sS -H "Authorization: Bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | python3 -c 'import sys,json;print(json.load(sys.stdin)["value"])')"
-          echo "$tok" | cut -d. -f2 | python3 -c 'import sys,base64,json;b=sys.stdin.read().strip();b+="="*(-len(b)%4);c=json.loads(base64.urlsafe_b64decode(b));print(json.dumps({k:c[k] for k in ("sub","aud","iss","repository","ref","event_name","job_workflow_ref") if k in c},indent=1))'
       # Pinned to a commit (this is v4), not a tag, because a tag can be moved.
       - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
         with:

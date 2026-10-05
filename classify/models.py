@@ -201,6 +201,14 @@ class Party(UUIDModel, FirmScopedModel):
     #: TDS section that normally applies to payments to this party, if any.
     tds_section = models.CharField(max_length=16, blank=True, choices=TdsSection.CHOICES)
 
+    #: This party's own account in the client's books (Sundry Creditors or Sundry Debtors), once it has one. A real
+    #: foreign key, not a name: renaming the ledger cannot orphan the party's balance, which is what happens to a
+    #: bank account's ledger if it is renamed without ``rename_account_ledger``. Created on first use, never in bulk,
+    #: by ``ledger.billing.party_ledger_for``. The database refuses a ledger of another client (see the migration).
+    ledger = models.OneToOneField(
+        LedgerAccount, null=True, blank=True, on_delete=models.PROTECT, related_name="party_record"
+    )
+
     notes = models.TextField(blank=True, default="")
     is_active = models.BooleanField(default=True)
 

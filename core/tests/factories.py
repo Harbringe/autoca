@@ -39,6 +39,10 @@ from gst.models import (
     RegisterInvoice,
 )
 from ledger.models import (
+    AllocationKind,
+    Bill,
+    BillAllocation,
+    BillKind,
     BooksAction,
     BooksEvent,
     ChangeAction,
@@ -361,6 +365,53 @@ def _ledger_opening(firm, **kw):
     )
 
 
+def _bill(firm, **kw):
+    client = kw.get("client") or _client(firm)
+    return Bill.objects.create(
+        firm=firm,
+        client=client,
+        party=kw.get("party") or _party(firm, client=client),
+        kind=BillKind.PURCHASE,
+        direction=Direction.CREDIT,
+        reference=f"INV-{uuid.uuid4().hex[:8]}",
+        bill_date=datetime.date(2025, 4, 13),
+        booked_on=datetime.date(2025, 4, 13),
+        financial_year=2025,
+        taxable_paise=100_000,
+        total_paise=100_000,
+        invoice_key=uuid.uuid4().hex * 2,
+    )
+
+
+def _bill_allocation(firm, **kw):
+    """A payment line on the party's own ledger, settling the bill in full."""
+    bill = kw.get("bill") or _bill(firm)
+    party_ledger = LedgerAccount.objects.create(
+        firm=firm, client=bill.client, name=f"Party {uuid.uuid4().hex[:8]}", group=LedgerGroup.CREDITOR
+    )
+    bill.party.ledger = party_ledger
+    bill.party.save(update_fields=["ledger"])
+    bank = _ledger_account(firm, client=bill.client, group=LedgerGroup.BANK)
+    entry = JournalEntry.objects.create(
+        firm=firm,
+        client=bill.client,
+        entry_no=1,
+        financial_year=2025,
+        entry_date=datetime.date(2025, 4, 20),
+        voucher_type=VoucherType.PAYMENT,
+        narration="Paid against the bill",
+        approved_at=django_timezone.now(),
+    )
+    debit = JournalLine.build(
+        entry=entry, ledger_account=party_ledger, party=bill.party, direction=Direction.DEBIT, amount_paise=100_000
+    )
+    credit = JournalLine.build(entry=entry, ledger_account=bank, direction=Direction.CREDIT, amount_paise=100_000)
+    JournalLine.objects.bulk_create([debit, credit])
+    return BillAllocation.objects.create(
+        firm=firm, client=bill.client, line=debit, bill=bill, kind=AllocationKind.AGAINST_BILL, amount_paise=100_000
+    )
+
+
 #: model -> callable(firm, **kwargs) -> instance
 FACTORIES = {
     Client: _client,
@@ -394,6 +445,8 @@ FACTORIES = {
     EntryChange: _entry_change,
     LedgerImportRun: _ledger_import_run,
     LedgerOpening: _ledger_opening,
+    Bill: _bill,
+    BillAllocation: _bill_allocation,
 }
 
 #: Firm is firm-scoped by primary key rather than by a firm_id column, so it is

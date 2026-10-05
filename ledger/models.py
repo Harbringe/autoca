@@ -37,6 +37,7 @@ from classify.models import LedgerAccount, Party
 from core.fy import fy_label
 from core.models import Client, FirmScopedModel, User, UUIDModel
 from core.money import format_inr
+from documents.models import Document
 
 
 class VoucherType(models.TextChoices):
@@ -48,6 +49,25 @@ class VoucherType(models.TextChoices):
     #: expenditure, and reported separately.
     CONTRA = "Contra", "Contra"
     JOURNAL = "Journal", "Journal"
+    #: The supplier's invoice, booked on its own date, before and apart from the payment (``ledger.billing``).
+    PURCHASE = "Purchase", "Purchase"
+    SALES = "Sales", "Sales"
+    #: A return. A debit note reverses a purchase; a credit note reverses a sale.
+    DEBIT_NOTE = "Debit Note", "Debit Note"
+    CREDIT_NOTE = "Credit Note", "Credit Note"
+
+
+class EntryKind(models.TextChoices):
+    """Where an entry came from, which decides how it may be edited.
+
+    A bank entry is one statement row posted, and its edit, removal and correction all run through that row's
+    classification. A voucher entry has no bank row: it is a bill booked by a person, and it is edited or removed
+    through the bill. The editing code checks this, so one kind can never be pushed down the other's path.
+    """
+
+    BANK = "BANK", "Posted from a bank statement row"
+    VOUCHER = "VOUCHER", "A purchase, sales or note voucher"
+    JOURNAL = "JOURNAL", "A journal voucher"
 
 
 class Direction(models.TextChoices):
@@ -113,6 +133,10 @@ class JournalEntry(UUIDModel, FirmScopedModel):
     entry_date = models.DateField()
     voucher_type = models.CharField(max_length=16, choices=VoucherType.choices)
     narration = models.TextField(blank=True)
+    #: See ``EntryKind``. Every entry that existed before bills is a bank entry, hence the database default.
+    entry_kind = models.CharField(
+        max_length=8, choices=EntryKind.choices, default=EntryKind.BANK, db_default=EntryKind.BANK
+    )
 
     #: The statement row this came from. The requirements document's "reference
     #: to the source line": any entry traces back to the exact line of the exact
@@ -397,3 +421,157 @@ class LedgerOpening(UUIDModel, FirmScopedModel):
 
     def __str__(self) -> str:
         return f"{self.ledger_id} FY{self.financial_year} {format_inr(self.signed_paise)}"
+
+
+# ---------------------------------------------------------------------------
+# Bills: what a party owes, or is owed, and what has settled it
+# ---------------------------------------------------------------------------
+
+
+class BillKind(models.TextChoices):
+    PURCHASE = "PURCHASE", "Purchase invoice"
+    SALES = "SALES", "Sales invoice"
+    DEBIT_NOTE = "DEBIT_NOTE", "Debit note (a purchase return)"
+    CREDIT_NOTE = "CREDIT_NOTE", "Credit note (a sales return)"
+    OPENING = "OPENING", "Opening balance, as a bill"
+
+
+class Bill(UUIDModel, FirmScopedModel):
+    """One invoice, note or opening balance that a party owes or is owed.
+
+    The fact that makes party-wise accounting possible: the invoice exists in the books on its own date, separate from
+    whatever later pays it. ``entry`` is the voucher that booked it; ``BillAllocation`` rows say what has settled it.
+
+    Never edited once posted. Whether it is open, part-settled or settled is *computed* from its allocations
+    (``ledger.billing.open_amount``) and is never stored, so it cannot drift from them.
+
+    ``direction`` is the side the bill sits on in the party's ledger: a purchase or a credit note is a credit (the
+    client owes), a sale or a debit note a debit (the party owes). An opening bill is either. A settling line is
+    always the opposite side.
+
+    ``invoice_key`` is the invoice's identity, the same one the GST module uses (``core.identity``), so a bill, an
+    uploaded register row and a GSTR-2B row are recognised as one invoice. It is kept as first written even if the
+    supplier's GSTIN is added later.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="bills")
+    party = models.ForeignKey(Party, on_delete=models.PROTECT, related_name="bills")
+    kind = models.CharField(max_length=12, choices=BillKind.choices)
+    direction = models.CharField(max_length=2, choices=Direction.choices)
+
+    #: The supplier's invoice number (for a sale, ours). Distinct from the firm's voucher number, which renumbering
+    #: at sign-off may change.
+    reference = models.CharField(max_length=64)
+    bill_date = models.DateField()
+    due_date = models.DateField(null=True, blank=True)
+    #: The date of the voucher that booked it, which is what the sign-off lock reads. For an opening bill, the date
+    #: the balance stands at.
+    booked_on = models.DateField()
+    financial_year = models.PositiveSmallIntegerField()
+
+    taxable_paise = models.BigIntegerField(default=0)
+    cgst_paise = models.BigIntegerField(default=0)
+    sgst_paise = models.BigIntegerField(default=0)
+    igst_paise = models.BigIntegerField(default=0)
+    cess_paise = models.BigIntegerField(default=0)
+    #: Signed: the rupee rounding a bill carries, positive when it rounds up.
+    round_off_paise = models.BigIntegerField(default=0)
+    #: Deducted at booking and not payable to the party.
+    tds_paise = models.BigIntegerField(default=0)
+    #: Reverse charge: the GST is the client's own liability, not part of what the party is owed.
+    rcm = models.BooleanField(default=False)
+    #: What the party's ledger was credited or debited for: taxable + tax + round-off - TDS (tax left out under RCM).
+    total_paise = models.BigIntegerField()
+
+    entry = models.OneToOneField(
+        JournalEntry, null=True, blank=True, on_delete=models.PROTECT, related_name="bill"
+    )
+    #: The uploaded invoice, protected: evidence behind the books must not vanish with a deleted file. A bill with none is
+    #: allowed but is an open item ("needs document"), never silent.
+    document = models.ForeignKey(
+        Document, null=True, blank=True, on_delete=models.PROTECT, related_name="bills"
+    )
+
+    invoice_key = models.CharField(max_length=64, db_index=True)
+    #: Blind index of the client's own GSTIN this belongs to, so each bill lands in the right GST return without the
+    #: books importing anything from ``gst/``.
+    own_gstin_hash = models.CharField(max_length=64, blank=True, default="", db_index=True)
+
+    class Meta:
+        db_table = "ledger_bill"
+        ordering = ["bill_date", "created_at"]
+        constraints = [
+            models.UniqueConstraint(
+                fields=["firm", "client", "kind", "financial_year", "invoice_key"],
+                name="uniq_bill_per_invoice",
+            ),
+            models.CheckConstraint(condition=models.Q(total_paise__gt=0), name="ck_bill_total_is_positive"),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(taxable_paise__gte=0, cgst_paise__gte=0, sgst_paise__gte=0, igst_paise__gte=0)
+                    & models.Q(cess_paise__gte=0, tds_paise__gte=0)
+                ),
+                name="ck_bill_amounts_are_not_negative",
+            ),
+            # A purchase and a credit note are what the client owes (a credit); a sale and a debit note, what the
+            # party owes (a debit). An opening balance may be either.
+            models.CheckConstraint(
+                condition=(
+                    models.Q(kind__in=["PURCHASE", "CREDIT_NOTE"], direction="CR")
+                    | models.Q(kind__in=["SALES", "DEBIT_NOTE"], direction="DR")
+                    | models.Q(kind="OPENING")
+                ),
+                name="ck_bill_direction_matches_kind",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["firm", "client", "party"], name="idx_bill_party"),
+            models.Index(fields=["firm", "client", "bill_date"], name="idx_bill_date"),
+            models.Index(fields=["firm", "own_gstin_hash", "invoice_key"], name="idx_bill_gst_key"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_kind_display()} {self.reference} ({format_inr(self.total_paise)})"
+
+
+class AllocationKind(models.TextChoices):
+    AGAINST_BILL = "AGAINST_BILL", "Against a bill"
+    #: Paid or received without naming a bill. A party balance waiting to be applied to one.
+    ON_ACCOUNT = "ON_ACCOUNT", "On account"
+    #: Paid or received before the invoice exists.
+    ADVANCE = "ADVANCE", "Advance"
+
+
+class BillAllocation(UUIDModel, FirmScopedModel):
+    """How much of one journal line settles one bill, or waits unapplied.
+
+    A line on a party's ledger is either wholly accounted for by allocations or has a remainder that is simply not
+    yet allocated, which is an open item. The database refuses an allocation total above the bill or above the line.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="bill_allocations")
+    line = models.ForeignKey(JournalLine, on_delete=models.PROTECT, related_name="allocations")
+    bill = models.ForeignKey(Bill, null=True, blank=True, on_delete=models.PROTECT, related_name="allocations")
+    kind = models.CharField(max_length=12, choices=AllocationKind.choices)
+    amount_paise = models.BigIntegerField()
+
+    class Meta:
+        db_table = "ledger_bill_allocation"
+        ordering = ["created_at"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount_paise__gt=0), name="ck_allocation_is_positive"),
+            models.CheckConstraint(
+                condition=(
+                    models.Q(kind="AGAINST_BILL", bill__isnull=False)
+                    | (~models.Q(kind="AGAINST_BILL") & models.Q(bill__isnull=True))
+                ),
+                name="ck_allocation_bill_matches_kind",
+            ),
+        ]
+        indexes = [
+            models.Index(fields=["firm", "bill"], name="idx_allocation_bill"),
+            models.Index(fields=["firm", "line"], name="idx_allocation_line"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.get_kind_display()} {format_inr(self.amount_paise)}"

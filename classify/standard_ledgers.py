@@ -54,6 +54,8 @@ STANDARD_LEDGERS: list[tuple[str, str]] = [
     ("Input CGST", G.DUTIES_AND_TAXES),
     ("Input SGST", G.DUTIES_AND_TAXES),
     ("Input IGST", G.DUTIES_AND_TAXES),
+    ("Input Cess", G.DUTIES_AND_TAXES),
+    ("Output Cess", G.DUTIES_AND_TAXES),
     ("Output CGST", G.DUTIES_AND_TAXES),
     ("Output SGST", G.DUTIES_AND_TAXES),
     ("Output IGST", G.DUTIES_AND_TAXES),

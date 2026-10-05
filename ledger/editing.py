@@ -22,6 +22,7 @@ from classify.models import ClassificationMethod, TransactionClassification
 from ledger.models import (
     ChangeAction,
     EntryChange,
+    EntryKind,
     EntryMarker,
     JournalEntry,
     JournalLine,
@@ -30,6 +31,23 @@ from ledger.models import (
 
 class EntryLockedError(RuntimeError):
     """The entry is inside books a senior has signed off."""
+
+
+class WrongEntryKindError(RuntimeError):
+    """A bank-row edit was attempted on an entry that did not come from a bank row."""
+
+
+def require_bank_entry(entry) -> None:
+    """Revising and removing here work through the entry's bank row, which a voucher entry does not have.
+
+    A purchase, sales or note voucher is changed through its bill (``ledger.billing.remove_bill``). Refusing here stops
+    one kind of entry being pushed down the other's path, which would otherwise fail on a missing statement row, or worse,
+    succeed on the wrong thing.
+    """
+    if entry.entry_kind != EntryKind.BANK:
+        raise WrongEntryKindError(
+            f"This is a {entry.get_entry_kind_display().lower()}, not a bank entry. Change it through its bill."
+        )
 
 
 def locked_through(client_id):
@@ -131,6 +149,7 @@ def revise_in_place(
     # fresh one would quietly undo it -- or collide with the entry that now
     # holds that number.
     entry = JournalEntry.objects.select_for_update().get(pk=entry.pk)
+    require_bank_entry(entry)
     require_editable(entry)
     approval._require_ledger_in_use(treatment.ledger)
     approval.require_not_own_bank_ledger(entry, treatment.ledger)
@@ -193,6 +212,7 @@ def remove_entry(entry, *, actor, note="") -> None:
     the change log, which is why that record is append-only.
     """
     entry = JournalEntry.objects.select_for_update().get(pk=entry.pk)
+    require_bank_entry(entry)
     require_editable(entry)
     before = snapshot(entry)
     record_change(entry, ChangeAction.REMOVED, actor=actor, before=before, note=note)

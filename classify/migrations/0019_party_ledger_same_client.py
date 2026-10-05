@@ -6,14 +6,11 @@ value, and the database checks it rather than the application remembering to. A 
 foreign key, matching ``ledger/0004``: no extra column and no new unique constraint on a populated table.
 """
 
-from django.conf import settings
 from django.db import migrations
 
 from core.db.rls import ddl_tenant_context_operations
 
-GUC = settings.TENANT_GUC
-
-FORWARD = f"""
+FORWARD = """
 CREATE OR REPLACE FUNCTION app.assert_party_ledger_same_client()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
@@ -23,7 +20,8 @@ BEGIN
         RETURN NEW;
     END IF;
 
-    PERFORM set_config('{GUC}', NEW.firm_id::text, true);
+    -- Deliberately does NOT set the tenant context from NEW.firm_id: a BEFORE trigger runs before the row's policy
+    -- check, so adopting the incoming row's firm would make that check pass for any firm.
 
     SELECT client_id INTO ledger_client
       FROM classify_ledger_account WHERE id = NEW.ledger_id;

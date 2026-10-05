@@ -26,7 +26,7 @@ from core.db.rls import ddl_tenant_context_operations, rls_operations
 
 GUC = settings.TENANT_GUC
 
-BILL_GUARD = f"""
+BILL_GUARD = """
 CREATE OR REPLACE FUNCTION app.ledger_bill_guard()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
@@ -52,7 +52,9 @@ BEGIN
         RETURN OLD;
     END IF;
 
-    PERFORM set_config('{GUC}', NEW.firm_id::text, true);
+    -- Deliberately does NOT set the tenant context from NEW.firm_id. A BEFORE trigger runs before the row's policy
+    -- check, so a trigger that adopted the incoming row's firm would make that check pass for any firm. The
+    -- transaction already has its context, and every read below runs under it.
 
     SELECT signed_off_through INTO locked_through FROM core_client WHERE id = NEW.client_id;
     IF locked_through IS NOT NULL AND NEW.booked_on <= locked_through THEN
@@ -87,7 +89,7 @@ CREATE TRIGGER ledger_bill_guard
     FOR EACH ROW EXECUTE FUNCTION app.ledger_bill_guard();
 """
 
-ALLOCATION_GUARD = f"""
+ALLOCATION_GUARD = """
 CREATE OR REPLACE FUNCTION app.ledger_bill_allocation_guard()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
@@ -113,8 +115,8 @@ BEGIN
     IF TG_OP = 'DELETE' THEN
         subject_line := OLD.line_id;
     ELSE
+        -- No set_config from NEW.firm_id here either; see ledger_bill_guard.
         subject_line := NEW.line_id;
-        PERFORM set_config('{GUC}', NEW.firm_id::text, true);
     END IF;
 
     SELECT l.entry_id, l.ledger_account_id, l.party_id, l.direction, e.entry_date, e.client_id

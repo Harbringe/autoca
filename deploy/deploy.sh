@@ -1,7 +1,10 @@
 #!/bin/sh
 # Update the running server to the latest code on this branch, then check it is healthy.
 #
-#   deploy/deploy.sh
+#   deploy/deploy.sh [COMMIT]
+#
+#   With a COMMIT (what the GitHub deploy job passes), it refuses to go on unless that commit is part of what it
+#   just pulled, so a deploy can never quietly ship something other than what was tested.
 #
 # Pulls, rebuilds the images, and brings everything up (the migrate step runs first, every time). It does not
 # touch the database's data or the .env files. If the check at the end fails, the previous images are still
@@ -13,6 +16,13 @@ cd "$(dirname "$0")/.."
 compose() { sudo docker compose --env-file .env.prod -f compose.prod.yaml "$@"; }
 
 git pull --ff-only
+
+want="${1:-}"
+if [ -n "$want" ]; then
+    git cat-file -e "$want^{commit}" 2>/dev/null || { echo "Refusing: commit $want is not on this server after pulling." >&2; exit 1; }
+    git merge-base --is-ancestor "$want" HEAD || { echo "Refusing: $want is not part of the code now checked out ($(git rev-parse --short HEAD))." >&2; exit 1; }
+    echo "Deploying $(git rev-parse --short HEAD) (includes $want)."
+fi
 compose build
 compose up -d
 

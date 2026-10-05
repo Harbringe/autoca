@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "2.2",
+  "description": "Deploy a tested AutoCA commit: runs deploy/deploy.sh on the server with that commit id. Nothing else.",
+  "parameters": {
+    "commit": {
+      "type": "String",
+      "description": "The full 40-character commit id to deploy.",
+      "allowedPattern": "^[0-9a-f]{40}$"
+    }
+  },
+  "mainSteps": [
+    {
+      "action": "aws:runShellScript",
+      "name": "deploy",
+      "inputs": {
+        "timeoutSeconds": "1500",
+        "runCommand": [
+          "su - ssm-user -c 'cd /srv/autoca && sh deploy/deploy.sh {{commit}}'"
+        ]
+      }
+    }
+  ]
+}

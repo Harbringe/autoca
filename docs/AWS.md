@@ -96,6 +96,22 @@ Later, `git checkout prod` returns to the branch (`deploy.sh` needs to be on the
 - One service: `ac restart web` (same settings), or `ac up -d --force-recreate web` (re-read settings).
 - Whole server: EC2 console -> Instance state -> **Reboot**. Docker starts at boot and every service has `restart: unless-stopped`, so everything comes back by itself. The address does not change (Elastic IP). Give it a minute, then `ac ps`.
 
+## Deploying from GitHub
+
+Pushing to `prod` updates the server by itself, once CI is green:
+
+```
+git push origin dev:main && git push origin dev:prod
+```
+
+CI runs on `prod`; when it passes, the **Deploy** workflow signs in to AWS with a short-lived token (no stored key) and runs the SSM document `autoca-deploy` on the server. That document can do exactly one thing: run `deploy/deploy.sh` with a commit id (40 hex characters, nothing else is accepted). `deploy.sh` refuses to continue unless that commit is part of what it just pulled.
+
+Watch it under GitHub -> Actions -> Deploy. A red run means the server was not changed past the point shown in its output; the previous containers keep running until `compose up` replaces them.
+
+To redeploy by hand: Actions -> Deploy -> Run workflow, with "Use workflow from" set to **prod**.
+
+The AWS side (set up once): the document `autoca-deploy` (`deploy/ssm-document.json`), GitHub as an OpenID Connect provider, and the role `autoca-github-deploy`, which may only send that one document to this one server and read the result.
+
 ## Backups
 
 The database lives in a Docker volume on the server's disk, so it is backed up two independent ways.

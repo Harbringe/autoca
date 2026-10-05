@@ -65,6 +65,7 @@ DOMAIN_ERRORS = {
     # Purchase and sales vouchers, bills and their settlement. Both are things a person can fix.
     "BillingError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "billing_rule"),
     "WrongEntryKindError": (status.HTTP_409_CONFLICT, "wrong_entry_kind"),
+    "MachineEditRefusedError": (status.HTTP_409_CONFLICT, "machine_edit_refused"),
     "StatementRemovalError": (status.HTTP_409_CONFLICT, "statement_in_use"),
     # GST reconciliation: an unreadable upload, and a rule that refused the step.
     "GstParseError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "gst_file_unreadable"),

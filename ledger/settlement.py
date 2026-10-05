@@ -21,6 +21,8 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 
 from django.db import transaction
+from django.db.models import BigIntegerField, F, Sum, Value
+from django.db.models.functions import Coalesce
 
 from core.access import require_posting_rights
 from core.rbac import require_permission
@@ -109,6 +111,31 @@ class Settlement:
     allocations: tuple[tuple[Bill, int], ...] = field(default_factory=tuple)
     #: What to do with the part no bill takes: ``ON_ACCOUNT`` or ``ADVANCE``. Required if anything is left.
     remainder: str | None = None
+
+
+def open_bills_for(party, line_direction: str) -> list[Bill]:
+    """The party's bills a line on the given side can settle, with what is still open on each, oldest first.
+
+    A bill is settled from the opposite side of the party's account, so a payment (a debit on the account) can settle
+    purchases and credit notes, and a receipt can settle sales and debit notes. Each bill carries ``open_paise``.
+    """
+    return list(
+        Bill.objects.filter(firm_id=party.firm_id, party=party)
+        .exclude(direction=line_direction)
+        .annotate(settled=Coalesce(Sum("allocations__amount_paise"), Value(0), output_field=BigIntegerField()))
+        .annotate(open_paise=F("total_paise") - F("settled"))
+        .filter(open_paise__gt=0)
+        .order_by("bill_date", "reference")
+    )
+
+
+def propose_for(party, line_direction: str, amount_paise: int) -> tuple[list[Bill], Proposal]:
+    """The party's open bills for this payment, and what the matcher would settle. A suggestion, not a decision."""
+    bills = open_bills_for(party, line_direction)
+    proposal = propose(
+        amount_paise, [OpenBill(id=b.pk, reference=b.reference, bill_date=b.bill_date, open_paise=b.open_paise) for b in bills]
+    )
+    return bills, proposal
 
 
 def party_for_ledger(ledger):

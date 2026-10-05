@@ -14,6 +14,7 @@ from rest_framework import serializers
 
 from api.fields import PaiseField
 from api.serializers.banking import StatementTransactionSerializer
+from api.serializers.settlement import RowSettlementSerializer
 from classify.models import (
     ClassificationRule,
     LedgerAccount,
@@ -345,12 +346,14 @@ class ClassificationSerializer(serializers.ModelSerializer):
     )
     is_posted = serializers.SerializerMethodField()
     method_display = serializers.CharField(source="get_method_display", read_only=True)
+    on_party_account = serializers.SerializerMethodField()
 
     class Meta:
         model = TransactionClassification
         fields = [
             "id",
             "transaction",
+            "on_party_account",
             "ledger",
             "ledger_name",
             "ledger_status",
@@ -381,6 +384,13 @@ class ClassificationSerializer(serializers.ModelSerializer):
             "reviewed_at",
         ]
         read_only_fields = fields
+
+    def get_on_party_account(self, obj) -> bool:
+        """True when the row is placed on a supplier's or customer's own account.
+
+        Such a row cannot be approved without saying which bills it settles, and is never approved with a whole band.
+        """
+        return bool(obj.ledger and obj.ledger.is_party_account)
 
     def get_ledger_opened_by_model(self, obj) -> bool:
         return bool(obj.ledger and obj.ledger.proposal_reason)
@@ -515,11 +525,23 @@ class ApproveSerializer(serializers.Serializer):
     band = serializers.ChoiceField(
         choices=[ReviewBand.HIGH, ReviewBand.ADVISED, ReviewBand.JUDGEMENT], required=False
     )
+    settlements = RowSettlementSerializer(
+        many=True, required=False,
+        help_text=(
+            "For each row placed on a supplier's or customer's own account: which of the party's bills it pays, or "
+            "whether it is held on account or as an advance. Such a row is refused without one, and is never approved "
+            "as part of a whole band."
+        ),
+    )
 
     def validate(self, attrs):
         if bool(attrs.get("classifications")) == bool(attrs.get("band")):
             raise serializers.ValidationError(
                 "Send exactly one of classifications or band."
+            )
+        if attrs.get("band") and attrs.get("settlements"):
+            raise serializers.ValidationError(
+                {"settlements": "Settlements go with a list of rows. A whole band never includes a party's account."}
             )
         return attrs
 

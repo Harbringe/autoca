@@ -25,12 +25,21 @@ from api.serializers.ledger import (
     RemoveEntrySerializer,
     TrialBalanceSerializer,
 )
+from api.serializers.settlement import (
+    SettledSerializer,
+    SettleEntrySerializer,
+    SettlementContextSerializer,
+)
+from api.views.settlement import build_context, party_line_of, settlement_from
 from banking.models import BankAccount
 from classify.engine import pending_approval
 from classify.models import LedgerAccount, Party
 from classify.treatment import Treatment
 from core.access import can_post, get_visible_client, posting_refusal, visible_client_ids
 from core.fy import financial_year
+from core.money import format_inr
+from ledger import billing
+from ledger import settlement as settling
 from ledger.approval import approve_many, correct
 from ledger.editing import remove_entry
 from ledger.models import EntryChange, JournalEntry
@@ -164,6 +173,44 @@ class JournalEntryViewSet(
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @extend_schema(
+        summary="Which bills the unallocated part of this payment could settle",
+        description=(
+            "For a payment on a party's account that is posted but not fully allocated: the party's open bills and a "
+            "suggestion of how the rest would clear them. Only a suggestion."
+        ),
+        responses={200: SettlementContextSerializer},
+    )
+    @action(detail=True, methods=["get"], pagination_class=None)
+    def settlement(self, request, pk=None):
+        entry = self.get_object()
+        line, left = party_line_of(entry)
+        if left <= 0:
+            raise billing.BillingError("This entry is already fully allocated.")
+        return Response(build_context(line.party, line.direction, left, already=line.amount_paise - left))
+
+    @extend_schema(
+        summary="Settle the unallocated part of a posted payment",
+        description=(
+            "Allocates what is not yet allocated on a payment's party line: to bills, and the rest held on account or "
+            "as an advance. A person decides; nothing is matched on its own. Needs `journal.approve`."
+        ),
+        request=SettleEntrySerializer,
+        responses={200: SettledSerializer},
+    )
+    @action(detail=True, methods=["post"], permission_classes=[CanApprove])
+    def settle(self, request, pk=None):
+        entry = self.get_object()
+        payload = SettleEntrySerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        settled = settling.settle_entry(
+            entry, settlement_from(entry.client, request.firm.pk, payload.validated_data), membership=request.membership
+        )
+        _, left = party_line_of(JournalEntry.objects.get(pk=entry.pk))
+        return Response(
+            {"settled_paise": settled, "settled_display": format_inr(settled), "fully_allocated": left <= 0}
+        )
+
+    @extend_schema(
         summary="What this entry used to be",
         description="Every change made to the entry while it was a working draft, oldest first.",
         responses={200: EntryChangeSerializer(many=True)},
@@ -211,7 +258,9 @@ class ApprovalView(viewsets.GenericViewSet):
         rows = list(pending_approval(client))
         if payload.validated_data.get("band"):
             band = payload.validated_data["band"]
-            rows = [row for row in rows if row.review_band == band]
+            # A row on a party's account needs a person to say which bills it settles, so a whole band never sweeps it
+            # in. The review screen shows those rows apart, each with its own settlement.
+            rows = [row for row in rows if row.review_band == band and not row.ledger.is_party_account]
         else:
             wanted = {str(pk) for pk in payload.validated_data["classifications"]}
             rows = [row for row in rows if str(row.pk) in wanted]
@@ -226,7 +275,17 @@ class ApprovalView(viewsets.GenericViewSet):
                     }
                 )
 
-        results = approve_many(rows, membership=request.membership)
+        settlements = {
+            item["classification"]: settlement_from(client, request.firm.pk, item)
+            for item in payload.validated_data.get("settlements", [])
+        }
+        stray = set(settlements) - {row.pk for row in rows}
+        if stray:
+            raise serializers.ValidationError(
+                {"settlements": f"{len(stray)} of these are for rows that are not being approved here."}
+            )
+
+        results = approve_many(rows, membership=request.membership, settlements=settlements)
         return Response(
             JournalEntrySerializer([r.entry for r in results], many=True).data,
             status=status.HTTP_201_CREATED,

@@ -35,7 +35,9 @@ from api.serializers.classify import (
     TreatmentSerializer,
 )
 from api.serializers.core import JobSerializer
+from api.serializers.settlement import SettlementContextSerializer
 from api.views.base import ClientScopedMixin, FirmScopedViewSet
+from api.views.settlement import build_context
 from banking.models import Statement
 from classify.engine import (
     confirm_party as confirm_party_decision,
@@ -63,6 +65,8 @@ from core.access import can_sign_off, get_visible_client, visible_client_ids
 from core.jobs import run_job
 from core.models import Client
 from core.rbac import has_permission
+from ledger import billing
+from ledger import settlement as settling
 from ledger.learning import learn_from_decision
 from teams import activity
 from teams.models import ActivityKind
@@ -474,7 +478,7 @@ class ClassificationViewSet(
         rows = TransactionClassification.objects.filter(
             firm_id=self.request.firm.pk,
             transaction__bank_account__client__in=visible_client_ids(self.request.membership),
-        ).select_related("transaction__bank_account", "ledger", "party").order_by(
+        ).select_related("transaction__bank_account", "ledger__party_record", "party").order_by(
             # Statement order, so paging never repeats or skips a row.
             "transaction__value_date", "transaction__row_number", "pk"
         )
@@ -485,6 +489,24 @@ class ClassificationViewSet(
             except ValueError:
                 return rows.none()
         return rows
+
+    @extend_schema(
+        summary="Which bills a payment on a party's account could settle",
+        description=(
+            "For a row placed on a supplier's or customer's own account: the party's open bills and a suggestion of "
+            "how this payment would clear them (a bill that is exactly this amount; a small set that adds up to it; "
+            "otherwise the oldest first). Only a suggestion: the row is approved with the settlement a person sends."
+        ),
+        responses={200: SettlementContextSerializer},
+    )
+    @action(detail=True, methods=["get"], pagination_class=None)
+    def settlement(self, request, pk=None):
+        row = self.get_object()
+        party = settling.party_for_ledger(row.ledger)
+        if party is None:
+            raise billing.BillingError("This row is not on a party's account, so there is nothing to settle.")
+        txn = row.transaction
+        return Response(build_context(party, settling.line_direction_for(txn), txn.amount_paise))
 
     @extend_schema(
         summary="Say who a row's payee is",

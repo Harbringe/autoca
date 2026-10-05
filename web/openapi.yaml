@@ -187,6 +187,33 @@ paths:
               schema:
                 $ref: '#/components/schemas/PlacementResult'
           description: ''
+  /api/v1/classifications/{id}/settlement/:
+    get:
+      operationId: classifications_settlement_retrieve
+      description: 'For a row placed on a supplier''s or customer''s own account:
+        the party''s open bills and a suggestion of how this payment would clear them
+        (a bill that is exactly this amount; a small set that adds up to it; otherwise
+        the oldest first). Only a suggestion: the row is approved with the settlement
+        a person sends.'
+      summary: Which bills a payment on a party's account could settle
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettlementContext'
+          description: ''
   /api/v1/clients/:
     get:
       operationId: clients_list
@@ -3521,6 +3548,67 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/journal-entries/{id}/settle/:
+    post:
+      operationId: journal_entries_settle_create
+      description: 'Allocates what is not yet allocated on a payment''s party line:
+        to bills, and the rest held on account or as an advance. A person decides;
+        nothing is matched on its own. Needs `journal.approve`.'
+      summary: Settle the unallocated part of a posted payment
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettleEntryRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SettleEntryRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SettleEntryRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settled'
+          description: ''
+  /api/v1/journal-entries/{id}/settlement/:
+    get:
+      operationId: journal_entries_settlement_retrieve
+      description: 'For a payment on a party''s account that is posted but not fully
+        allocated: the party''s open bills and a suggestion of how the rest would
+        clear them. Only a suggestion.'
+      summary: Which bills the unallocated part of this payment could settle
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettlementContext'
+          description: ''
   /api/v1/me/:
     get:
       operationId: me_retrieve
@@ -4031,6 +4119,14 @@ components:
             format: uuid
         band:
           $ref: '#/components/schemas/BandEnum'
+        settlements:
+          type: array
+          items:
+            $ref: '#/components/schemas/RowSettlementRequest'
+          description: 'For each row placed on a supplier''s or customer''s own account:
+            which of the party''s bills it pays, or whether it is held on account
+            or as an advance. Such a row is refused without one, and is never approved
+            as part of a whole band.'
     AssignRequest:
       type: object
       properties:
@@ -4459,6 +4555,18 @@ components:
         * `use_tally` - use_tally
         * `keep_bank` - keep_bank
         * `skip` - skip
+    BasisEnum:
+      enum:
+      - exact_one
+      - exact_set
+      - oldest_first
+      - none
+      type: string
+      description: |-
+        * `exact_one` - exact_one
+        * `exact_set` - exact_set
+        * `oldest_first` - oldest_first
+        * `none` - none
     Bill:
       type: object
       description: Adds a ``*_display`` string beside every ``*_paise`` field named
@@ -5140,6 +5248,13 @@ components:
           allOf:
           - $ref: '#/components/schemas/StatementTransaction'
           readOnly: true
+        on_party_account:
+          type: boolean
+          description: |-
+            True when the row is placed on a supplier's or customer's own account.
+
+            Such a row cannot be approved without saying which bills it settles, and is never approved with a whole band.
+          readOnly: true
         ledger:
           type: string
           format: uuid
@@ -5272,6 +5387,7 @@ components:
       - method
       - method_display
       - needs_review
+      - on_party_account
       - open_question
       - party
       - party_candidates
@@ -7217,6 +7333,63 @@ components:
     NullEnum:
       enum:
       - null
+    OpenBill:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/Kind1acEnum'
+          readOnly: true
+        kind_display:
+          type: string
+          readOnly: true
+        reference:
+          type: string
+          readOnly: true
+        bill_date:
+          type: string
+          format: date
+          readOnly: true
+        due_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        total_paise:
+          type: integer
+          readOnly: true
+        open_paise:
+          type: integer
+          readOnly: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        total_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        open_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - bill_date
+      - due_date
+      - id
+      - kind
+      - kind_display
+      - open_display
+      - open_paise
+      - reference
+      - total_display
+      - total_paise
     OpenWork:
       type: object
       properties:
@@ -7834,6 +8007,17 @@ components:
       - ledger
       - ledger_name
       - role_display
+    PartyRef:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+      required:
+      - id
+      - name
     PartyRequest:
       type: object
       properties:
@@ -8138,6 +8322,50 @@ components:
       - total_expenses_paise
       - total_income_display
       - total_income_paise
+    Proposal:
+      type: object
+      properties:
+        allocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProposedAllocation'
+        remainder_paise:
+          type: integer
+          description: What is left after the bills, to be held on account or as an
+            advance.
+        remainder_display:
+          type: string
+        basis:
+          allOf:
+          - $ref: '#/components/schemas/BasisEnum'
+          description: |-
+            How sure the suggestion is: one bill is exactly this amount; a small set adds up to it exactly; the oldest bills filled in date order; or there is nothing open to settle.
+
+            * `exact_one` - exact_one
+            * `exact_set` - exact_set
+            * `oldest_first` - oldest_first
+            * `none` - none
+      required:
+      - allocations
+      - basis
+      - remainder_display
+      - remainder_paise
+    ProposedAllocation:
+      type: object
+      properties:
+        bill:
+          type: string
+          format: uuid
+        amount_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        amount_display:
+          type: string
+      required:
+      - amount_display
+      - amount_paise
+      - bill
     RecategorizeRequest:
       type: object
       properties:
@@ -8189,6 +8417,14 @@ components:
         * `regular` - Regular
         * `composition` - Composition
         * `other` - Other
+    RemainderEnum:
+      enum:
+      - ON_ACCOUNT
+      - ADVANCE
+      type: string
+      description: |-
+        * `ON_ACCOUNT` - Held on account
+        * `ADVANCE` - An advance
     RemoveBillRequest:
       type: object
       properties:
@@ -8605,6 +8841,31 @@ components:
         * `SENIOR_CA` - Senior CA
         * `STAFF` - Staff
         * `READ_ONLY` - Read only
+    RowSettlementRequest:
+      type: object
+      description: A person's decision about what one payment or receipt on a party's
+        account is for.
+      properties:
+        allocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/SettlementAllocationRequest'
+        remainder:
+          nullable: true
+          description: |-
+            What to do with the part of the payment no bill takes: hold it on account, or treat it as an advance. Required when the bills do not add up to the whole amount.
+
+            * `ON_ACCOUNT` - Held on account
+            * `ADVANCE` - An advance
+          oneOf:
+          - $ref: '#/components/schemas/RemainderEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        classification:
+          type: string
+          format: uuid
+          description: The row this decision is for.
+      required:
+      - classification
     RunCreateRequest:
       type: object
       properties:
@@ -8712,6 +8973,97 @@ components:
         * `DN` - DN
         * `IMPG` - IMPG
         * `ISD` - ISD
+    SettleEntryRequest:
+      type: object
+      description: Settle the unallocated part of an entry that is already posted.
+      properties:
+        allocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/SettlementAllocationRequest'
+        remainder:
+          nullable: true
+          description: |-
+            What to do with the part of the payment no bill takes: hold it on account, or treat it as an advance. Required when the bills do not add up to the whole amount.
+
+            * `ON_ACCOUNT` - Held on account
+            * `ADVANCE` - An advance
+          oneOf:
+          - $ref: '#/components/schemas/RemainderEnum'
+          - $ref: '#/components/schemas/NullEnum'
+    Settled:
+      type: object
+      properties:
+        settled_paise:
+          type: integer
+          description: How much of the entry was allocated by this request.
+        settled_display:
+          type: string
+        fully_allocated:
+          type: boolean
+          description: Nothing of the entry is left unallocated.
+      required:
+      - fully_allocated
+      - settled_display
+      - settled_paise
+    SettlementAllocationRequest:
+      type: object
+      properties:
+        bill:
+          type: string
+          format: uuid
+        amount_paise:
+          type: integer
+          minimum: 1
+          description: How much of this bill the payment clears.
+      required:
+      - amount_paise
+      - bill
+    SettlementContext:
+      type: object
+      description: Everything the screen needs to ask the question and suggest an
+        answer.
+      properties:
+        party:
+          $ref: '#/components/schemas/PartyRef'
+        amount_paise:
+          type: integer
+          description: What moved, in whole paise.
+        amount_display:
+          type: string
+        direction:
+          allOf:
+          - $ref: '#/components/schemas/SettlementContextDirectionEnum'
+          description: |-
+            The side of the party's account the payment lands on.
+
+            * `DR` - DR
+            * `CR` - CR
+        bills:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpenBill'
+        proposal:
+          $ref: '#/components/schemas/Proposal'
+        already_allocated_paise:
+          type: integer
+          description: 'For an entry already posted: how much of it is already allocated.'
+      required:
+      - already_allocated_paise
+      - amount_display
+      - amount_paise
+      - bills
+      - direction
+      - party
+      - proposal
+    SettlementContextDirectionEnum:
+      enum:
+      - DR
+      - CR
+      type: string
+      description: |-
+        * `DR` - DR
+        * `CR` - CR
     SignOffRequest:
       type: object
       properties:

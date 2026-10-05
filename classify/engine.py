@@ -392,7 +392,7 @@ def review_queue(client, band: str | None = None):
     """
     queue = (
         _unposted(client)
-        .select_related("transaction__bank_account", "ledger", "party")
+        .select_related("transaction__bank_account", "ledger__party_record", "party")
         .order_by("-confidence", "-transaction__value_date")
     )
     return queue.filter(review_band=band) if band else queue
@@ -416,7 +416,7 @@ def pending_approval(client):
     return (
         _unposted(client)
         .filter(ledger__isnull=False)
-        .select_related("transaction__bank_account", "ledger", "party")
+        .select_related("transaction__bank_account", "ledger__party_record", "party")
         .order_by("-confidence", "-transaction__value_date")
     )
 

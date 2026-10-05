@@ -119,6 +119,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/classifications/{id}/settlement/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Which bills a payment on a party's account could settle
+         * @description For a row placed on a supplier's or customer's own account: the party's open bills and a suggestion of how this payment would clear them (a bill that is exactly this amount; a small set that adds up to it; otherwise the oldest first). Only a suggestion: the row is approved with the settlement a person sends.
+         */
+        get: operations["classifications_settlement_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/": {
         parameters: {
             query?: never;
@@ -1561,6 +1581,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/journal-entries/{id}/settle/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Settle the unallocated part of a posted payment
+         * @description Allocates what is not yet allocated on a payment's party line: to bills, and the rest held on account or as an advance. A person decides; nothing is matched on its own. Needs `journal.approve`.
+         */
+        post: operations["journal_entries_settle_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/journal-entries/{id}/settlement/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Which bills the unallocated part of this payment could settle
+         * @description For a payment on a party's account that is posted but not fully allocated: the party's open bills and a suggestion of how the rest would clear them. Only a suggestion.
+         */
+        get: operations["journal_entries_settlement_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/": {
         parameters: {
             query?: never;
@@ -1834,6 +1894,8 @@ export interface components {
         ApproveRequest: {
             classifications?: string[];
             band?: components["schemas"]["BandEnum"];
+            /** @description For each row placed on a supplier's or customer's own account: which of the party's bills it pays, or whether it is held on account or as an advance. Such a row is refused without one, and is never approved as part of a whole band. */
+            settlements?: components["schemas"]["RowSettlementRequest"][];
         };
         AssignRequest: {
             /** Format: uuid */
@@ -2027,6 +2089,14 @@ export interface components {
          * @enum {string}
          */
         BankEnum: "use_tally" | "keep_bank" | "skip";
+        /**
+         * @description * `exact_one` - exact_one
+         *     * `exact_set` - exact_set
+         *     * `oldest_first` - oldest_first
+         *     * `none` - none
+         * @enum {string}
+         */
+        BasisEnum: "exact_one" | "exact_set" | "oldest_first" | "none";
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         Bill: {
             /** Format: uuid */
@@ -2297,6 +2367,12 @@ export interface components {
             /** Format: uuid */
             readonly id: string;
             readonly transaction: components["schemas"]["StatementTransaction"];
+            /**
+             * @description True when the row is placed on a supplier's or customer's own account.
+             *
+             *     Such a row cannot be approved without saying which bills it settles, and is never approved with a whole band.
+             */
+            readonly on_party_account: boolean;
             /** Format: uuid */
             readonly ledger: string | null;
             readonly ledger_name: string | null;
@@ -3180,6 +3256,25 @@ export interface components {
         };
         /** @enum {unknown} */
         NullEnum: null;
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
+        OpenBill: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly kind: components["schemas"]["Kind1acEnum"];
+            readonly kind_display: string;
+            readonly reference: string;
+            /** Format: date */
+            readonly bill_date: string;
+            /** Format: date */
+            readonly due_date: string | null;
+            readonly total_paise: number;
+            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            readonly open_paise: number;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly total_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly open_display: string | null;
+        };
         OpenWork: {
             /** @description Rows nobody has placed in a ledger yet. */
             unresolved: number;
@@ -3532,6 +3627,11 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
         };
+        PartyRef: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+        };
         PartyRequest: {
             canonical_name: string;
             role?: components["schemas"]["PartyRoleEnum"];
@@ -3674,6 +3774,28 @@ export interface components {
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly net_profit_display: string | null;
         };
+        Proposal: {
+            allocations: components["schemas"]["ProposedAllocation"][];
+            /** @description What is left after the bills, to be held on account or as an advance. */
+            remainder_paise: number;
+            remainder_display: string;
+            /**
+             * @description How sure the suggestion is: one bill is exactly this amount; a small set adds up to it exactly; the oldest bills filled in date order; or there is nothing open to settle.
+             *
+             *     * `exact_one` - exact_one
+             *     * `exact_set` - exact_set
+             *     * `oldest_first` - oldest_first
+             *     * `none` - none
+             */
+            basis: components["schemas"]["BasisEnum"];
+        };
+        ProposedAllocation: {
+            /** Format: uuid */
+            bill: string;
+            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            amount_paise: number;
+            amount_display: string;
+        };
         RecategorizeRequest: {
             /** Format: uuid */
             statement?: string | null;
@@ -3698,6 +3820,12 @@ export interface components {
          * @enum {string}
          */
         RegistrationTypeEnum: "regular" | "composition" | "other";
+        /**
+         * @description * `ON_ACCOUNT` - Held on account
+         *     * `ADVANCE` - An advance
+         * @enum {string}
+         */
+        RemainderEnum: "ON_ACCOUNT" | "ADVANCE";
         RemoveBillRequest: {
             /**
              * @description Why it is being removed. Kept in the change log.
@@ -3919,6 +4047,22 @@ export interface components {
          * @enum {string}
          */
         Role170Enum: "FIRM_ADMIN" | "SENIOR_CA" | "STAFF" | "READ_ONLY";
+        /** @description A person's decision about what one payment or receipt on a party's account is for. */
+        RowSettlementRequest: {
+            allocations?: components["schemas"]["SettlementAllocationRequest"][];
+            /**
+             * @description What to do with the part of the payment no bill takes: hold it on account, or treat it as an advance. Required when the bills do not add up to the whole amount.
+             *
+             *     * `ON_ACCOUNT` - Held on account
+             *     * `ADVANCE` - An advance
+             */
+            remainder?: (components["schemas"]["RemainderEnum"] | components["schemas"]["NullEnum"]) | null;
+            /**
+             * Format: uuid
+             * @description The row this decision is for.
+             */
+            classification: string;
+        };
         RunCreateRequest: {
             /** Format: uuid */
             registration: string;
@@ -3974,6 +4118,54 @@ export interface components {
          * @enum {string}
          */
         SectionEnum: "B2B" | "CDN" | "DN" | "IMPG" | "ISD";
+        /** @description Settle the unallocated part of an entry that is already posted. */
+        SettleEntryRequest: {
+            allocations?: components["schemas"]["SettlementAllocationRequest"][];
+            /**
+             * @description What to do with the part of the payment no bill takes: hold it on account, or treat it as an advance. Required when the bills do not add up to the whole amount.
+             *
+             *     * `ON_ACCOUNT` - Held on account
+             *     * `ADVANCE` - An advance
+             */
+            remainder?: (components["schemas"]["RemainderEnum"] | components["schemas"]["NullEnum"]) | null;
+        };
+        Settled: {
+            /** @description How much of the entry was allocated by this request. */
+            settled_paise: number;
+            settled_display: string;
+            /** @description Nothing of the entry is left unallocated. */
+            fully_allocated: boolean;
+        };
+        SettlementAllocationRequest: {
+            /** Format: uuid */
+            bill: string;
+            /** @description How much of this bill the payment clears. */
+            amount_paise: number;
+        };
+        /** @description Everything the screen needs to ask the question and suggest an answer. */
+        SettlementContext: {
+            party: components["schemas"]["PartyRef"];
+            /** @description What moved, in whole paise. */
+            amount_paise: number;
+            amount_display: string;
+            /**
+             * @description The side of the party's account the payment lands on.
+             *
+             *     * `DR` - DR
+             *     * `CR` - CR
+             */
+            direction: components["schemas"]["SettlementContextDirectionEnum"];
+            bills: components["schemas"]["OpenBill"][];
+            proposal: components["schemas"]["Proposal"];
+            /** @description For an entry already posted: how much of it is already allocated. */
+            already_allocated_paise: number;
+        };
+        /**
+         * @description * `DR` - DR
+         *     * `CR` - CR
+         * @enum {string}
+         */
+        SettlementContextDirectionEnum: "DR" | "CR";
         SignOffRequest: {
             /**
              * Format: date
@@ -4730,6 +4922,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PlacementResult"];
+                };
+            };
+        };
+    };
+    classifications_settlement_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettlementContext"];
                 };
             };
         };
@@ -7341,6 +7554,54 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    journal_entries_settle_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SettleEntryRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["SettleEntryRequest"];
+                "multipart/form-data": components["schemas"]["SettleEntryRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Settled"];
+                };
+            };
+        };
+    };
+    journal_entries_settlement_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettlementContext"];
+                };
             };
         };
     };

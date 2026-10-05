@@ -29,7 +29,7 @@ compose stop web caddy
 echo "restore: loading $key"
 # A one-off web container does the download (it holds the S3 tooling and the role); --clean drops each object
 # before recreating it, so the database-level grants made when it was first created are kept.
-compose run --rm --no-deps -T web python -m integrations.backup.s3 get "$key" \
+compose run --rm --no-deps -T web python -m integrations.backup.s3 get "$key" < /dev/null \
     | compose exec -T db pg_restore -U postgres -d autoca --clean --if-exists --no-password
 
 echo "restore: starting everything again (migrations run first)"

@@ -29,7 +29,7 @@ trap cleanup EXIT
 
 echo "drill: restoring $key into the scratch database $scratch"
 psql -d postgres -c "create database $scratch" > /dev/null
-compose exec -T web python -m integrations.backup.s3 get "$key" \
+compose exec -T web python -m integrations.backup.s3 get "$key" < /dev/null \
     | compose exec -T db pg_restore -U postgres -d "$scratch" --no-password 2> /tmp/restore-drill.err || true
 if [ -s /tmp/restore-drill.err ]; then
     echo "drill: pg_restore reported (first lines):"

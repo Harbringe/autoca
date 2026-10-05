@@ -101,6 +101,11 @@ class GenericStatementParser(StatementParser):
     #: balance chain to prove a column mapping against.
     MIN_ROWS = 3
 
+    def __init__(self, *, liability: bool = False):
+        #: A loan statement: the balance is what is owed, so it rises with a debit. Chosen by the caller from the
+        #: document's title (see banking.parsers), never discovered here.
+        self.liability = liability
+
     @classmethod
     def detect(cls, document: PdfDocument) -> bool:
         """True when some table on some page looks like a transaction table."""
@@ -116,7 +121,7 @@ class GenericStatementParser(StatementParser):
             )
 
         try:
-            mapping = infer_columns(header, rows)
+            mapping = infer_columns(header, rows, liability=self.liability)
         except ColumnInferenceError as exc:
             raise StatementParseError(str(exc)) from exc
 
@@ -132,7 +137,7 @@ class GenericStatementParser(StatementParser):
             for number, row in enumerate(movements, start=1)
         ]
         opening, closing = self._bookend_balances(
-            transactions, summaries, markers, mapping
+            transactions, summaries, markers, mapping, self.liability
         )
         text = document.text
 
@@ -146,6 +151,8 @@ class GenericStatementParser(StatementParser):
             opening_balance_paise=opening,
             closing_balance_paise=closing,
             transactions=tuple(transactions),
+            kind="LOAN" if self.liability else "BANK",
+            liability=self.liability,
         )
 
     # -- gathering rows -----------------------------------------------------
@@ -265,7 +272,7 @@ class GenericStatementParser(StatementParser):
         return movements, markers
 
     @staticmethod
-    def _bookend_balances(transactions, summaries, markers, mapping: ColumnMap):
+    def _bookend_balances(transactions, summaries, markers, mapping: ColumnMap, liability: bool = False):
         """Opening and closing balances, printed if the statement prints them.
 
         Most do, on a labelled row or a brought-forward line. The figure is read
@@ -291,7 +298,7 @@ class GenericStatementParser(StatementParser):
 
         first, last = transactions[0], transactions[-1]
         if opening is None:
-            opening = first.balance_paise - first.signed_paise
+            opening = first.balance_paise - (-first.signed_paise if liability else first.signed_paise)
         if closing is None:
             closing = last.balance_paise
         return opening, closing

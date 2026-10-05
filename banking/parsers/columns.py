@@ -223,13 +223,16 @@ def as_direction(cell: str) -> str | None:
 # ---------------------------------------------------------------------------
 
 
-def infer_columns(header: list[str] | None, rows: list[list[str]]) -> ColumnMap:
+def infer_columns(header: list[str] | None, rows: list[list[str]], *, liability: bool = False) -> ColumnMap:
     """Work out the column layout of ``rows`` and prove it against the balances.
 
     ``header`` is used as a hint when present and is never trusted on its own:
     a mapping read straight from the header still has to reproduce the running
     balance. Banks mislabel columns, and an export can carry the header of a
     different report entirely.
+
+    ``liability`` is for a loan statement, whose balance rises with a debit. It is passed in by the caller, who
+    knows what kind of document this is; it is never tried as a fallback (see ``ParsedStatement.liability``).
     """
     if not rows:
         raise ColumnInferenceError("No data rows to infer a layout from.")
@@ -255,7 +258,7 @@ def infer_columns(header: list[str] | None, rows: list[list[str]]) -> ColumnMap:
             f"extracted with its columns merged."
         )
 
-    candidate = _best_mapping(rows, named, date_index, money_indices, profiles)
+    candidate = _best_mapping(rows, named, date_index, money_indices, profiles, liability)
     if candidate is None:
         raise ColumnInferenceError(
             "No arrangement of this table's columns reproduces its own running "
@@ -359,7 +362,7 @@ def _pick_narration(named, profiles, used: set[int]) -> tuple[int, bool]:
     return best["index"], True
 
 
-def _best_mapping(rows, named, date_index, money_indices, profiles) -> ColumnMap | None:
+def _best_mapping(rows, named, date_index, money_indices, profiles, liability=False) -> ColumnMap | None:
     """Try every plausible layout; return the first the arithmetic endorses.
 
     Ordered so the likeliest and most specific arrangements are tested first:
@@ -382,7 +385,7 @@ def _best_mapping(rows, named, date_index, money_indices, profiles) -> ColumnMap
                 named, profiles, date_index, balance_index,
                 debit=debit_index, credit=credit_index,
             )
-            if _reproduces_balances(rows, mapping):
+            if _reproduces_balances(rows, mapping, liability):
                 return mapping
 
         for amount_index in _single_amounts(named, others):
@@ -391,7 +394,7 @@ def _best_mapping(rows, named, date_index, money_indices, profiles) -> ColumnMap
                 named, profiles, date_index, balance_index,
                 amount=amount_index, direction=direction_index,
             )
-            if _reproduces_balances(rows, mapping):
+            if _reproduces_balances(rows, mapping, liability):
                 return mapping
     return None
 
@@ -438,7 +441,7 @@ def _assemble(named, profiles, date_index, balance_index, **amounts) -> ColumnMa
     )
 
 
-def _reproduces_balances(rows, mapping: ColumnMap) -> bool:
+def _reproduces_balances(rows, mapping: ColumnMap, liability: bool = False) -> bool:
     """The test that makes guessing safe.
 
     Walks consecutive rows and checks that the change in the balance column is
@@ -453,6 +456,8 @@ def _reproduces_balances(rows, mapping: ColumnMap) -> bool:
     for index in range(1, len(rows)):
         delta = balances[index] - balances[index - 1]
         signed = signed_amount(rows[index], mapping)
+        if signed is not None and liability:
+            signed = -signed
         if signed is None or signed != delta:
             failures += 1
             if failures > TOLERATED_FAILURES:

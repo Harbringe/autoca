@@ -174,6 +174,18 @@ class ParsedStatement:
     #: right, but these catch a compensating pair of errors.
     stated_total_debit_paise: int | None = None
     stated_total_credit_paise: int | None = None
+    #: BANK, or LOAN. Only says how the account is booked later; the arithmetic below needs just ``liability``.
+    kind: str = "BANK"
+    #: True for an account whose balance is what the client OWES (a loan). Its running balance moves the other
+    #: way from a bank account's: a debit raises it, a credit lowers it. The rows still carry debit and credit
+    #: exactly as the statement prints them; only this check changes. It is set by the document's title, never
+    #: by a guess after a bank read fails, because a bank statement with swapped columns would then pass here
+    #: and post backwards.
+    liability: bool = False
+
+    def balance_effect(self, txn: ParsedTransaction) -> int:
+        """What this row did to the printed running balance."""
+        return -txn.signed_paise if self.liability else txn.signed_paise
 
     def __post_init__(self):
         self._check_balance_chain()
@@ -185,13 +197,14 @@ class ParsedStatement:
     def _check_balance_chain(self) -> None:
         running = self.opening_balance_paise
         for txn in self.transactions:
-            running += txn.signed_paise
+            effect = self.balance_effect(txn)
+            running += effect
             if running != txn.balance_paise:
                 raise BalanceChainError(
                     f"Balance chain broke at row {txn.row_number} "
                     f"({txn.date:%d-%m-%Y}, {collapse_whitespace(txn.narration)[:60]!r}): "
                     f"expected a balance of {format_inr(running)} after applying "
-                    f"{format_inr(txn.signed_paise)}, but the statement prints "
+                    f"{format_inr(effect)}, but the statement prints "
                     f"{format_inr(txn.balance_paise)}. A row was dropped, duplicated, "
                     f"or read into the wrong column at or before this point."
                 )

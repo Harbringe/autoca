@@ -87,11 +87,14 @@ def detect_parser(document: PdfDocument) -> StatementParser:
         )
 
     kind = _not_a_bank_account(document)
+    if kind == "loan":
+        # Read as a loan, on the strength of its title: the balance is what is owed and rises with a debit.
+        return GenericStatementParser(liability=True)
     if kind:
         raise UnsupportedBankError(
-            f"This is a {kind} statement, not a bank account statement. AutoCA reads bank accounts, where money "
-            f"in raises the balance; a {kind}'s balance moves the other way, so reading it as a bank account "
-            f"would post every row backwards. Nothing was guessed."
+            f"This is a {kind} statement, not a bank account statement, and {kind} statements are not read yet. "
+            f"Its balance does not move like a bank account's, so reading it as one would post every row "
+            f"backwards. Nothing was guessed."
         )
 
     matches = [parser for parser in DEDICATED_PARSERS if parser.detect(document)]

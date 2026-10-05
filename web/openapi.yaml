@@ -527,6 +527,189 @@ paths:
               schema:
                 $ref: '#/components/schemas/BankAccountDetail'
           description: ''
+  /api/v1/clients/{client_id}/bills/:
+    get:
+      operationId: clients_bills_list
+      description: |-
+        A client's purchase and sales invoices and the notes that reverse them.
+
+        Each bill is booked to its party's own account on its own date, apart from whatever later pays it, which is what
+        makes "what do we owe this supplier" answerable. A bill is a permanent fact: it is posted or removed, never edited,
+        and once the books are signed off it cannot be removed at all.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: 'Financial year by its starting year: 2025 means FY2025-26.'
+      - in: query
+        name: kind
+        schema:
+          type: string
+          enum:
+          - CREDIT_NOTE
+          - DEBIT_NOTE
+          - OPENING
+          - PURCHASE
+          - SALES
+        description: Only this kind.
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      - in: query
+        name: party
+        schema:
+          type: string
+        description: Only this party's bills.
+      - in: query
+        name: q
+        schema:
+          type: string
+        description: Part of the invoice number or the party's name.
+      - in: query
+        name: status
+        schema:
+          type: string
+          enum:
+          - open
+          - settled
+        description: Only bills still owing, or fully settled.
+      tags:
+      - bills
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBillList'
+          description: ''
+    post:
+      operationId: clients_bills_create
+      description: |-
+        Writes the voucher, the bill and the journal lines together, or nothing. Needs `journal.approve` on a client the caller may post to, and is refused inside signed-off books.
+
+        Money is whole paise. A purchase credits the supplier the taxable value plus GST, less any TDS typed here; under reverse charge the supplier is owed only the taxable value. A sale debits the customer. A debit note reverses a purchase and a credit note a sale. The GST split is as printed on the invoice: it is not computed from the place of supply in this version.
+
+        The same invoice number from the same supplier in the same financial year is refused as a duplicate (422 `billing_rule`), however the number is punctuated.
+      summary: Book a purchase, sales, debit-note or credit-note voucher
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - bills
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BillCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BillCreateRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillDetail'
+          description: ''
+  /api/v1/clients/{client_id}/bills/{id}/:
+    get:
+      operationId: clients_bills_retrieve
+      description: |-
+        A client's purchase and sales invoices and the notes that reverse them.
+
+        Each bill is booked to its party's own account on its own date, apart from whatever later pays it, which is what
+        makes "what do we owe this supplier" answerable. A bill is a permanent fact: it is posted or removed, never edited,
+        and once the books are signed off it cannot be removed at all.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - bills
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillDetail'
+          description: ''
+  /api/v1/clients/{client_id}/bills/{id}/remove/:
+    post:
+      operationId: clients_bills_remove_create
+      description: Only before the books are signed off, and only while nothing has
+        been allocated to it. What it was is kept in the change log. A bill with a
+        payment against it is changed with a debit or credit note instead.
+      summary: Remove a bill and its voucher
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - bills
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RemoveBillRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RemoveBillRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RemoveBillRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/clients/{client_id}/books/:
     get:
       operationId: clients_books_retrieve
@@ -3774,6 +3957,64 @@ components:
           maxLength: 255
         group:
           $ref: '#/components/schemas/LedgerGroupEnum'
+    Allocation:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/AllocationKindEnum'
+          readOnly: true
+        kind_display:
+          type: string
+          readOnly: true
+        amount_paise:
+          type: integer
+          readOnly: true
+        line:
+          type: string
+          format: uuid
+          readOnly: true
+        entry_no:
+          type: integer
+          readOnly: true
+        voucher_type:
+          type: string
+          readOnly: true
+        entry_date:
+          type: string
+          format: date
+          readOnly: true
+        amount_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - amount_display
+      - amount_paise
+      - entry_date
+      - entry_no
+      - id
+      - kind
+      - kind_display
+      - line
+      - voucher_type
+    AllocationKindEnum:
+      enum:
+      - AGAINST_BILL
+      - ON_ACCOUNT
+      - ADVANCE
+      type: string
+      description: |-
+        * `AGAINST_BILL` - Against a bill
+        * `ON_ACCOUNT` - On account
+        * `ADVANCE` - Advance
     ApproveRequest:
       type: object
       description: |-
@@ -3819,7 +4060,7 @@ components:
         name:
           type: string
         role:
-          $ref: '#/components/schemas/RoleEnum'
+          $ref: '#/components/schemas/Role170Enum'
         role_display:
           type: string
         is_owner:
@@ -4218,6 +4459,501 @@ components:
         * `use_tally` - use_tally
         * `keep_bank` - keep_bank
         * `skip` - skip
+    Bill:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/Kind1acEnum'
+          readOnly: true
+        kind_display:
+          type: string
+          readOnly: true
+        direction:
+          allOf:
+          - $ref: '#/components/schemas/Direction745Enum'
+          readOnly: true
+        party:
+          type: string
+          format: uuid
+          readOnly: true
+        party_name:
+          type: string
+          readOnly: true
+        reference:
+          type: string
+          readOnly: true
+        bill_date:
+          type: string
+          format: date
+          readOnly: true
+        due_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        booked_on:
+          type: string
+          format: date
+          readOnly: true
+        financial_year:
+          type: integer
+          readOnly: true
+        taxable_paise:
+          type: integer
+          readOnly: true
+        cgst_paise:
+          type: integer
+          readOnly: true
+        sgst_paise:
+          type: integer
+          readOnly: true
+        igst_paise:
+          type: integer
+          readOnly: true
+        cess_paise:
+          type: integer
+          readOnly: true
+        round_off_paise:
+          type: integer
+          readOnly: true
+        tds_paise:
+          type: integer
+          readOnly: true
+        rcm:
+          type: boolean
+          readOnly: true
+        total_paise:
+          type: integer
+          readOnly: true
+        open_paise:
+          type: integer
+          readOnly: true
+          description: 'What is still unsettled: the total less everything allocated
+            to it. Computed, never stored.'
+        entry:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        voucher_type:
+          type: string
+          readOnly: true
+        entry_no:
+          type: integer
+          readOnly: true
+        document:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        has_document:
+          type: boolean
+          readOnly: true
+        is_locked:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        taxable_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        cgst_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        sgst_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        igst_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        cess_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        round_off_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        tds_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        total_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        open_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - bill_date
+      - booked_on
+      - cess_display
+      - cess_paise
+      - cgst_display
+      - cgst_paise
+      - created_at
+      - direction
+      - document
+      - due_date
+      - entry
+      - entry_no
+      - financial_year
+      - has_document
+      - id
+      - igst_display
+      - igst_paise
+      - is_locked
+      - kind
+      - kind_display
+      - open_display
+      - open_paise
+      - party
+      - party_name
+      - rcm
+      - reference
+      - round_off_display
+      - round_off_paise
+      - sgst_display
+      - sgst_paise
+      - taxable_display
+      - taxable_paise
+      - tds_display
+      - tds_paise
+      - total_display
+      - total_paise
+      - voucher_type
+    BillCreateKindEnum:
+      enum:
+      - PURCHASE
+      - SALES
+      - DEBIT_NOTE
+      - CREDIT_NOTE
+      type: string
+      description: |-
+        * `PURCHASE` - Purchase invoice
+        * `SALES` - Sales invoice
+        * `DEBIT_NOTE` - Debit note (a purchase return)
+        * `CREDIT_NOTE` - Credit note (a sales return)
+    BillCreateRequest:
+      type: object
+      description: The shape of a voucher request. The accounting rules are the domain's,
+        and say why in words.
+      properties:
+        kind:
+          $ref: '#/components/schemas/BillCreateKindEnum'
+        party:
+          type: string
+          format: uuid
+        reference:
+          type: string
+          minLength: 1
+          description: The invoice or note number printed on the document.
+          maxLength: 64
+        bill_date:
+          type: string
+          format: date
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        heads:
+          type: array
+          items:
+            $ref: '#/components/schemas/HeadRequest'
+        cgst_paise:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        sgst_paise:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        igst_paise:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        cess_paise:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        round_off_paise:
+          type: integer
+          default: 0
+          description: 'Signed: positive when the invoice rounds up, negative when
+            down.'
+        tds_paise:
+          type: integer
+          minimum: 0
+          default: 0
+          description: Deducted when the bill is booked, so the supplier is owed the
+            net. Purchases only.
+        tds_section:
+          default: ''
+          oneOf:
+          - $ref: '#/components/schemas/TdsSectionEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        rcm:
+          type: boolean
+          default: false
+          description: 'Reverse charge: the client, not the supplier, owes the GST.
+            Purchases only.'
+        narration:
+          type: string
+          default: ''
+          maxLength: 500
+        own_gstin:
+          type: string
+          default: ''
+          description: The client's own GSTIN this belongs to, so it lands in the
+            right return.
+        document:
+          type: string
+          format: uuid
+          nullable: true
+          description: An uploaded invoice file.
+      required:
+      - bill_date
+      - heads
+      - kind
+      - party
+      - reference
+    BillDetail:
+      type: object
+      description: The bill with the voucher it booked and everything that has settled
+        it.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/Kind1acEnum'
+          readOnly: true
+        kind_display:
+          type: string
+          readOnly: true
+        direction:
+          allOf:
+          - $ref: '#/components/schemas/Direction745Enum'
+          readOnly: true
+        party:
+          type: string
+          format: uuid
+          readOnly: true
+        party_name:
+          type: string
+          readOnly: true
+        reference:
+          type: string
+          readOnly: true
+        bill_date:
+          type: string
+          format: date
+          readOnly: true
+        due_date:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        booked_on:
+          type: string
+          format: date
+          readOnly: true
+        financial_year:
+          type: integer
+          readOnly: true
+        taxable_paise:
+          type: integer
+          readOnly: true
+        cgst_paise:
+          type: integer
+          readOnly: true
+        sgst_paise:
+          type: integer
+          readOnly: true
+        igst_paise:
+          type: integer
+          readOnly: true
+        cess_paise:
+          type: integer
+          readOnly: true
+        round_off_paise:
+          type: integer
+          readOnly: true
+        tds_paise:
+          type: integer
+          readOnly: true
+        rcm:
+          type: boolean
+          readOnly: true
+        total_paise:
+          type: integer
+          readOnly: true
+        open_paise:
+          type: integer
+          readOnly: true
+          description: 'What is still unsettled: the total less everything allocated
+            to it. Computed, never stored.'
+        entry:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        voucher_type:
+          type: string
+          readOnly: true
+        entry_no:
+          type: integer
+          readOnly: true
+        document:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        has_document:
+          type: boolean
+          readOnly: true
+        is_locked:
+          type: boolean
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        narration:
+          type: string
+          readOnly: true
+          default: ''
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/JournalLine'
+          readOnly: true
+          default: []
+        allocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/Allocation'
+          readOnly: true
+        taxable_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        cgst_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        sgst_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        igst_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        cess_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        round_off_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        tds_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        total_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        open_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - allocations
+      - bill_date
+      - booked_on
+      - cess_display
+      - cess_paise
+      - cgst_display
+      - cgst_paise
+      - created_at
+      - direction
+      - document
+      - due_date
+      - entry
+      - entry_no
+      - financial_year
+      - has_document
+      - id
+      - igst_display
+      - igst_paise
+      - is_locked
+      - kind
+      - kind_display
+      - lines
+      - narration
+      - open_display
+      - open_paise
+      - party
+      - party_name
+      - rcm
+      - reference
+      - round_off_display
+      - round_off_paise
+      - sgst_display
+      - sgst_paise
+      - taxable_display
+      - taxable_paise
+      - tds_display
+      - tds_paise
+      - total_display
+      - total_paise
+      - voucher_type
     BlankEnum:
       enum:
       - ''
@@ -4785,6 +5521,14 @@ components:
       required:
       - kind
       - match
+    Direction745Enum:
+      enum:
+      - DR
+      - CR
+      type: string
+      description: |-
+        * `DR` - Debit
+        * `CR` - Credit
     Document:
       type: object
       properties:
@@ -4897,6 +5641,16 @@ components:
         * `REMOVED` - Entry removed
         * `AI_REVISED` - Revised by the AI after a correction
         * `RENUMBERED` - Voucher renumbered at sign-off
+    EntryKindEnum:
+      enum:
+      - BANK
+      - VOUCHER
+      - JOURNAL
+      type: string
+      description: |-
+        * `BANK` - Posted from a bank statement row
+        * `VOUCHER` - A purchase, sales or note voucher
+        * `JOURNAL` - A journal voucher
     Firm:
       type: object
       properties:
@@ -5104,6 +5858,20 @@ components:
       required:
       - code
       - detail
+    HeadRequest:
+      type: object
+      properties:
+        ledger:
+          type: string
+          format: uuid
+          description: An expense, purchase, sales or asset ledger of this client.
+        amount_paise:
+          type: integer
+          minimum: 1
+          description: The taxable value that goes to this ledger.
+      required:
+      - amount_paise
+      - ledger
     InviteCreated:
       type: object
       properties:
@@ -5116,7 +5884,7 @@ components:
         full_name:
           type: string
         role:
-          $ref: '#/components/schemas/RoleEnum'
+          $ref: '#/components/schemas/Role170Enum'
         role_display:
           type: string
         manager:
@@ -5159,7 +5927,7 @@ components:
         full_name:
           type: string
         role:
-          $ref: '#/components/schemas/RoleEnum'
+          $ref: '#/components/schemas/Role170Enum'
         role_display:
           type: string
         manager:
@@ -5198,7 +5966,7 @@ components:
           maxLength: 255
         role:
           allOf:
-          - $ref: '#/components/schemas/RoleEnum'
+          - $ref: '#/components/schemas/Role170Enum'
           default: STAFF
         manager:
           type: string
@@ -5315,6 +6083,18 @@ components:
           allOf:
           - $ref: '#/components/schemas/VoucherTypeEnum'
           readOnly: true
+        entry_kind:
+          allOf:
+          - $ref: '#/components/schemas/EntryKindEnum'
+          readOnly: true
+        entry_kind_display:
+          type: string
+          readOnly: true
+        bill:
+          type: string
+          format: uuid
+          nullable: true
+          readOnly: true
         entry_date:
           type: string
           format: date
@@ -5389,7 +6169,10 @@ components:
       - approved_at
       - approved_by
       - approved_by_email
+      - bill
       - entry_date
+      - entry_kind
+      - entry_kind_display
       - entry_no
       - financial_year
       - fy_label
@@ -5442,7 +6225,7 @@ components:
           nullable: true
         direction:
           allOf:
-          - $ref: '#/components/schemas/JournalLineDirectionEnum'
+          - $ref: '#/components/schemas/Direction745Enum'
           readOnly: true
         amount_paise:
           type: integer
@@ -5469,14 +6252,20 @@ components:
       - party_name
       - rcm
       - tds_section
-    JournalLineDirectionEnum:
+    Kind1acEnum:
       enum:
-      - DR
-      - CR
+      - PURCHASE
+      - SALES
+      - DEBIT_NOTE
+      - CREDIT_NOTE
+      - OPENING
       type: string
       description: |-
-        * `DR` - Debit
-        * `CR` - Credit
+        * `PURCHASE` - Purchase invoice
+        * `SALES` - Sales invoice
+        * `DEBIT_NOTE` - Debit note (a purchase return)
+        * `CREDIT_NOTE` - Credit note (a sales return)
+        * `OPENING` - Opening balance, as a bill
     Kind372Enum:
       enum:
       - BANK_STATEMENT
@@ -5887,7 +6676,7 @@ components:
         name:
           type: string
         role:
-          $ref: '#/components/schemas/RoleEnum'
+          $ref: '#/components/schemas/Role170Enum'
         role_display:
           type: string
         is_owner:
@@ -5984,7 +6773,7 @@ components:
         name:
           type: string
         role:
-          $ref: '#/components/schemas/RoleEnum'
+          $ref: '#/components/schemas/Role170Enum'
         role_display:
           type: string
         is_owner:
@@ -6673,6 +7462,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/BankAccount'
+    PaginatedBillList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Bill'
     PaginatedClassificationList:
       type: object
       required:
@@ -6982,6 +7794,19 @@ components:
         canonical_name:
           type: string
           maxLength: 255
+        role:
+          $ref: '#/components/schemas/PartyRoleEnum'
+        role_display:
+          type: string
+          readOnly: true
+        ledger:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        ledger_name:
+          type: string
+          readOnly: true
         alias_token:
           type: string
           readOnly: true
@@ -7006,6 +7831,9 @@ components:
       - canonical_name
       - created_at
       - id
+      - ledger
+      - ledger_name
+      - role_display
     PartyRequest:
       type: object
       properties:
@@ -7013,6 +7841,8 @@ components:
           type: string
           minLength: 1
           maxLength: 255
+        role:
+          $ref: '#/components/schemas/PartyRoleEnum'
         gstin:
           type: string
           description: Stored encrypted, with a keyed index so GST reconciliation
@@ -7039,6 +7869,18 @@ components:
         * `CANDIDATE` - Looks similar to a known party -- needs confirming
         * `NEW` - No known party looks like this
         * `CONFIRMED` - A person has confirmed which party this is
+    PartyRoleEnum:
+      enum:
+      - VENDOR
+      - CUSTOMER
+      - BOTH
+      - OTHER
+      type: string
+      description: |-
+        * `VENDOR` - Supplier
+        * `CUSTOMER` - Customer
+        * `BOTH` - Both supplier and customer
+        * `OTHER` - Other (lender, employee, related party)
     PatchedBankAccountRequest:
       type: object
       description: Adds a ``*_display`` string beside every ``*_paise`` field named
@@ -7121,7 +7963,7 @@ components:
       type: object
       properties:
         role:
-          $ref: '#/components/schemas/RoleEnum'
+          $ref: '#/components/schemas/Role170Enum'
         manager:
           type: string
           format: uuid
@@ -7140,6 +7982,8 @@ components:
           type: string
           minLength: 1
           maxLength: 255
+        role:
+          $ref: '#/components/schemas/PartyRoleEnum'
         gstin:
           type: string
           description: Stored encrypted, with a keyed index so GST reconciliation
@@ -7178,7 +8022,7 @@ components:
         name:
           type: string
         role:
-          $ref: '#/components/schemas/RoleEnum'
+          $ref: '#/components/schemas/Role170Enum'
         role_display:
           type: string
         is_owner:
@@ -7345,6 +8189,14 @@ components:
         * `regular` - Regular
         * `composition` - Composition
         * `other` - Other
+    RemoveBillRequest:
+      type: object
+      properties:
+        note:
+          type: string
+          default: ''
+          description: Why it is being removed. Kept in the change log.
+          maxLength: 500
     RemoveEntryRequest:
       type: object
       properties:
@@ -7741,7 +8593,7 @@ components:
       - pending_approval
       - total
       - unresolved
-    RoleEnum:
+    Role170Enum:
       enum:
       - FIRM_ADMIN
       - SENIOR_CA

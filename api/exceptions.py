@@ -62,6 +62,9 @@ DOMAIN_ERRORS = {
     "NothingRequestedError": (status.HTTP_409_CONFLICT, "nothing_requested"),
     "BooksError": (status.HTTP_409_CONFLICT, "books_state"),
     "EntryLockedError": (status.HTTP_409_CONFLICT, "entry_locked"),
+    # Purchase and sales vouchers, bills and their settlement. Both are things a person can fix.
+    "BillingError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "billing_rule"),
+    "WrongEntryKindError": (status.HTTP_409_CONFLICT, "wrong_entry_kind"),
     "StatementRemovalError": (status.HTTP_409_CONFLICT, "statement_in_use"),
     # GST reconciliation: an unreadable upload, and a rule that refused the step.
     "GstParseError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "gst_file_unreadable"),

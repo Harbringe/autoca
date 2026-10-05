@@ -255,6 +255,9 @@ def correct(
 
     require_permission(membership, "journal.correct")
     require_posting_rights(membership, entry.client)
+    # Both paths below work through the entry's bank row. A purchase, sales or note voucher has none, and is changed
+    # through its bill, so refuse here in words instead of failing on a missing statement row.
+    editing.require_bank_entry(entry)
 
     if not editing.is_locked(entry):
         from ledger.learning import learn_after_correction

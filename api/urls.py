@@ -24,6 +24,7 @@ from api.views.banking import (
     StatementViewSet,
     TransactionViewSet,
 )
+from api.views.billing import BillViewSet
 from api.views.books import BooksView
 from api.views.classify import (
     ClassificationViewSet,
@@ -62,6 +63,7 @@ per_client.register("bank-accounts", BankAccountViewSet, basename="client-bank-a
 per_client.register("statements", StatementViewSet, basename="client-statement")
 per_client.register("ledgers", LedgerAccountViewSet, basename="client-ledger")
 per_client.register("parties", PartyViewSet, basename="client-party")
+per_client.register("bills", BillViewSet, basename="client-bill")
 per_client.register("rules", RuleViewSet, basename="client-rule")
 per_client.register("review-queue", ReviewQueueViewSet, basename="client-review-queue")
 

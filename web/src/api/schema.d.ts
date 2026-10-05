@@ -260,6 +260,80 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/bills/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description A client's purchase and sales invoices and the notes that reverse them.
+         *
+         *     Each bill is booked to its party's own account on its own date, apart from whatever later pays it, which is what
+         *     makes "what do we owe this supplier" answerable. A bill is a permanent fact: it is posted or removed, never edited,
+         *     and once the books are signed off it cannot be removed at all.
+         */
+        get: operations["clients_bills_list"];
+        put?: never;
+        /**
+         * Book a purchase, sales, debit-note or credit-note voucher
+         * @description Writes the voucher, the bill and the journal lines together, or nothing. Needs `journal.approve` on a client the caller may post to, and is refused inside signed-off books.
+         *
+         *     Money is whole paise. A purchase credits the supplier the taxable value plus GST, less any TDS typed here; under reverse charge the supplier is owed only the taxable value. A sale debits the customer. A debit note reverses a purchase and a credit note a sale. The GST split is as printed on the invoice: it is not computed from the place of supply in this version.
+         *
+         *     The same invoice number from the same supplier in the same financial year is refused as a duplicate (422 `billing_rule`), however the number is punctuated.
+         */
+        post: operations["clients_bills_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/bills/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description A client's purchase and sales invoices and the notes that reverse them.
+         *
+         *     Each bill is booked to its party's own account on its own date, apart from whatever later pays it, which is what
+         *     makes "what do we owe this supplier" answerable. A bill is a permanent fact: it is posted or removed, never edited,
+         *     and once the books are signed off it cannot be removed at all.
+         */
+        get: operations["clients_bills_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/bills/{id}/remove/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove a bill and its voucher
+         * @description Only before the books are signed off, and only while nothing has been allocated to it. What it was is kept in the change log. A bill with a payment against it is changed with a debit or credit note instead.
+         */
+        post: operations["clients_bills_remove_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/books/": {
         parameters: {
             query?: never;
@@ -1727,6 +1801,29 @@ export interface components {
             name?: string;
             group?: components["schemas"]["LedgerGroupEnum"];
         };
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
+        Allocation: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly kind: components["schemas"]["AllocationKindEnum"];
+            readonly kind_display: string;
+            readonly amount_paise: number;
+            /** Format: uuid */
+            readonly line: string;
+            readonly entry_no: number;
+            readonly voucher_type: string;
+            /** Format: date */
+            readonly entry_date: string;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly amount_display: string | null;
+        };
+        /**
+         * @description * `AGAINST_BILL` - Against a bill
+         *     * `ON_ACCOUNT` - On account
+         *     * `ADVANCE` - Advance
+         * @enum {string}
+         */
+        AllocationKindEnum: "AGAINST_BILL" | "ON_ACCOUNT" | "ADVANCE";
         /**
          * @description Post reviewed rows to the immutable journal.
          *
@@ -1755,7 +1852,7 @@ export interface components {
             /** @description The membership id. */
             id: string;
             name: string;
-            role: components["schemas"]["RoleEnum"];
+            role: components["schemas"]["Role170Enum"];
             role_display: string;
             is_owner: boolean;
             is_active: boolean;
@@ -1930,6 +2027,197 @@ export interface components {
          * @enum {string}
          */
         BankEnum: "use_tally" | "keep_bank" | "skip";
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
+        Bill: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly kind: components["schemas"]["Kind1acEnum"];
+            readonly kind_display: string;
+            readonly direction: components["schemas"]["Direction745Enum"];
+            /** Format: uuid */
+            readonly party: string;
+            readonly party_name: string;
+            readonly reference: string;
+            /** Format: date */
+            readonly bill_date: string;
+            /** Format: date */
+            readonly due_date: string | null;
+            /** Format: date */
+            readonly booked_on: string;
+            readonly financial_year: number;
+            readonly taxable_paise: number;
+            readonly cgst_paise: number;
+            readonly sgst_paise: number;
+            readonly igst_paise: number;
+            readonly cess_paise: number;
+            readonly round_off_paise: number;
+            readonly tds_paise: number;
+            readonly rcm: boolean;
+            readonly total_paise: number;
+            /** @description What is still unsettled: the total less everything allocated to it. Computed, never stored. */
+            readonly open_paise: number;
+            /** Format: uuid */
+            readonly entry: string | null;
+            readonly voucher_type: string;
+            readonly entry_no: number;
+            /** Format: uuid */
+            readonly document: string | null;
+            readonly has_document: boolean;
+            readonly is_locked: boolean;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly taxable_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly cgst_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly sgst_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly igst_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly cess_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly round_off_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly tds_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly total_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly open_display: string | null;
+        };
+        /**
+         * @description * `PURCHASE` - Purchase invoice
+         *     * `SALES` - Sales invoice
+         *     * `DEBIT_NOTE` - Debit note (a purchase return)
+         *     * `CREDIT_NOTE` - Credit note (a sales return)
+         * @enum {string}
+         */
+        BillCreateKindEnum: "PURCHASE" | "SALES" | "DEBIT_NOTE" | "CREDIT_NOTE";
+        /** @description The shape of a voucher request. The accounting rules are the domain's, and say why in words. */
+        BillCreateRequest: {
+            kind: components["schemas"]["BillCreateKindEnum"];
+            /** Format: uuid */
+            party: string;
+            /** @description The invoice or note number printed on the document. */
+            reference: string;
+            /** Format: date */
+            bill_date: string;
+            /** Format: date */
+            due_date?: string | null;
+            heads: components["schemas"]["HeadRequest"][];
+            /**
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             * @default 0
+             */
+            cgst_paise: number;
+            /**
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             * @default 0
+             */
+            sgst_paise: number;
+            /**
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             * @default 0
+             */
+            igst_paise: number;
+            /**
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             * @default 0
+             */
+            cess_paise: number;
+            /**
+             * @description Signed: positive when the invoice rounds up, negative when down.
+             * @default 0
+             */
+            round_off_paise: number;
+            /**
+             * @description Deducted when the bill is booked, so the supplier is owed the net. Purchases only.
+             * @default 0
+             */
+            tds_paise: number;
+            /** @default  */
+            tds_section: components["schemas"]["TdsSectionEnum"] | components["schemas"]["BlankEnum"];
+            /**
+             * @description Reverse charge: the client, not the supplier, owes the GST. Purchases only.
+             * @default false
+             */
+            rcm: boolean;
+            /** @default  */
+            narration: string;
+            /**
+             * @description The client's own GSTIN this belongs to, so it lands in the right return.
+             * @default
+             */
+            own_gstin: string;
+            /**
+             * Format: uuid
+             * @description An uploaded invoice file.
+             */
+            document?: string | null;
+        };
+        /** @description The bill with the voucher it booked and everything that has settled it. */
+        BillDetail: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly kind: components["schemas"]["Kind1acEnum"];
+            readonly kind_display: string;
+            readonly direction: components["schemas"]["Direction745Enum"];
+            /** Format: uuid */
+            readonly party: string;
+            readonly party_name: string;
+            readonly reference: string;
+            /** Format: date */
+            readonly bill_date: string;
+            /** Format: date */
+            readonly due_date: string | null;
+            /** Format: date */
+            readonly booked_on: string;
+            readonly financial_year: number;
+            readonly taxable_paise: number;
+            readonly cgst_paise: number;
+            readonly sgst_paise: number;
+            readonly igst_paise: number;
+            readonly cess_paise: number;
+            readonly round_off_paise: number;
+            readonly tds_paise: number;
+            readonly rcm: boolean;
+            readonly total_paise: number;
+            /** @description What is still unsettled: the total less everything allocated to it. Computed, never stored. */
+            readonly open_paise: number;
+            /** Format: uuid */
+            readonly entry: string | null;
+            readonly voucher_type: string;
+            readonly entry_no: number;
+            /** Format: uuid */
+            readonly document: string | null;
+            readonly has_document: boolean;
+            readonly is_locked: boolean;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** @default  */
+            readonly narration: string;
+            /** @default [] */
+            readonly lines: components["schemas"]["JournalLine"][];
+            readonly allocations: components["schemas"]["Allocation"][];
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly taxable_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly cgst_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly sgst_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly igst_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly cess_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly round_off_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly tds_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly total_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly open_display: string | null;
+        };
         /** @enum {unknown} */
         BlankEnum: "";
         BooksEvent: {
@@ -2169,6 +2457,12 @@ export interface components {
             /** @default  */
             note: string;
         };
+        /**
+         * @description * `DR` - Debit
+         *     * `CR` - Credit
+         * @enum {string}
+         */
+        Direction745Enum: "DR" | "CR";
         Document: {
             /** Format: uuid */
             readonly id: string;
@@ -2207,6 +2501,13 @@ export interface components {
          * @enum {string}
          */
         EntryChangeActionEnum: "EDITED" | "REMOVED" | "AI_REVISED" | "RENUMBERED";
+        /**
+         * @description * `BANK` - Posted from a bank statement row
+         *     * `VOUCHER` - A purchase, sales or note voucher
+         *     * `JOURNAL` - A journal voucher
+         * @enum {string}
+         */
+        EntryKindEnum: "BANK" | "VOUCHER" | "JOURNAL";
         Firm: {
             /** Format: uuid */
             readonly id: string;
@@ -2284,13 +2585,22 @@ export interface components {
             /** @description A sentence for a person; show it as it is. */
             detail: string;
         };
+        HeadRequest: {
+            /**
+             * Format: uuid
+             * @description An expense, purchase, sales or asset ledger of this client.
+             */
+            ledger: string;
+            /** @description The taxable value that goes to this ledger. */
+            amount_paise: number;
+        };
         InviteCreated: {
             /** Format: uuid */
             id: string;
             /** Format: email */
             email: string;
             full_name: string;
-            role: components["schemas"]["RoleEnum"];
+            role: components["schemas"]["Role170Enum"];
             role_display: string;
             manager: components["schemas"]["Person"] | null;
             /** Format: date-time */
@@ -2308,7 +2618,7 @@ export interface components {
             /** Format: email */
             email: string;
             full_name: string;
-            role: components["schemas"]["RoleEnum"];
+            role: components["schemas"]["Role170Enum"];
             role_display: string;
             manager: components["schemas"]["Person"] | null;
             /** Format: date-time */
@@ -2323,7 +2633,7 @@ export interface components {
             email: string;
             full_name?: string;
             /** @default STAFF */
-            role: components["schemas"]["RoleEnum"];
+            role: components["schemas"]["Role170Enum"];
             /** Format: uuid */
             manager?: string | null;
         };
@@ -2376,6 +2686,10 @@ export interface components {
             readonly id: string;
             readonly entry_no: number;
             readonly voucher_type: components["schemas"]["VoucherTypeEnum"];
+            readonly entry_kind: components["schemas"]["EntryKindEnum"];
+            readonly entry_kind_display: string;
+            /** Format: uuid */
+            readonly bill: string | null;
             /** Format: date */
             readonly entry_date: string;
             readonly financial_year: number;
@@ -2419,7 +2733,7 @@ export interface components {
             /** Format: uuid */
             readonly party: string | null;
             readonly party_name: string | null;
-            readonly direction: components["schemas"]["JournalLineDirectionEnum"];
+            readonly direction: components["schemas"]["Direction745Enum"];
             readonly amount_paise: number;
             readonly rcm: boolean;
             readonly tds_section: string;
@@ -2427,11 +2741,14 @@ export interface components {
             readonly amount_display: string | null;
         };
         /**
-         * @description * `DR` - Debit
-         *     * `CR` - Credit
+         * @description * `PURCHASE` - Purchase invoice
+         *     * `SALES` - Sales invoice
+         *     * `DEBIT_NOTE` - Debit note (a purchase return)
+         *     * `CREDIT_NOTE` - Credit note (a sales return)
+         *     * `OPENING` - Opening balance, as a bill
          * @enum {string}
          */
-        JournalLineDirectionEnum: "DR" | "CR";
+        Kind1acEnum: "PURCHASE" | "SALES" | "DEBIT_NOTE" | "CREDIT_NOTE" | "OPENING";
         /**
          * @description * `BANK_STATEMENT` - Bank statement
          *     * `PURCHASE_INVOICE` - Purchase invoice
@@ -2624,7 +2941,7 @@ export interface components {
             /** @description The membership id. */
             id: string;
             name: string;
-            role: components["schemas"]["RoleEnum"];
+            role: components["schemas"]["Role170Enum"];
             role_display: string;
             is_owner: boolean;
             is_active: boolean;
@@ -2666,7 +2983,7 @@ export interface components {
             /** @description The membership id. */
             id: string;
             name: string;
-            role: components["schemas"]["RoleEnum"];
+            role: components["schemas"]["Role170Enum"];
             role_display: string;
             is_owner: boolean;
             is_active: boolean;
@@ -2987,6 +3304,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["BankAccount"][];
         };
+        PaginatedBillList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["Bill"][];
+        };
         PaginatedClassificationList: {
             /** @example 123 */
             count: number;
@@ -3186,6 +3518,11 @@ export interface components {
             /** Format: uuid */
             readonly id: string;
             canonical_name: string;
+            role?: components["schemas"]["PartyRoleEnum"];
+            readonly role_display: string;
+            /** Format: uuid */
+            readonly ledger: string | null;
+            readonly ledger_name: string;
             readonly alias_token: string;
             /** @description Stored encrypted, with a keyed index so GST reconciliation can join on it. */
             gstin?: string;
@@ -3197,6 +3534,7 @@ export interface components {
         };
         PartyRequest: {
             canonical_name: string;
+            role?: components["schemas"]["PartyRoleEnum"];
             /** @description Stored encrypted, with a keyed index so GST reconciliation can join on it. */
             gstin?: string;
             rcm_default?: boolean;
@@ -3211,6 +3549,14 @@ export interface components {
          * @enum {string}
          */
         PartyResolutionEnum: "AUTO" | "CANDIDATE" | "NEW" | "CONFIRMED";
+        /**
+         * @description * `VENDOR` - Supplier
+         *     * `CUSTOMER` - Customer
+         *     * `BOTH` - Both supplier and customer
+         *     * `OTHER` - Other (lender, employee, related party)
+         * @enum {string}
+         */
+        PartyRoleEnum: "VENDOR" | "CUSTOMER" | "BOTH" | "OTHER";
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         PatchedBankAccountRequest: {
             ledger_name?: string;
@@ -3250,7 +3596,7 @@ export interface components {
             is_active?: boolean;
         };
         PatchedMemberUpdateRequest: {
-            role?: components["schemas"]["RoleEnum"];
+            role?: components["schemas"]["Role170Enum"];
             /** Format: uuid */
             manager?: string | null;
             scope_all_clients?: boolean;
@@ -3260,6 +3606,7 @@ export interface components {
         };
         PatchedPartyRequest: {
             canonical_name?: string;
+            role?: components["schemas"]["PartyRoleEnum"];
             /** @description Stored encrypted, with a keyed index so GST reconciliation can join on it. */
             gstin?: string;
             rcm_default?: boolean;
@@ -3282,7 +3629,7 @@ export interface components {
             /** @description The membership id. */
             id: string;
             name: string;
-            role: components["schemas"]["RoleEnum"];
+            role: components["schemas"]["Role170Enum"];
             role_display: string;
             is_owner: boolean;
             is_active: boolean;
@@ -3351,6 +3698,13 @@ export interface components {
          * @enum {string}
          */
         RegistrationTypeEnum: "regular" | "composition" | "other";
+        RemoveBillRequest: {
+            /**
+             * @description Why it is being removed. Kept in the change log.
+             * @default
+             */
+            note: string;
+        };
         RemoveEntryRequest: {
             /**
              * @description Why it is being removed. Kept in the change log.
@@ -3564,7 +3918,7 @@ export interface components {
          *     * `READ_ONLY` - Read only
          * @enum {string}
          */
-        RoleEnum: "FIRM_ADMIN" | "SENIOR_CA" | "STAFF" | "READ_ONLY";
+        Role170Enum: "FIRM_ADMIN" | "SENIOR_CA" | "STAFF" | "READ_ONLY";
         RunCreateRequest: {
             /** Format: uuid */
             registration: string;
@@ -4618,6 +4972,118 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["BankAccountDetail"];
                 };
+            };
+        };
+    };
+    clients_bills_list: {
+        parameters: {
+            query?: {
+                /** @description Financial year by its starting year: 2025 means FY2025-26. */
+                fy?: number;
+                /** @description Only this kind. */
+                kind?: "CREDIT_NOTE" | "DEBIT_NOTE" | "OPENING" | "PURCHASE" | "SALES";
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+                /** @description Only this party's bills. */
+                party?: string;
+                /** @description Part of the invoice number or the party's name. */
+                q?: string;
+                /** @description Only bills still owing, or fully settled. */
+                status?: "open" | "settled";
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedBillList"];
+                };
+            };
+        };
+    };
+    clients_bills_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["BillCreateRequest"];
+                "multipart/form-data": components["schemas"]["BillCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillDetail"];
+                };
+            };
+        };
+    };
+    clients_bills_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillDetail"];
+                };
+            };
+        };
+    };
+    clients_bills_remove_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["RemoveBillRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["RemoveBillRequest"];
+                "multipart/form-data": components["schemas"]["RemoveBillRequest"];
+            };
+        };
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

@@ -92,12 +92,18 @@ class PartySerializer(serializers.ModelSerializer):
         allow_blank=True,
         help_text="Stored encrypted, with a keyed index so GST reconciliation can join on it.",
     )
+    role_display = serializers.CharField(source="get_role_display", read_only=True)
+    ledger_name = serializers.CharField(source="ledger.name", read_only=True, default=None)
 
     class Meta:
         model = Party
         fields = [
             "id",
             "canonical_name",
+            "role",
+            "role_display",
+            "ledger",
+            "ledger_name",
             "alias_token",
             "gstin",
             "rcm_default",
@@ -105,7 +111,15 @@ class PartySerializer(serializers.ModelSerializer):
             "is_active",
             "created_at",
         ]
-        read_only_fields = ["id", "alias_token", "created_at"]
+        read_only_fields = ["id", "ledger", "alias_token", "created_at"]
+
+    def validate_role(self, value):
+        """A supplier cannot become a customer under bills already booked to it: they would be on the wrong side."""
+        if self.instance is not None and value != self.instance.role and self.instance.bills.exists():
+            raise serializers.ValidationError(
+                "This party already has bills, so its role cannot change. Book the other side under a new party."
+            )
+        return value
 
     def validate_canonical_name(self, value: str) -> str:
         value = value.strip()

@@ -66,7 +66,7 @@ class JournalEntryViewSet(
                 firm_id=self.request.firm.pk,
                 client__in=visible_client_ids(self.request.membership),
             )
-            .select_related("approved_by", "client")
+            .select_related("approved_by", "client", "bill")
             .prefetch_related("lines__ledger_account", "lines__party", "superseded_by_set")
         )
         client_id = self.request.query_params.get("client")

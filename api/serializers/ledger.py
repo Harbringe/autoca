@@ -53,6 +53,8 @@ class JournalEntrySerializer(MoneySerializerMixin, serializers.ModelSerializer):
     )
     marker_display = serializers.CharField(source="get_marker_display", read_only=True)
     is_locked = serializers.SerializerMethodField()
+    entry_kind_display = serializers.CharField(source="get_entry_kind_display", read_only=True)
+    bill = serializers.SerializerMethodField()
 
     class Meta:
         model = JournalEntry
@@ -60,6 +62,9 @@ class JournalEntrySerializer(MoneySerializerMixin, serializers.ModelSerializer):
             "id",
             "entry_no",
             "voucher_type",
+            "entry_kind",
+            "entry_kind_display",
+            "bill",
             "entry_date",
             "financial_year",
             "fy_label",
@@ -84,6 +89,15 @@ class JournalEntrySerializer(MoneySerializerMixin, serializers.ModelSerializer):
         """Inside books a senior has signed off, so no longer changeable."""
         through = getattr(obj.client, "signed_off_through", None)
         return through is not None and obj.entry_date <= through
+
+    @extend_schema_field(serializers.UUIDField(allow_null=True))
+    def get_bill(self, obj):
+        """The bill this voucher booked, for a purchase, sales or note voucher; null for a bank entry.
+
+        A voucher is changed through its bill, not through the bank-entry correction, so a screen needs to know.
+        """
+        bill = getattr(obj, "bill", None)
+        return bill.pk if bill else None
 
     @extend_schema_field(serializers.UUIDField(allow_null=True))
     def get_superseded_by(self, obj):

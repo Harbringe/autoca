@@ -25,8 +25,8 @@ from django.utils import timezone
 
 from classify.models import Party
 from core.access import require_sign_off
-from core.crypto import blind_index
 from core.identifiers import is_valid_gstin
+from core.identity import invoice_key
 from core.models import Client, FirmMembership, User
 from documents.models import Document, DocumentKind, DocumentStatus
 from gst import matching
@@ -207,8 +207,7 @@ def load_portal(run: ReconRun, data: bytes, filename: str, user: User | None) ->
 
 def match_key(firm_id, gstin: str, invoice_no: str) -> str:
     """An invoice's identity across re-matches: supplier + normalised number."""
-    ident = f"{matching.normalise_gstin(gstin)}|{matching.normalise_invoice_no(invoice_no)}"
-    return blind_index(ident, firm_id, "gst.match")
+    return invoice_key(firm_id, gstin, invoice_no)
 
 
 def _as_invoice(row, prefix: str, rcm_parties: set[str]) -> Invoice:

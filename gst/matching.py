@@ -27,6 +27,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 
 from core.identifiers import is_valid_gstin
+from core.identity import normalise_gstin, normalise_invoice_no
 from core.money import PAISE
 
 #: One rupee per tax head. GST amounts are conventionally rounded to the rupee,
@@ -174,29 +175,8 @@ class Reconciliation:
 # Normalising
 # ---------------------------------------------------------------------------
 
-_NON_ALNUM = re.compile(r"[^A-Z0-9]")
-
-
-def normalise_invoice_no(raw: str) -> str:
-    """The comparison form of an invoice number.
-
-    Suppliers and staff disagree about separators, case and zero padding for
-    the same invoice: ``INV/0042``, ``inv-42`` and ``INV 042`` are one invoice.
-    Dropping non-alphanumerics, upper-casing and stripping zeros that follow
-    a letter or start the number makes those equal. It cannot make two
-    different invoices equal in any way a real numbering series produces -- if
-    it ever does, the amounts are compared next and will differ.
-    """
-    s = _NON_ALNUM.sub("", (raw or "").upper())
-    # Zeros directly after a letter (INV042 -> INV42) or at the very start.
-    s = re.sub(r"(?<=[A-Z])0+(?=[0-9])", "", s)
-    s = s.lstrip("0")
-    return s or "0"
-
-
-def normalise_gstin(raw: str) -> str:
-    return (raw or "").strip().upper()
-
+#: ``normalise_invoice_no`` and ``normalise_gstin`` are imported from ``core.identity``, imported at the top of this
+#: file: the books use the same definition of "the same invoice", and ``gst/`` must not own it.
 
 # ---------------------------------------------------------------------------
 # Blocked credit (section 17(5)) -- defaults, and always overridable

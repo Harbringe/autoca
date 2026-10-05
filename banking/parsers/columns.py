@@ -185,6 +185,8 @@ def as_date(cell: str):
     text = re.sub(r"\s+", " ", (cell or "").strip())
     if not text:
         return None
+    # A narrow date column wraps "30-Mar-" / "2026" onto two lines; the break is not part of the date.
+    text = re.sub(r"([-/.]) +(?=\d)", r"\1", text)
     # Statements often append a time to the date; the date is the part we want.
     text = text.split(" ")[0] if re.match(r"^\S+\s+\d{1,2}:\d{2}", text) else text
     for fmt in DATE_FORMATS:

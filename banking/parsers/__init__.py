@@ -21,6 +21,8 @@ first-match-wins, because it means one of their detectors is too loose.
 
 from __future__ import annotations
 
+import re
+
 from integrations.pdf.base import PdfDocument
 
 from .axis import AxisStatementParser
@@ -59,12 +61,37 @@ __all__ = [
 ]
 
 
+#: Titles of statements that are not for a bank account. Matched only near the top of the first page, so a
+#: narration that mentions a loan EMI on a bank statement never trips it.
+_NOT_A_BANK_ACCOUNT = (
+    (re.compile(r"\bloan\s+(account\s+)?statement\b|\bhome\s+loan\s+statement\b", re.IGNORECASE), "loan"),
+    (re.compile(r"\bcredit\s+card\s+statement\b|\bstatement\s+of\s+credit\s+card\b", re.IGNORECASE), "credit card"),
+)
+_TITLE_AREA = 800
+
+
+def _not_a_bank_account(document: PdfDocument) -> str | None:
+    head = document.pages[0].text[:_TITLE_AREA] if document.pages else ""
+    for pattern, kind in _NOT_A_BANK_ACCOUNT:
+        if pattern.search(head):
+            return kind
+    return None
+
+
 def detect_parser(document: PdfDocument) -> StatementParser:
     if not document.has_text_layer:
         raise NoTextLayerError(
             "This PDF has no text layer, so it is a scan. OCR is the fallback "
             "path for scanned statements and is not wired yet -- see "
             "integrations/ocr/base.py before reaching for a vendor."
+        )
+
+    kind = _not_a_bank_account(document)
+    if kind:
+        raise UnsupportedBankError(
+            f"This is a {kind} statement, not a bank account statement. AutoCA reads bank accounts, where money "
+            f"in raises the balance; a {kind}'s balance moves the other way, so reading it as a bank account "
+            f"would post every row backwards. Nothing was guessed."
         )
 
     matches = [parser for parser in DEDICATED_PARSERS if parser.detect(document)]

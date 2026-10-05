@@ -42,6 +42,7 @@ jobs:
       DATABASE_URL: postgresql://autoca_ci:ci@localhost:5432/autoca
       DATABASE_OWNER_URL: postgresql://autoca_ci:ci@localhost:5432/autoca
       KMS_LOCAL_MASTER_KEY: dGVzdC1vbmx5LW1hc3Rlci1rZXktMzItYnl0ZXMtISE=
+      BLIND_INDEX_KEY: test-only-blind-index-key-not-a-secret
 
     steps:
       - uses: actions/checkout@v4

@@ -42,13 +42,13 @@ class FakeS3:
         return Paginator()
 
     def upload_fileobj(self, stream, bucket, key, ExtraArgs):  # noqa: N803
-        self.uploads.append((bucket, key, stream.read(), ExtraArgs))
+        data = stream.read()
+        self.uploads.append((bucket, key, data, ExtraArgs))
+        self.objects.append({"Key": key, "Size": len(data), "LastModified": NOW})
 
     def head_object(self, Bucket, Key):  # noqa: N803
-        for bucket, key, data, _ in self.uploads:
-            if (bucket, key) == (Bucket, Key):
-                return {"ContentLength": len(data)}
-        raise KeyError(Key)
+        # The server holds no read permission on the bucket, so the tool must never ask.
+        raise AssertionError("put must not need s3:GetObject")
 
     def download_fileobj(self, bucket, key, out):
         self.downloads.append((bucket, key))
@@ -92,6 +92,17 @@ def test_an_upload_is_encrypted_and_reports_the_size_s3_holds():
     bucket, key, data, extra = client.uploads[0]
     assert (bucket, key, len(data)) == ("bkt", "daily/2026/10/05/x.dump", 321)
     assert extra == {"ServerSideEncryption": "AES256"}
+
+
+def test_a_refused_read_explains_the_temporary_policy_instead_of_a_stack_trace():
+    from botocore.exceptions import ClientError
+
+    class Denied(FakeS3):
+        def download_fileobj(self, bucket, key, out):
+            raise ClientError({"Error": {"Code": "AccessDenied", "Message": "no"}}, "GetObject")
+
+    with pytest.raises(SystemExit, match="autoca-backups-restore"):
+        backup.get(Denied(), "bkt", "daily/k", io.BytesIO())
 
 
 def test_download_streams_to_the_destination():

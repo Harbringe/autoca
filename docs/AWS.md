@@ -100,7 +100,11 @@ Later, `git checkout prod` returns to the branch (`deploy.sh` needs to be on the
 
 The database lives in a Docker volume on the server's disk, so it is backed up two independent ways.
 
-**1. A nightly dump to S3** (the main one). A systemd timer runs `deploy/backup.sh` at 02:00 IST: it dumps the database, checks the dump can be read back (`pg_restore --list`), uploads it to the backups bucket (`BACKUP_BUCKET`, versioned, encrypted, dumps expire after 35 days), and checks S3 holds every byte. It stops, loudly, at the first thing that does not check out, and uploads nothing it could not read back. The server's role may put, get and list that bucket but **never delete**, so a compromised server cannot erase its own backups.
+**1. A nightly dump to S3** (the main one). A systemd timer runs `deploy/backup.sh` at 02:00 IST: it dumps the database, checks the dump can be read back (`pg_restore --list`), uploads it to the backups bucket (`BACKUP_BUCKET`, versioned, encrypted, dumps expire after 35 days), and checks S3 holds every byte. It stops, loudly, at the first thing that does not check out, and uploads nothing it could not read back. The server's role may put and list that bucket but **never read or delete**. The web container shares the role, so anything on it is reachable by the internet-facing process; a compromised web process can therefore neither read the dumps (they hold every client's data) nor erase them.
+
+**Restores and drills need to read, so they need a temporary policy.** Before `restore.sh` or `restore-drill.sh`, in the IAM console attach the inline policy `autoca-backups-restore` to the server's role (allow `s3:GetObject` on `arn:aws:s3:::BACKUP_BUCKET/*`), and detach it when done. If you forget, the script stops and says so.
+
+**A dump is trusted input.** `restore.sh` runs `pg_restore` as the database superuser, so a tampered dump could run commands in the database container. Only restore keys you recognise, made by `backup.sh`; because the server cannot read or overwrite old objects, a planted dump is the only way in, and it needs write access to the bucket.
 
 **2. Daily disk snapshots** (a second net). An AWS Data Lifecycle Manager policy snapshots the whole server disk daily and keeps 7. It also covers the settings files.
 

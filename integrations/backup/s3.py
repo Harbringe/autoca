@@ -8,8 +8,11 @@ Run inside the web container, where the instance's IAM role signs the requests (
     python -m integrations.backup.s3 list 10                                          the ten newest
     python -m integrations.backup.s3 age-metric                                       publish the age to CloudWatch
 
-The bucket is ``BACKUP_BUCKET``. The role may put, get and list but never delete, so a compromised server
-cannot erase its own backups; the bucket is versioned, so it cannot overwrite them either.
+The bucket is ``BACKUP_BUCKET``. The server's standing permission is to put and list, never to read or delete: the
+web container shares the instance role, so anything on the role is reachable by the internet-facing process,
+and a compromised web process must not be able to read every dump or erase them. The bucket is versioned, so
+it cannot overwrite them either. ``get`` (restores and drills) needs a TEMPORARY read policy that an
+administrator attaches to the role for the duration; see docs/AWS.md.
 
 ``age-metric`` is the dead man's switch. It publishes how many hours old the newest backup is, every half
 hour. An alarm fires when that passes ~26 hours, and ALSO when the numbers stop arriving, which is what a
@@ -67,13 +70,30 @@ def list_objects(client, bucket: str, prefix: str = DEFAULT_PREFIX) -> list[dict
 
 
 def put(client, bucket: str, key: str, stream) -> int:
-    """Upload ``stream`` as ``key``, encrypted at rest, and return the size S3 reports back."""
+    """Upload ``stream`` as ``key``, encrypted at rest, and return the size S3 reports back.
+
+    The size is read from a listing, not a HEAD request: HEAD needs read permission, which the server
+    deliberately does not hold on this bucket.
+    """
     client.upload_fileobj(stream, bucket, key, ExtraArgs={"ServerSideEncryption": "AES256"})
-    return int(client.head_object(Bucket=bucket, Key=key)["ContentLength"])
+    for obj in list_objects(client, bucket, key):
+        if obj["Key"] == key:
+            return int(obj["Size"])
+    raise SystemExit(f"backup: {key} is not in the bucket after the upload")
 
 
 def get(client, bucket: str, key: str, out) -> None:
-    client.download_fileobj(bucket, key, out)
+    from botocore.exceptions import ClientError
+
+    try:
+        client.download_fileobj(bucket, key, out)
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") in {"AccessDenied", "403"}:
+            raise SystemExit(
+                "backup: the server's role may not read backups, by design. For a restore or a drill, attach the "
+                "temporary policy autoca-backups-restore to the role, run it, then detach it (docs/AWS.md)."
+            ) from exc
+        raise
 
 
 def newest_age(client, bucket: str, now: datetime.datetime) -> tuple[dict | None, float]:

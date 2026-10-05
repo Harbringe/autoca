@@ -49,7 +49,9 @@ class BankAccount(UUIDModel, FirmScopedModel):
     """A client's bank account (or loan account), and the Tally ledger it posts to."""
 
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="bank_accounts")
-    kind = models.CharField(max_length=8, choices=AccountKind.choices, default=AccountKind.BANK)
+    kind = models.CharField(
+        max_length=8, choices=AccountKind.choices, default=AccountKind.BANK, db_default=AccountKind.BANK
+    )
     bank_code = models.CharField(max_length=16, help_text="Parser identifier, e.g. AXIS.")
 
     #: AES-256-GCM under the firm's data key, bound to the firm id as additional

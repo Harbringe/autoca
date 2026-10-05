@@ -14,7 +14,10 @@ class Migration(migrations.Migration):
             model_name="bankaccount",
             name="kind",
             field=models.CharField(
-                choices=[("BANK", "Bank account"), ("LOAN", "Loan account")], default="BANK", max_length=8
+                choices=[("BANK", "Bank account"), ("LOAN", "Loan account")],
+                db_default="BANK",
+                default="BANK",
+                max_length=8,
             ),
         ),
     ]

@@ -96,7 +96,27 @@ Later, `git checkout prod` returns to the branch (`deploy.sh` needs to be on the
 - One service: `ac restart web` (same settings), or `ac up -d --force-recreate web` (re-read settings).
 - Whole server: EC2 console -> Instance state -> **Reboot**. Docker starts at boot and every service has `restart: unless-stopped`, so everything comes back by itself. The address does not change (Elastic IP). Give it a minute, then `ac ps`.
 
+## Backups
+
+The database lives in a Docker volume on the server's disk, so it is backed up two independent ways.
+
+**1. A nightly dump to S3** (the main one). A systemd timer runs `deploy/backup.sh` at 02:00 IST: it dumps the database, checks the dump can be read back (`pg_restore --list`), uploads it to the backups bucket (`BACKUP_BUCKET`, versioned, encrypted, dumps expire after 35 days), and checks S3 holds every byte. It stops, loudly, at the first thing that does not check out, and uploads nothing it could not read back. The server's role may put, get and list that bucket but **never delete**, so a compromised server cannot erase its own backups.
+
+**2. Daily disk snapshots** (a second net). An AWS Data Lifecycle Manager policy snapshots the whole server disk daily and keeps 7. It also covers the settings files.
+
+```
+sudo sh deploy/backup.sh           take one now
+sh deploy/backup-status.sh 20      the newest 20, and a warning if the latest is over 26 hours old
+sh deploy/restore-drill.sh         prove they work: fresh backup -> scratch database -> compare -> drop. Monthly.
+sh deploy/restore.sh <S3 key>      replace the REAL database from a backup (asks you to type RESTORE)
+journalctl -u autoca-backup -n 50  what the nightly job said
+systemctl list-timers 'autoca-*'   when it next runs
+```
+
+**The alarm.** A second timer publishes "how many hours old is the newest backup" to CloudWatch (`Autoca/Backup`, `BackupAgeHours`) every 30 minutes. A CloudWatch alarm emails you when it passes 26, AND when the numbers stop arriving, which is what a dead server looks like. A job that only logs "ok" can tell you neither.
+
+**The keys are not in the dump, on purpose.** Without `KMS_LOCAL_MASTER_KEY` and `BLIND_INDEX_KEY` the stored bank account numbers cannot be read, which is why they live in your password manager, apart from the data. To recover on a new server: create it as in the setup, run `deploy/init-env.sh ... --carry-secrets`, put the SAME three keys into `.env.prod`, start it, then `sh deploy/restore.sh <key>`.
+
 ## Not set up yet
 
-- **Backups.** The database lives in a Docker volume on the server's disk. Nothing copies it elsewhere yet. A nightly dump to S3 and a tested restore are the next job, and must exist before real client data does.
 - **AWS KMS.** Account numbers are encrypted under `KMS_LOCAL_MASTER_KEY`, which lives in `.env.prod`. Moving that to AWS KMS is a later step.

@@ -1,8 +1,8 @@
 #!/bin/sh
 # Writes the three settings files compose.prod.yaml reads.
 #
-#   deploy/init-env.sh APP_HOST API_HOST S3_BUCKET [--carry-secrets]
-#   deploy/init-env.sh app.example.in api.example.in my-s3-bucket
+#   deploy/init-env.sh APP_HOST API_HOST S3_BUCKET [BACKUP_BUCKET] [--carry-secrets]
+#   deploy/init-env.sh app.example.in api.example.in my-s3-bucket my-backups-bucket
 #
 # They are separate on purpose, so each container only receives the credentials it needs:
 #
@@ -38,7 +38,8 @@ set -- $args
 
 APP_HOST="${1:?usage: deploy/init-env.sh APP_HOST API_HOST S3_BUCKET [--carry-secrets]}"
 API_HOST="${2:?usage: deploy/init-env.sh APP_HOST API_HOST S3_BUCKET [--carry-secrets]}"
-BUCKET="${3:?usage: deploy/init-env.sh APP_HOST API_HOST S3_BUCKET [--carry-secrets]}"
+BUCKET="${3:?usage: deploy/init-env.sh APP_HOST API_HOST S3_BUCKET [BACKUP_BUCKET] [--carry-secrets]}"
+BACKUP_BUCKET="${4:-}"
 
 for existing in .env.prod .env.owner .env.db; do
     if [ -e "$existing" ]; then
@@ -67,6 +68,7 @@ cp deploy/prod.env.example .env.prod
     printf 's|^FRONTEND_URL=.*|FRONTEND_URL=https://%s|\n' "$APP_HOST"
     printf 's|^CSRF_TRUSTED_ORIGINS=.*|CSRF_TRUSTED_ORIGINS=https://%s,https://%s|\n' "$APP_HOST" "$API_HOST"
     printf 's|^STORAGE_BUCKET=.*|STORAGE_BUCKET=%s|\n' "$BUCKET"
+    if [ -n "$BACKUP_BUCKET" ]; then printf 's|^BACKUP_BUCKET=.*|BACKUP_BUCKET=%s|\n' "$BACKUP_BUCKET"; fi
     printf 's|^DATABASE_URL=.*|DATABASE_URL=postgresql://autoca_web:%s@db:5432/autoca|\n' "$WEB"
     printf 's|^CELERY_BROKER_URL=.*|CELERY_BROKER_URL=redis://redis:6379/0|\n'
     printf 's|^TRUSTED_PROXY_COUNT=.*|TRUSTED_PROXY_COUNT=1|\n'

@@ -29,7 +29,7 @@ def built_with(monkeypatch):
 def test_unset_or_empty_keys_leave_boto3_to_use_the_instance_role(built_with, empty):
     adapter = S3StorageAdapter(bucket="b", region="ap-south-1", access_key_id=empty, secret_access_key=empty)
 
-    adapter.client
+    _ = adapter.client
 
     assert built_with["aws_access_key_id"] is None
     assert built_with["aws_secret_access_key"] is None
@@ -39,7 +39,7 @@ def test_unset_or_empty_keys_leave_boto3_to_use_the_instance_role(built_with, em
 def test_explicit_keys_are_still_passed_through(built_with):
     adapter = S3StorageAdapter(bucket="b", region="ap-south-1", access_key_id="AKIA-X", secret_access_key="s")
 
-    adapter.client
+    _ = adapter.client
 
     assert built_with["aws_access_key_id"] == "AKIA-X"
     assert built_with["aws_secret_access_key"] == "s"

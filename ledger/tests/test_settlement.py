@@ -414,3 +414,63 @@ def test_booking_a_voucher_does_not_empty_the_review_queue(client, statement, se
     assert review_queue(client).count() == waiting
     assert unresolved_for(client).count() == unresolved
     assert pending_approval(client).count() == pending
+
+
+# ---------------------------------------------------------------------------
+# A payment that goes round the bills is an open item until someone says why
+# ---------------------------------------------------------------------------
+
+
+def paid_as_an_expense(client, senior, party):
+    """The old way: the payment to a supplier booked straight to an expense head, with the party named on it."""
+    row, amount = the_payment(client)
+    classification = review(row, Treatment(ledger=ledger(client, "Office Expenses"), party=party), learn=False)[0]
+    return classification, approve(classification, membership=senior).entry, amount
+
+
+def set_status(classification, status):
+    from classify.models import TransactionClassification
+
+    TransactionClassification.objects.filter(pk=classification.pk).update(bill_status=status)
+
+
+def test_a_payment_that_goes_round_a_partys_bills_is_listed(client, statement, senior):
+    party = make_party(client)
+    supplier_bill(client, senior, 1_000_00, party=party)
+    classification, entry, amount = paid_as_an_expense(client, senior, party)
+
+    items = openitems.open_items(client, only=["payment_bypasses_bills"])
+
+    assert [(i.kind, i.amount_paise, i.link) for i in items] == [
+        ("payment_bypasses_bills", amount, {"type": "entry", "id": str(entry.pk)})
+    ]
+    assert "has bills" in items[0].summary and "Office Expenses" in items[0].summary
+
+
+def test_a_payment_to_a_party_with_no_bills_is_not_listed(client, statement, senior):
+    """Invoice-wise accounting has not started for that party; flagging every old payment would bury the ones that matter."""
+    paid_as_an_expense(client, senior, make_party(client))
+
+    assert openitems.open_items(client, only=["payment_bypasses_bills"]) == []
+
+
+def test_saying_why_clears_it_and_needing_an_invoice_moves_it_to_its_own_list(client, statement, senior):
+    from classify.models import BillStatus
+
+    party = make_party(client)
+    supplier_bill(client, senior, 1_000_00, party=party)
+    classification, entry, amount = paid_as_an_expense(client, senior, party)
+
+    set_status(classification, BillStatus.NO_INVOICE_EXPECTED)
+    assert openitems.open_items(client, only=["payment_bypasses_bills", "payment_needs_invoice"]) == []
+
+    set_status(classification, BillStatus.NEEDS_INVOICE)
+    items = openitems.open_items(client, only=["payment_bypasses_bills", "payment_needs_invoice"])
+    assert [i.kind for i in items] == ["payment_needs_invoice"]
+    assert items[0].amount_paise == amount and "waiting for its invoice" in items[0].summary
+
+
+def test_a_payment_settled_against_the_bills_is_not_a_bypass(client, statement, senior):
+    entry, bill, amount = settled_entry(client, senior)
+
+    assert openitems.open_items(client, only=["payment_bypasses_bills", "payment_needs_invoice"]) == []

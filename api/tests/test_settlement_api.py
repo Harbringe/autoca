@@ -190,7 +190,8 @@ def test_a_settlement_for_a_bill_that_is_not_this_clients_is_not_found(api, clie
 
 def test_a_settlement_for_a_row_that_is_not_being_approved_is_refused(api, client_record, statement):
     row, amount, party, bill = on_the_partys_account(api, client_record, statement)
-    other = review_queue(client_record).filter(ledger__isnull=False).exclude(pk=row.pk).first()
+    other = review_queue(client_record).exclude(pk=row.pk).first()
+    assert other is not None
 
     response = approvals(
         api, client_record,

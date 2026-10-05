@@ -25,6 +25,7 @@ from api.serializers.ledger import (
     RemoveEntrySerializer,
     TrialBalanceSerializer,
 )
+from api.serializers.openitems import BillStatusSerializer
 from api.serializers.settlement import (
     SettledSerializer,
     SettleEntrySerializer,
@@ -41,7 +42,7 @@ from core.money import format_inr
 from ledger import billing
 from ledger import settlement as settling
 from ledger.approval import approve_many, correct
-from ledger.editing import remove_entry
+from ledger.editing import remove_entry, require_bank_entry
 from ledger.models import EntryChange, JournalEntry
 from ledger.reconciliation import check_balance
 from ledger.reports import balance_sheet, profit_and_loss, trial_balance
@@ -210,6 +211,30 @@ class JournalEntryViewSet(
         return Response(
             {"settled_paise": settled, "settled_display": format_inr(settled), "fully_allocated": left <= 0}
         )
+
+    @extend_schema(
+        summary="Say why a payment to a party with bills has no invoice against it",
+        description=(
+            "A payment booked to an expense head, to a party that has bills, goes round those bills; until someone says why "
+            "it is an open item. `NO_INVOICE_EXPECTED` marks a direct expense, `NEEDS_INVOICE` keeps it listed as waiting "
+            "for one. A note about the document trail: it changes nothing that is posted, so it may be set at any time. "
+            "Bank entries only. Needs `journal.approve`."
+        ),
+        request=BillStatusSerializer,
+        responses={200: BillStatusSerializer},
+    )
+    @action(detail=True, methods=["post"], url_path="bill-status", permission_classes=[CanApprove])
+    def bill_status(self, request, pk=None):
+        entry = self.get_object()
+        if not can_post(request.membership, entry.client):
+            raise PermissionDenied(posting_refusal(entry.client))
+        require_bank_entry(entry)
+        payload = BillStatusSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        classification = entry.source_transaction.classification
+        classification.bill_status = payload.validated_data["status"]
+        classification.save(update_fields=["bill_status"])
+        return Response({"status": classification.bill_status})
 
     @extend_schema(
         summary="What this entry used to be",

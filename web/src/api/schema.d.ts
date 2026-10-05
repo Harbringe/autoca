@@ -804,6 +804,52 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/open-items/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Open items
+         * @description Everything that does not yet tie out for a client, as one list, oldest first.
+         *
+         *     Each kind of document registers what can be left unmatched about it (see ``ledger.openitems``), so a new document type
+         *     adds items here without adding a report. Computed on request: an item that has been fixed is simply not there.
+         */
+        get: operations["clients_open_items_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/outstanding/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Outstanding payables or receivables, aged
+         * @description What the client owes its suppliers, or its customers owe it, bill by bill, aged.
+         *
+         *     Worked out as at the date asked for, counting only the settlements that had happened by then, so last month's report
+         *     stays what it was. Read from the same bills and allocations the party's ledger is checked against.
+         */
+        get: operations["clients_outstanding_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/parties/": {
         parameters: {
             query?: never;
@@ -882,6 +928,26 @@ export interface paths {
          *     who you are paying rather than of the category it was booked under.
          */
         patch: operations["clients_parties_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/parties/{id}/statement/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A party's statement of account
+         * @description The party's own ledger from one date to another, line by line, with a running balance: what would be sent to the party. The opening balance is the ledger's imported opening plus everything posted before the start date, which is exactly what the party's bills are checked against, so the two cannot disagree.
+         */
+        get: operations["clients_parties_statement_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
         trace?: never;
     };
     "/api/v1/clients/{client_id}/reports/balance-sheet/": {
@@ -1519,6 +1585,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/journal-entries/{id}/bill-status/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Say why a payment to a party with bills has no invoice against it
+         * @description A payment booked to an expense head, to a party that has bills, goes round those bills; until someone says why it is an open item. `NO_INVOICE_EXPECTED` marks a direct expense, `NEEDS_INVOICE` keeps it listed as waiting for one. A note about the document trail: it changes nothing that is posted, so it may be set at any time. Bank entries only. Needs `journal.approve`.
+         */
+        post: operations["journal_entries_bill_status_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/journal-entries/{id}/changes/": {
         parameters: {
             query?: never;
@@ -1861,6 +1947,12 @@ export interface components {
             name?: string;
             group?: components["schemas"]["LedgerGroupEnum"];
         };
+        /**
+         * @description * `DR` - DR
+         *     * `CR` - CR
+         * @enum {string}
+         */
+        AccountSideEnum: "DR" | "CR";
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         Allocation: {
             /** Format: uuid */
@@ -2288,6 +2380,33 @@ export interface components {
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly open_display: string | null;
         };
+        BillStatus: {
+            /**
+             * @description What to say about a payment booked to an expense head although the party has bills: `NO_INVOICE_EXPECTED` (a direct expense), `NEEDS_INVOICE` (it is waiting for one), or blank to unsay it.
+             *
+             *     * `` - Not said
+             *     * `NO_INVOICE_EXPECTED` - No invoice expected (a direct expense)
+             *     * `NEEDS_INVOICE` - Needs an invoice
+             */
+            status: components["schemas"]["BillStatusStatusEnum"] | components["schemas"]["BlankEnum"];
+        };
+        BillStatusRequest: {
+            /**
+             * @description What to say about a payment booked to an expense head although the party has bills: `NO_INVOICE_EXPECTED` (a direct expense), `NEEDS_INVOICE` (it is waiting for one), or blank to unsay it.
+             *
+             *     * `` - Not said
+             *     * `NO_INVOICE_EXPECTED` - No invoice expected (a direct expense)
+             *     * `NEEDS_INVOICE` - Needs an invoice
+             */
+            status: components["schemas"]["BillStatusStatusEnum"] | components["schemas"]["BlankEnum"];
+        };
+        /**
+         * @description * `` - Not said
+         *     * `NO_INVOICE_EXPECTED` - No invoice expected (a direct expense)
+         *     * `NEEDS_INVOICE` - Needs an invoice
+         * @enum {string}
+         */
+        BillStatusStatusEnum: "NO_INVOICE_EXPECTED" | "NEEDS_INVOICE";
         /** @enum {unknown} */
         BlankEnum: "";
         BooksEvent: {
@@ -3275,6 +3394,48 @@ export interface components {
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly open_display: string | null;
         };
+        OpenItem: {
+            kind: string;
+            /** @description What this kind of item is, in a few words. */
+            title: string;
+            /** @description What is unmatched and about whom, as a sentence a CA can read. */
+            summary: string;
+            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            amount_paise: number | null;
+            amount_display: string | null;
+            /**
+             * Format: date
+             * @description The date it dates from.
+             */
+            since: string | null;
+            /** @description Days from then to today. */
+            age_days: number | null;
+            link: components["schemas"]["OpenItemLink"] | null;
+        };
+        OpenItemKind: {
+            kind: string;
+            title: string;
+            count: number;
+        };
+        OpenItemLink: {
+            /**
+             * @description What to open to fix it: a bill, a posted entry, or a party's account.
+             *
+             *     * `bill` - bill
+             *     * `entry` - entry
+             *     * `party` - party
+             */
+            type: components["schemas"]["TypeEnum"];
+            /** Format: uuid */
+            id: string;
+        };
+        OpenItems: {
+            count: number;
+            /** @description Every kind that can be reported, with how many are open now. */
+            kinds: components["schemas"]["OpenItemKind"][];
+            /** @description Oldest first. */
+            items: components["schemas"]["OpenItem"][];
+        };
         OpenWork: {
             /** @description Rows nobody has placed in a ledger yet. */
             unresolved: number;
@@ -3302,6 +3463,58 @@ export interface components {
              * @description The date that balance was true. Normally the first day of the period.
              */
             opening_as_of: string;
+        };
+        Outstanding: {
+            side: components["schemas"]["SideEnum"];
+            /** Format: date */
+            as_of: string;
+            /** @description The ageing buckets, in reading order. */
+            buckets: string[];
+            parties: components["schemas"]["OutstandingParty"][];
+            bucket_paise: {
+                [key: string]: number;
+            };
+            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            on_account_paise: number;
+            on_account_display: string;
+            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            total_paise: number;
+            total_display: string;
+        };
+        OutstandingBill: {
+            /** Format: uuid */
+            bill: string;
+            reference: string;
+            kind: string;
+            kind_display: string;
+            /** Format: date */
+            bill_date: string;
+            /** Format: date */
+            due_date: string | null;
+            /** @description Days from the bill date to the report date. */
+            age_days: number;
+            /** @description The ageing bucket: 0-30, 31-60, 61-90 or Over 90. */
+            bucket: string;
+            /** @description Still owing on the report date. Negative for a note that reverses a bill. */
+            open_paise: number;
+            open_display: string;
+        };
+        OutstandingParty: {
+            /** Format: uuid */
+            party: string;
+            name: string;
+            gstin_last4: string;
+            bills: components["schemas"]["OutstandingBill"][];
+            /** @description What is owing in each ageing bucket. */
+            bucket_paise: {
+                [key: string]: number;
+            };
+            /** @description Money held on account or as an advance, as a negative: it reduces what is owed. */
+            on_account_paise: number;
+            on_account_display: string;
+            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            total_paise: number;
+            total_display: string;
         };
         OverviewByStage: {
             no_statements: number;
@@ -3657,6 +3870,51 @@ export interface components {
          * @enum {string}
          */
         PartyRoleEnum: "VENDOR" | "CUSTOMER" | "BOTH" | "OTHER";
+        PartyStatement: {
+            /** Format: uuid */
+            party: string;
+            name: string;
+            /** Format: date */
+            date_from: string;
+            /** Format: date */
+            date_to: string;
+            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            opening_paise: number;
+            opening_display: string;
+            rows: components["schemas"]["PartyStatementRow"][];
+            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            total_debit_paise: number;
+            total_debit_display: string;
+            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            total_credit_paise: number;
+            total_credit_display: string;
+            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            closing_paise: number;
+            closing_display: string;
+        };
+        PartyStatementRow: {
+            /** Format: date */
+            date: string;
+            voucher_type: string;
+            entry_no: number;
+            narration: string;
+            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            debit_paise: number;
+            debit_display: string;
+            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            credit_paise: number;
+            credit_display: string;
+            /** @description Debits positive, like the ledger: an amount owed to the party is negative. */
+            balance_paise: number;
+            balance_display: string;
+            /** Format: uuid */
+            entry: string;
+            /**
+             * Format: uuid
+             * @description The bill this voucher booked, if it booked one.
+             */
+            bill: string | null;
+        };
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         PatchedBankAccountRequest: {
             ledger_name?: string;
@@ -4157,18 +4415,18 @@ export interface components {
              *     * `DR` - DR
              *     * `CR` - CR
              */
-            direction: components["schemas"]["SettlementContextDirectionEnum"];
+            direction: components["schemas"]["AccountSideEnum"];
             bills: components["schemas"]["OpenBill"][];
             proposal: components["schemas"]["Proposal"];
             /** @description For an entry already posted: how much of it is already allocated. */
             already_allocated_paise: number;
         };
         /**
-         * @description * `DR` - DR
-         *     * `CR` - CR
+         * @description * `payables` - payables
+         *     * `receivables` - receivables
          * @enum {string}
          */
-        SettlementContextDirectionEnum: "DR" | "CR";
+        SideEnum: "payables" | "receivables";
         SignOffRequest: {
             /**
              * Format: date
@@ -4740,6 +4998,13 @@ export interface components {
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly total_credit_display: string | null;
         };
+        /**
+         * @description * `bill` - bill
+         *     * `entry` - entry
+         *     * `party` - party
+         * @enum {string}
+         */
+        TypeEnum: "bill" | "entry" | "party";
         UploadRequest: {
             /** Format: binary */
             file: string;
@@ -6282,6 +6547,56 @@ export interface operations {
             };
         };
     };
+    clients_open_items_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Only this kind. See `kinds` in the response for the names. */
+                kind?: string;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpenItems"];
+                };
+            };
+        };
+    };
+    clients_outstanding_retrieve: {
+        parameters: {
+            query?: {
+                /** @description The report date, as YYYY-MM-DD. Default today. */
+                as_of?: string;
+                /** @description Whom: suppliers or customers. Default payables. */
+                side?: "payables" | "receivables";
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Outstanding"];
+                };
+            };
+        };
+    };
     clients_parties_list: {
         parameters: {
             query?: {
@@ -6430,6 +6745,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Party"];
+                };
+            };
+        };
+    };
+    clients_parties_statement_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Start, as YYYY-MM-DD. Default the start of this financial year. */
+                date_from?: string;
+                /** @description End, as YYYY-MM-DD. Default today. */
+                date_to?: string;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PartyStatement"];
                 };
             };
         };
@@ -7482,6 +7824,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JournalEntry"];
+                };
+            };
+        };
+    };
+    journal_entries_bill_status_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillStatusRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["BillStatusRequest"];
+                "multipart/form-data": components["schemas"]["BillStatusRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillStatus"];
                 };
             };
         };

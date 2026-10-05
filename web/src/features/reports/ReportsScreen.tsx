@@ -25,6 +25,7 @@ import { DateInput } from '@/components/ui/date-input'
 import { Spinner } from '@/components/ui/spinner'
 import { asAt, closingLine, formatDate, formatDateTime, formatDrCr, formatPaise, fyLabel, parseDate, plural, sideTotal } from '@/lib/format'
 import { useFy } from '@/features/shell/useFy'
+import { OutstandingReport } from './OutstandingReport'
 import { cn } from '@/lib/utils'
 
 export type { ReportTab }
@@ -43,6 +44,7 @@ export function ReportsScreen({ clientId, report }: { clientId: string; report: 
       {report === 'tb' && <TrialBalanceReport clientId={clientId} fy={fy} />}
       {report === 'pl' && <ProfitAndLossReport clientId={clientId} fy={fy} />}
       {report === 'bs' && <BalanceSheetReport clientId={clientId} fy={fy} />}
+      {(report === 'payables' || report === 'receivables') && <OutstandingReport clientId={clientId} side={report} />}
       {report === 'recon' && <Reconciliation clientId={clientId} />}
     </div>
   )

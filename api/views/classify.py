@@ -7,6 +7,7 @@ much of it is bulk-approvable, and one endpoint per decision.
 
 from __future__ import annotations
 
+import datetime
 import uuid
 
 from django.core.exceptions import PermissionDenied
@@ -35,8 +36,10 @@ from api.serializers.classify import (
     TreatmentSerializer,
 )
 from api.serializers.core import JobSerializer
+from api.serializers.partyreports import PartyStatementSerializer, statement_payload
 from api.serializers.settlement import SettlementContextSerializer
 from api.views.base import ClientScopedMixin, FirmScopedViewSet
+from api.views.partyreports import date_param
 from api.views.settlement import build_context
 from banking.models import Statement
 from classify.engine import (
@@ -62,12 +65,14 @@ from classify.proposals import reject as reject_proposal
 from classify.queue import mark_waiting, waiting_count
 from classify.treatment import ReviewBand, Treatment
 from core.access import can_sign_off, get_visible_client, visible_client_ids
+from core.fy import financial_year, fy_bounds
 from core.jobs import run_job
 from core.models import Client
 from core.rbac import has_permission
 from ledger import billing
 from ledger import settlement as settling
 from ledger.learning import learn_from_decision
+from ledger.partyreports import party_statement
 from teams import activity
 from teams.models import ActivityKind
 
@@ -214,6 +219,29 @@ class PartyViewSet(ClientScopedMixin, FirmScopedViewSet):
         "PATCH": "party.manage",
         "DELETE": "party.manage",
     }
+
+    @extend_schema(
+        summary="A party's statement of account",
+        description=(
+            "The party's own ledger from one date to another, line by line, with a running balance: what would be sent "
+            "to the party. The opening balance is the ledger's imported opening plus everything posted before the start "
+            "date, which is exactly what the party's bills are checked against, so the two cannot disagree."
+        ),
+        parameters=[
+            OpenApiParameter("date_from", str, description="Start, as YYYY-MM-DD. Default the start of this financial year."),
+            OpenApiParameter("date_to", str, description="End, as YYYY-MM-DD. Default today."),
+        ],
+        responses={200: PartyStatementSerializer},
+    )
+    @action(detail=True, methods=["get"], pagination_class=None)
+    def statement(self, request, client_id=None, pk=None):
+        party = self.get_object()
+        today = datetime.date.today()
+        date_from = date_param(request, "date_from", fy_bounds(financial_year(today))[0])
+        date_to = date_param(request, "date_to", today)
+        if date_to < date_from:
+            raise ValidationError({"date_to": "The end is before the start."})
+        return Response(PartyStatementSerializer(statement_payload(party_statement(party, date_from, date_to))).data)
 
 
 def _model_warning(outcome) -> str:

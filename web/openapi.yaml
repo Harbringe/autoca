@@ -1896,6 +1896,78 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedLedgerRowList'
           description: ''
+  /api/v1/clients/{client_id}/open-items/:
+    get:
+      operationId: clients_open_items_retrieve
+      description: |-
+        Everything that does not yet tie out for a client, as one list, oldest first.
+
+        Each kind of document registers what can be left unmatched about it (see ``ledger.openitems``), so a new document type
+        adds items here without adding a report. Computed on request: an item that has been fixed is simply not there.
+      summary: Open items
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: kind
+        schema:
+          type: string
+        description: Only this kind. See `kinds` in the response for the names.
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpenItems'
+          description: ''
+  /api/v1/clients/{client_id}/outstanding/:
+    get:
+      operationId: clients_outstanding_retrieve
+      description: |-
+        What the client owes its suppliers, or its customers owe it, bill by bill, aged.
+
+        Worked out as at the date asked for, counting only the settlements that had happened by then, so last month's report
+        stays what it was. Read from the same bills and allocations the party's ledger is checked against.
+      summary: Outstanding payables or receivables, aged
+      parameters:
+      - in: query
+        name: as_of
+        schema:
+          type: string
+        description: The report date, as YYYY-MM-DD. Default today.
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: side
+        schema:
+          type: string
+          enum:
+          - payables
+          - receivables
+        description: 'Whom: suppliers or customers. Default payables.'
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Outstanding'
+          description: ''
   /api/v1/clients/{client_id}/parties/:
     get:
       operationId: clients_parties_list
@@ -2127,6 +2199,49 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/clients/{client_id}/parties/{id}/statement/:
+    get:
+      operationId: clients_parties_statement_retrieve
+      description: 'The party''s own ledger from one date to another, line by line,
+        with a running balance: what would be sent to the party. The opening balance
+        is the ledger''s imported opening plus everything posted before the start
+        date, which is exactly what the party''s bills are checked against, so the
+        two cannot disagree.'
+      summary: A party's statement of account
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: date_from
+        schema:
+          type: string
+        description: Start, as YYYY-MM-DD. Default the start of this financial year.
+      - in: query
+        name: date_to
+        schema:
+          type: string
+        description: End, as YYYY-MM-DD. Default today.
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PartyStatement'
+          description: ''
   /api/v1/clients/{client_id}/reports/balance-sheet/:
     get:
       operationId: clients_reports_balance_sheet_retrieve
@@ -3453,6 +3568,45 @@ paths:
               schema:
                 $ref: '#/components/schemas/JournalEntry'
           description: ''
+  /api/v1/journal-entries/{id}/bill-status/:
+    post:
+      operationId: journal_entries_bill_status_create
+      description: 'A payment booked to an expense head, to a party that has bills,
+        goes round those bills; until someone says why it is an open item. `NO_INVOICE_EXPECTED`
+        marks a direct expense, `NEEDS_INVOICE` keeps it listed as waiting for one.
+        A note about the document trail: it changes nothing that is posted, so it
+        may be set at any time. Bank entries only. Needs `journal.approve`.'
+      summary: Say why a payment to a party with bills has no invoice against it
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillStatusRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BillStatusRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BillStatusRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillStatus'
+          description: ''
   /api/v1/journal-entries/{id}/changes/:
     get:
       operationId: journal_entries_changes_list
@@ -4045,6 +4199,14 @@ components:
           maxLength: 255
         group:
           $ref: '#/components/schemas/LedgerGroupEnum'
+    AccountSideEnum:
+      enum:
+      - DR
+      - CR
+      type: string
+      description: |-
+        * `DR` - DR
+        * `CR` - CR
     Allocation:
       type: object
       description: Adds a ``*_display`` string beside every ``*_paise`` field named
@@ -5062,6 +5224,45 @@ components:
       - total_display
       - total_paise
       - voucher_type
+    BillStatus:
+      type: object
+      properties:
+        status:
+          description: |-
+            What to say about a payment booked to an expense head although the party has bills: `NO_INVOICE_EXPECTED` (a direct expense), `NEEDS_INVOICE` (it is waiting for one), or blank to unsay it.
+
+            * `` - Not said
+            * `NO_INVOICE_EXPECTED` - No invoice expected (a direct expense)
+            * `NEEDS_INVOICE` - Needs an invoice
+          oneOf:
+          - $ref: '#/components/schemas/BillStatusStatusEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+      required:
+      - status
+    BillStatusRequest:
+      type: object
+      properties:
+        status:
+          description: |-
+            What to say about a payment booked to an expense head although the party has bills: `NO_INVOICE_EXPECTED` (a direct expense), `NEEDS_INVOICE` (it is waiting for one), or blank to unsay it.
+
+            * `` - Not said
+            * `NO_INVOICE_EXPECTED` - No invoice expected (a direct expense)
+            * `NEEDS_INVOICE` - Needs an invoice
+          oneOf:
+          - $ref: '#/components/schemas/BillStatusStatusEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+      required:
+      - status
+    BillStatusStatusEnum:
+      enum:
+      - NO_INVOICE_EXPECTED
+      - NEEDS_INVOICE
+      type: string
+      description: |-
+        * `` - Not said
+        * `NO_INVOICE_EXPECTED` - No invoice expected (a direct expense)
+        * `NEEDS_INVOICE` - Needs an invoice
     BlankEnum:
       enum:
       - ''
@@ -7390,6 +7591,97 @@ components:
       - reference
       - total_display
       - total_paise
+    OpenItem:
+      type: object
+      properties:
+        kind:
+          type: string
+        title:
+          type: string
+          description: What this kind of item is, in a few words.
+        summary:
+          type: string
+          description: What is unmatched and about whom, as a sentence a CA can read.
+        amount_paise:
+          type: integer
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        amount_display:
+          type: string
+          nullable: true
+        since:
+          type: string
+          format: date
+          nullable: true
+          description: The date it dates from.
+        age_days:
+          type: integer
+          nullable: true
+          description: Days from then to today.
+        link:
+          allOf:
+          - $ref: '#/components/schemas/OpenItemLink'
+          nullable: true
+      required:
+      - age_days
+      - amount_display
+      - amount_paise
+      - kind
+      - link
+      - since
+      - summary
+      - title
+    OpenItemKind:
+      type: object
+      properties:
+        kind:
+          type: string
+        title:
+          type: string
+        count:
+          type: integer
+      required:
+      - count
+      - kind
+      - title
+    OpenItemLink:
+      type: object
+      properties:
+        type:
+          allOf:
+          - $ref: '#/components/schemas/TypeEnum'
+          description: |-
+            What to open to fix it: a bill, a posted entry, or a party's account.
+
+            * `bill` - bill
+            * `entry` - entry
+            * `party` - party
+        id:
+          type: string
+          format: uuid
+      required:
+      - id
+      - type
+    OpenItems:
+      type: object
+      properties:
+        count:
+          type: integer
+        kinds:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpenItemKind'
+          description: Every kind that can be reported, with how many are open now.
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpenItem'
+          description: Oldest first.
+      required:
+      - count
+      - items
+      - kinds
     OpenWork:
       type: object
       properties:
@@ -7437,6 +7729,136 @@ components:
       required:
       - opening_as_of
       - opening_balance_paise
+    Outstanding:
+      type: object
+      properties:
+        side:
+          $ref: '#/components/schemas/SideEnum'
+        as_of:
+          type: string
+          format: date
+        buckets:
+          type: array
+          items:
+            type: string
+          description: The ageing buckets, in reading order.
+        parties:
+          type: array
+          items:
+            $ref: '#/components/schemas/OutstandingParty'
+        bucket_paise:
+          type: object
+          additionalProperties:
+            type: integer
+            description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+              a decimal.
+        on_account_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        on_account_display:
+          type: string
+        total_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        total_display:
+          type: string
+      required:
+      - as_of
+      - bucket_paise
+      - buckets
+      - on_account_display
+      - on_account_paise
+      - parties
+      - side
+      - total_display
+      - total_paise
+    OutstandingBill:
+      type: object
+      properties:
+        bill:
+          type: string
+          format: uuid
+        reference:
+          type: string
+        kind:
+          type: string
+        kind_display:
+          type: string
+        bill_date:
+          type: string
+          format: date
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        age_days:
+          type: integer
+          description: Days from the bill date to the report date.
+        bucket:
+          type: string
+          description: 'The ageing bucket: 0-30, 31-60, 61-90 or Over 90.'
+        open_paise:
+          type: integer
+          description: Still owing on the report date. Negative for a note that reverses
+            a bill.
+        open_display:
+          type: string
+      required:
+      - age_days
+      - bill
+      - bill_date
+      - bucket
+      - due_date
+      - kind
+      - kind_display
+      - open_display
+      - open_paise
+      - reference
+    OutstandingParty:
+      type: object
+      properties:
+        party:
+          type: string
+          format: uuid
+        name:
+          type: string
+        gstin_last4:
+          type: string
+        bills:
+          type: array
+          items:
+            $ref: '#/components/schemas/OutstandingBill'
+        bucket_paise:
+          type: object
+          additionalProperties:
+            type: integer
+            description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+              a decimal.
+          description: What is owing in each ageing bucket.
+        on_account_paise:
+          type: integer
+          description: 'Money held on account or as an advance, as a negative: it
+            reduces what is owed.'
+        on_account_display:
+          type: string
+        total_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        total_display:
+          type: string
+      required:
+      - bills
+      - bucket_paise
+      - gstin_last4
+      - name
+      - on_account_display
+      - on_account_paise
+      - party
+      - total_display
+      - total_paise
     OverviewByStage:
       type: object
       properties:
@@ -8065,6 +8487,113 @@ components:
         * `CUSTOMER` - Customer
         * `BOTH` - Both supplier and customer
         * `OTHER` - Other (lender, employee, related party)
+    PartyStatement:
+      type: object
+      properties:
+        party:
+          type: string
+          format: uuid
+        name:
+          type: string
+        date_from:
+          type: string
+          format: date
+        date_to:
+          type: string
+          format: date
+        opening_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        opening_display:
+          type: string
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/PartyStatementRow'
+        total_debit_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        total_debit_display:
+          type: string
+        total_credit_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        total_credit_display:
+          type: string
+        closing_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        closing_display:
+          type: string
+      required:
+      - closing_display
+      - closing_paise
+      - date_from
+      - date_to
+      - name
+      - opening_display
+      - opening_paise
+      - party
+      - rows
+      - total_credit_display
+      - total_credit_paise
+      - total_debit_display
+      - total_debit_paise
+    PartyStatementRow:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        voucher_type:
+          type: string
+        entry_no:
+          type: integer
+        narration:
+          type: string
+        debit_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        debit_display:
+          type: string
+        credit_paise:
+          type: integer
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        credit_display:
+          type: string
+        balance_paise:
+          type: integer
+          description: 'Debits positive, like the ledger: an amount owed to the party
+            is negative.'
+        balance_display:
+          type: string
+        entry:
+          type: string
+          format: uuid
+        bill:
+          type: string
+          format: uuid
+          nullable: true
+          description: The bill this voucher booked, if it booked one.
+      required:
+      - balance_display
+      - balance_paise
+      - bill
+      - credit_display
+      - credit_paise
+      - date
+      - debit_display
+      - debit_paise
+      - entry
+      - entry_no
+      - narration
+      - voucher_type
     PatchedBankAccountRequest:
       type: object
       description: Adds a ``*_display`` string beside every ``*_paise`` field named
@@ -9040,7 +9569,7 @@ components:
           type: string
         direction:
           allOf:
-          - $ref: '#/components/schemas/SettlementContextDirectionEnum'
+          - $ref: '#/components/schemas/AccountSideEnum'
           description: |-
             The side of the party's account the payment lands on.
 
@@ -9063,14 +9592,14 @@ components:
       - direction
       - party
       - proposal
-    SettlementContextDirectionEnum:
+    SideEnum:
       enum:
-      - DR
-      - CR
+      - payables
+      - receivables
       type: string
       description: |-
-        * `DR` - DR
-        * `CR` - CR
+        * `payables` - payables
+        * `receivables` - receivables
     SignOffRequest:
       type: object
       properties:
@@ -10167,6 +10696,16 @@ components:
       - total_credit_paise
       - total_debit_display
       - total_debit_paise
+    TypeEnum:
+      enum:
+      - bill
+      - entry
+      - party
+      type: string
+      description: |-
+        * `bill` - bill
+        * `entry` - entry
+        * `party` - party
     UploadRequest:
       type: object
       properties:

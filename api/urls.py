@@ -43,6 +43,7 @@ from api.views.ledger import (
     ReportView,
 )
 from api.views.overview import FirmMetricsView, FirmOverviewView
+from api.views.partyreports import OpenItemsView, OutstandingView
 from api.views.tally import TallyImportViewSet
 from teams.views import FirmOwnerView, FirmSettingsView
 
@@ -88,6 +89,16 @@ urlpatterns = [
         "clients/<uuid:client_id>/statements/upload/",
         StatementUploadView.as_view({"post": "create"}),
         name="statement-upload",
+    ),
+    path(
+        "clients/<uuid:client_id>/open-items/",
+        OpenItemsView.as_view({"get": "retrieve"}),
+        name="open-items",
+    ),
+    path(
+        "clients/<uuid:client_id>/outstanding/",
+        OutstandingView.as_view({"get": "retrieve"}),
+        name="outstanding",
     ),
     path(
         "clients/<uuid:client_id>/approvals/",

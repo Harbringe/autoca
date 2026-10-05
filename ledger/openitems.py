@@ -17,10 +17,19 @@ import datetime
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
-from django.db.models import F, Sum
+from django.db.models import F, Q, Sum
 
+from core.money import format_inr
 from ledger import billing
-from ledger.models import AllocationKind, Bill, BillAllocation, BillKind, JournalLine
+from ledger.models import (
+    AllocationKind,
+    Bill,
+    BillAllocation,
+    BillKind,
+    EntryKind,
+    JournalEntry,
+    JournalLine,
+)
 
 
 @dataclass(frozen=True)
@@ -118,7 +127,7 @@ def unallocated_settlements(client):
                 f"is not allocated to any bill.",
                 amount_paise=left,
                 since=line.entry.entry_date,
-                link={"type": "journal_line", "id": str(line.pk)},
+                link={"type": "entry", "id": str(line.entry_id)},
             )
 
 
@@ -135,7 +144,7 @@ def money_on_account(client):
             f"{allocation.line.party.canonical_name}'s account has not been applied to a bill.",
             amount_paise=allocation.amount_paise,
             since=allocation.line.entry.entry_date,
-            link={"type": "journal_line", "id": str(allocation.line_id)},
+            link={"type": "entry", "id": str(allocation.line.entry_id)},
         )
 
 
@@ -154,6 +163,80 @@ def parties_out_of_balance(client):
                 amount_paise=abs(position.difference_paise),
                 link={"type": "party", "id": str(party.pk)},
             )
+
+
+def _live_entry(transaction_row):
+    """The entry that currently stands for a bank row, ignoring corrected ones."""
+    return JournalEntry.objects.filter(
+        source_transaction=transaction_row, entry_kind=EntryKind.BANK, superseded_by_set__isnull=True
+    ).first()
+
+
+def _classified_rows(client):
+    from classify.models import TransactionClassification
+
+    return TransactionClassification.objects.filter(
+        firm_id=client.firm_id, transaction__bank_account__client=client, ledger__isnull=False, party__isnull=False
+    ).select_related("transaction", "party", "ledger")
+
+
+@detector("payment_bypasses_bills", "A payment to a party that has bills, booked to an expense instead")
+def payments_that_bypass_bills(client):
+    """The party has invoices on the books, but this payment did not go against them.
+
+    That is the one place a party-wise ledger can quietly stop being true: the money moved, the bill is still shown as
+    owing, and the party's account disagrees with the bank. A payment may legitimately have no invoice (rent, a small cash
+    item), but then someone says so, and until they do it is listed. A party with no bills is not listed: invoice-wise
+    accounting has not started for it, and flagging every old payment would bury the ones that matter.
+    """
+    from django.db.models import Exists, OuterRef
+
+    from classify.models import BillStatus, LedgerGroup, PartyRole
+
+    rows = (
+        _classified_rows(client)
+        .filter(bill_status=BillStatus.UNSTATED, ledger__party_record__isnull=True)
+        .exclude(ledger__group__in=[LedgerGroup.BANK, LedgerGroup.CASH, LedgerGroup.BANK_OD, LedgerGroup.LOAN])
+        .filter(Exists(Bill.objects.filter(party_id=OuterRef("party_id"))))
+        .filter(
+            Q(transaction__debit_paise__gt=0, party__role__in=[PartyRole.VENDOR, PartyRole.BOTH])
+            | Q(transaction__credit_paise__gt=0, party__role__in=[PartyRole.CUSTOMER, PartyRole.BOTH])
+        )
+        .order_by("transaction__value_date")
+    )
+    for row in rows:
+        entry = _live_entry(row.transaction)
+        if entry is None:
+            continue
+        verb = "paid" if row.transaction.is_debit else "received"
+        yield OpenItem(
+            kind="payment_bypasses_bills",
+            client_id=client.pk,
+            summary=f"{row.party.canonical_name} has bills, but {format_inr(row.transaction.amount_paise)} {verb} on "
+            f"{row.transaction.value_date:%d-%m-%Y} was booked to {row.ledger.name}, not against them.",
+            amount_paise=row.transaction.amount_paise,
+            since=row.transaction.value_date,
+            link={"type": "entry", "id": str(entry.pk)},
+        )
+
+
+@detector("payment_needs_invoice", "A payment waiting for its invoice")
+def payments_needing_an_invoice(client):
+    from classify.models import BillStatus
+
+    for row in _classified_rows(client).filter(bill_status=BillStatus.NEEDS_INVOICE).order_by("transaction__value_date"):
+        entry = _live_entry(row.transaction)
+        if entry is None:
+            continue
+        yield OpenItem(
+            kind="payment_needs_invoice",
+            client_id=client.pk,
+            summary=f"{format_inr(row.transaction.amount_paise)} paid to {row.party.canonical_name} on "
+            f"{row.transaction.value_date:%d-%m-%Y} is waiting for its invoice.",
+            amount_paise=row.transaction.amount_paise,
+            since=row.transaction.value_date,
+            link={"type": "entry", "id": str(entry.pk)},
+        )
 
 
 def total_held(client) -> int:

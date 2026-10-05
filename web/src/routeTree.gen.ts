@@ -42,6 +42,7 @@ import { Route as AppClientsClientIdDocumentsRouteImport } from './routes/_app/c
 import { Route as AppClientsClientIdGstRouteImport } from './routes/_app/clients/$clientId/gst'
 import { Route as AppClientsClientIdLedgersRouteImport } from './routes/_app/clients/$clientId/ledgers'
 import { Route as AppClientsClientIdMastersRouteImport } from './routes/_app/clients/$clientId/masters'
+import { Route as AppClientsClientIdOpenItemsRouteImport } from './routes/_app/clients/$clientId/open-items'
 import { Route as AppClientsClientIdReportsRouteImport } from './routes/_app/clients/$clientId/reports'
 import { Route as AppClientsClientIdReviewRouteImport } from './routes/_app/clients/$clientId/review'
 import { Route as AppClientsClientIdStatementsRouteImport } from './routes/_app/clients/$clientId/statements'
@@ -216,6 +217,12 @@ const AppClientsClientIdMastersRoute =
     path: '/masters',
     getParentRoute: () => AppClientsClientIdRouteRoute,
   } as any)
+const AppClientsClientIdOpenItemsRoute =
+  AppClientsClientIdOpenItemsRouteImport.update({
+    id: '/open-items',
+    path: '/open-items',
+    getParentRoute: () => AppClientsClientIdRouteRoute,
+  } as any)
 const AppClientsClientIdReportsRoute =
   AppClientsClientIdReportsRouteImport.update({
     id: '/reports',
@@ -272,6 +279,7 @@ export interface FileRoutesByFullPath {
   '/clients/$clientId/gst': typeof AppClientsClientIdGstRoute
   '/clients/$clientId/ledgers': typeof AppClientsClientIdLedgersRoute
   '/clients/$clientId/masters': typeof AppClientsClientIdMastersRoute
+  '/clients/$clientId/open-items': typeof AppClientsClientIdOpenItemsRoute
   '/clients/$clientId/reports': typeof AppClientsClientIdReportsRoute
   '/clients/$clientId/review': typeof AppClientsClientIdReviewRoute
   '/clients/$clientId/statements': typeof AppClientsClientIdStatementsRoute
@@ -308,6 +316,7 @@ export interface FileRoutesByTo {
   '/clients/$clientId/gst': typeof AppClientsClientIdGstRoute
   '/clients/$clientId/ledgers': typeof AppClientsClientIdLedgersRoute
   '/clients/$clientId/masters': typeof AppClientsClientIdMastersRoute
+  '/clients/$clientId/open-items': typeof AppClientsClientIdOpenItemsRoute
   '/clients/$clientId/reports': typeof AppClientsClientIdReportsRoute
   '/clients/$clientId/review': typeof AppClientsClientIdReviewRoute
   '/clients/$clientId/statements': typeof AppClientsClientIdStatementsRoute
@@ -348,6 +357,7 @@ export interface FileRoutesById {
   '/_app/clients/$clientId/gst': typeof AppClientsClientIdGstRoute
   '/_app/clients/$clientId/ledgers': typeof AppClientsClientIdLedgersRoute
   '/_app/clients/$clientId/masters': typeof AppClientsClientIdMastersRoute
+  '/_app/clients/$clientId/open-items': typeof AppClientsClientIdOpenItemsRoute
   '/_app/clients/$clientId/reports': typeof AppClientsClientIdReportsRoute
   '/_app/clients/$clientId/review': typeof AppClientsClientIdReviewRoute
   '/_app/clients/$clientId/statements': typeof AppClientsClientIdStatementsRoute
@@ -388,6 +398,7 @@ export interface FileRouteTypes {
     | '/clients/$clientId/gst'
     | '/clients/$clientId/ledgers'
     | '/clients/$clientId/masters'
+    | '/clients/$clientId/open-items'
     | '/clients/$clientId/reports'
     | '/clients/$clientId/review'
     | '/clients/$clientId/statements'
@@ -424,6 +435,7 @@ export interface FileRouteTypes {
     | '/clients/$clientId/gst'
     | '/clients/$clientId/ledgers'
     | '/clients/$clientId/masters'
+    | '/clients/$clientId/open-items'
     | '/clients/$clientId/reports'
     | '/clients/$clientId/review'
     | '/clients/$clientId/statements'
@@ -463,6 +475,7 @@ export interface FileRouteTypes {
     | '/_app/clients/$clientId/gst'
     | '/_app/clients/$clientId/ledgers'
     | '/_app/clients/$clientId/masters'
+    | '/_app/clients/$clientId/open-items'
     | '/_app/clients/$clientId/reports'
     | '/_app/clients/$clientId/review'
     | '/_app/clients/$clientId/statements'
@@ -709,6 +722,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppClientsClientIdMastersRouteImport
       parentRoute: typeof AppClientsClientIdRouteRoute
     }
+    '/_app/clients/$clientId/open-items': {
+      id: '/_app/clients/$clientId/open-items'
+      path: '/open-items'
+      fullPath: '/clients/$clientId/open-items'
+      preLoaderRoute: typeof AppClientsClientIdOpenItemsRouteImport
+      parentRoute: typeof AppClientsClientIdRouteRoute
+    }
     '/_app/clients/$clientId/reports': {
       id: '/_app/clients/$clientId/reports'
       path: '/reports'
@@ -769,6 +789,7 @@ interface AppClientsClientIdRouteRouteChildren {
   AppClientsClientIdGstRoute: typeof AppClientsClientIdGstRoute
   AppClientsClientIdLedgersRoute: typeof AppClientsClientIdLedgersRoute
   AppClientsClientIdMastersRoute: typeof AppClientsClientIdMastersRoute
+  AppClientsClientIdOpenItemsRoute: typeof AppClientsClientIdOpenItemsRoute
   AppClientsClientIdReportsRoute: typeof AppClientsClientIdReportsRoute
   AppClientsClientIdReviewRoute: typeof AppClientsClientIdReviewRoute
   AppClientsClientIdStatementsRoute: typeof AppClientsClientIdStatementsRoute
@@ -786,6 +807,7 @@ const AppClientsClientIdRouteRouteChildren: AppClientsClientIdRouteRouteChildren
     AppClientsClientIdGstRoute: AppClientsClientIdGstRoute,
     AppClientsClientIdLedgersRoute: AppClientsClientIdLedgersRoute,
     AppClientsClientIdMastersRoute: AppClientsClientIdMastersRoute,
+    AppClientsClientIdOpenItemsRoute: AppClientsClientIdOpenItemsRoute,
     AppClientsClientIdReportsRoute: AppClientsClientIdReportsRoute,
     AppClientsClientIdReviewRoute: AppClientsClientIdReviewRoute,
     AppClientsClientIdStatementsRoute: AppClientsClientIdStatementsRoute,

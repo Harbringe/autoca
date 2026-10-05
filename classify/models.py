@@ -554,6 +554,19 @@ class ClassificationMethod(models.TextChoices):
     LLM = "LLM", "Suggested by a language model"
 
 
+class BillStatus(models.TextChoices):
+    """What a payment to a party, booked straight to an expense head, says about its invoice.
+
+    Once a party has bills on the books, a payment to it that bypasses them is where an island would hide: the money moved,
+    the invoice is not settled by it, and the party's account no longer tells the truth. Saying why makes the bypass
+    visible and deliberate. Blank means nobody has said, and is itself an open item.
+    """
+
+    UNSTATED = "", "Not said"
+    NO_INVOICE_EXPECTED = "NO_INVOICE_EXPECTED", "No invoice expected (a direct expense)"
+    NEEDS_INVOICE = "NEEDS_INVOICE", "Needs an invoice"
+
+
 class ModelState(models.TextChoices):
     """Where a row stands in the queue for the model tier (``classify.queue``)."""
 
@@ -656,6 +669,12 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
     #: foreign key: journal entries can never be deleted, and the column is
     #: added to a populated, RLS-forced table without a validating scan.
     mirrored_entry_id = models.UUIDField(null=True, blank=True, db_index=True)
+
+    #: See ``BillStatus``. Only meaningful for a payment or receipt with a party that has bills, booked to an ordinary
+    #: ledger. A flag about the document trail, not an accounting treatment: it does not change what is posted.
+    bill_status = models.CharField(
+        max_length=24, choices=BillStatus.choices, blank=True, default=BillStatus.UNSTATED, db_default=BillStatus.UNSTATED
+    )
 
     reviewed_by = models.ForeignKey(
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name="classifications"

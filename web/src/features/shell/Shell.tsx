@@ -134,6 +134,7 @@ const SCREEN_TITLE: Record<string, string> = {
   review: 'Review',
   bills: 'Purchases & Sales',
   daybook: 'Day Book',
+  'open-items': 'To fix',
   ledgers: 'Ledgers',
   reports: 'Reports',
   books: 'Books & sign-off',

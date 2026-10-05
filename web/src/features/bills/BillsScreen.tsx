@@ -26,6 +26,7 @@ import { useFy } from '@/features/shell/useFy'
 import { formatDate, formatPaise, fyLabel, plural } from '@/lib/format'
 import { KIND_LABEL, openPositions, VOUCHER_KINDS } from '@/lib/vouchers'
 import { useSession } from '@/session/session'
+import { PartyStatementDialog } from './PartyStatementDialog'
 import { VoucherDialog } from './VoucherDialog'
 
 export function BillsScreen({ clientId, openId }: { clientId: string; openId?: string }) {
@@ -172,6 +173,7 @@ function BillDialog({ clientId, summary, mayPost, onClose }: { clientId: string;
   const detail = useQuery(billQuery(clientId, summary.id))
   const remove = useRemoveBill(clientId)
   const [removing, setRemoving] = useState(false)
+  const [statement, setStatement] = useState(false)
   const bill = detail.data
 
   const settled = (bill?.allocations.length ?? 0) > 0
@@ -244,13 +246,16 @@ function BillDialog({ clientId, summary, mayPost, onClose }: { clientId: string;
               {summary.is_locked && <p className="flex items-center gap-2 text-sm text-muted-foreground"><Lock className="size-4" aria-hidden /> In signed-off books; it can no longer be removed.</p>}
               {settled && !summary.is_locked && <p className="text-sm text-muted-foreground">It has payments against it, so it cannot be removed. Record a debit or credit note to adjust it.</p>}
 
-              {mayRemove && (
-                <div className="flex justify-end">
-                  <Button variant="outline" onClick={() => setRemoving(true)}>Remove this bill</Button>
-                </div>
-              )}
+              <div className="flex flex-wrap justify-between gap-2">
+                <Button variant="outline" onClick={() => setStatement(true)}>Statement of account</Button>
+                {mayRemove && <Button variant="outline" onClick={() => setRemoving(true)}>Remove this bill</Button>}
+              </div>
             </div>
           )
+        )}
+
+        {statement && (
+          <PartyStatementDialog clientId={clientId} partyId={summary.party} partyName={summary.party_name} onClose={() => setStatement(false)} />
         )}
 
         <Confirm

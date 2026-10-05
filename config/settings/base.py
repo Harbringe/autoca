@@ -614,6 +614,11 @@ SPECTACULAR_SETTINGS = {
     "ENUM_NAME_OVERRIDES": {
         "AssistantStateEnum": ["working", "idle", "paused"],
         "AssistantReasonEnum": ["", "rate_limit", "daily_limit", "provider_down", "assistant_off"],
+        # Bills and settlements. Several models share the field names "role" and "direction", and without a name
+        # each choice set takes a hash.
+        "AllocationKindEnum": ["AGAINST_BILL", "ON_ACCOUNT", "ADVANCE"],
+        "PartyRoleEnum": ["VENDOR", "CUSTOMER", "BOTH", "OTHER"],
+        "AccountSideEnum": ["DR", "CR"],
     },
     "SCHEMA_PATH_PREFIX": "/api/v1",
     "TAGS": [

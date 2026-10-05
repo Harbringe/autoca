@@ -7,7 +7,7 @@
 
 import { queryOptions, useMutation } from '@tanstack/react-query'
 import { raw } from '@/api/client'
-import type { Bill, BillCreateRequest, BillDetail, SettlementContext } from '@/api/types'
+import type { Bill, BillCreateRequest, BillDetail, OpenItems, Outstanding, PartyStatement, SettlementContext } from '@/api/types'
 import { allPages } from './books'
 import { clientKeys, useInvalidateClient, V1 } from './clients'
 
@@ -38,6 +38,20 @@ export const rowSettlement = (clientId: string, classificationId: string) =>
     queryFn: () => raw.get<SettlementContext>(`${V1}/classifications/${classificationId}/settlement/`),
   })
 
+/** What the client owes its suppliers, or its customers owe it, bill by bill, aged, as at a date (ISO). */
+export const outstanding = (clientId: string, side: 'payables' | 'receivables', asOf: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'outstanding', side, asOf),
+    queryFn: () => raw.get<Outstanding>(`${V1}/clients/${clientId}/outstanding/`, { side, as_of: asOf }),
+  })
+
+/** One party's account, line by line with a running balance, between two ISO dates. */
+export const partyStatement = (clientId: string, partyId: string, from: string, to: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'parties', partyId, 'statement', from, to),
+    queryFn: () => raw.get<PartyStatement>(`${V1}/clients/${clientId}/parties/${partyId}/statement/`, { date_from: from, date_to: to }),
+  })
+
 export function usePostBill(clientId: string) {
   const invalidate = useInvalidateClient(clientId)
   return useMutation({
@@ -51,6 +65,40 @@ export function useRemoveBill(clientId: string) {
   return useMutation({
     mutationFn: ({ id, note }: { id: string; note: string }) =>
       raw.post<void>(`${V1}/clients/${clientId}/bills/${id}/remove/`, { note }),
+    onSuccess: invalidate,
+  })
+}
+
+/** Everything that does not yet tie out for the client, oldest first; `kind` narrows the list but not the counts. */
+export const openItems = (clientId: string, kind = '') =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'open-items', kind),
+    queryFn: () => raw.get<OpenItems>(`${V1}/clients/${clientId}/open-items/`, kind ? { kind } : {}),
+  })
+
+/** A posted payment's open bills, for settling it after the fact. */
+export const entrySettlement = (clientId: string, entryId: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'entry-settlement', entryId),
+    queryFn: () => raw.get<SettlementContext>(`${V1}/journal-entries/${entryId}/settlement/`),
+  })
+
+/** Say why a payment to a party with bills has no invoice against it (blank unsays it). */
+export function useSetBillStatus(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: ({ entry, status }: { entry: string; status: '' | 'NO_INVOICE_EXPECTED' | 'NEEDS_INVOICE' }) =>
+      raw.post<{ status: string }>(`${V1}/journal-entries/${entry}/bill-status/`, { status }),
+    onSuccess: invalidate,
+  })
+}
+
+/** Settle the unallocated part of a posted payment, as a person decided. */
+export function useSettleEntry(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: ({ entry, allocations, remainder }: { entry: string; allocations: { bill: string; amount_paise: number }[]; remainder: string | null }) =>
+      raw.post<{ settled_paise: number }>(`${V1}/journal-entries/${entry}/settle/`, { allocations, remainder }),
     onSuccess: invalidate,
   })
 }

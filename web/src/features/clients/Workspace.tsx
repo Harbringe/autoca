@@ -82,6 +82,7 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
               { to: '/clients/$clientId/bookkeeping', params: p, label: 'Books overview' },
               { to: '/clients/$clientId/bills', params: p, label: 'Purchases & Sales' },
               { to: '/clients/$clientId/daybook', params: p, label: 'Day Book' },
+              { to: '/clients/$clientId/open-items', params: p, label: 'To fix' },
             { to: '/clients/$clientId/ledgers', params: p, label: 'Ledgers' },
             { to: '/clients/$clientId/masters', params: p, label: 'Parties & rules' },
             { to: '/clients/$clientId/books', params: p, label: 'Books & sign-off' },

@@ -1,6 +1,14 @@
 # Party accounting, phase 1
 
-Status: **step 1a is built and in CI** (2026-10-05); 1b to 1e are not. Written 2026-10-05.
+Status: **steps 1a and 1b are built, in CI and live** (2026-10-05); 1c to 1e are not. Written 2026-10-05.
+
+## What step 1b built
+
+The API: `POST /clients/{id}/bills/` books a purchase, sales, debit-note or credit-note voucher; `GET` lists and filters (kind, party, financial year, open or settled, text) and reads one with its lines and allocations; `POST .../remove/` takes out an unsigned, unsettled bill. `Party` now exposes `role` (so a customer can be created) and its `ledger`, and refuses a role change once it has bills. The journal says whether an entry is a voucher (`entry_kind`) and which bill it belongs to, and its `correct` action refuses a voucher entry in words (409 `wrong_entry_kind`): before this it would have failed on the missing bank row.
+
+The web app: a **Purchases & Sales** tab under Bookkeeping, with what is owed to suppliers and by customers, the bills with no invoice file, a filterable list, a bill detail with its lines and what has settled it, and a voucher form that shows the party's account as it is typed. The Day Book lists the new voucher types, shows the party as the particulars, and sends a voucher entry to its bill. The form's preview arithmetic (`web/src/lib/vouchers.ts`) mirrors `ledger/billing.py`, and `vouchers.test.ts` uses the same figures as `test_billing_plan.py`; the server remains the authority and its messages are shown as written.
+
+Not in 1b: attaching or uploading an invoice file to a bill (a bill with none is reported, not blocked; reading the file is stage 2); the open-items list has no screen yet (1d); settling a bank line (1c).
 
 ## What step 1a built, and where it differs from the design
 

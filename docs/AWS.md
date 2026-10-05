@@ -1,13 +1,32 @@
 # Running AutoCA on AWS
 
-One small server runs everything: the web app, the API, the database, Redis and the HTTPS proxy, all as containers described in `compose.prod.yaml`. This is the day-to-day guide. How it was built and why is in the commit history of the `aws-deploy` branch.
+One small server runs everything: the web app, the API, the database, Redis and the HTTPS proxy, all as containers described in `compose.prod.yaml`. This is the day-to-day guide.
+
+## Branches
+
+There are three, and only three. Everything else is deleted when it is merged.
+
+| Branch | What it is |
+|---|---|
+| `dev` | Where work happens. Push here freely. CI runs on it. |
+| `main` | Stable: changes arrive from `dev` once CI is green. (Render and Vercel, the old setup, still build from this one until they are retired.) |
+| `prod` | Exactly what the server runs. The server follows this branch (`git pull`, `deploy/deploy.sh`). |
+
+Promote by fast-forward, never by rewriting history, so each branch is always a prefix of the one before it:
+
+```
+git switch main && git merge --ff-only dev  && git push && git switch dev
+git switch prod && git merge --ff-only main && git push && git switch dev
+```
+
+Then deploy on the server: `sh deploy/deploy.sh`.
 
 ## Where things are
 
 | | |
 |---|---|
 | Server | EC2 `autoca-app`, Mumbai (`ap-south-1`), reached with **Session Manager** (EC2 console -> Connect). There is no SSH. |
-| Code | `/srv/autoca` (a clone of the repo, branch `aws-deploy`, read-only deploy key) |
+| Code | `/srv/autoca` (a clone of the repo, branch `prod`, read-only deploy key) |
 | Settings | `/srv/autoca/.env.prod`, `.env.owner`, `.env.db` (never committed, mode 600) |
 | Files | S3 bucket `autoca-files-<account-id>`, reached by the server's role (no keys) |
 | Logs | CloudWatch Logs group `/autoca/prod`, 90 days, and `ac logs` on the server |
@@ -70,7 +89,7 @@ git checkout <that commit>
 ac build && ac up -d
 ```
 
-Later, `git checkout aws-deploy` returns to the branch (`deploy.sh` needs to be on the branch, because it pulls). Migrations that already ran are not undone by going back; a change that added columns or tables is harmless to older code, but ask before going back across one that removed anything.
+Later, `git checkout prod` returns to the branch (`deploy.sh` needs to be on the branch, because it pulls). Migrations that already ran are not undone by going back; a change that added columns or tables is harmless to older code, but ask before going back across one that removed anything.
 
 ## Restart
 

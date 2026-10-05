@@ -1,6 +1,21 @@
 # Party accounting, phase 1
 
-Status: design for review. Nothing here is built. Written 2026-10-05.
+Status: **step 1a is built and in CI** (2026-10-05); 1b to 1e are not. Written 2026-10-05.
+
+## What step 1a built, and where it differs from the design
+
+Built: the shared invoice key in `core/identity.py`; `Party.ledger`; the Purchase, Sales, Debit Note and Credit Note voucher types; `JournalEntry.entry_kind`; the `Bill` and `BillAllocation` tables with row-level security, sign-off locks and the database guards of section 4.6; the GST, RCM, cess, TDS-receivable and round-off standard ledgers; the planner and posting layer in `ledger/billing.py`; settlement and `party_position`; and the open-items registry in `ledger/openitems.py` with four detectors (bill with no document, payment not allocated, money on account, party out of balance). Nothing has a screen or an endpoint yet: that is 1b.
+
+Differences from the text below, all deliberate:
+
+- **Bills and allocations are never UPDATEd**, in the database as well as in code. Re-booking is a delete and an insert, before sign-off. (The design said bills are never edited; the database now enforces it.)
+- **`Bill.document` is `PROTECT`**, so an invoice file cannot be deleted from under the bill that cites it.
+- **`Bill.booked_on`** was added: the voucher's date, which the sign-off lock reads (for an opening bill, the date the balance stands at).
+- **Cess** has its own Input and Output ledgers; the design listed only CGST, SGST and IGST.
+- **Permission:** posting reuses `journal.approve` and the client posting rules. No new permission yet.
+- **A security finding changed an older migration's behaviour.** A BEFORE trigger runs before a row's policy check, so one that set the tenant from the incoming row's `firm_id` let that check pass for any firm. The new triggers do not do it; `ledger/0013` and `classify/0020` repair the two older ones; `core/tests/test_trigger_tenant_switch.py` fails if any BEFORE trigger calls `set_config`.
+- **Not in 1a, by design:** opening bills are modelled but have no posting function yet (1e); the open-items list has no API (1d); settlement of a *bank* line is 1c.
+- **Known limit:** `party_position` and the detectors query per bill and per line. Fine at pilot volume; they will need aggregating before a client has thousands of bills.
 
 Decided by the user (2026-10-05): **AutoCA is the final books of record** (not a feeder for Tally), **party-wise accounting is approved**, and the larger aim is that every document a CA firm receives reconciles into one set of books. This note is phase 1 of that: the foundation. Phases 2 onward (invoice reading, GST tie-in, assets, payroll, the close screen) are outlined in section 13 and each gets its own design.
 

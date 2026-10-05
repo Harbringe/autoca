@@ -27,6 +27,7 @@ export const CLIENT_SCREEN_MODULE: Record<string, ModuleId> = {
   statements: 'bank',
   review: 'bank',
   bookkeeping: 'bookkeeping',
+  bills: 'bookkeeping',
   daybook: 'bookkeeping',
   ledgers: 'bookkeeping',
   masters: 'bookkeeping',

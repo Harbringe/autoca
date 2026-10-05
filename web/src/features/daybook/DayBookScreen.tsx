@@ -7,7 +7,7 @@
 // a draft -- lets you correct or remove it.
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { Lock, Search, Undo2 } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -33,10 +33,13 @@ import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { isAssistantEntry, unpostEntry, useUnpostMany } from './unpost'
 
-const TYPES = ['Payment', 'Receipt', 'Contra', 'Journal'] as const
+const TYPES = ['Payment', 'Receipt', 'Contra', 'Journal', 'Purchase', 'Sales', 'Debit Note', 'Credit Note'] as const
 
 /** The line a Day Book shows as Particulars: the side that is not this client's bank. */
 function particulars(entry: JournalEntry, bankNames: Set<string>) {
+  // A purchase or sales voucher has no bank on either side: what a CA scans for is who it is with.
+  const party = entry.entry_kind !== 'BANK' ? entry.lines.find((l) => l.party_name) : undefined
+  if (party) return party
   const other = entry.lines.filter((l) => !bankNames.has(l.ledger_name))
   const line = other[other.length - 1] ?? entry.lines[0]
   return line
@@ -220,7 +223,10 @@ function EntryDialog({ clientId, entry, onClose }: { clientId: string; entry: Jo
   const [ledger, setLedger] = useState<string | null>(other?.ledger_account ?? null)
   const [narration, setNarration] = useState(entry.narration)
   const [onlyThis, setOnlyThis] = useState(true)
-  const mayEdit = can('journal.correct') && !!client.data?.can_post && (!entry.is_locked || !!client.data?.can_sign_off)
+  const navigate = useNavigate()
+  // A purchase, sales or note voucher has no bank row, so it is changed through its bill, not by the bank-entry correction.
+  const isVoucher = entry.entry_kind !== 'BANK'
+  const mayEdit = !isVoucher && can('journal.correct') && !!client.data?.can_post && (!entry.is_locked || !!client.data?.can_sign_off)
 
   async function correct() {
     try {
@@ -316,6 +322,16 @@ function EntryDialog({ clientId, entry, onClose }: { clientId: string; entry: Jo
             </div>
           </div>
         ) : (
+          isVoucher && entry.bill ? (
+            <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
+              <span>This is a {entry.voucher_type.toLowerCase()} voucher. It is changed through its bill.</span>
+              <Button
+                onClick={() => void navigate({ to: '/clients/$clientId/bills', params: { clientId }, search: { bill: entry.bill ?? undefined } })}
+              >
+                Open the bill
+              </Button>
+            </div>
+          ) : (
           mayEdit && (
             <div className="flex justify-end gap-2">
               {!entry.is_locked && (
@@ -325,6 +341,7 @@ function EntryDialog({ clientId, entry, onClose }: { clientId: string; entry: Jo
               )}
               <Button onClick={() => setCorrecting(true)}>Correct</Button>
             </div>
+          )
           )
         )}
 

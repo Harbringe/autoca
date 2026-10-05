@@ -100,6 +100,7 @@ function PaletteBody({ search, setSearch, close }: { search: string; setSearch: 
       ? ([
           { value: 'c-upload', label: 'Upload bank statement', group: 'This client', icon: <Upload />, run: go(() => void navigate({ to: '/clients/$clientId/statements', params: { clientId } }).then(() => setTimeout(() => document.dispatchEvent(new CustomEvent('autoca:upload')), 50))) },
           { value: 'c-review', label: 'Review transactions', group: 'This client', icon: <ListChecks />, run: go(() => void navigate({ to: '/clients/$clientId/review', params: { clientId }, search: { stage: 'unresolved' } })) },
+          { value: 'c-bills', label: 'Purchases & Sales', group: 'This client', icon: <FileText />, run: go(() => void navigate({ to: '/clients/$clientId/bills', params: { clientId } })) },
           { value: 'c-daybook', label: 'Day Book', group: 'This client', icon: <BookOpen />, run: go(() => void navigate({ to: '/clients/$clientId/daybook', params: { clientId } })) },
           { value: 'c-bookkeeping', label: 'Books overview', group: 'This client', icon: <BookOpen />, run: go(() => void navigate({ to: '/clients/$clientId/bookkeeping', params: { clientId } })) },
           { value: 'c-tb', label: 'Trial Balance', group: 'This client', icon: <Scale />, run: go(() => void navigate({ to: '/clients/$clientId/reports', params: { clientId }, search: { report: 'tb' } })) },

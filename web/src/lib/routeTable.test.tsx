@@ -25,7 +25,7 @@ describe('route table', () => {
     expect(
       unresolved([
         '/', '/dashboard', '/clients', `/clients/${ID}`, `/clients/${ID}/statements`, `/clients/${ID}/review`,
-        `/clients/${ID}/bookkeeping`, `/clients/${ID}/daybook`, `/clients/${ID}/ledgers`, `/clients/${ID}/masters`, `/clients/${ID}/books`,
+        `/clients/${ID}/bookkeeping`, `/clients/${ID}/bills`, `/clients/${ID}/daybook`, `/clients/${ID}/ledgers`, `/clients/${ID}/masters`, `/clients/${ID}/books`,
         `/clients/${ID}/reports`, `/clients/${ID}/team`, `/clients/${ID}/gst`, '/pipeline', '/bookkeeping', '/bank',
         '/gst', '/reports', '/work', '/staff', '/team', '/firm', '/settings/team', '/settings/firm',
         '/settings/activity', '/settings/preferences', '/settings', '/soon/documents',

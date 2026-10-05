@@ -80,6 +80,7 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
       : module === 'bookkeeping'
         ? [
               { to: '/clients/$clientId/bookkeeping', params: p, label: 'Books overview' },
+              { to: '/clients/$clientId/bills', params: p, label: 'Purchases & Sales' },
               { to: '/clients/$clientId/daybook', params: p, label: 'Day Book' },
             { to: '/clients/$clientId/ledgers', params: p, label: 'Ledgers' },
             { to: '/clients/$clientId/masters', params: p, label: 'Parties & rules' },

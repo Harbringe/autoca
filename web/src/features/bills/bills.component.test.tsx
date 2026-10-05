@@ -1,0 +1,189 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { render, screen, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { describe, expect, it, vi } from 'vitest'
+import { bills as billsQuery } from '@/api/queries/bills'
+import { ledgers as ledgersQuery, parties as partiesQuery } from '@/api/queries/books'
+import { clientDetail } from '@/api/queries/clients'
+import type { Bill, Client, LedgerAccount, Party } from '@/api/types'
+import { BillsScreen } from './BillsScreen'
+import { VoucherDialog } from './VoucherDialog'
+
+vi.mock('@/session/session', () => ({
+  useSession: () => ({ me: { permissions: ['journal.approve', 'journal.view'] }, can: () => true }),
+}))
+vi.mock('@/features/shell/useFy', () => ({ useFy: () => ({ fy: 2025 }) }))
+
+const CLIENT = 'c1'
+
+const party = (id: string, name: string, role: string): Party =>
+  ({ id, canonical_name: name, role, is_active: true, gstin: '', ledger: null }) as unknown as Party
+const ledger = (id: string, name: string, group: string): LedgerAccount =>
+  ({ id, name, group, status: 'ACTIVE', is_active: true, is_bank_or_cash: group === 'BANK' }) as unknown as LedgerAccount
+
+const PARTIES = [party('p1', 'Ravi Traders', 'VENDOR'), party('p2', 'Mehta Stores', 'CUSTOMER'), party('p3', 'Both Ways Ltd', 'BOTH')]
+const LEDGERS = [ledger('l1', 'Purchases', 'PURCHASE'), ledger('l2', 'Sales', 'SALES'), ledger('l3', 'Axis Bank A/c 9999', 'BANK')]
+
+function bill(over: Partial<Bill> & Pick<Bill, 'id' | 'kind' | 'party_name' | 'reference'>): Bill {
+  return {
+    direction: 'CR',
+    kind_display: over.kind,
+    party: 'p1',
+    bill_date: '2025-10-01',
+    due_date: null,
+    booked_on: '2025-10-01',
+    financial_year: 2025,
+    total_paise: 11_800_000,
+    total_display: '₹1,18,000.00',
+    open_paise: 11_800_000,
+    open_display: '₹1,18,000.00',
+    entry: 'e1',
+    entry_no: 1,
+    voucher_type: 'Purchase',
+    has_document: false,
+    is_locked: false,
+    ...over,
+  } as unknown as Bill
+}
+
+const BILLS = [
+  bill({ id: 'b1', kind: 'PURCHASE', party_name: 'Ravi Traders', reference: 'INV-1' }),
+  bill({ id: 'b2', kind: 'PURCHASE', party_name: 'Shah Stationers', reference: 'S-9', open_paise: 0, open_display: '₹0.00', has_document: true, bill_date: '2025-09-01' }),
+  bill({ id: 'b3', kind: 'SALES', party_name: 'Mehta Stores', reference: 'SL-1', total_paise: 5_000_000, total_display: '₹50,000.00', open_paise: 5_000_000, open_display: '₹50,000.00', voucher_type: 'Sales', direction: 'DR', bill_date: '2025-10-05' }),
+  bill({ id: 'b4', kind: 'PURCHASE', party_name: 'Last Year Ltd', reference: 'OLD', financial_year: 2024, bill_date: '2025-02-01' }),
+]
+
+function renderWith(ui: React.ReactElement, data: { bills?: Bill[] } = {}) {
+  const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
+  queryClient.setQueryData(billsQuery(CLIENT).queryKey, data.bills ?? BILLS)
+  queryClient.setQueryData(partiesQuery(CLIENT).queryKey, PARTIES)
+  queryClient.setQueryData(ledgersQuery(CLIENT).queryKey, LEDGERS)
+  queryClient.setQueryData(clientDetail(CLIENT).queryKey, { id: CLIENT, name: 'Acme', can_post: true } as unknown as Client)
+  render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
+}
+
+describe('Purchases & Sales', () => {
+  it('lists the year’s bills, and leaves out other years', async () => {
+    renderWith(<BillsScreen clientId={CLIENT} />)
+    const table = await screen.findByRole('table', { name: /Purchases and sales, FY/ })
+    const rows = within(table).getAllByRole('row').slice(1, -1) // header and totals
+    expect(rows).toHaveLength(3)
+    expect(table).not.toHaveTextContent('Last Year Ltd')
+  })
+
+  it('says what is owed to suppliers and by customers', async () => {
+    renderWith(<BillsScreen clientId={CLIENT} />)
+    await screen.findByRole('table')
+    const owing = screen.getByRole('region', { name: 'What is owing' })
+    // Ravi's 1,18,000 is open; Shah's is settled. The customer owes 50,000.
+    expect(within(owing).getByText('Owed to suppliers').parentElement).toHaveTextContent('₹1,18,000.00')
+    expect(within(owing).getByText('Owed by customers').parentElement).toHaveTextContent('₹50,000.00')
+  })
+
+  it('shows a bill with no invoice file instead of hiding it', async () => {
+    renderWith(<BillsScreen clientId={CLIENT} />)
+    const table = await screen.findByRole('table')
+    const ravi = within(table).getByText('Ravi Traders').closest('tr')!
+    const shah = within(table).getByText('Shah Stationers').closest('tr')!
+    expect(ravi).toHaveTextContent('No file')
+    expect(shah).not.toHaveTextContent('No file')
+    expect(shah).toHaveTextContent('Settled')
+    expect(screen.getByText('Bills with no invoice file').parentElement).toHaveTextContent('2')
+  })
+
+  it('filters by type and by whether anything is still owing', async () => {
+    renderWith(<BillsScreen clientId={CLIENT} />)
+    await screen.findByRole('table')
+    await userEvent.selectOptions(screen.getByLabelText('Type'), 'SALES')
+    expect(within(screen.getByRole('table')).getAllByRole('row').slice(1, -1)).toHaveLength(1)
+    await userEvent.selectOptions(screen.getByLabelText('Type'), '')
+    await userEvent.selectOptions(screen.getByLabelText('Status'), 'settled')
+    const rows = within(screen.getByRole('table')).getAllByRole('row').slice(1, -1)
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toHaveTextContent('Shah Stationers')
+  })
+
+  it('searches the party and the invoice number', async () => {
+    renderWith(<BillsScreen clientId={CLIENT} />)
+    await screen.findByRole('table')
+    await userEvent.type(screen.getByLabelText('Search bills'), 'sl-1')
+    expect(within(screen.getByRole('table')).getAllByRole('row').slice(1, -1)).toHaveLength(1)
+  })
+
+  it('invites the first voucher when there are none, and offers to book one', async () => {
+    renderWith(<BillsScreen clientId={CLIENT} />, { bills: [] })
+    expect(await screen.findByText(/No purchase or sales vouchers in FY/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Book the first one/ })).toBeInTheDocument()
+  })
+})
+
+describe('Booking a voucher', () => {
+  const open = () => renderWith(<VoucherDialog clientId={CLIENT} open onOpenChange={() => {}} />)
+
+  it('works out the supplier’s account as the figures are typed', async () => {
+    open()
+    await userEvent.type(await screen.findByLabelText('Amount (₹)'), '1,00,000')
+    await userEvent.type(screen.getByLabelText('CGST'), '9000')
+    await userEvent.type(screen.getByLabelText('SGST'), '9000')
+    const preview = screen.getByRole('region', { name: 'What this comes to' })
+    expect(preview).toHaveTextContent('Supplier’s account (Cr)')
+    expect(preview).toHaveTextContent('₹1,18,000.00')
+  })
+
+  it('under reverse charge the supplier is owed only the taxable value', async () => {
+    open()
+    await userEvent.type(await screen.findByLabelText('Amount (₹)'), '1,00,000')
+    await userEvent.type(screen.getByLabelText('CGST'), '9000')
+    await userEvent.type(screen.getByLabelText('SGST'), '9000')
+    await userEvent.click(screen.getByLabelText(/Reverse charge/))
+    expect(screen.getByRole('region', { name: 'What this comes to' })).toHaveTextContent('₹1,00,000.00')
+  })
+
+  it('TDS is deducted from what the supplier is owed', async () => {
+    open()
+    await userEvent.type(await screen.findByLabelText('Amount (₹)'), '50,000')
+    await userEvent.type(screen.getByLabelText('IGST'), '9000')
+    await userEvent.type(screen.getByLabelText(/TDS deducted/), '5000')
+    expect(screen.getByRole('region', { name: 'What this comes to' })).toHaveTextContent('₹54,000.00')
+  })
+
+  it('says why, in the server’s words, when the figures cannot make a voucher', async () => {
+    open()
+    await userEvent.type(await screen.findByLabelText('Amount (₹)'), '1,000')
+    await userEvent.type(screen.getByLabelText('CGST'), '90')
+    await userEvent.type(screen.getByLabelText('IGST'), '180')
+    expect(screen.getByRole('status')).toHaveTextContent('CGST and SGST, or IGST, not both')
+  })
+
+  it('offers only suppliers on a purchase and only customers on a sale', async () => {
+    open()
+    const party = await screen.findByLabelText('Supplier')
+    expect(within(party).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Choose…', 'Both Ways Ltd', 'Ravi Traders', '+ Add a new supplier…',
+    ])
+    await userEvent.selectOptions(screen.getByLabelText('Voucher type'), 'SALES')
+    const customer = screen.getByLabelText('Customer')
+    expect(within(customer).getAllByRole('option').map((o) => o.textContent)).toEqual([
+      'Choose…', 'Both Ways Ltd', 'Mehta Stores', '+ Add a new customer…',
+    ])
+    // TDS and reverse charge belong to a purchase, not a sale.
+    expect(screen.queryByLabelText(/TDS deducted/)).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/Reverse charge/)).not.toBeInTheDocument()
+  })
+
+  it('never offers a bank, cash or party account as what an invoice is for', async () => {
+    open()
+    await screen.findByLabelText('Supplier')
+    // The ledger picker lists what can hold an invoice's value; the bank account is not among them.
+    await userEvent.click(screen.getAllByRole('combobox').find((el) => el.getAttribute('aria-label')?.startsWith('Ledger')) ?? screen.getAllByRole('combobox')[1]!)
+    expect(screen.queryByText('Axis Bank A/c 9999')).not.toBeInTheDocument()
+  })
+
+  it('asks for what is missing instead of sending an empty voucher', async () => {
+    open()
+    await userEvent.click(await screen.findByRole('button', { name: 'Book voucher' }))
+    expect(await screen.findByText('Choose the supplier.')).toBeInTheDocument()
+    expect(screen.getByText('Enter the invoice number as printed.')).toBeInTheDocument()
+    expect(screen.getByText('Choose where this goes.')).toBeInTheDocument()
+  })
+})

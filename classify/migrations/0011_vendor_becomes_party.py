@@ -37,12 +37,11 @@ On the renames below:
 
 import uuid
 
-from django.db import migrations, models
 import django.db.models.deletion
 import django.utils.timezone
+from django.db import migrations, models
 
 from core.db.rls import ddl_tenant_context_operations
-
 
 #: Tables the composite foreign keys below must read to validate themselves.
 #: FORCE is lifted across them for the length of this migration only; see the

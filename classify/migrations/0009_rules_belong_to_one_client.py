@@ -24,8 +24,8 @@ Two consequences:
   there because a foreign key needs a unique index to point at.
 """
 
-from django.db import migrations, models
 import django.db.models.deletion
+from django.db import migrations, models
 
 #: Tables this migration must read and validate in full.
 #:

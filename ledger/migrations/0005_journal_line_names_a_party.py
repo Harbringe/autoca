@@ -17,8 +17,8 @@ constraints itself -- they reference columns by number, not by name -- so the
 composite key added in 0004 survives without being restated here.
 """
 
-from django.db import migrations, models
 import django.db.models.deletion
+from django.db import migrations, models
 
 
 class Migration(migrations.Migration):

@@ -276,13 +276,13 @@ def apply_place(user, current: PlatformMembership | None, data: dict) -> None:
     firm = data.get("firm")
     role = data.get("role") or Role.STAFF
     manager = data.get("manager") if not data.get("make_owner") else None
-    values = dict(
-        role=role,
-        manager_id=manager.pk if manager else None,
-        scope_all_clients=bool(data.get("scope_all_clients")),
-        is_active=bool(data.get("membership_active")),
-        make_owner=bool(data.get("make_owner")),
-    )
+    values = {
+        "role": role,
+        "manager_id": manager.pk if manager else None,
+        "scope_all_clients": bool(data.get("scope_all_clients")),
+        "is_active": bool(data.get("membership_active")),
+        "make_owner": bool(data.get("make_owner")),
+    }
 
     if firm is None:
         if current is not None:

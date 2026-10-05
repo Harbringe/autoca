@@ -1,7 +1,8 @@
 [tool.ruff]
 line-length = 100
 target-version = "py313"
-exclude = [".venv", "*/migrations/0001_initial.py", "staticfiles"]
+# web/qa holds throwaway QA scripts, not product code.
+exclude = [".venv", "*/migrations/0001_initial.py", "staticfiles", "web/qa"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "C4", "DJ", "S"]
@@ -13,5 +14,14 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 # Tests parse XML this codebase just produced, not anything untrusted.
-"*/tests/*" = ["S105", "S106", "S314"]
+# F811: a test imports a fixture and then takes it as an argument, which looks like a redefinition.
+"*/tests/*" = ["S105", "S106", "S314", "F811"]
 "config/settings/*" = ["F403", "F405"]
+# The SQL here interpolates fixed internal names (database role names from settings), never user input.
+"*/migrations/*" = ["S608"]
+# NULL on these text columns means something ("never queued", "no value from the source view"); changing it
+# is a schema migration, not a lint fix.
+"classify/models.py" = ["DJ001"]
+"superadmin/models.py" = ["DJ001", "DJ008"]
+# A throwaway login for the synthetic QA firm.
+"scripts/qa_seed.py" = ["S105"]

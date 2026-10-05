@@ -38,14 +38,15 @@ import django  # noqa: E402
 
 django.setup()
 
+from django_otp.plugins.otp_totp.models import TOTPDevice  # noqa: E402
+
 from core.db.session import firm_context  # noqa: E402
 from core.models import Client, Firm, FirmMembership, Role, User  # noqa: E402
 from core.provisioning import create_client, create_firm, create_user  # noqa: E402
-from django_otp.plugins.otp_totp.models import TOTPDevice  # noqa: E402
 from teams import service  # noqa: E402
 
 MARKER = ROOT / "web" / "qa" / ".qa-firm"
-PASSWORD = "qa-synthetic-Passw0rd-2026"
+PASSWORD = "qa-synthetic-Passw0rd-2026"  # noqa: S105
 FIRM_NAME = "QA Associates (synthetic)"
 
 PEOPLE = [

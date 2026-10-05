@@ -22,6 +22,7 @@ from classify.treatment import Treatment
 from core.db.session import firm_context
 from core.models import FirmMembership, Role, User
 from core.provisioning import create_client, create_firm
+from ledger import editing
 from ledger.approval import (
     AlreadyPostedError,
     NotApprovableError,
@@ -32,7 +33,6 @@ from ledger.approval import (
     voucher_type_for,
 )
 from ledger.models import Direction, JournalEntry, JournalLine, VoucherType
-from ledger import editing
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("fixture_adapters")]
 
@@ -414,7 +414,7 @@ def test_correcting_an_unsigned_entry_changes_it_and_keeps_the_old_state_in_the_
 
     assert corrected.pk == original.pk, "a draft is changed, not chained"
     assert not corrected.is_superseded
-    names = {l.ledger_account.name for l in corrected.lines.select_related("ledger_account")}
+    names = {line.ledger_account.name for line in corrected.lines.select_related("ledger_account")}
     assert "Staff Welfare" in names and "Office Expenses" not in names
     change = EntryChange.objects.get(entry_id=original.pk, action=ChangeAction.EDITED)
     assert "Office Expenses" in str(change.before), "what it was is not lost"

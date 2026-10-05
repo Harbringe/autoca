@@ -40,8 +40,8 @@ from django.utils import timezone
 
 from banking.models import BankAccount, Statement, StatementTransaction
 from classify.models import LedgerGroup, ModelState, TransactionClassification
-from core.money import format_inr
 from core.models import FirmMembership
+from core.money import format_inr
 from ledger.models import (
     BooksAction,
     BooksEvent,

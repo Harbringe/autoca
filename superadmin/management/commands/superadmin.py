@@ -18,9 +18,8 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import connections, transaction
 
 from core.db.session import _apply_user
-from core.models import User
+from core.models import FirmMembership, User
 from superadmin import sql
-from core.models import FirmMembership
 
 security_log = logging.getLogger("autoca.security")
 

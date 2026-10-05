@@ -39,9 +39,9 @@ from classify.models import (
     ClassificationRule,
     Direction,
     MatchType,
+    Party,
     RuleSource,
     TransactionClassification,
-    Party,
 )
 from classify.narration import NarrationFacts, analyse, normalise
 from classify.parties import Kind, PartyBook, candidates_as_json, confirm_alias

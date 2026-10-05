@@ -128,8 +128,9 @@ def test_only_owner_and_admins_edit_clients(owner, senior, staff, client_record)
 
 
 def test_client_edits_are_validated(owner, firm, client_record):
-    from core.provisioning import create_client
     import datetime
+
+    from core.provisioning import create_client
 
     create_client(firm, "Other Client", datetime.date(2025, 4, 1))
     http = sign_in(owner.user)

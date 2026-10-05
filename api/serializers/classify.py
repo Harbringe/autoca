@@ -12,15 +12,15 @@ import re
 
 from rest_framework import serializers
 
-from api.fields import MoneySerializerMixin, PaiseField
+from api.fields import PaiseField
 from api.serializers.banking import StatementTransactionSerializer
 from classify.models import (
     ClassificationRule,
     LedgerAccount,
     LedgerGroup,
     MatchType,
-    TransactionClassification,
     Party,
+    TransactionClassification,
 )
 from classify.treatment import ReviewBand, TdsSection
 from core.fy import financial_year

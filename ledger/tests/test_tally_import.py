@@ -10,7 +10,6 @@ from django.db.utils import IntegrityError
 
 from banking.models import BankAccount
 from classify.models import LedgerAccount, LedgerGroup, LedgerStatus
-from classify.seeds import LedgerRenameError
 from core.db.session import firm_context
 from core.models import Client, FirmMembership, Role, User
 from core.provisioning import create_client, create_firm
@@ -19,7 +18,6 @@ from ledger.models import ImportStatus, JournalLine, LedgerImportRun, LedgerOpen
 from ledger.reports import trial_balance
 from ledger.tally_import import (
     TallyConflictsUnresolvedError,
-    TallyImportError,
     TallyRunStaleError,
     TallyYearMismatchError,
     confirm_run,

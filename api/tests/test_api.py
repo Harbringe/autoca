@@ -538,7 +538,7 @@ def test_renaming_the_bank_ledger_moves_the_ledger_and_reports_posted_lines(api,
     body = response.json()
     assert body["ledger_name"] == "Axis Bank Savings"
     assert body["posted_lines"] > 0
-    names = {l["name"] for l in api.get(f"{V1}/clients/{client_record.pk}/ledgers/").json()["results"]}
+    names = {row["name"] for row in api.get(f"{V1}/clients/{client_record.pk}/ledgers/").json()["results"]}
     assert "Axis Bank Savings" in names and account["ledger_name"] not in names
 
 

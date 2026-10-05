@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+
 from banking.models import Statement, StatementTransaction
 from banking.removal import remove_statement
 from classify.models import TransactionClassification

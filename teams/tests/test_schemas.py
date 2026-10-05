@@ -5,7 +5,6 @@ from __future__ import annotations
 import pytest
 
 from api.tests.conftest import sign_in
-from core.db.session import firm_context
 from teams import schemas
 from teams.tests.test_team import TEAM, V1, _lead_client, _on_team, admin, lead  # noqa: F401
 
@@ -40,7 +39,7 @@ def test_the_schema_types_every_team_firm_and_owner_reply():
 
 def test_the_described_shapes_are_the_shapes_returned(client_record, admin, lead):
     _lead_client(client_record, lead)
-    staff = _on_team(client_record.firm, lead, "clerk@example.test")
+    _on_team(client_record.firm, lead, "clerk@example.test")
     http = sign_in(admin.user)
 
     members = http.get(f"{TEAM}/members/").json()

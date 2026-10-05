@@ -27,7 +27,7 @@ def approve_high(api, client_record):
 def bank_net(client_record) -> int:
     """Debits minus credits on the client's bank ledger, over every entry, corrected or not."""
     lines = JournalLine.objects.filter(entry__client=client_record, ledger_account__group=LedgerGroup.BANK)
-    return sum(l.amount_paise if l.direction == Direction.DEBIT else -l.amount_paise for l in lines)
+    return sum(line.amount_paise if line.direction == Direction.DEBIT else -line.amount_paise for line in lines)
 
 
 # --- A1-001: a name that is taken is refused, readably ------------------------------------------
@@ -77,7 +77,7 @@ def test_a_one_off_correction_changes_only_the_entry_named(api, client_record, s
     approve_high(api, client_record)
     posted = [
         e for e in JournalEntry.objects.filter(client=client_record)
-        if any(l.ledger_account_id == cashback.pk for l in e.lines.all())
+        if any(line.ledger_account_id == cashback.pk for line in e.lines.all())
     ]
     assert len(posted) >= 2, "the fixture should have several entries in that ledger"
 
@@ -89,7 +89,7 @@ def test_a_one_off_correction_changes_only_the_entry_named(api, client_record, s
 
     assert response.status_code == 201
     for entry in posted[1:]:
-        ledgers = {l.ledger_account_id for l in JournalEntry.objects.get(pk=entry.pk).lines.all()}
+        ledgers = {line.ledger_account_id for line in JournalEntry.objects.get(pk=entry.pk).lines.all()}
         assert cashback.pk in ledgers and elsewhere.pk not in ledgers
 
 
@@ -133,8 +133,8 @@ def test_correcting_a_correction_after_a_reopen_does_not_count_the_original_twic
     entry = JournalEntry.objects.get(pk=correction["id"])
     lines = list(entry.lines.all())
     assert len(lines) == 4, "reversal of the original (2 lines) plus the new treatment (2 lines)"
-    assert sum(l.amount_paise for l in lines if l.direction == Direction.DEBIT) == sum(
-        l.amount_paise for l in lines if l.direction == Direction.CREDIT
+    assert sum(line.amount_paise for line in lines if line.direction == Direction.DEBIT) == sum(
+        line.amount_paise for line in lines if line.direction == Direction.CREDIT
     )
 
 

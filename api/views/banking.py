@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import hashlib
 
-from django.shortcuts import get_object_or_404
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, status, viewsets
@@ -30,9 +29,9 @@ from banking.removal import remove_statement
 from classify.engine import classify_statement
 from classify.queue import mark_waiting
 from classify.seeds import rename_account_ledger, seed_client
+from core.access import get_visible_client, visible_client_ids
 from core.jobs import run_job
 from core.models import Job, JobStatus
-from core.access import get_visible_client, visible_client_ids
 
 
 @extend_schema(tags=["statements"])

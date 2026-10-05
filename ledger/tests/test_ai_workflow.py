@@ -7,12 +7,17 @@ of, park anything in Suspense, override a person, or touch signed-off books.
 from __future__ import annotations
 
 import pytest
-from classify.models import ClassificationRule, LedgerAccount, LedgerGroup, TransactionClassification
+
+from classify.models import (
+    ClassificationRule,
+    LedgerGroup,
+    TransactionClassification,
+)
 from classify.treatment import ReviewBand, Treatment
 from core.db.session import firm_context
 from core.models import Client
-from ledger import books, editing
-from ledger.approval import approve, auto_post, auto_post_client, correct
+from ledger import books
+from ledger.approval import approve, auto_post_client, correct
 from ledger.learning import learn_from_decision
 from ledger.models import ChangeAction, EntryChange, EntryMarker, JournalEntry
 from ledger.tests.test_approval import (  # noqa: F401  (fixtures and helpers)
@@ -186,7 +191,7 @@ def test_correcting_one_entry_moves_the_similar_ones_the_ai_placed(client, senio
         correct(entries[0], membership=senior, treatment=Treatment(ledger=right))
 
         for entry in posted_for(client, BHIM):
-            names = {l.ledger_account.name for l in entry.lines.select_related("ledger_account")}
+            names = {line.ledger_account.name for line in entry.lines.select_related("ledger_account")}
             assert "Cashback Received" in names and "Wrong Income" not in names
         others = posted_for(client, BHIM).exclude(pk=entries[0].pk)
         assert {e.marker for e in others} == {EntryMarker.AI_REVISED}, "what the AI moved is marked"
@@ -219,7 +224,7 @@ def test_a_persons_own_decision_is_never_overridden_by_the_lesson(client, senior
         # ...and then corrects another. The lesson must not undo their choice.
         correct(entries[0], membership=senior, treatment=Treatment(ledger=right))
 
-        kept = {l.ledger_account.name for l in entries[1].lines.select_related("ledger_account")}
+        kept = {line.ledger_account.name for line in entries[1].lines.select_related("ledger_account")}
         row = TransactionClassification.objects.get(transaction=entries[1].source_transaction)
         assert row.method == "REVIEWED"
         assert row.ledger.name in ("Special Case", "Cashback Received")
@@ -251,7 +256,7 @@ def test_signed_off_entries_are_not_rewritten_by_a_later_lesson(client, staff, s
 
         correct(last, membership=senior, treatment=Treatment(ledger=right))
 
-        names = {l.ledger_account.name for l in first.lines.select_related("ledger_account")}
+        names = {line.ledger_account.name for line in first.lines.select_related("ledger_account")}
         assert "Wrong Income" in names, "signed-off books are never rewritten"
 
 

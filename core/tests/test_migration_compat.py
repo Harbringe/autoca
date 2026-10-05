@@ -60,7 +60,7 @@ def test_new_migrations_are_backward_compatible():
                 problems.append(f"{app}/{name}: AddField {op.model_name}.{op.name} is NOT NULL with no db_default")
         if isinstance(
             op,
-            (migrations.RemoveField, migrations.RenameField, migrations.DeleteModel, migrations.RenameModel),
+            migrations.RemoveField | migrations.RenameField | migrations.DeleteModel | migrations.RenameModel,
         ) and (app, name) not in ALLOWED_DESTRUCTIVE:
             problems.append(f"{app}/{name}: {type(op).__name__} breaks the release still running")
     assert not problems, "\n".join(problems)

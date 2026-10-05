@@ -15,19 +15,19 @@ import pytest
 from banking.tests.support import ingest_fixture_statement
 from classify.engine import (
     classify_statement,
+    party_for,
     pending_approval,
     review,
     review_queue,
     review_summary,
     unresolved_for,
-    party_for,
 )
 from classify.models import (
     ClassificationRule,
     LedgerAccount,
     LedgerGroup,
-    TransactionClassification,
     Party,
+    TransactionClassification,
 )
 from classify.seeds import seed_client
 from classify.treatment import ReviewBand, TdsSection, Treatment, band_for

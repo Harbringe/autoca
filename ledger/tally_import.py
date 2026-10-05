@@ -483,7 +483,7 @@ def _apply(run: LedgerImportRun, user, resolutions: list[dict]) -> None:
     if unresolved:
         raise TallyConflictsUnresolvedError(unresolved)
 
-    ledgers = {str(l.pk): l for l in LedgerAccount.objects.filter(firm_id=client.firm_id, client=client)}
+    ledgers = {str(acct.pk): acct for acct in LedgerAccount.objects.filter(firm_id=client.firm_id, client=client)}
     start = fy_bounds(run.financial_year)[0]
     tally = {"created": 0, "matched": 0, "renamed": 0, "regrouped": 0, "openings": 0, "bank_openings": 0, "skipped": 0}
     applied: list[int] = []

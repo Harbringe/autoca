@@ -21,11 +21,18 @@ from django.utils import timezone
 
 from classify.models import ClassificationMethod, TransactionClassification
 from classify.narration import Channel
-from core.access import can_sign_off, require_posting_rights, require_sign_off
+from core.access import can_sign_off, require_posting_rights
 from core.fy import financial_year
 from core.money import format_inr
 from core.rbac import require_permission
-from ledger.models import Direction, EntryMarker, JournalEntry, JournalLine, VoucherSequence, VoucherType
+from ledger.models import (
+    Direction,
+    EntryMarker,
+    JournalEntry,
+    JournalLine,
+    VoucherSequence,
+    VoucherType,
+)
 
 
 class NotApprovableError(RuntimeError):
@@ -336,8 +343,9 @@ def auto_post_client(client) -> int:
     Each row is its own savepoint: one that the database refuses -- a locked
     period, a constraint -- stays in the queue and does not take the rest down.
     """
-    from classify.engine import pending_approval
     from django.db import DatabaseError
+
+    from classify.engine import pending_approval
 
     posted = 0
     for row in list(pending_approval(client)):

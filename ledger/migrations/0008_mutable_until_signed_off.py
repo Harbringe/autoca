@@ -36,6 +36,7 @@ move ``signed_off_through`` -- which has its own guard (``core.0011``).
 this permits precisely because it runs *before* the lock date is advanced.
 """
 
+from django.conf import settings
 from django.db import migrations
 
 from core.db.rls import (
@@ -43,11 +44,10 @@ from core.db.rls import (
     append_only_sql,
     balanced_entry_trigger_sql,
 )
-from django.conf import settings
 
 GUC = settings.TENANT_GUC
 
-ENTRY_GUARD = f"""
+ENTRY_GUARD = """
 CREATE OR REPLACE FUNCTION app.ledger_journal_entry_immutable()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE
@@ -104,7 +104,7 @@ CREATE TRIGGER ledger_journal_entry_immutable
     FOR EACH ROW EXECUTE FUNCTION app.ledger_journal_entry_immutable();
 """
 
-LINE_GUARD = f"""
+LINE_GUARD = """
 CREATE OR REPLACE FUNCTION app.ledger_journal_line_immutable()
 RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE

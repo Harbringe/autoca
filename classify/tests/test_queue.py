@@ -13,7 +13,13 @@ from django.test.utils import CaptureQueriesContext
 
 from banking.tests.support import ingest_fixture_statement
 from classify.engine import classify_statement, review, unresolved_for
-from classify.models import ClassificationMethod, LedgerAccount, LedgerGroup, ModelState, TransactionClassification
+from classify.models import (
+    ClassificationMethod,
+    LedgerAccount,
+    LedgerGroup,
+    ModelState,
+    TransactionClassification,
+)
 from classify.queue import MAX_ATTEMPTS, _pause_key, mark_waiting, process_next_batch, waiting_count
 from classify.seeds import seed_client
 from core.db.session import firm_context, get_current_firm_id

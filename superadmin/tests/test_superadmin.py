@@ -205,7 +205,7 @@ def test_the_admin_registers_the_platform_and_not_the_books():
     from django.contrib.auth.models import Group
 
     from banking.models import BankAccount, Statement, StatementTransaction
-    from classify.models import ClassificationRule, LedgerAccount, TransactionClassification, Party
+    from classify.models import ClassificationRule, LedgerAccount, Party, TransactionClassification
     from core.models import AuditLog, Client, Firm, Job
     from documents.models import Document
     from ledger.models import JournalEntry, JournalLine, VoucherSequence

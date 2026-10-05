@@ -18,12 +18,12 @@ from __future__ import annotations
 from django.core.management.base import BaseCommand, CommandError
 
 from classify.engine import (
+    party_for,
     pending_approval,
     review,
     review_queue,
     review_summary,
     unresolved_for,
-    party_for,
 )
 from classify.models import LedgerAccount, LedgerGroup
 from classify.treatment import ReviewBand, Treatment

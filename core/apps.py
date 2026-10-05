@@ -8,5 +8,7 @@ class CoreConfig(AppConfig):
     verbose_name = "Accounts"
 
     def ready(self):
-        from core import checks  # noqa: F401  (registers system checks)
-        from core import signals  # noqa: F401  (one profile per account)
+        from core import (
+            checks,  # noqa: F401  (registers system checks)
+            signals,  # noqa: F401  (one profile per account)
+        )

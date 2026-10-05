@@ -18,6 +18,7 @@ from __future__ import annotations
 import datetime
 
 import pytest
+from django.core.exceptions import ValidationError
 
 from classify.engine import rules_for
 from classify.models import (
@@ -76,7 +77,7 @@ def test_a_rule_may_not_place_one_clients_rows_in_another_clients_ledger(two_cli
         pattern="acme",
         direction=Direction.ANY,
     )
-    with pytest.raises(Exception) as caught:
+    with pytest.raises(ValidationError) as caught:
         rule.full_clean()
     message = str(caught.value).lower()
     assert "another client" in message
@@ -98,7 +99,7 @@ def test_a_firm_wide_rule_may_not_name_a_clients_ledger(two_clients):
         pattern="zenith",
         direction=Direction.ANY,
     )
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         rule.full_clean()
 
 
@@ -118,7 +119,7 @@ def test_a_rule_may_not_name_another_clients_party(two_clients):
         pattern="supplier",
         direction=Direction.ANY,
     )
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         rule.full_clean()
 
 

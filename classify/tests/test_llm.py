@@ -10,7 +10,12 @@ import pytest
 from banking.tests.support import ingest_fixture_statement
 from classify.engine import classify_statement, review, review_queue, unresolved_for
 from classify.llm import _TOKEN, recategorize, suggest_unresolved
-from classify.models import ClassificationMethod, LedgerAccount, LedgerGroup, TransactionClassification
+from classify.models import (
+    ClassificationMethod,
+    LedgerAccount,
+    LedgerGroup,
+    TransactionClassification,
+)
 from classify.seeds import seed_client
 from classify.treatment import ReviewBand
 from core.db.session import firm_context

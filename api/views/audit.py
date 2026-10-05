@@ -14,7 +14,6 @@ import uuid
 
 from django.utils import timezone
 from rest_framework import serializers
-from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.pagination import DefaultPagination
@@ -26,11 +25,11 @@ UUID = r"[0-9a-fA-F-]{36}"
 #: (method, path pattern, description). First match wins. {client} is filled in
 #: from the client id in the path when there is one.
 ACTIONS: list[tuple[str, str, str]] = [
-    ("POST", rf"^/auth/login/$", "Signed in"),
-    ("POST", rf"^/auth/logout/$", "Signed out"),
-    ("POST", rf"^/auth/mfa/", "Set up or used their second factor"),
-    ("POST", rf"^/auth/invite/$", "Accepted an invite"),
-    ("POST", rf"^/api/v1/clients/$", "Created a client"),
+    ("POST", r"^/auth/login/$", "Signed in"),
+    ("POST", r"^/auth/logout/$", "Signed out"),
+    ("POST", r"^/auth/mfa/", "Set up or used their second factor"),
+    ("POST", r"^/auth/invite/$", "Accepted an invite"),
+    ("POST", r"^/api/v1/clients/$", "Created a client"),
     ("PATCH", rf"^/api/v1/clients/(?P<client>{UUID})/$", "Changed the details of {client}"),
     ("PUT", rf"^/api/v1/clients/(?P<client>{UUID})/$", "Changed the details of {client}"),
     ("DELETE", rf"^/api/v1/clients/(?P<client>{UUID})/$", "Deleted a client"),
@@ -55,14 +54,14 @@ ACTIONS: list[tuple[str, str, str]] = [
     ("POST", rf"^/api/v1/clients/(?P<client>{UUID})/bank-accounts/{UUID}/opening-balance/$", "Set an opening balance for {client}"),
     ("POST", rf"^/api/v1/classifications/{UUID}/review/$", "Placed a transaction in a ledger"),
     ("POST", rf"^/api/v1/journal-entries/{UUID}/correct/$", "Corrected a posted entry"),
-    ("POST", rf"^/api/v1/team/members/$", "Invited someone to the firm"),
+    ("POST", r"^/api/v1/team/members/$", "Invited someone to the firm"),
     ("PATCH", rf"^/api/v1/team/members/{UUID}/$", "Changed a team member"),
     ("PUT", rf"^/api/v1/team/clients/(?P<client>{UUID})/lead/$", "Changed {client}'s lead"),
     ("POST", rf"^/api/v1/team/clients/(?P<client>{UUID})/team/$", "Put someone on {client}"),
     ("DELETE", rf"^/api/v1/team/clients/(?P<client>{UUID})/team/{UUID}/$", "Took someone off {client}"),
     ("DELETE", rf"^/api/v1/team/invites/{UUID}/$", "Revoked an invite"),
-    ("PATCH", rf"^/api/v1/firm/$", "Renamed the firm"),
-    ("POST", rf"^/api/v1/firm/owner/$", "Transferred ownership of the firm"),
+    ("PATCH", r"^/api/v1/firm/$", "Renamed the firm"),
+    ("POST", r"^/api/v1/firm/owner/$", "Transferred ownership of the firm"),
 ]
 _COMPILED = [(m, re.compile(p), d) for m, p, d in ACTIONS]
 

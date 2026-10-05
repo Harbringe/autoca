@@ -158,7 +158,6 @@ def test_only_the_lead_or_a_firm_admin_signs_off(posted):
 
 def test_sign_off_is_enforced_below_the_view(posted):
     """ledger.approval checks again, for callers that never pass through a view."""
-    from django.core.exceptions import PermissionDenied
 
     from ledger.approval import correct
     from ledger.editing import EntryLockedError

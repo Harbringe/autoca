@@ -16,6 +16,7 @@ from __future__ import annotations
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from api.views.assistant import NextBatchView
 from api.views.audit import AuditLogView
 from api.views.banking import (
     BankAccountViewSet,
@@ -23,14 +24,13 @@ from api.views.banking import (
     StatementViewSet,
     TransactionViewSet,
 )
-from api.views.assistant import NextBatchView
 from api.views.books import BooksView
 from api.views.classify import (
     ClassificationViewSet,
     LedgerAccountViewSet,
+    PartyViewSet,
     ReviewQueueViewSet,
     RuleViewSet,
-    PartyViewSet,
 )
 from api.views.core import ClientViewSet, JobViewSet, MeView
 from api.views.documents import DocumentDownloadView, FirmDocumentListView
@@ -41,9 +41,8 @@ from api.views.ledger import (
     ReconciliationView,
     ReportView,
 )
-from api.views.tally import TallyImportViewSet
-
 from api.views.overview import FirmMetricsView, FirmOverviewView
+from api.views.tally import TallyImportViewSet
 from teams.views import FirmOwnerView, FirmSettingsView
 
 app_name = "api"

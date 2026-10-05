@@ -65,7 +65,7 @@ class DocumentDownloadView(APIView):
             StorageAdapter.verify_tenant_key(document.storage_key, request.firm.pk)
             content = get_storage().get(document.storage_key)
         except (PermissionError, FileNotFoundError, KeyError):
-            raise Http404("The file is no longer available.")
+            raise Http404("The file is no longer available.") from None
         filename = document.original_filename or f"{document.pk}"
         response = FileResponse(BytesIO(content), as_attachment=True, filename=filename,
                                 content_type=mimetypes.guess_type(filename)[0] or "application/octet-stream")

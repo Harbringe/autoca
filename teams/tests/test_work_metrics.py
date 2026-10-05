@@ -8,7 +8,6 @@ from api.tests.conftest import sign_in
 from classify.models import LedgerAccount, TransactionClassification
 from classify.treatment import ReviewBand
 from core.db.session import firm_context
-from core.models import ClientAssignment
 from ledger.approval import auto_post_client
 from ledger.models import BooksAction, BooksEvent, EntryMarker, JournalEntry
 from teams.tests.test_team import TEAM, V1, _lead_client, _on_team, admin, lead  # noqa: F401

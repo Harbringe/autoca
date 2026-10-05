@@ -12,8 +12,8 @@ from rest_framework import serializers, status, viewsets
 from rest_framework.response import Response
 
 from api.permissions import HasFirmPermission
-from core.access import can_post, can_sign_off, get_visible_client
 from classify.engine import review_queue
+from core.access import can_post, can_sign_off, get_visible_client
 from core.rbac import has_permission
 from ledger import books
 from ledger.editing import locked_through
@@ -40,7 +40,7 @@ class SignOffSerializer(serializers.Serializer):
         unknown = sorted(set(data) - set(self.fields))
         if unknown:
             raise serializers.ValidationError(
-                {name: "Not a field this request accepts. Send `through` and `note`." for name in unknown}
+                dict.fromkeys(unknown, "Not a field this request accepts. Send `through` and `note`.")
             )
         return super().to_internal_value(data)
 

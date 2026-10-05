@@ -14,6 +14,7 @@ from rest_framework.test import APIClient
 
 from api.tests.conftest import member, sign_in
 from core.db.session import firm_context
+from core.identifiers import gstin_check_character
 from core.models import Client, Role
 from core.provisioning import create_firm
 
@@ -21,6 +22,14 @@ pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("fixture_adapters")
 
 V1 = "/api/v1"
 RAVI_GSTIN = "27AAACR5055K1Z7"
+
+
+def valid_gstin(first_fourteen: str) -> str:
+    """The API checks the GSTIN's check character, so a test's second supplier needs a real one."""
+    return first_fourteen + gstin_check_character(first_fourteen)
+
+
+SHAH_GSTIN = valid_gstin("24AAACS1234A1Z")
 
 
 def base(client_record):
@@ -178,7 +187,7 @@ def test_a_malformed_own_gstin_is_refused(api, client_record, ravi, purchases):
 
 
 def test_the_list_filters_by_kind_party_and_text(api, client_record, ravi, purchases):
-    shah = make_party(api, client_record, "Shah Stationers", gstin="24AAACS1234A1Z9")
+    shah = make_party(api, client_record, "Shah Stationers", gstin=SHAH_GSTIN)
     post_bill(api, client_record, voucher(ravi, purchases, reference="R-1"))
     post_bill(api, client_record, voucher(shah, purchases, reference="S-9"))
     url = f"{base(client_record)}/bills/"
@@ -256,13 +265,21 @@ def test_staff_can_post_a_voucher(staff_api, api, client_record, ravi, purchases
     assert post_bill(staff_api, client_record, voucher(ravi, purchases)).status_code == 201
 
 
-def test_another_firm_cannot_see_or_post_to_this_clients_bills(api, client_record, ravi, purchases):
-    bill = post_bill(api, client_record, voucher(ravi, purchases)).json()
+def test_another_firm_cannot_see_or_post_to_this_clients_bills(client_record):
+    """The client is not visible to the other firm at all, so every bill route under it is a 404.
+
+    One firm per test: the tenant context cannot be switched inside a transaction, so this makes no request as the
+    owning firm. That a bill's rows are invisible to another firm is the isolation suite's job, which covers the table.
+    """
     outsider = sign_in(member(create_firm("Somebody Else"), Role.SENIOR_CA, "them@example.test").user)
+    nobody = "00000000-0000-0000-0000-000000000000"
+    body = {"kind": "PURCHASE", "party": nobody, "reference": "X", "bill_date": "2025-10-01",
+            "heads": [{"ledger": nobody, "amount_paise": 100}]}
 
     assert outsider.get(f"{base(client_record)}/bills/").status_code == 404
-    assert outsider.get(f"{base(client_record)}/bills/{bill['id']}/").status_code == 404
-    assert post_bill(outsider, client_record, voucher(ravi, purchases, reference="X")).status_code == 404
+    assert outsider.get(f"{base(client_record)}/bills/{nobody}/").status_code == 404
+    assert outsider.post(f"{base(client_record)}/bills/", body, format="json").status_code == 404
+    assert outsider.post(f"{base(client_record)}/bills/{nobody}/remove/", {}, format="json").status_code == 404
 
 
 def test_anonymous_requests_are_refused(client_record):

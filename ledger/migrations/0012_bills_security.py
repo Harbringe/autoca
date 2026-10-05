@@ -115,7 +115,7 @@ BEGIN
     IF TG_OP = 'DELETE' THEN
         subject_line := OLD.line_id;
     ELSE
-        -- No set_config from NEW.firm_id here either; see ledger_bill_guard.
+        -- The tenant is not taken from the incoming row here either; see ledger_bill_guard.
         subject_line := NEW.line_id;
     END IF;
 

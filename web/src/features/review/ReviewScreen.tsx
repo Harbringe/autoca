@@ -35,6 +35,7 @@ import { useHotkey } from '@/lib/hotkeys'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { summariseBulk, type BulkSummary } from './bulkPost'
+import { SettlementPanel } from './SettlementPanel'
 import { LedgerPicker, usableLedgers } from './LedgerPicker'
 import { PostedEntries } from './PostedEntries'
 import { StageNav, STAGES } from './StageNav'
@@ -124,7 +125,8 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
   useEffect(() => setTicked(new Set()), [stage, band])
 
   const canPost = can('journal.approve') && !!client.data?.can_post
-  const postable = (r: Classification) => !!r.ledger && !r.is_posted
+  // A row on a party's account is never ticked or posted in bulk: a person says which bills it settles, one row at a time.
+  const postable = (r: Classification) => !!r.ledger && !r.is_posted && !r.on_party_account
   const tickedRows = rows.filter((r) => ticked.has(r.id) && postable(r))
   const proposed = (ledgers.data ?? []).filter((l) => l.status === 'PROPOSED')
 
@@ -175,6 +177,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
   }, 'Review')
 
   const highCount = summary.data?.bulk_approvable ?? 0
+  const needSettling = summary.data?.needs_settlement ?? 0
   // The rows the band would post, for the confirmation's breakdown. The "Ready to post" list is the one that holds them.
   const ready = useQuery({ ...reviewQueue(clientId, 'pending_approval'), enabled: canPost && highCount > 0 })
   function askBulk() {
@@ -186,6 +189,12 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
 
   return (
     <div className="grid gap-4">
+      {needSettling > 0 && stage !== 'unresolved' && (
+        <p role="status" className="rounded-md border border-accent-edge bg-accent px-3 py-2 text-sm">
+          {plural(needSettling, 'row')} {needSettling === 1 ? 'is' : 'are'} on a supplier’s or customer’s own account. Each needs you to say which
+          bills it settles, so {needSettling === 1 ? 'it is' : 'they are'} not part of “Post all”. Open the row to settle it.
+        </p>
+      )}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <StageNav clientId={clientId} active={stage} />
         <div className="flex flex-wrap gap-2">
@@ -608,7 +617,7 @@ function Decision({
 
   useHotkey('l', 'Choose the ledger', () => ledgerInput.current?.focus(), 'Review')
   useHotkey('enter', 'Place the row in the chosen ledger', () => canPlace && !busy && !alreadyPlacedByPerson && void place(), 'Review')
-  useHotkey('p', 'Post this row', () => canPost && row.ledger && unchanged && !busy && void postNow(), 'Review')
+  useHotkey('p', 'Post this row', () => canPost && row.ledger && unchanged && !busy && !row.on_party_account && void postNow(), 'Review')
 
   // The entry as it will be posted with what is chosen now, not as it was suggested.
   const chosenLedger = ledgers.find((l) => l.id === ledger)
@@ -733,13 +742,17 @@ function Decision({
             </div>
           </div>
 
+          {canPost && row.ledger && unchanged && row.on_party_account && (
+            <SettlementPanel clientId={clientId} row={row} onDone={onDone} />
+          )}
+
           <div className="sticky bottom-0 -mx-4 flex flex-wrap justify-end gap-2 border-t bg-card px-4 py-3 max-sm:[&>*]:flex-1">
             {!alreadyPlacedByPerson && (
               <Button variant={row.ledger && unchanged ? 'outline' : 'primary'} onClick={() => void place()} disabled={busy || !ledger}>
                 {row.ledger && ledger === row.ledger ? 'Confirm ledger' : 'Place in ledger'} <Kbd className="ml-1 bg-transparent max-sm:hidden">Enter</Kbd>
               </Button>
             )}
-            {canPost && row.ledger && unchanged && (
+            {canPost && row.ledger && unchanged && !row.on_party_account && (
               <Button onClick={() => void postNow()} disabled={busy}>
                 Post entry <Kbd className="ml-1 bg-transparent text-primary-foreground/80 max-sm:hidden">P</Kbd>
               </Button>

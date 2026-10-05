@@ -448,6 +448,7 @@ class ReviewQueueViewSet(
                     "judgement": summary.judgement,
                     "total": summary.total,
                     "bulk_approvable": summary.bulk_approvable,
+                    "needs_settlement": summary.needs_settlement,
                     "unresolved": unresolved_for(self.client).count(),
                     "pending_approval": pending_approval(self.client).count(),
                     "assistant_waiting": waiting_count(self.client),

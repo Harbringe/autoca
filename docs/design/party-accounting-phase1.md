@@ -1,6 +1,25 @@
 # Party accounting, phase 1
 
-Status: **steps 1a and 1b are built, in CI and live** (2026-10-05); 1c to 1e are not. Written 2026-10-05.
+Status: **steps 1a and 1b are live; 1c is built and in CI** (2026-10-06); 1d and 1e are not. Written 2026-10-05.
+
+## What step 1c built
+
+A bank row placed on a supplier's or customer's own account now **settles bills**, and a person says which. The row is posted the way every bank row is (`Dr party / Cr bank`); what is new is that it cannot be posted without a *settlement*: the bills it pays, and what to do with any remainder (hold it on account, or as an advance). `ledger/settlement.py` holds a pure matcher that only *proposes* (one bill that is exactly the amount; a small set that adds up to it; otherwise the oldest first) and the rules a settlement must satisfy; `approve` takes the settlement and writes the allocations in the same transaction as the entry.
+
+What it guarantees:
+
+- **Nothing reaches a party's account without a person.** `auto_post` skips it; a whole band never includes it (`approvals` with `band`); `bulk_approvable` and the web's "Post all" exclude it; a learned rule may not move an entry onto it, nor undo a settlement (`MachineEditRefusedError`, checked in `revise_in_place` and skipped in the learning path).
+- **Totals must add up**, and a bill is cleared only from the opposite side of the account, only for the same party, and only up to what is open; refused in words before anything is written, and again by the database (`ledger/0012`).
+- **Editing or removing a settled payment reopens its bills.** The allocations are deleted, and the change log's snapshot of the entry now records what each line settled. Removing a statement does the same, through `remove_entry`. A payment edited onto a party's account is given the party on its line and shows as an open item (`payment_unallocated`) until `settle_entry` allocates it.
+- **A settled payment inside signed-off books cannot be corrected here** (a reversing line would sit on the same side as the bill it was meant to reopen, and the allocations are locked with it): the message says to record a journal dated after the sign-off, or reopen the books.
+- **Only a standing bank payment can be settled**, not a bill voucher's own line and not a corrected entry's reversing lines.
+- **The AI model is never offered a party's account** (`LedgerAccount.is_party_account`): its name is a real party's name, and it must not place payments on it.
+
+API: `GET classifications/{id}/settlement/` (the party's open bills and the suggestion), `approvals` accepts a `settlements` entry per row, `GET journal-entries/{id}/settlement/` and `POST .../settle/` for a payment already posted, and `ClassificationSerializer.on_party_account` plus `needs_settlement` in the review summary. Web: a settlement panel in the review screen in place of "Post entry", prefilled from the suggestion and editable, with the totals worked out as it is edited.
+
+A bug found by the tests while building it, and fixed first: a purchase or sales voucher has no bank row, so the "already posted" subquery in `classify.engine.unposted_in` held a NULL, and `NOT IN` a list containing NULL matches nothing in SQL, so **one voucher emptied that client's whole review queue**. It shipped in 1a and was live for a day before this caught it. The subquery now only holds entries that came from a bank row, with a regression test.
+
+Decision 8 (a supplier payment booked straight to an expense head needs a recorded reason) is **not** in 1c: the settlement path is in place, and the reason-for-bypass field comes with 1d's open-items work.
 
 ## What step 1b built
 

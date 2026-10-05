@@ -4031,7 +4031,10 @@ export interface components {
             /** @description No suggestion. Needs a person. */
             judgement: number;
             total: number;
+            /** @description How many a whole-band approval would post: the high band, less rows on a party's account. */
             bulk_approvable: number;
+            /** @description Waiting rows placed on a supplier's or customer's own account. Each needs a person to say which bills it settles. */
+            needs_settlement: number;
             /** @description Of the total, how many have no ledger yet. */
             unresolved: number;
             /** @description Of the total, how many have a ledger and await a senior CA. */

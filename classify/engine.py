@@ -99,6 +99,11 @@ class ReviewSummary:
     high: int
     advised: int
     judgement: int
+    #: Of the high band, rows on a supplier's or customer's own account. A person says which bills each one settles,
+    #: so a whole band never posts them.
+    high_on_party_accounts: int = 0
+    #: Every waiting row on a party's account, in any band: the ones that are waiting for a settlement decision.
+    needs_settlement: int = 0
 
     @property
     def total(self) -> int:
@@ -106,7 +111,7 @@ class ReviewSummary:
 
     @property
     def bulk_approvable(self) -> int:
-        return self.high
+        return self.high - self.high_on_party_accounts
 
 
 # ---------------------------------------------------------------------------
@@ -470,11 +475,15 @@ def unposted_in(firm_id, clients):
 
 def review_summary(client) -> ReviewSummary:
     """How much work is waiting, split by how much thought each row needs."""
-    counts = Counter(review_queue(client).values_list("review_band", flat=True))
+    queue = review_queue(client)
+    counts = Counter(queue.values_list("review_band", flat=True))
+    on_party_accounts = queue.filter(ledger__party_record__isnull=False)
     return ReviewSummary(
         high=counts.get(ReviewBand.HIGH, 0),
         advised=counts.get(ReviewBand.ADVISED, 0),
         judgement=counts.get(ReviewBand.JUDGEMENT, 0),
+        high_on_party_accounts=on_party_accounts.filter(review_band=ReviewBand.HIGH).count(),
+        needs_settlement=on_party_accounts.count(),
     )
 
 

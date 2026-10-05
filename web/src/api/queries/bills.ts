@@ -7,7 +7,7 @@
 
 import { queryOptions, useMutation } from '@tanstack/react-query'
 import { raw } from '@/api/client'
-import type { Bill, BillCreateRequest, BillDetail } from '@/api/types'
+import type { Bill, BillCreateRequest, BillDetail, SettlementContext } from '@/api/types'
 import { allPages } from './books'
 import { clientKeys, useInvalidateClient, V1 } from './clients'
 
@@ -29,6 +29,13 @@ export const bill = (clientId: string, billId: string) =>
   queryOptions({
     queryKey: clientKeys.part(clientId, 'bills', billId),
     queryFn: () => raw.get<BillDetail>(`${V1}/clients/${clientId}/bills/${billId}/`),
+  })
+
+/** The party's open bills for a payment on its account, and how the payment would clear them: only a suggestion. */
+export const rowSettlement = (clientId: string, classificationId: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'settlement', classificationId),
+    queryFn: () => raw.get<SettlementContext>(`${V1}/classifications/${classificationId}/settlement/`),
   })
 
 export function usePostBill(clientId: string) {

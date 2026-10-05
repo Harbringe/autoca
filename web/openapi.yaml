@@ -8810,6 +8810,12 @@ components:
           type: integer
         bulk_approvable:
           type: integer
+          description: 'How many a whole-band approval would post: the high band,
+            less rows on a party''s account.'
+        needs_settlement:
+          type: integer
+          description: Waiting rows placed on a supplier's or customer's own account.
+            Each needs a person to say which bills it settles.
         unresolved:
           type: integer
           description: Of the total, how many have no ledger yet.
@@ -8826,6 +8832,7 @@ components:
       - bulk_approvable
       - high
       - judgement
+      - needs_settlement
       - pending_approval
       - total
       - unresolved

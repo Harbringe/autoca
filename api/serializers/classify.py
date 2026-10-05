@@ -501,7 +501,12 @@ class ReviewSummarySerializer(serializers.Serializer):
     advised = serializers.IntegerField(help_text="Suggested, but worth a look.")
     judgement = serializers.IntegerField(help_text="No suggestion. Needs a person.")
     total = serializers.IntegerField()
-    bulk_approvable = serializers.IntegerField()
+    bulk_approvable = serializers.IntegerField(
+        help_text="How many a whole-band approval would post: the high band, less rows on a party's account."
+    )
+    needs_settlement = serializers.IntegerField(
+        help_text="Waiting rows placed on a supplier's or customer's own account. Each needs a person to say which bills it settles."
+    )
     unresolved = serializers.IntegerField(help_text="Of the total, how many have no ledger yet.")
     pending_approval = serializers.IntegerField(
         help_text="Of the total, how many have a ledger and await a senior CA."

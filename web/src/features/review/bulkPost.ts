@@ -15,8 +15,9 @@ export interface BulkSummary {
   received: number
 }
 
-/** The rows the HIGH band posts: placed in a ledger, not yet posted, in the high-confidence band. */
-export const isHighReady = (r: Classification): boolean => r.review_band === 'HIGH' && !!r.ledger && !r.is_posted
+/** The rows the HIGH band posts: placed in a ledger, not yet posted, in the high-confidence band, and not on a party's account. */
+export const isHighReady = (r: Classification): boolean =>
+  r.review_band === 'HIGH' && !!r.ledger && !r.is_posted && !r.on_party_account
 
 export function summariseBulk(rows: Classification[]): BulkSummary {
   const s: BulkSummary = { count: 0, byRule: 0, byModel: 0, byPerson: 0, paidOutPaise: 0, paidOut: 0, receivedPaise: 0, received: 0 }

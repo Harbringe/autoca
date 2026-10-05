@@ -17,4 +17,10 @@ describe('summariseBulk', () => {
     ])
     expect(s).toMatchObject({ count: 3, byRule: 1, byModel: 1, byPerson: 1, paidOut: 2, paidOutPaise: 350, received: 1, receivedPaise: 1000 })
   })
+
+
+  it('never counts a row on a party’s account: a person says which bills it settles', () => {
+    const s = summariseBulk([row({}), row({ on_party_account: true }, { amount_paise: 999 })])
+    expect(s).toMatchObject({ count: 1, paidOut: 1, paidOutPaise: 100 })
+  })
 })

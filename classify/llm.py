@@ -96,6 +96,24 @@ confidence is 0 to 1 for how sure you are the ledger is right. Above 0.9 means i
 Respond with a single JSON object: {"suggestions": [{"key": ..., "ledger": <name or null>, "new_ledger": <{"name", "group"} or null>, "narration": <string>, "question": <string or "">, "party_alias": <alias or null>, "party_guess": <{"alias", "reason"} or null>, "rcm": bool, "tds_section": <section or "">, "confidence": <0-1>, "rationale": <string>}, ...]} with exactly one entry per input key."""
 
 
+#: Added for a batch of rows from a LOAN account statement. The rules above read a debit as money leaving the bank and
+#: a credit as sales or receipts, which on a loan is backwards: the model would file an instalment as income.
+LOAN_ADDENDUM = """
+
+THIS BATCH IS FROM A LOAN ACCOUNT STATEMENT, not a bank account. Read "direction" this way instead of the rule above:
+- "debit" RAISES what the client owes the lender: the loan being disbursed (the other side is the client's bank ledger), interest charged, or processing and other fees and charges (the other side is an interest or bank-charges expense ledger).
+- "credit" LOWERS what the client owes: an instalment, EMI or prepayment the client paid (the other side is the client's BANK ledger it was paid from), or a reversal or waiver of an earlier charge (the other side is the expense it was charged to).
+- Never place a credit here in sales, income or a receipt ledger, and never open a ledger for the lender or the loan: the loan's own ledger is the account these rows come from and is not offered to you.
+- An instalment paid from the client's own bank account goes to that bank ledger, and the rationale should say it is an EMI."""
+
+
+def system_prompt_for(batch) -> str:
+    """The instructions for this batch: the standing ones, plus the loan note when the rows are from a loan."""
+    if batch and getattr(batch[0].transaction.bank_account, "kind", "BANK") == "LOAN":
+        return SYSTEM_PROMPT + LOAN_ADDENDUM
+    return SYSTEM_PROMPT
+
+
 @dataclass(frozen=True)
 class SuggestResult:
     considered: int
@@ -421,7 +439,7 @@ def _ask(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]:
     # Reasoning models spend part of this budget thinking before they answer; a
     # budget that only fits the answer truncates it, and JSON mode then rejects it.
     response = llm.complete_json(
-        SYSTEM_PROMPT,
+        system_prompt_for(batch),
         json.dumps(prompt, ensure_ascii=False),
         max_tokens=int(getattr(settings, "LLM_MAX_TOKENS", 8192)),
     )

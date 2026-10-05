@@ -4207,9 +4207,13 @@ export interface components {
          *     * `Receipt` - Receipt
          *     * `Contra` - Contra
          *     * `Journal` - Journal
+         *     * `Purchase` - Purchase
+         *     * `Sales` - Sales
+         *     * `Debit Note` - Debit Note
+         *     * `Credit Note` - Credit Note
          * @enum {string}
          */
-        VoucherTypeEnum: "Payment" | "Receipt" | "Contra" | "Journal";
+        VoucherTypeEnum: "Payment" | "Receipt" | "Contra" | "Journal" | "Purchase" | "Sales" | "Debit Note" | "Credit Note";
         /** @description Counts of work in the period, one per metric in `metrics`. Keys are the metric keys. */
         WorkTotals: {
             statements_uploaded: number;

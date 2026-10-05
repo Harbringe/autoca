@@ -8985,12 +8985,20 @@ components:
       - Receipt
       - Contra
       - Journal
+      - Purchase
+      - Sales
+      - Debit Note
+      - Credit Note
       type: string
       description: |-
         * `Payment` - Payment
         * `Receipt` - Receipt
         * `Contra` - Contra
         * `Journal` - Journal
+        * `Purchase` - Purchase
+        * `Sales` - Sales
+        * `Debit Note` - Debit Note
+        * `Credit Note` - Credit Note
     WorkTotals:
       type: object
       description: Counts of work in the period, one per metric in `metrics`. Keys

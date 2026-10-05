@@ -105,8 +105,12 @@ def _loan_involved(classification) -> bool:
 
 
 @transaction.atomic
-def approve(classification, *, membership, narration: str | None = None) -> ApprovalResult:
+def approve(classification, *, membership, narration: str | None = None, settlement=None) -> ApprovalResult:
     """Post one classified transaction to the ledger.
+
+    A row placed on a supplier's or customer's own account must come with a ``settlement``: a person's decision about
+    which of that party's bills it pays, or whether it is held on account or as an advance. Nothing reaches a party's
+    account without one (see ``ledger.settlement``).
 
     Raises rather than returning a failure, because every reason this can fail
     is a bug or a permission problem, not an outcome a caller should branch on.
@@ -148,6 +152,19 @@ def approve(classification, *, membership, narration: str | None = None) -> Appr
             f"reopen the books."
         )
 
+    from ledger import settlement as settling
+
+    party = settling.party_for_ledger(classification.ledger)
+    if party is not None:
+        if settlement is None:
+            raise NotApprovableError(settling.needed_message(party, transaction_row.amount_paise))
+        settling.validate(party, settling.line_direction_for(transaction_row), transaction_row.amount_paise, settlement)
+        # The party is the account, so the line says so: the party reports and the open items read it from there.
+        if classification.party_id != party.pk:
+            classification.party = party
+    elif settlement is not None:
+        raise NotApprovableError("This row is not on a party's account, so there is nothing to settle.")
+
     voucher_type = voucher_type_for(classification)
     mirror = (
         _mirror_for(classification)
@@ -166,6 +183,10 @@ def approve(classification, *, membership, narration: str | None = None) -> Appr
             narration=narration if narration is not None else book_narration_for(classification),
             approved_by=membership.user,
         )
+        if party is not None:
+            settling.apply(
+                entry.lines.get(ledger_account=classification.ledger), settlement, transaction_row.amount_paise
+            )
 
     # Approving a model's suggestion is a person agreeing with it, and that
     # agreement is worth remembering: next month the same payee is a rule hit
@@ -179,7 +200,7 @@ def approve(classification, *, membership, narration: str | None = None) -> Appr
     classification.reviewed_at = timezone.now()
     classification.save(
         update_fields=[
-            "method", "needs_review", "confidence", "reviewed_by", "reviewed_at", "mirrored_entry_id",
+            "method", "needs_review", "confidence", "reviewed_by", "reviewed_at", "mirrored_entry_id", "party",
         ]
     )
 
@@ -225,7 +246,7 @@ def book_narration_for(classification) -> str:
 
 
 @transaction.atomic
-def approve_many(classifications, *, membership) -> list[ApprovalResult]:
+def approve_many(classifications, *, membership, settlements=None) -> list[ApprovalResult]:
     """Post a batch. All or nothing.
 
     The high-confidence block of the review screen is approved this way. One
@@ -233,7 +254,8 @@ def approve_many(classifications, *, membership) -> list[ApprovalResult]:
     half-posted, which would be worse than not posting it at all -- the reviewer
     would have to work out which half.
     """
-    return [approve(row, membership=membership) for row in classifications]
+    settlements = settlements or {}
+    return [approve(row, membership=membership, settlement=settlements.get(row.pk)) for row in classifications]
 
 
 @transaction.atomic
@@ -284,6 +306,16 @@ def correct(
             f"or a firm administrator can adjust it; ask them."
         )
     require_not_own_bank_ledger(entry, treatment.ledger)
+
+    from ledger.models import BillAllocation
+
+    if BillAllocation.objects.filter(line__entry=entry).exists():
+        # A reversing line on the party's account would sit on the same side as the bill it was meant to reopen, and the
+        # allocations on the original are locked with it, so the books could not be made to show the bill open again.
+        raise NotApprovableError(
+            f"{entry} settles bills and is inside signed-off books, so it cannot be corrected here. Record a journal "
+            f"voucher dated after the sign-off, or ask a senior to reopen the books."
+        )
 
     if entry.is_superseded:
         raise NotApprovableError(
@@ -352,6 +384,8 @@ def auto_post(classification) -> JournalEntry | None:
         or ledger.group == LedgerGroup.SUSPENSE
         or ledger.status != LedgerStatus.ACTIVE
         or ledger.name == txn.bank_account.ledger_name
+        # A payment on a party's account settles bills, and a person says which. Never the machine's to post.
+        or ledger.is_party_account
         or (ledger.group == LedgerGroup.CASH and classification.channel in ELECTRONIC_CHANNELS)
         or (ledger.proposal_reason and not _a_person_has_posted_to(ledger))
         or _live_entry_for(txn) is not None

@@ -254,7 +254,11 @@ def _claim(client, size: int) -> _Claim:
         own_accounts=[a.account_number for a in client.bank_accounts.all()],
         spellings=list(PartyAlias.objects.filter(firm_id=client.firm_id, client=client)),
     )
-    chart = _Chart(client, list(LedgerAccount.objects.filter(firm_id=client.firm_id, client=client)), account.ledger_name)
+    chart = _Chart(
+        client,
+        list(LedgerAccount.objects.filter(firm_id=client.firm_id, client=client).select_related("party_record")),
+        account.ledger_name,
+    )
     return _Claim(
         rows=rows,
         waiting=0,
@@ -321,7 +325,9 @@ def _apply_batch(client, claim: _Claim, replies: dict) -> BatchOutcome:
     placed_by_others = [row.pk for row in rows if row.ledger_id is not None]
 
     chart = _Chart(
-        client, list(LedgerAccount.objects.filter(firm_id=firm_id, client=client)), claim.account_ledger_name
+        client,
+        list(LedgerAccount.objects.filter(firm_id=firm_id, client=client).select_related("party_record")),
+        claim.account_ledger_name,
     )
     opened_before = chart.proposed = _recent_proposals(client)
     _apply(open_rows, replies, chart, claim.pseudonymiser)

@@ -163,6 +163,9 @@ class _Chart:
             # requirements warn against. Unsure means a flagged guess in a real
             # ledger, not a parking space.
             and ledger.group != "SUSPENSE"
+            # A party's own account is named after the party, and it is never the model's to choose: its name would
+            # put a real party name in the prompt, and a payment on it settles bills, which a person decides.
+            and not ledger.is_party_account
         ]
 
     def by_name(self, name):
@@ -246,7 +249,7 @@ def _suggest(client, classifications, *, batch_size, replace: bool) -> SuggestRe
         return SuggestResult(considered=0, suggested=0, declined=0)
 
     # Every ledger in any status: proposals are checked against rejected names too.
-    known = list(LedgerAccount.objects.filter(firm_id=client.firm_id, client=client))
+    known = list(LedgerAccount.objects.filter(firm_id=client.firm_id, client=client).select_related("party_record"))
     parties = list(Party.objects.filter(firm_id=client.firm_id, client=client, is_active=True))
     own_accounts = [a.account_number for a in client.bank_accounts.all()]
     spellings = list(PartyAlias.objects.filter(firm_id=client.firm_id, client=client))

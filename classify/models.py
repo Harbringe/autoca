@@ -144,6 +144,17 @@ class LedgerAccount(UUIDModel, FirmScopedModel):
     def is_proposed(self) -> bool:
         return self.status == LedgerStatus.PROPOSED
 
+    @property
+    def is_party_account(self) -> bool:
+        """True when this is a supplier's or customer's own account (``Party.ledger`` points at it).
+
+        Such a ledger is named after the party, and money moved on it settles that party's bills. Two consequences: the
+        model is never offered it (its name is a party's name, and a payment on it needs a person to say which bills it
+        settles), and a row placed on it is never posted in bulk or automatically. Cheap when the queryset used
+        ``select_related("party_record")``; otherwise one query per ledger.
+        """
+        return hasattr(self, "party_record")
+
 
 class PartyRole(models.TextChoices):
     """Which side of the books a party sits on.

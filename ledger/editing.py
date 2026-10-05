@@ -20,6 +20,7 @@ from django.utils import timezone
 
 from classify.models import ClassificationMethod, TransactionClassification
 from ledger.models import (
+    BillAllocation,
     ChangeAction,
     EntryChange,
     EntryKind,
@@ -96,6 +97,11 @@ def snapshot(entry) -> dict:
                 "amount_paise": line.amount_paise,
                 "rcm": line.rcm,
                 "tds_section": line.tds_section,
+                # What this line was settling, so a payment's allocations are not lost when it is edited or removed.
+                "allocations": [
+                    {"bill": str(a.bill_id) if a.bill_id else None, "kind": a.kind, "amount_paise": a.amount_paise}
+                    for a in line.allocations.all()
+                ],
             }
             for line in entry.lines.select_related("ledger_account").order_by("-signed_paise")
         ],
@@ -167,6 +173,10 @@ def revise_in_place(
         rule=rule,
         user=actor,
     )
+    # Moved onto a party's own account: the line must name that party, which is how its position and the open items read it.
+    if classification.ledger is not None and classification.ledger.is_party_account:
+        if classification.party_id != classification.ledger.party_record.pk:
+            classification.party = classification.ledger.party_record
     if method == ClassificationMethod.REVIEWED:
         classification.needs_review = False
         classification.reviewed_at = timezone.now()
@@ -182,6 +192,9 @@ def revise_in_place(
         entry.voucher_type = new_type
         changed += ["entry_no", "voucher_type"]
 
+    # A payment that settled bills stops settling them: they reopen, and the change log has what was allocated. Whoever
+    # edited it settles it again (``ledger.settlement.settle_entry``); until then it is an open item.
+    BillAllocation.objects.filter(line__entry=entry).delete()
     entry.lines.all().delete()
     lines = approval._double_entry(entry, classification)
     if entry.supersedes_id:
@@ -221,5 +234,7 @@ def remove_entry(entry, *, actor, note="") -> None:
     TransactionClassification.objects.filter(
         firm_id=entry.firm_id, transaction_id=entry.source_transaction_id
     ).update(needs_review=True)
+    # Whatever the payment settled reopens; the change log recorded the allocations just above.
+    BillAllocation.objects.filter(line__entry=entry).delete()
     entry.lines.all().delete()
     entry.delete()

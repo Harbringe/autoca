@@ -33,12 +33,19 @@ jobs:
   deploy:
     name: Deploy to the server
     runs-on: ubuntu-latest
-    # Only a green CI run on prod, or a person pressing the button on prod.
+    # Only a green CI run that was a PUSH to prod in THIS repository, or a person pressing the button on prod.
+    # The branch filter above matches a branch's name, and a fork's pull request can use the name `prod`, so
+    # the event and the repository are checked as well.
     if: >-
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      (github.event_name == 'workflow_run'
+        && github.event.workflow_run.conclusion == 'success'
+        && github.event.workflow_run.event == 'push'
+        && github.event.workflow_run.head_branch == 'prod'
+        && github.event.workflow_run.head_repository.full_name == github.repository)
       || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/prod')
     steps:
-      - uses: aws-actions/configure-aws-credentials@v4
+      # Pinned to a commit (this is v4), not a tag, because a tag can be moved.
+      - uses: aws-actions/configure-aws-credentials@7474bc4690e29a8392af63c5b98e7449536d5c3a
         with:
           role-to-assume: ${{ env.ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}

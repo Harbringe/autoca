@@ -34,10 +34,22 @@ from documents.models import Document
 CRYPTO_PURPOSE = "banking.account"
 
 
+class AccountKind(models.TextChoices):
+    """What an account with a statement is.
+
+    A loan is an account too: it has a ledger, rows and a running balance. It differs in two ways. Its balance is
+    what the client OWES, so a debit raises it; and its ledger is a liability, not a bank account.
+    """
+
+    BANK = "BANK", "Bank account"
+    LOAN = "LOAN", "Loan account"
+
+
 class BankAccount(UUIDModel, FirmScopedModel):
-    """A client's bank account, and the Tally ledger it posts to."""
+    """A client's bank account (or loan account), and the Tally ledger it posts to."""
 
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="bank_accounts")
+    kind = models.CharField(max_length=8, choices=AccountKind.choices, default=AccountKind.BANK)
     bank_code = models.CharField(max_length=16, help_text="Parser identifier, e.g. AXIS.")
 
     #: AES-256-GCM under the firm's data key, bound to the firm id as additional
@@ -138,7 +150,7 @@ class BankAccount(UUIDModel, FirmScopedModel):
         full number instead, because two accounts sharing a ledger would merge
         their books. A CA can rename either, or a Tally import can.
         """
-        bank = f"{self.bank_code.title()} Bank A/c"
+        bank = f"{self.bank_code.title()} Loan A/c" if self.kind == AccountKind.LOAN else f"{self.bank_code.title()} Bank A/c"
         short = f"{bank} {self.account_last4}"
         clash = (
             BankAccount.objects.filter(client_id=self.client_id, ledger_name=short)

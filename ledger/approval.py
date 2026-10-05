@@ -74,9 +74,34 @@ def voucher_type_for(classification) -> str:
     outright.
     """
     ledger = classification.ledger
+    if classification.transaction.bank_account.kind == "LOAN":
+        return _loan_voucher_type(classification)
     if ledger is not None and ledger.is_bank_or_cash:
         return VoucherType.CONTRA
     return VoucherType.PAYMENT if classification.transaction.is_debit else VoucherType.RECEIPT
+
+
+def _loan_voucher_type(classification) -> str:
+    """The voucher a row of a LOAN statement is, as Tally would book it.
+
+    Cash moved only when the other side is a bank or cash ledger: an instalment (a credit on the loan, paid out
+    of the bank) is a Payment, and a disbursal (a debit on the loan, paid into the bank) is a Receipt. Interest
+    and charges (the other side an expense) move no cash at all, so they are Journal vouchers, not Payments.
+    """
+    ledger = classification.ledger
+    if ledger is not None and ledger.is_bank_or_cash:
+        return VoucherType.RECEIPT if classification.transaction.is_debit else VoucherType.PAYMENT
+    return VoucherType.JOURNAL
+
+
+def _loan_involved(classification) -> bool:
+    """A loan account on one side, whichever statement this row came from."""
+    from classify.models import LedgerGroup
+
+    ledger = classification.ledger
+    return classification.transaction.bank_account.kind == "LOAN" or (
+        ledger is not None and ledger.group == LedgerGroup.LOAN
+    )
 
 
 @transaction.atomic
@@ -124,7 +149,11 @@ def approve(classification, *, membership, narration: str | None = None) -> Appr
         )
 
     voucher_type = voucher_type_for(classification)
-    mirror = _mirror_for(classification) if voucher_type == VoucherType.CONTRA else None
+    mirror = (
+        _mirror_for(classification)
+        if voucher_type == VoucherType.CONTRA or _loan_involved(classification)
+        else None
+    )
     if mirror is not None:
         # The other account's statement already recorded this transfer. Writing
         # it again would count the money twice in both bank ledgers.
@@ -178,6 +207,14 @@ def book_narration_for(classification) -> str:
     amount = format_inr(txn.amount_paise)
     party = classification.counterparty.strip()
     channel = classification.channel if classification.channel not in ("", "UNKNOWN") else "bank"
+    if txn.bank_account.kind == "LOAN":
+        # A debit on the loan raises what is owed; a credit lowers it. "Paid" and "received" would read backwards.
+        bank_side = classification.ledger is not None and classification.ledger.is_bank_or_cash
+        if txn.is_debit:
+            head = f"Being loan of {amount} disbursed into {ledger}" if bank_side else f"Being {amount} charged on the loan towards {ledger}"
+        else:
+            head = f"Being {amount} repaid towards the loan from {ledger}" if bank_side else f"Being {amount} credited to the loan against {ledger}"
+        return f"{head} (loan statement: {txn.narration.strip()[:80]})"
     if classification.ledger is not None and classification.ledger.is_bank_or_cash:
         head = f"Being {amount} transferred to {ledger}" if txn.is_debit else f"Being {amount} received into bank from {ledger}"
     elif txn.is_debit:
@@ -322,7 +359,7 @@ def auto_post(classification) -> JournalEntry | None:
         return None
 
     voucher_type = voucher_type_for(classification)
-    if voucher_type == VoucherType.CONTRA:
+    if voucher_type == VoucherType.CONTRA or _loan_involved(classification):
         mirror = _mirror_for(classification)
         if mirror is not None:
             classification.mirrored_entry_id = mirror.pk
@@ -389,6 +426,14 @@ def _mirror_for(classification) -> JournalEntry | None:
     other = classification.ledger
     debit_ledger, credit_ledger = (other, bank) if txn.is_debit else (bank, other)
     window = datetime.timedelta(days=MIRROR_WINDOW_DAYS)
+    # A loan instalment is a Payment on the bank's side and a Payment on the loan's, never a Contra, so when a loan
+    # is involved the twin may be any of these. It still has to be exactly these two ledgers and this amount, from
+    # a different account, so nothing unrelated can match.
+    twin_types = (
+        (VoucherType.CONTRA, VoucherType.PAYMENT, VoucherType.RECEIPT)
+        if _loan_involved(classification)
+        else (VoucherType.CONTRA,)
+    )
 
     claimed = TransactionClassification.objects.filter(
         firm_id=classification.firm_id, mirrored_entry_id__isnull=False
@@ -398,7 +443,7 @@ def _mirror_for(classification) -> JournalEntry | None:
         JournalEntry.objects.filter(
             firm_id=classification.firm_id,
             client_id=txn.bank_account.client_id,
-            voucher_type=VoucherType.CONTRA,
+            voucher_type__in=twin_types,
             superseded_by_set__isnull=True,
             entry_date__gte=txn.value_date - window,
             entry_date__lte=txn.value_date + window,

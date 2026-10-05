@@ -126,6 +126,10 @@ def ledger_balance(bank_account, as_of: datetime.date) -> int:
         # corrected position, which is the whole point of correcting that way.
     ).aggregate(total=Sum("signed_paise"))["total"] or 0
 
+    if bank_account.kind == "LOAN":
+        # A loan's ledger is a liability: what is owed shows as a credit, which is negative here, while the
+        # statement prints it as a positive balance. Compare owed with owed.
+        return (bank_account.opening_balance_paise or 0) - posted
     return (bank_account.opening_balance_paise or 0) + posted
 
 

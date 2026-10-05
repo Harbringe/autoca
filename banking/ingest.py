@@ -27,6 +27,7 @@ from django.db import transaction
 
 from banking.models import BankAccount, Statement, StatementTransaction
 from banking.parsers import ParsedStatement, detect_parser
+from banking.parsers.base import StatementParseError
 from core.models import Client
 from core.money import format_inr
 from documents.models import Document, DocumentKind, DocumentStatus, PipelineTier
@@ -241,12 +242,19 @@ def _account_for(client: Client, parsed: ParsedStatement) -> BankAccount:
         account_number_hash=lookup,
     ).first()
 
+    if account is not None and account.kind != parsed.kind:
+        raise StatementParseError(
+            f"This account was first saved as a {account.get_kind_display().lower()}, but this statement reads "
+            f"as a {parsed.kind.lower()} account. They cannot be mixed in one ledger."
+        )
+
     if account is None:
         account = BankAccount(
             firm_id=client.firm_id,
             client=client,
             bank_code=parsed.bank_code,
             ifsc=parsed.ifsc,
+            kind=parsed.kind,
         )
         account.set_account_number(parsed.account_number)
         account.set_account_holder(parsed.account_holder)

@@ -147,11 +147,15 @@ def contra_ledger_for(account) -> LedgerAccount:
     A transfer between two accounts the client owns posts against the *other*
     account's ledger, which makes the voucher a Contra. Creating it on demand
     means the second account does not have to have been uploaded first.
+
+    A loan account's ledger is a liability (Loans), not a bank account: it is what the client owes, and it must
+    not be counted among the client's bank balances.
     """
+    group = LedgerGroup.LOAN if account.kind == "LOAN" else LedgerGroup.BANK
     ledger, _ = LedgerAccount.objects.get_or_create(
         firm_id=account.firm_id,
         client=account.client,
         name=account.ledger_name,
-        defaults={"group": LedgerGroup.BANK},
+        defaults={"group": group},
     )
     return ledger

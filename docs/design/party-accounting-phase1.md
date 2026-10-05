@@ -77,7 +77,9 @@ A new `ledger.Bill` row for each invoice, note or opening balance that a party o
 - `reference` (the supplier's or our invoice number), `bill_date`, optional `due_date`;
 - `taxable_paise`, `cgst_paise`, `sgst_paise`, `igst_paise`, `cess_paise`, `round_off_paise`, `tds_paise`, `total_paise` (what the party is owed or owes);
 - `entry`: the journal entry that booked it (one-to-one, null for an opening bill that has only a ledger opening behind it);
-- `document`: optional link to the uploaded invoice file (used from phase 2).
+- `document`: link to the uploaded invoice file, when there is one. A bill with no document is allowed but is reported as an open item ("needs document"), never silently accepted (section 9A);
+- `invoice_key`: the invoice's identity, **the same key the GST module uses** (supplier GSTIN and normalised invoice number, hashed per firm; for an unregistered supplier, the party id in place of the GSTIN). Indexed. This is what joins a bill to a register row, a GSTR-2B row and a bank payment (section 9A);
+- `own_gstin_hash`: blind index of the *client's* own GSTIN the purchase or sale belongs to, so each bill falls in the right GST return without the books importing anything from `gst/`.
 
 A bill is a fact and is never edited after it is posted. Correcting one is a correcting entry, using the existing mechanism. Whether a bill is open, part-settled or settled is **computed from its allocations**, never stored, so it cannot drift.
 
@@ -173,6 +175,42 @@ Screens (web): a **Parties** page (balances, open bills, statement); a **voucher
 - Tally chart import links each Sundry Creditor and Sundry Debtor ledger to a `Party` by normalised name (creating the party if missing), carries `ISBILLWISEON`, and reads GSTIN where Tally has it.
 - New columns carry database defaults, as the migration guard requires, so the previous release keeps working while a deploy is in flight.
 
+## 9A. No islands: how every document links
+
+The rule for this whole programme (stated by the user, 2026-10-05): a raw document is an island, and AutoCA's value is linking and reconciling them into one set of books. So this phase is judged not by what it adds but by what it **connects**, and by whether anything is left unconnected without being visible.
+
+### The shared keys
+| Fact | Shared key | Joins |
+|---|---|---|
+| An invoice | `invoice_key` = supplier GSTIN (or party id) + normalised invoice number | Bill, uploaded register row, GSTR-2B row, GST decisions, the invoice file |
+| A party | `Party` (one row), linked to its ledger by `Party.ledger` | Bills, ledger lines, bank-account matches, aliases, GST rows |
+| A payment | The bank row, through `BillAllocation` | Bank statement, party ledger, the bills it settles |
+| A file | `Document` | Whatever it produced (statement, bills, register rows) |
+| A GST return | `own_gstin_hash` + period | Bills, register rows, 2B rows |
+
+**The invoice key is not new.** `gst/services.match_key` and `gst/matching.normalise_invoice_no` already define it, and GST decisions are stored under it so they survive a rebuild. This design reuses it exactly. To keep `gst/` a removable add-on (nothing outside `gst/` may import it), the key function moves to a neutral module (`core/identity.py`), and `gst/` imports it from there. Books and GST then share one definition without depending on each other's tables.
+
+### What each existing island becomes
+- **GST registers and GSTR-2B (`gst/`).** Today the "register" side is an uploaded file, which is a second copy of the purchase invoices the books are about to hold. Stage 4 makes the register side come **from the bills**, with an uploaded Tally register kept only as a cross-check ("register against books against 2B"). Phase 1 already gives every bill its `invoice_key` and `own_gstin_hash`, so the join needs no migration later. In phase 1 a new bill also **shows whether the same key is already in an uploaded register or 2B**, as an indicator, so the first connection exists on day one.
+- **Documents.** `Document` is the evidence registry, but each module links its own uploads its own way (`Statement.document`, `ReconRun.register_document`). A read-only **document trail** answers, for any document: what did it produce, and what is matched. A document that produced nothing, or a bill with no document, is an open item.
+- **Bank statements.** Already tied to the bank ledger, and now also to bills through allocations. A supplier payment that was never allocated or marked direct-expense is an open item.
+- **Loan statements.** Already tied to the loan ledger and mirrored with the bank EMI. They join the same open-item list, and later the control-account close.
+- **Tally import.** Party-ledger links and bill-wise openings use the same `Party` and `Bill` rows, so imported history is not a separate pile.
+
+### One list of open items
+Rather than each module reporting its own leftovers, one computed (not stored) open-items view collects them. Each module registers a small detector that returns items with a kind, client, reference, amount, age and a link to the thing to fix. Phase 1 registers these:
+
+- a bank payment to a supplier that is not allocated to a bill and not marked direct-expense or on account;
+- a bill with no document;
+- a duplicate invoice key;
+- a party whose open bills do not equal its ledger balance;
+- an advance or on-account amount never applied.
+
+Later stages add their own kinds (a bill missing from GSTR-2B, an asset with no invoice, a payroll mismatch) to the **same** list, so the close screen is built from it instead of from seven separate reports. Sign-off will be gated on this list, which is the point of the programme.
+
+### The bypass problem
+Today a supplier payment can go straight to an expense head. That path must stay, because rent, small cash items and bank charges are real and have no invoice. But it is exactly where an island would hide, so a payment to a **party** that is booked to an expense head must carry a recorded reason (direct expense: no invoice expected, or needs invoice) and a "needs invoice" payment is an open item until a bill arrives. Nothing leaves the books silently outside the bill system.
+
 ## 10. What could go wrong, and the guard for each
 
 | Risk | Guard |
@@ -185,6 +223,14 @@ Screens (web): a **Parties** page (balances, open bills, statement); a **voucher
 | Rounding drift between bill total and ledger | Totals are checked to the paisa at posting; a bill that does not add up is refused. |
 | Ledger picker flooded with party ledgers | Hidden from the chart picker by default; reached through the party. |
 | AI classifying a bill payment as an expense | The party-first rule in section 6 puts the party ledger first; a regression test per supplier role. |
+| Two copies of one invoice (books and uploaded register) drifting apart | One `invoice_key`; the register becomes derived from bills in stage 4; until then a bill shows when its key is in a register or 2B. |
+| `gst/` becoming a hard dependency of the books | The shared key lives in `core/identity.py`; bills store `own_gstin_hash`, not a foreign key to `gst`. A test asserts nothing outside `gst/` and the API imports it. |
+| The same supplier entered as two parties ("Ravi Traders", "Ravi Trader Pvt Ltd"), splitting a balance across two ledgers | Alias and GSTIN matching resolve to one party before posting. A merge after posting is a transfer journal between the two ledgers, never an edit, and is on the programme list. A duplicate-GSTIN check flags two parties with one GSTIN as an open item. |
+| A bill dated in a signed-off period | Refused with the same message as a bank row in a locked period; the CA reopens the books or dates it correctly. |
+| A bill in one financial year paid in the next | Allocation date and bill date are independent. Outstanding is computed as at any date; ageing runs from the bill date. A test covers a bill that crosses 31 March. |
+| An invoice with several tax rates or heads | A bill carries one tax split per line head in the voucher, and its `total_paise` must equal the lines. A test covers 5%, 12% and 18% on one invoice. |
+| A credit note that no bill refers to | Allowed, but allocated on account and listed as an open item until applied. |
+| A payment settling several bills for different amounts after TDS | The matcher proposes it and a person confirms; the allocations plus TDS must equal the line, or it is refused. |
 
 ## 11. Tests
 
@@ -194,7 +240,7 @@ Pure unit tests for posting-rule arithmetic (purchase, sales, RCM, TDS, notes, r
 
 Each step ships and is tested on its own.
 
-- **1a. Model and posting engine.** Party ledger link, voucher types, bills, allocations, entry kind, GST ledgers, the posting functions, and their tests. No screens yet.
+- **1a. Model and posting engine.** First, the shared invoice key moves to `core/identity.py` (no behaviour change). Then the party ledger link, voucher types, bills (with `invoice_key`, `own_gstin_hash`, document link), allocations, entry kind, GST ledgers, the posting functions, the open-items registry with its first detectors, and their tests. No screens yet.
 - **1b. Voucher entry.** The API and the purchase and sales form.
 - **1c. Settlement.** Bank lines against bills, the matcher, and the review panel.
 - **1d. Reports.** Outstanding, party statement, control check; the invoice CSV import.
@@ -217,3 +263,6 @@ Each step ships and is tested on its own.
 4. **GST ledgers and the CGST/SGST/IGST split.** Recommended: add the standard set; the CA enters the split in phase 1.
 5. **Settlements always need a person's confirmation in phase 1.** Recommended: yes, relaxed later once the matcher has a track record.
 6. **Do purchase and sales vouchers need a draft stage before posting?** Recommended: no in phase 1 (a person posts directly, as in Tally, and sign-off is the check); phase 2's invoice reading adds drafts, since a machine's reading must be reviewed.
+7. **The invoice identity for an unregistered supplier (no GSTIN).** Recommended: party id plus normalised invoice number, so the duplicate check still works and a later-added GSTIN does not orphan old bills (the key is recomputed and the old one kept as an alias).
+8. **Does a supplier payment booked directly to an expense head need a reason?** Recommended: yes, a short choice (no invoice expected, or needs invoice), as described in section 9A, so the bypass is visible.
+9. **Step 1a gets a new first item:** move the invoice-key functions to `core/identity.py` and point `gst/` at them, with no behaviour change, before any bill code is written. Recommended: yes, because every later join depends on one definition.

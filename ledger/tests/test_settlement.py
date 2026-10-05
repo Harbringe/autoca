@@ -300,7 +300,9 @@ def test_the_model_is_never_offered_a_partys_account(client, statement, senior):
 
 def test_the_bank_and_ordinary_ledgers_are_not_party_accounts(client, statement, senior):
     assert not ledger(client, "Office Expenses").is_party_account
-    assert not statement.bank_account.client.ledgers.filter(name=statement.bank_account.ledger_name).first().is_party_account
+    from classify.seeds import contra_ledger_for
+
+    assert not contra_ledger_for(statement.bank_account).is_party_account
 
 
 # ---------------------------------------------------------------------------
@@ -346,7 +348,7 @@ def test_the_machine_may_not_move_an_entry_onto_a_party_account_or_undo_a_settle
         editing.revise_in_place(entry, Treatment(ledger=expense), actor=None, method=ClassificationMethod.RULE)
     assert billing.open_amount(bill) == bill.total_paise - amount
 
-    other_row = review_queue(client).exclude(transaction=entry.source_transaction).first()
+    other_row = review_queue(client).filter(transaction__narration__icontains="Blinkit").first()
     other = approve(review(other_row, expense, learn=False)[0], membership=senior).entry
     bill.party.refresh_from_db()
     with pytest.raises(editing.MachineEditRefusedError, match="own account"):
@@ -390,3 +392,25 @@ def test_an_entry_that_has_been_corrected_cannot_be_settled(client, statement, s
 
     with pytest.raises(BillingError, match="corrected"):
         settling.settle_entry(entry, settle((bill, amount)), membership=senior)
+
+
+# ---------------------------------------------------------------------------
+# A voucher has no bank row, and must not disturb the queue of bank rows
+# ---------------------------------------------------------------------------
+
+
+def test_booking_a_voucher_does_not_empty_the_review_queue(client, statement, senior):
+    """A purchase voucher has no bank row, so the list of posted bank rows used to contain a NULL, and ``NOT IN`` a list
+    with a NULL matches nothing: one voucher emptied the client's whole queue."""
+    from classify.engine import pending_approval, unresolved_for
+
+    waiting = review_queue(client).count()
+    unresolved = unresolved_for(client).count()
+    pending = pending_approval(client).count()
+    assert waiting > 1 and unresolved > 0
+
+    supplier_bill(client, senior, 1_000_00)
+
+    assert review_queue(client).count() == waiting
+    assert unresolved_for(client).count() == unresolved
+    assert pending_approval(client).count() == pending

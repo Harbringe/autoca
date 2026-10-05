@@ -453,8 +453,11 @@ def unposted_in(firm_id, clients):
     """
     from ledger.models import JournalEntry
 
+    # Only entries that came from a bank row. A purchase, sales or note voucher has no bank row, so its
+    # ``source_transaction_id`` is NULL, and ``NOT IN`` a list that contains a NULL matches nothing at all in SQL: one
+    # voucher on a client would otherwise have emptied that client's whole review queue.
     posted = JournalEntry.objects.filter(
-        firm_id=firm_id, superseded_by_set__isnull=True
+        firm_id=firm_id, superseded_by_set__isnull=True, source_transaction__isnull=False
     ).values("source_transaction_id")
 
     return TransactionClassification.objects.filter(

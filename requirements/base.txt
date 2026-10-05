@@ -1,22 +1,22 @@
 # --- Core framework ---
-Django==5.2.6
+Django==5.2.17
 psycopg[binary]==3.2.9
 
 # --- API ---
 # Session-authenticated REST, and OpenAPI generated from the code rather
 # than maintained beside it -- a hand-written schema is wrong within a week.
-djangorestframework==3.16.1
+djangorestframework==3.17.2
 drf-spectacular==0.28.0
 
 # --- Config ---
 dj-database-url==3.0.1
-python-dotenv==1.1.1
+python-dotenv==1.2.4
 
 # --- Auth / crypto ---
 argon2-cffi==25.1.0
 django-otp==1.6.1
 qrcode==8.2
-cryptography==45.0.6
+cryptography==50.0.2
 
 # --- Async / queue ---
 celery==5.5.3

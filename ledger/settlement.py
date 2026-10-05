@@ -26,7 +26,7 @@ from django.db.models.functions import Coalesce
 
 from core.access import require_posting_rights
 from core.rbac import require_permission
-from ledger import billing
+from ledger import billing, editing
 from ledger.models import AllocationKind, Bill, Direction, JournalLine
 
 #: How many of the oldest open bills are searched for a set that adds up to the payment exactly, and how big a set.
@@ -218,23 +218,38 @@ def settle_entry(entry, settlement: Settlement, *, membership) -> int:
     require_permission(membership, "journal.approve")
     require_posting_rights(membership, entry.client)
 
+    line, left = party_line_of(entry)
+    if left <= 0:
+        raise billing.BillingError("This entry is already fully allocated.")
+    validate(line.party, line.direction, left, settlement)
+    apply(line, settlement, left)
+    return left
+
+
+def party_line_of(entry) -> tuple[JournalLine, int]:
+    """The line of a posted bank payment that sits on a party's own account, and how much of it is unallocated.
+
+    Only a bank entry that still stands can be settled. A purchase or sales voucher also has a line on the party's
+    account, but that line is the bill itself being booked, not money that moved; and an entry that has been corrected,
+    or that is itself a correction, carries reversing lines that are not payments either. Settling one of those would
+    pay a bill with something that was never paid.
+    """
+    editing.require_bank_entry(entry)
+    if entry.supersedes_id or entry.is_superseded:
+        raise billing.BillingError(
+            "This entry has been corrected, or is a correction, so it cannot be settled. Settle the entry that stands."
+        )
     line = next(
         (
             candidate
-            for candidate in entry.lines.select_related("ledger_account")
+            for candidate in entry.lines.select_related("ledger_account__party_record", "party")
             if candidate.ledger_account.is_party_account and candidate.party_id
         ),
         None,
     )
     if line is None:
         raise billing.BillingError("This entry is not on a party's account, so there is nothing to settle.")
-
-    left = billing.line_unallocated(line)
-    if left <= 0:
-        raise billing.BillingError("This entry is already fully allocated.")
-    validate(line.party, line.direction, left, settlement)
-    apply(line, settlement, left)
-    return left
+    return line, billing.line_unallocated(line)
 
 
 def line_direction_for(transaction_row) -> str:

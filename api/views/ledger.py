@@ -30,7 +30,7 @@ from api.serializers.settlement import (
     SettleEntrySerializer,
     SettlementContextSerializer,
 )
-from api.views.settlement import build_context, party_line_of, settlement_from
+from api.views.settlement import build_context, settlement_from
 from banking.models import BankAccount
 from classify.engine import pending_approval
 from classify.models import LedgerAccount, Party
@@ -45,6 +45,7 @@ from ledger.editing import remove_entry
 from ledger.models import EntryChange, JournalEntry
 from ledger.reconciliation import check_balance
 from ledger.reports import balance_sheet, profit_and_loss, trial_balance
+from ledger.settlement import party_line_of
 
 FY_PARAM = OpenApiParameter(
     "fy", int, description="Financial year by its starting year: 2025 means FY2025-26."

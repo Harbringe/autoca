@@ -10,7 +10,6 @@ from rest_framework import serializers
 
 from api.serializers.settlement import OpenBillSerializer
 from core.money import format_inr
-from ledger import billing
 from ledger import settlement as settling
 from ledger.models import Bill
 from ledger.settlement import Settlement
@@ -53,16 +52,3 @@ def settlement_from(client, firm_id, data) -> Settlement:
     )
 
 
-def party_line_of(entry):
-    """The line of a posted entry that sits on a party's own account, and how much of it is not yet allocated."""
-    line = next(
-        (
-            candidate
-            for candidate in entry.lines.select_related("ledger_account__party_record", "party")
-            if candidate.ledger_account.is_party_account and candidate.party_id
-        ),
-        None,
-    )
-    if line is None:
-        raise billing.BillingError("This entry is not on a party's account, so there is nothing to settle.")
-    return line, billing.line_unallocated(line)

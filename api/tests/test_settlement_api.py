@@ -251,3 +251,14 @@ def test_a_read_only_member_cannot_settle_a_posted_payment(api, client_record, s
     refused = sign_in(reader.user).post(f"{V1}/journal-entries/{entry.pk}/settle/", {"allocations": []}, format="json")
 
     assert refused.status_code == 403
+
+
+def test_a_bill_voucher_cannot_be_settled_through_the_journal(api, client_record, statement):
+    """Its line on the party's account is the bill itself being booked, not money that moved."""
+    party, bill = supplier_bill_for(api, client_record, 100_000)
+
+    looked = api.get(f"{V1}/journal-entries/{bill['entry']}/settlement/")
+    settled = api.post(f"{V1}/journal-entries/{bill['entry']}/settle/", {"allocations": []}, format="json")
+
+    assert looked.status_code == 409 and looked.json()["code"] == "wrong_entry_kind"
+    assert settled.status_code == 409 and settled.json()["code"] == "wrong_entry_kind"

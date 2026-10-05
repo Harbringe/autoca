@@ -362,3 +362,31 @@ def test_a_person_may_still_move_an_entry_onto_a_party_account(client, statement
     editing.revise_in_place(entry, Treatment(ledger=bill.party.ledger), actor=senior.user)
 
     assert bill.party.ledger.name in [name for name, _, _ in lines_of(entry)]
+
+
+# ---------------------------------------------------------------------------
+# Only a standing bank payment can be settled
+# ---------------------------------------------------------------------------
+
+
+def test_a_bill_voucher_is_not_a_payment_and_cannot_be_settled(client, statement, senior):
+    """A purchase voucher has a line on the party's account too, but it is the bill being booked, not money that moved."""
+    bill = supplier_bill(client, senior, 1_000_00)
+
+    with pytest.raises(editing.WrongEntryKindError):
+        settling.settle_entry(bill.entry, Settlement(), membership=senior)
+
+
+def test_an_entry_that_has_been_corrected_cannot_be_settled(client, statement, senior):
+    row, amount = the_payment(client)
+    bill = supplier_bill(client, senior, amount)
+    bill.party.refresh_from_db()
+    expense = ledger(client, "Office Expenses")
+    entry = approve(review(row, expense, learn=False)[0], membership=senior).entry
+    editing.revise_in_place(entry, Treatment(ledger=bill.party.ledger), actor=senior.user)
+    Client.objects.filter(pk=client.pk).update(signed_off_through=entry.entry_date)
+    correct(entry, membership=senior, treatment=Treatment(ledger=expense))
+    entry.refresh_from_db()
+
+    with pytest.raises(BillingError, match="corrected"):
+        settling.settle_entry(entry, settle((bill, amount)), membership=senior)

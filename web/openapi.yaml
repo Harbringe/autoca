@@ -1554,6 +1554,197 @@ paths:
               schema:
                 $ref: '#/components/schemas/GstError'
           description: ''
+  /api/v1/clients/{client_id}/invoices/:
+    get:
+      operationId: clients_invoices_list
+      description: |-
+        Invoices uploaded as files, and what each appears to say.
+
+        A reading is only a draft. Booking it is the ordinary purchase or sales voucher with this file attached
+        (`POST bills/` with `document`), which closes the reading; or it is attached to a bill booked by hand first, or set
+        aside. Until then it is an open item, so a file cannot sit unseen.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - invoices
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedInvoiceReadingList'
+          description: ''
+  /api/v1/clients/{client_id}/invoices/{id}/:
+    get:
+      operationId: clients_invoices_retrieve
+      description: |-
+        Invoices uploaded as files, and what each appears to say.
+
+        A reading is only a draft. Booking it is the ordinary purchase or sales voucher with this file attached
+        (`POST bills/` with `document`), which closes the reading; or it is attached to a bill booked by hand first, or set
+        aside. Until then it is an open item, so a file cannot sit unseen.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - invoices
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceReading'
+          description: ''
+  /api/v1/clients/{client_id}/invoices/{id}/attach/:
+    post:
+      operationId: clients_invoices_attach_create
+      description: |-
+        Invoices uploaded as files, and what each appears to say.
+
+        A reading is only a draft. Booking it is the ordinary purchase or sales voucher with this file attached
+        (`POST bills/` with `document`), which closes the reading; or it is attached to a bill booked by hand first, or set
+        aside. Until then it is an open item, so a file cannot sit unseen.
+      summary: Attach this file to a bill booked by hand
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - invoices
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AttachRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AttachRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceReading'
+          description: ''
+  /api/v1/clients/{client_id}/invoices/{id}/discard/:
+    post:
+      operationId: clients_invoices_discard_create
+      description: |-
+        Invoices uploaded as files, and what each appears to say.
+
+        A reading is only a draft. Booking it is the ordinary purchase or sales voucher with this file attached
+        (`POST bills/` with `document`), which closes the reading; or it is attached to a bill booked by hand first, or set
+        aside. Until then it is an open item, so a file cannot sit unseen.
+      summary: Set this invoice aside
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - invoices
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceReading'
+          description: ''
+  /api/v1/clients/{client_id}/invoices/upload/:
+    post:
+      operationId: clients_invoices_upload_create
+      description: Stores the PDF with the client's other documents and reads its
+        text layer into a draft, with the arithmetic that proves or faults it. Nothing
+        is booked. A scan or photo has no text layer and is stored with a reason instead
+        of a reading (`unreadable_reason`). The same file again returns its reading
+        (`200`). Needs `document.upload`.
+      summary: Upload an invoice and read it
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - invoices
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InvoiceUploadRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InvoiceUploadRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceReading'
+          description: ''
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceReading'
+          description: ''
   /api/v1/clients/{client_id}/ledgers/:
     get:
       operationId: clients_ledgers_list
@@ -4440,6 +4631,16 @@ components:
         * `working` - working
         * `idle` - idle
         * `paused` - paused
+    AttachRequest:
+      type: object
+      properties:
+        bill:
+          type: string
+          format: uuid
+          description: The bill, booked by hand earlier, that this file is the invoice
+            for.
+      required:
+      - bill
     AttentionReason:
       type: object
       properties:
@@ -5351,6 +5552,20 @@ components:
       - total_display
       - total_paise
       - voucher_type
+    BillHint:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        reference:
+          type: string
+        party_name:
+          type: string
+      required:
+      - id
+      - party_name
+      - reference
     BillStatus:
       type: object
       properties:
@@ -5548,6 +5763,19 @@ components:
       required:
       - count
       - date
+    Check:
+      type: object
+      properties:
+        name:
+          type: string
+        ok:
+          type: boolean
+        detail:
+          type: string
+      required:
+      - detail
+      - name
+      - ok
     ChoiceEnum:
       enum:
       - keep_ours
@@ -6429,6 +6657,97 @@ components:
             $ref: '#/components/schemas/InviteRecord'
       required:
       - results
+    InvoiceReading:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        kind:
+          type: string
+        status:
+          type: string
+        status_display:
+          type: string
+        document:
+          type: string
+          format: uuid
+          description: The stored file; download it from the documents route.
+        filename:
+          type: string
+        proved:
+          type: boolean
+          description: Every arithmetic and format check passed.
+        unreadable_reason:
+          type: string
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/Check'
+        created_at:
+          type: string
+          format: date-time
+        read:
+          allOf:
+          - $ref: '#/components/schemas/ReadFields'
+          nullable: true
+          description: What was read; null when nothing could be.
+        suggested_party:
+          allOf:
+          - $ref: '#/components/schemas/PartyHint'
+          nullable: true
+          description: The client's party with the GSTIN that was read, if any.
+        matching_bill:
+          allOf:
+          - $ref: '#/components/schemas/BillHint'
+          nullable: true
+          description: A bill already booked from this very invoice that has no file
+            yet.
+        bill:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+      - bill
+      - checks
+      - created_at
+      - document
+      - filename
+      - id
+      - kind
+      - matching_bill
+      - proved
+      - read
+      - status
+      - status_display
+      - suggested_party
+      - unreadable_reason
+    InvoiceUploadKindEnum:
+      enum:
+      - PURCHASE
+      - SALES
+      type: string
+      description: |-
+        * `PURCHASE` - PURCHASE
+        * `SALES` - SALES
+    InvoiceUploadRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+          description: The invoice as a PDF with a text layer.
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/InvoiceUploadKindEnum'
+          description: |-
+            `PURCHASE`: a supplier's invoice to the client. `SALES`: the client's invoice to a customer.
+
+            * `PURCHASE` - PURCHASE
+            * `SALES` - SALES
+      required:
+      - file
+      - kind
     ItcStatusEnum:
       enum:
       - eligible
@@ -7808,11 +8127,12 @@ components:
           allOf:
           - $ref: '#/components/schemas/TypeEnum'
           description: |-
-            What to open to fix it: a bill, a posted entry, or a party's account.
+            What to open to fix it: a bill, a posted entry, a party's account, or an uploaded invoice.
 
             * `bill` - bill
             * `entry` - entry
             * `party` - party
+            * `invoice` - invoice
         id:
           type: string
           format: uuid
@@ -8435,6 +8755,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FirmDocument'
+    PaginatedInvoiceReadingList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/InvoiceReading'
     PaginatedJobList:
       type: object
       required:
@@ -8692,6 +9035,17 @@ components:
       - ledger
       - ledger_name
       - role_display
+    PartyHint:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+      required:
+      - id
+      - name
     PartyRef:
       type: object
       properties:
@@ -9194,6 +9548,94 @@ components:
       - amount_display
       - amount_paise
       - bill
+    ReadFields:
+      type: object
+      properties:
+        supplier_name:
+          type: string
+        gstins:
+          type: array
+          items:
+            type: string
+          description: Every valid GSTIN printed on the invoice, in order.
+        counterparty_gstin:
+          type: string
+          description: 'The other party''s: the supplier on a purchase, the buyer
+            on a sale.'
+        invoice_no:
+          type: string
+        invoice_date:
+          type: string
+          format: date
+          nullable: true
+        taxable_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        cgst_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        sgst_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        igst_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        cess_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        round_off_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        total_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        total_display:
+          type: string
+          nullable: true
+      required:
+      - cess_paise
+      - cgst_paise
+      - counterparty_gstin
+      - gstins
+      - igst_paise
+      - invoice_date
+      - invoice_no
+      - round_off_paise
+      - sgst_paise
+      - supplier_name
+      - taxable_paise
+      - total_display
+      - total_paise
     RecategorizeRequest:
       type: object
       properties:
@@ -11047,11 +11489,13 @@ components:
       - bill
       - entry
       - party
+      - invoice
       type: string
       description: |-
         * `bill` - bill
         * `entry` - entry
         * `party` - party
+        * `invoice` - invoice
     UploadRequest:
       type: object
       properties:

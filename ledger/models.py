@@ -575,3 +575,50 @@ class BillAllocation(UUIDModel, FirmScopedModel):
 
     def __str__(self) -> str:
         return f"{self.get_kind_display()} {format_inr(self.amount_paise)}"
+
+
+class ReadingStatus(models.TextChoices):
+    OPEN = "OPEN", "Waiting for a person"
+    BOOKED = "BOOKED", "Booked as a bill"
+    ATTACHED = "ATTACHED", "Attached to a bill already booked"
+    DISCARDED = "DISCARDED", "Set aside"
+
+
+class InvoiceReading(UUIDModel, FirmScopedModel):
+    """What an uploaded invoice file appears to say, as a draft, until a person books it or sets it aside.
+
+    The file itself is a ``Document``; this is the reading of it. The reading is never the books: nothing is booked
+    until a person confirms (``ledger.invoice_intake.book_reading``), and the bill that results carries the document, so
+    the invoice and the entry are one thing. A reading attached to a bill that was booked by hand first links them
+    from this side (``bill``), because a bill is never edited.
+
+    The fields read (supplier name, GSTINs, amounts) are personal data and are kept encrypted in ``payload_enc``;
+    ``checks`` holds only the names and results of the arithmetic that proves or faults the reading, which carry none.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="invoice_readings")
+    document = models.OneToOneField(Document, on_delete=models.PROTECT, related_name="reading")
+    #: ``PURCHASE`` (a supplier's invoice to the client) or ``SALES`` (the client's invoice to a customer).
+    kind = models.CharField(max_length=12, choices=[(BillKind.PURCHASE, "Purchase"), (BillKind.SALES, "Sales")])
+    status = models.CharField(max_length=10, choices=ReadingStatus.choices, default=ReadingStatus.OPEN)
+    #: Every check passed. A reading that is not proved is still shown, with what failed, for a person to fix.
+    proved = models.BooleanField(default=False)
+    checks = models.JSONField(default=list)
+    #: Why nothing could be read (a scan, say), in words for the screen. Blank when something was.
+    unreadable_reason = models.CharField(max_length=255, blank=True, default="")
+    payload_enc = models.BinaryField(null=True, blank=True)
+    #: The invoice's identity as the books and the GST module know it, so a reading finds the bill booked from it.
+    invoice_key = models.CharField(max_length=64, blank=True, default="", db_index=True)
+    bill = models.OneToOneField(Bill, null=True, blank=True, on_delete=models.PROTECT, related_name="reading")
+    decided_by = models.ForeignKey(
+        "core.User", null=True, blank=True, on_delete=models.SET_NULL, related_name="decided_readings"
+    )
+    decided_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        db_table = "ledger_invoice_reading"
+        ordering = ["-created_at"]
+        indexes = [models.Index(fields=["firm", "client", "status"], name="idx_reading_client_status")]
+
+    def __str__(self) -> str:
+        return f"Reading of {self.document_id} ({self.get_status_display()})"

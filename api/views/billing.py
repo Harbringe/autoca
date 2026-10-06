@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import uuid
 
+from django.db import transaction
 from django.db.models import BigIntegerField, F, Q, Sum, Value
 from django.db.models.functions import Coalesce
 from django.shortcuts import get_object_or_404
@@ -23,7 +24,7 @@ from api.serializers.billing import (
 from api.views.base import ClientScopedMixin
 from classify.models import LedgerAccount, Party
 from documents.models import Document
-from ledger import billing
+from ledger import billing, invoice_intake
 from ledger.billing import BillInput
 from ledger.models import Bill, BillKind
 
@@ -55,7 +56,7 @@ class BillViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.RetrieveModel
             super()
             .get_queryset()
             .filter(firm_id=self.request.firm.pk)
-            .select_related("party", "entry", "client", "document")
+            .select_related("party", "entry", "client", "document", "reading")
             .annotate(settled_paise=Coalesce(Sum("allocations__amount_paise"), Value(0), output_field=BigIntegerField()))
             .annotate(open_paise=F("total_paise") - F("settled_paise"))
         )
@@ -132,28 +133,32 @@ class BillViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.RetrieveModel
         if data["document"] is not None:
             document = get_object_or_404(Document, pk=data["document"], firm_id=request.firm.pk, client=client)
 
-        bill = POSTERS[data["kind"]](
-            client,
-            party,
-            heads,
-            BillInput(
-                reference=data["reference"],
-                bill_date=data["bill_date"],
-                due_date=data["due_date"],
-                narration=data["narration"],
-                document=document,
-                own_gstin=data["own_gstin"],
-                cgst=data["cgst_paise"],
-                sgst=data["sgst_paise"],
-                igst=data["igst_paise"],
-                cess=data["cess_paise"],
-                round_off=data["round_off_paise"],
-                tds=data["tds_paise"],
-                tds_section=data["tds_section"],
-                rcm=data["rcm"],
-            ),
-            membership=request.membership,
-        )
+        with transaction.atomic():
+            bill = POSTERS[data["kind"]](
+                client,
+                party,
+                heads,
+                BillInput(
+                    reference=data["reference"],
+                    bill_date=data["bill_date"],
+                    due_date=data["due_date"],
+                    narration=data["narration"],
+                    document=document,
+                    own_gstin=data["own_gstin"],
+                    cgst=data["cgst_paise"],
+                    sgst=data["sgst_paise"],
+                    igst=data["igst_paise"],
+                    cess=data["cess_paise"],
+                    round_off=data["round_off_paise"],
+                    tds=data["tds_paise"],
+                    tds_section=data["tds_section"],
+                    rcm=data["rcm"],
+                ),
+                membership=request.membership,
+            )
+            # An uploaded invoice that was waiting for this is no longer waiting: the bill carries it.
+            if document is not None:
+                invoice_intake.note_booked(document, bill, user=request.user)
         return Response(BillDetailSerializer(self.get_queryset().get(pk=bill.pk)).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(

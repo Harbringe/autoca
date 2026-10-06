@@ -36,6 +36,7 @@ from api.views.classify import (
 from api.views.core import ClientViewSet, JobViewSet, MeView
 from api.views.documents import DocumentDownloadView, FirmDocumentListView
 from api.views.gst import RegistrationViewSet, RunSignOffView, RunViewSet
+from api.views.invoices import InvoiceReadingViewSet
 from api.views.ledger import (
     ApprovalView,
     JournalEntryViewSet,
@@ -65,6 +66,7 @@ per_client.register("statements", StatementViewSet, basename="client-statement")
 per_client.register("ledgers", LedgerAccountViewSet, basename="client-ledger")
 per_client.register("parties", PartyViewSet, basename="client-party")
 per_client.register("bills", BillViewSet, basename="client-bill")
+per_client.register("invoices", InvoiceReadingViewSet, basename="client-invoice")
 per_client.register("rules", RuleViewSet, basename="client-rule")
 per_client.register("review-queue", ReviewQueueViewSet, basename="client-review-queue")
 

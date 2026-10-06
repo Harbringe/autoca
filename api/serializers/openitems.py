@@ -17,7 +17,8 @@ from core.money import format_inr
 
 class OpenItemLinkSerializer(serializers.Serializer):
     type = serializers.ChoiceField(
-        choices=["bill", "entry", "party"], help_text="What to open to fix it: a bill, a posted entry, or a party's account."
+        choices=["bill", "entry", "party", "invoice"],
+        help_text="What to open to fix it: a bill, a posted entry, a party's account, or an uploaded invoice.",
     )
     id = serializers.UUIDField()
 

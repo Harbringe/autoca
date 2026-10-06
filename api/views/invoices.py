@@ -1,0 +1,113 @@
+"""Uploaded invoices: the drafts read from them, and what a person does with each."""
+
+from __future__ import annotations
+
+from django.shortcuts import get_object_or_404
+from drf_spectacular.utils import extend_schema
+from rest_framework import mixins, status, viewsets
+from rest_framework.decorators import action
+from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.response import Response
+
+from api.pagination import DefaultPagination
+from api.permissions import CanApprove, HasFirmPermission
+from api.serializers.invoices import (
+    AttachSerializer,
+    InvoiceReadingSerializer,
+    InvoiceUploadSerializer,
+    reading_payload,
+)
+from api.throttles import enforce
+from api.views.base import ClientScopedMixin
+from ledger import invoice_intake
+from ledger.models import Bill, InvoiceReading
+
+
+@extend_schema(tags=["invoices"])
+class InvoiceReadingViewSet(
+    ClientScopedMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
+):
+    """Invoices uploaded as files, and what each appears to say.
+
+    A reading is only a draft. Booking it is the ordinary purchase or sales voucher with this file attached
+    (`POST bills/` with `document`), which closes the reading; or it is attached to a bill booked by hand first, or set
+    aside. Until then it is an open item, so a file cannot sit unseen.
+    """
+
+    permission_classes = [HasFirmPermission]
+    pagination_class = DefaultPagination
+    parser_classes = [MultiPartParser, FormParser]
+    required_permission = {"GET": "journal.view", "POST": "document.upload"}
+    queryset = InvoiceReading.objects.all()
+    serializer_class = InvoiceReadingSerializer
+
+    def get_queryset(self):
+        queryset = super().get_queryset().filter(firm_id=self.request.firm.pk).select_related("document", "client")
+        wanted = self.request.query_params.get("status")
+        return queryset.filter(status=wanted) if wanted else queryset
+
+    def _payload(self, reading: InvoiceReading) -> dict:
+        return reading_payload(
+            reading,
+            invoice_intake.fields_of(reading),
+            invoice_intake.suggested_party(reading),
+            invoice_intake.matching_bill(reading),
+        )
+
+    def list(self, request, *args, **kwargs):
+        page = self.paginate_queryset(self.get_queryset())
+        return self.get_paginated_response(InvoiceReadingSerializer([self._payload(r) for r in page], many=True).data)
+
+    def retrieve(self, request, *args, **kwargs):
+        return Response(InvoiceReadingSerializer(self._payload(self.get_object())).data)
+
+    @extend_schema(
+        summary="Upload an invoice and read it",
+        description=(
+            "Stores the PDF with the client's other documents and reads its text layer into a draft, with the arithmetic "
+            "that proves or faults it. Nothing is booked. A scan or photo has no text layer and is stored with a reason "
+            "instead of a reading (`unreadable_reason`). The same file again returns its reading (`200`). Needs "
+            "`document.upload`."
+        ),
+        request=InvoiceUploadSerializer,
+        responses={201: InvoiceReadingSerializer, 200: InvoiceReadingSerializer},
+    )
+    @action(detail=False, methods=["post"], url_path="upload")
+    def upload(self, request, client_id=None):
+        enforce(request, self, "upload")
+        payload = InvoiceUploadSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        upload = payload.validated_data["file"]
+        reading, is_new = invoice_intake.read_upload(
+            client=self.client,
+            data=upload.read(),
+            filename=upload.name,
+            kind=payload.validated_data["kind"],
+            uploaded_by=request.user,
+        )
+        reading = self.get_queryset().get(pk=reading.pk)
+        return Response(
+            InvoiceReadingSerializer(self._payload(reading)).data,
+            status=status.HTTP_201_CREATED if is_new else status.HTTP_200_OK,
+        )
+
+    @extend_schema(
+        summary="Attach this file to a bill booked by hand",
+        request=AttachSerializer,
+        responses={200: InvoiceReadingSerializer},
+    )
+    @action(detail=True, methods=["post"], url_path="attach", permission_classes=[CanApprove])
+    def attach(self, request, client_id=None, pk=None):
+        reading = self.get_object()
+        payload = AttachSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        bill = get_object_or_404(Bill, pk=payload.validated_data["bill"], firm_id=request.firm.pk, client=self.client)
+        invoice_intake.attach_to_bill(reading, bill, membership=request.membership)
+        return Response(InvoiceReadingSerializer(self._payload(self.get_queryset().get(pk=reading.pk))).data)
+
+    @extend_schema(summary="Set this invoice aside", request=None, responses={200: InvoiceReadingSerializer})
+    @action(detail=True, methods=["post"], url_path="discard", permission_classes=[CanApprove])
+    def discard(self, request, client_id=None, pk=None):
+        reading = self.get_object()
+        invoice_intake.discard(reading, membership=request.membership)
+        return Response(InvoiceReadingSerializer(self._payload(self.get_queryset().get(pk=reading.pk))).data)

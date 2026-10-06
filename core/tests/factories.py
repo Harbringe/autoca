@@ -48,6 +48,7 @@ from ledger.models import (
     ChangeAction,
     Direction,
     EntryChange,
+    InvoiceReading,
     JournalEntry,
     JournalLine,
     LedgerImportRun,
@@ -383,6 +384,13 @@ def _bill(firm, **kw):
     )
 
 
+def _invoice_reading(firm, **kw):
+    client = kw.get("client") or _client(firm)
+    return InvoiceReading.objects.create(
+        firm=firm, client=client, document=kw.get("document") or _document(firm, client=client), kind=BillKind.PURCHASE
+    )
+
+
 def _bill_allocation(firm, **kw):
     """A payment line on the party's own ledger, settling the bill in full."""
     bill = kw.get("bill") or _bill(firm)
@@ -447,6 +455,7 @@ FACTORIES = {
     LedgerOpening: _ledger_opening,
     Bill: _bill,
     BillAllocation: _bill_allocation,
+    InvoiceReading: _invoice_reading,
 }
 
 #: Firm is firm-scoped by primary key rather than by a firm_id column, so it is

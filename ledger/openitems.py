@@ -87,7 +87,7 @@ def open_items(client, *, only: Iterable[str] | None = None) -> list[OpenItem]:
 def bills_without_a_document(client):
     """The books say an invoice exists and nothing proves it. Allowed, but never silent."""
     bills = Bill.objects.filter(
-        firm_id=client.firm_id, client=client, document__isnull=True
+        firm_id=client.firm_id, client=client, document__isnull=True, reading__isnull=True
     ).exclude(kind=BillKind.OPENING).select_related("party")
     for bill in bills:
         yield OpenItem(
@@ -163,6 +163,37 @@ def parties_out_of_balance(client):
                 amount_paise=abs(position.difference_paise),
                 link={"type": "party", "id": str(party.pk)},
             )
+
+
+@detector("invoice_unbooked", "An uploaded invoice nobody has booked")
+def invoices_waiting(client):
+    """A file that arrived and has not become a bill, been attached to one, or been set aside. Never left unseen."""
+    from ledger import invoice_intake
+    from ledger.models import InvoiceReading, ReadingStatus
+
+    for reading in InvoiceReading.objects.filter(
+        firm_id=client.firm_id, client=client, status=ReadingStatus.OPEN
+    ).select_related("document"):
+        name = reading.document.original_filename or "An invoice"
+        if reading.unreadable_reason:
+            summary = f"{name} is a scan or photo and cannot be read yet. Key it in by hand; the file stays attached."
+            amount = None
+        else:
+            fields = invoice_intake.fields_of(reading)
+            amount = fields.get("total_paise")
+            summary = (
+                f"{name} has been read and is waiting to be booked."
+                if reading.proved
+                else f"{name} was read but does not add up; check it before booking."
+            )
+        yield OpenItem(
+            kind="invoice_unbooked",
+            client_id=client.pk,
+            summary=summary,
+            amount_paise=amount,
+            since=reading.created_at.date(),
+            link={"type": "invoice", "id": str(reading.pk)},
+        )
 
 
 @detector("party_opening_unbilled", "An opening balance not yet broken into bills")

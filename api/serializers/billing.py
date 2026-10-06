@@ -69,7 +69,8 @@ class BillSerializer(MoneySerializerMixin, serializers.ModelSerializer):
 
     @extend_schema_field(serializers.BooleanField())
     def get_has_document(self, obj) -> bool:
-        return obj.document_id is not None
+        # A file attached from the invoice side (``InvoiceReading``) counts: a bill is never edited to carry it.
+        return obj.document_id is not None or hasattr(obj, "reading")
 
     @extend_schema_field(serializers.BooleanField())
     def get_is_locked(self, obj) -> bool:

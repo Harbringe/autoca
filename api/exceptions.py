@@ -64,6 +64,7 @@ DOMAIN_ERRORS = {
     "EntryLockedError": (status.HTTP_409_CONFLICT, "entry_locked"),
     # Purchase and sales vouchers, bills and their settlement. Both are things a person can fix.
     "BillingError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "billing_rule"),
+    "IntakeError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "invoice_intake"),
     "WrongEntryKindError": (status.HTTP_409_CONFLICT, "wrong_entry_kind"),
     "MachineEditRefusedError": (status.HTTP_409_CONFLICT, "machine_edit_refused"),
     "StatementRemovalError": (status.HTTP_409_CONFLICT, "statement_in_use"),

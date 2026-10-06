@@ -686,6 +686,120 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/invoices/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Invoices uploaded as files, and what each appears to say.
+         *
+         *     A reading is only a draft. Booking it is the ordinary purchase or sales voucher with this file attached
+         *     (`POST bills/` with `document`), which closes the reading; or it is attached to a bill booked by hand first, or set
+         *     aside. Until then it is an open item, so a file cannot sit unseen.
+         */
+        get: operations["clients_invoices_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/invoices/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description Invoices uploaded as files, and what each appears to say.
+         *
+         *     A reading is only a draft. Booking it is the ordinary purchase or sales voucher with this file attached
+         *     (`POST bills/` with `document`), which closes the reading; or it is attached to a bill booked by hand first, or set
+         *     aside. Until then it is an open item, so a file cannot sit unseen.
+         */
+        get: operations["clients_invoices_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/invoices/{id}/attach/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Attach this file to a bill booked by hand
+         * @description Invoices uploaded as files, and what each appears to say.
+         *
+         *     A reading is only a draft. Booking it is the ordinary purchase or sales voucher with this file attached
+         *     (`POST bills/` with `document`), which closes the reading; or it is attached to a bill booked by hand first, or set
+         *     aside. Until then it is an open item, so a file cannot sit unseen.
+         */
+        post: operations["clients_invoices_attach_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/invoices/{id}/discard/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set this invoice aside
+         * @description Invoices uploaded as files, and what each appears to say.
+         *
+         *     A reading is only a draft. Booking it is the ordinary purchase or sales voucher with this file attached
+         *     (`POST bills/` with `document`), which closes the reading; or it is attached to a bill booked by hand first, or set
+         *     aside. Until then it is an open item, so a file cannot sit unseen.
+         */
+        post: operations["clients_invoices_discard_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/invoices/upload/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload an invoice and read it
+         * @description Stores the PDF with the client's other documents and reads its text layer into a draft, with the arithmetic that proves or faults it. Nothing is booked. A scan or photo has no text layer and is stored with a reason instead of a reading (`unreadable_reason`). The same file again returns its reading (`200`). Needs `document.upload`.
+         */
+        post: operations["clients_invoices_upload_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/ledgers/": {
         parameters: {
             query?: never;
@@ -2076,6 +2190,13 @@ export interface components {
          * @enum {string}
          */
         AssistantStateEnum: "working" | "idle" | "paused";
+        AttachRequest: {
+            /**
+             * Format: uuid
+             * @description The bill, booked by hand earlier, that this file is the invoice for.
+             */
+            bill: string;
+        };
         AttentionReason: {
             /**
              * @description reconciliation_difference: the books and the bank statement disagree at the latest statement date. statement_month_missing: a month inside a bank account's run of statements has none. assistant_entries_unchecked: entries the assistant posted or changed are not yet checked. unsigned_too_long: the books are not signed off more than 45 days after the latest entry. suspense_balance: the Suspense ledger holds a non-zero balance. opening_balance_unconfirmed: a bank account's opening balance is not confirmed. These describe where the books stand now, whatever period was asked for.
@@ -2464,6 +2585,12 @@ export interface components {
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly open_display: string | null;
         };
+        BillHint: {
+            /** Format: uuid */
+            id: string;
+            reference: string;
+            party_name: string;
+        };
         BillStatus: {
             /**
              * @description What to say about a payment booked to an expense head although the party has bills: `NO_INVOICE_EXPECTED` (a direct expense), `NEEDS_INVOICE` (it is waiting for one), or blank to unsay it.
@@ -2554,6 +2681,11 @@ export interface components {
             /** Format: date */
             date: string;
             count: number;
+        };
+        Check: {
+            name: string;
+            ok: boolean;
+            detail: string;
         };
         /**
          * @description * `keep_ours` - keep_ours
@@ -2921,6 +3053,53 @@ export interface components {
         };
         InvitesResponse: {
             results: components["schemas"]["InviteRecord"][];
+        };
+        InvoiceReading: {
+            /** Format: uuid */
+            id: string;
+            kind: string;
+            status: string;
+            status_display: string;
+            /**
+             * Format: uuid
+             * @description The stored file; download it from the documents route.
+             */
+            document: string;
+            filename: string;
+            /** @description Every arithmetic and format check passed. */
+            proved: boolean;
+            unreadable_reason: string;
+            checks: components["schemas"]["Check"][];
+            /** Format: date-time */
+            created_at: string;
+            /** @description What was read; null when nothing could be. */
+            read: components["schemas"]["ReadFields"] | null;
+            /** @description The client's party with the GSTIN that was read, if any. */
+            suggested_party: components["schemas"]["PartyHint"] | null;
+            /** @description A bill already booked from this very invoice that has no file yet. */
+            matching_bill: components["schemas"]["BillHint"] | null;
+            /** Format: uuid */
+            bill: string | null;
+        };
+        /**
+         * @description * `PURCHASE` - PURCHASE
+         *     * `SALES` - SALES
+         * @enum {string}
+         */
+        InvoiceUploadKindEnum: "PURCHASE" | "SALES";
+        InvoiceUploadRequest: {
+            /**
+             * Format: binary
+             * @description The invoice as a PDF with a text layer.
+             */
+            file: string;
+            /**
+             * @description `PURCHASE`: a supplier's invoice to the client. `SALES`: the client's invoice to a customer.
+             *
+             *     * `PURCHASE` - PURCHASE
+             *     * `SALES` - SALES
+             */
+            kind: components["schemas"]["InvoiceUploadKindEnum"];
         };
         /**
          * @description * `eligible` - eligible
@@ -3533,11 +3712,12 @@ export interface components {
         };
         OpenItemLink: {
             /**
-             * @description What to open to fix it: a bill, a posted entry, or a party's account.
+             * @description What to open to fix it: a bill, a posted entry, a party's account, or an uploaded invoice.
              *
              *     * `bill` - bill
              *     * `entry` - entry
              *     * `party` - party
+             *     * `invoice` - invoice
              */
             type: components["schemas"]["TypeEnum"];
             /** Format: uuid */
@@ -3866,6 +4046,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["FirmDocument"][];
         };
+        PaginatedInvoiceReadingList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["InvoiceReading"][];
+        };
         PaginatedJobList: {
             /** @example 123 */
             count: number;
@@ -4018,6 +4213,11 @@ export interface components {
             is_active?: boolean;
             /** Format: date-time */
             readonly created_at: string;
+        };
+        PartyHint: {
+            /** Format: uuid */
+            id: string;
+            name: string;
         };
         PartyRef: {
             /** Format: uuid */
@@ -4268,6 +4468,52 @@ export interface components {
              */
             amount_paise: number;
             amount_display: string;
+        };
+        ReadFields: {
+            supplier_name: string;
+            /** @description Every valid GSTIN printed on the invoice, in order. */
+            gstins: string[];
+            /** @description The other party's: the supplier on a purchase, the buyer on a sale. */
+            counterparty_gstin: string;
+            invoice_no: string;
+            /** Format: date */
+            invoice_date: string | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            taxable_paise: number | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            cgst_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            sgst_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            igst_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            cess_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            round_off_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            total_paise: number | null;
+            total_display: string | null;
         };
         RecategorizeRequest: {
             /** Format: uuid */
@@ -5265,9 +5511,10 @@ export interface components {
          * @description * `bill` - bill
          *     * `entry` - entry
          *     * `party` - party
+         *     * `invoice` - invoice
          * @enum {string}
          */
-        TypeEnum: "bill" | "entry" | "party";
+        TypeEnum: "bill" | "entry" | "party" | "invoice";
         UploadRequest: {
             /** Format: binary */
             file: string;
@@ -6551,6 +6798,137 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GstError"];
+                };
+            };
+        };
+    };
+    clients_invoices_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedInvoiceReadingList"];
+                };
+            };
+        };
+    };
+    clients_invoices_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceReading"];
+                };
+            };
+        };
+    };
+    clients_invoices_attach_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["AttachRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AttachRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceReading"];
+                };
+            };
+        };
+    };
+    clients_invoices_discard_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceReading"];
+                };
+            };
+        };
+    };
+    clients_invoices_upload_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["InvoiceUploadRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["InvoiceUploadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceReading"];
+                };
+            };
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceReading"];
                 };
             };
         };

@@ -15,9 +15,10 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { parseFy } from '@/lib/fy'
 import { useHotkey } from '@/lib/hotkeys'
 import { moduleHref } from '@/lib/jump'
-import { setSelectedClient } from '@/lib/selectedClient'
 import { switchClientPath } from '@/lib/modules'
 import { usePreferences } from '@/lib/preferences'
+import { useDebounced } from '@/lib/useDebounced'
+import { openClientSwitcher } from './switcherBus'
 import { useSession } from '@/session/session'
 
 interface PaletteApi {
@@ -29,15 +30,6 @@ export function usePalette(): PaletteApi {
   const value = useContext(Ctx)
   if (!value) throw new Error('usePalette outside PaletteProvider')
   return value
-}
-
-function useDebounced<T>(value: T, ms = 200): T {
-  const [debounced, setDebounced] = useState(value)
-  useEffect(() => {
-    const t = setTimeout(() => setDebounced(value), ms)
-    return () => clearTimeout(t)
-  }, [value, ms])
-  return debounced
 }
 
 export function PaletteProvider({ children }: { children: ReactNode }) {
@@ -54,7 +46,10 @@ export function PaletteProvider({ children }: { children: ReactNode }) {
   )
 
   useHotkey('ctrl+k', 'Search clients, go to a screen, run an action', () => api.open())
-  useHotkey('alt+c', 'Switch client', () => api.open())
+  // Inside a client the switcher is on screen and takes the key; elsewhere the palette lists clients.
+  useHotkey('alt+c', 'Switch client', () => {
+    if (!openClientSwitcher()) api.open()
+  })
 
   return (
     <Ctx.Provider value={api}>
@@ -103,13 +98,13 @@ function PaletteBody({ search, setSearch, close }: { search: string; setSearch: 
           { value: 'c-review', label: 'Review transactions', group: 'This client', icon: <ListChecks />, run: go(() => void navigate({ to: '/clients/$clientId/review', params: { clientId }, search: { stage: 'unresolved' } })) },
           { value: 'c-bills', label: 'Purchases & Sales', group: 'This client', icon: <FileText />, run: go(() => void navigate({ to: '/clients/$clientId/bills', params: { clientId } })) },
           { value: 'c-daybook', label: 'Day Book', group: 'This client', icon: <BookOpen />, run: go(() => void navigate({ to: '/clients/$clientId/daybook', params: { clientId } })) },
-          { value: 'c-bookkeeping', label: 'Books overview', group: 'This client', icon: <BookOpen />, run: go(() => void navigate({ to: '/clients/$clientId/bookkeeping', params: { clientId } })) },
+          { value: 'c-bookkeeping', label: 'Books summary', group: 'This client', icon: <BookOpen />, run: go(() => void navigate({ to: '/clients/$clientId/bookkeeping', params: { clientId } })) },
           { value: 'c-tb', label: 'Trial Balance', group: 'This client', icon: <Scale />, run: go(() => void navigate({ to: '/clients/$clientId/reports', params: { clientId }, search: { report: 'tb' } })) },
           { value: 'c-pl', label: 'Profit & Loss A/c', group: 'This client', icon: <FileText />, run: go(() => void navigate({ to: '/clients/$clientId/reports', params: { clientId }, search: { report: 'pl' } })) },
           { value: 'c-bs', label: 'Balance Sheet', group: 'This client', icon: <FileText />, run: go(() => void navigate({ to: '/clients/$clientId/reports', params: { clientId }, search: { report: 'bs' } })) },
-          { value: 'c-books', label: 'Books & sign-off', group: 'This client', icon: <ListChecks />, run: go(() => void navigate({ to: '/clients/$clientId/books', params: { clientId } })) },
+          { value: 'c-books', label: 'Sign-off', group: 'This client', icon: <ListChecks />, run: go(() => void navigate({ to: '/clients/$clientId/books', params: { clientId } })) },
           ...(can('team.view') || can('client.update')
-            ? ([{ value: 'c-team', label: 'Settings & team', group: 'This client', icon: <Users />, run: go(() => void navigate({ to: '/clients/$clientId/team', params: { clientId } })) }] satisfies Item[])
+            ? ([{ value: 'c-team', label: 'Client settings', group: 'This client', icon: <Users />, run: go(() => void navigate({ to: '/clients/$clientId/team', params: { clientId } })) }] satisfies Item[])
             : []),
           { value: 'c-ledgers', label: 'Ledgers (chart of accounts)', group: 'This client', icon: <BookOpen />, run: go(() => void navigate({ to: '/clients/$clientId/ledgers', params: { clientId } })) },
         ] satisfies Item[])
@@ -202,7 +197,6 @@ function PaletteBody({ search, setSearch, close }: { search: string; setSearch: 
                 icon={<Users />}
                 onSelect={() => {
                   close()
-                  setSelectedClient(null)
                   void navigate({ to: switchClientPath(path, null) as never })
                 }}
               >

@@ -3,7 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { Bell, CheckCircle2 } from 'lucide-react'
 import { useState, type KeyboardEvent } from 'react'
 import { messageOf } from '@/api/errors'
-import { firmAlerts } from '@/api/queries/alerts'
+import { clientAlerts, firmAlerts } from '@/api/queries/alerts'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
@@ -11,11 +11,11 @@ import { useSession } from '@/session/session'
 import { AlertRow, SEVERITY_LABEL } from './AlertList'
 import { badgeText, filterAlerts, severityCounts, type SeverityFilter } from './alertView'
 
-/** How many things need attention across the firm, kept current. Zero while it loads or is not allowed. */
-export function useAlertCount(): number {
+/** How many things need attention across the firm, kept current. Zero while it loads, is not allowed, or inside a client (the bell counts that client's own). */
+export function useAlertCount(enabled = true): number {
   const { can } = useSession()
-  const feed = useQuery({ ...firmAlerts(), enabled: can('client.view') })
-  return feed.data?.counts.total ?? 0
+  const feed = useQuery({ ...firmAlerts(), enabled: enabled && can('client.view') })
+  return enabled ? (feed.data?.counts.total ?? 0) : 0
 }
 
 const TABS: { id: SeverityFilter; label: string }[] = [
@@ -27,13 +27,17 @@ const TABS: { id: SeverityFilter; label: string }[] = [
 
 /**
  * The bell in the top bar. It opens a panel under itself listing what needs attention, most serious
- * first; choosing a row goes to the screen where it is fixed and closes the panel.
+ * first; choosing a row goes to the screen where it is fixed and closes the panel. Inside a client
+ * (`clientId`) it lists only that client's alerts and says so; elsewhere it is the firm's.
  */
-export function AlertBell() {
+export function AlertBell({ clientId }: { clientId?: string }) {
   const { can } = useSession()
   const [open, setOpen] = useState(false)
   const [filter, setFilter] = useState<SeverityFilter>('all')
-  const feed = useQuery({ ...firmAlerts(), enabled: can('client.view') })
+  const firm = useQuery({ ...firmAlerts(), enabled: can('client.view') && !clientId })
+  const one = useQuery({ ...clientAlerts(clientId ?? ''), enabled: can('client.view') && !!clientId })
+  const feed = clientId ? one : firm
+  const scope = clientId ? 'this client' : null
   if (!can('client.view')) return null
 
   const alerts = feed.data?.alerts ?? []
@@ -61,7 +65,7 @@ export function AlertBell() {
           size="icon"
           className="relative max-sm:size-11"
           aria-haspopup="dialog"
-          aria-label={count ? `Alerts: ${count} need attention` : 'Alerts: nothing needs attention'}
+          aria-label={`Alerts${scope ? ` for ${scope}` : ''}: ${count ? `${count} need attention` : 'nothing needs attention'}`}
           title="Alerts"
         >
           <Bell className="size-[18px]" aria-hidden />
@@ -75,7 +79,7 @@ export function AlertBell() {
       <PopoverContent align="end" aria-label="Alerts" className="w-[380px] max-w-[calc(100vw-1rem)] max-sm:w-[calc(100vw-1rem)]">
         <div className="flex items-baseline justify-between gap-3 px-4 pb-1 pt-3">
           <h2 className="text-sm font-semibold text-heading">
-            Alerts {count > 0 && <span className="num font-normal text-muted-foreground">({count})</span>}
+            {clientId ? 'This client' : 'Alerts'} {count > 0 && <span className="num font-normal text-muted-foreground">({count})</span>}
           </h2>
         </div>
         {alerts.length > 0 && (
@@ -114,18 +118,18 @@ export function AlertBell() {
             <div className="grid justify-items-center gap-1 p-8 text-center">
               <CheckCircle2 className="size-6 text-success" aria-hidden />
               <p className="text-sm font-semibold text-heading">All clear</p>
-              <p className="text-[13px] text-muted-foreground">{alerts.length ? 'Nothing at this level.' : 'Nothing needs a person right now.'}</p>
+              <p className="text-[13px] text-muted-foreground">{alerts.length ? 'Nothing at this level.' : clientId ? 'Nothing needs a person for this client.' : 'Nothing needs a person right now.'}</p>
             </div>
           ) : (
             <ul className="divide-y">
               {visible.map((alert, i) => (
-                <AlertRow key={`${alert.client}-${alert.kind}-${alert.to}-${i}`} alert={alert} onNavigate={close} />
+                <AlertRow key={`${alert.client}-${alert.kind}-${alert.to}-${i}`} alert={alert} showClient={!clientId} onNavigate={close} />
               ))}
             </ul>
           )}
         </div>
         <div className="border-t px-4 py-3 text-sm">
-          <Link to="/alerts" onClick={close} className="font-medium text-link underline underline-offset-2">
+          <Link to="/alerts" search={(clientId ? { client: clientId } : undefined) as never} onClick={close} className="font-medium text-link underline underline-offset-2">
             View all alerts
           </Link>
         </div>

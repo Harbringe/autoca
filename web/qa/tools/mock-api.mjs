@@ -85,7 +85,10 @@ http
     if (p === '/api/v1/me/') return send(res, ME)
     if (p === '/api/v1/firm/overview/') return send(res, overview())
     if (p === '/api/v1/firm/alerts/') return send(res, feed(ALERTS, module))
-    if (p === '/api/v1/clients/') return send(res, page(CLIENTS))
+    if (p === '/api/v1/clients/') {
+      const q = (url.searchParams.get('search') || '').toLowerCase()
+      return send(res, page(CLIENTS.filter((c) => !q || c.name.toLowerCase().includes(q))))
+    }
     if ((m = p.match(/^\/api\/v1\/clients\/([^/]+)\/alerts\/$/))) return send(res, feed(ALERTS.filter((a) => a.client === m[1]), module))
     if ((m = p.match(/^\/api\/v1\/clients\/([^/]+)\/review-queue\/summary\/$/))) return send(res, summary())
     if ((m = p.match(/^\/api\/v1\/clients\/([^/]+)\/books\/$/))) return send(res, books())

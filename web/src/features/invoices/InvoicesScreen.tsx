@@ -85,13 +85,13 @@ export function InvoicesScreen({ clientId }: { clientId: string }) {
   const waiting = readings.filter((r) => r.status === 'OPEN').length
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-4 [&>*]:min-w-0">
       <div className="no-print flex flex-wrap items-center justify-between gap-3">
         <p className="text-sm text-muted-foreground">
           {waiting === 0 ? 'Nothing is waiting.' : `${plural(waiting, 'invoice')} waiting for you.`} Each file is read, never booked on its own.
         </p>
         {mayUpload && (
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Select aria-label="Kind of invoice" className="w-44" value={kind} onChange={(e) => setKind(e.target.value as 'PURCHASE' | 'SALES')}>
               <option value="PURCHASE">Purchase invoice</option>
               <option value="SALES">Sales invoice</option>

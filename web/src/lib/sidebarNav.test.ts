@@ -1,37 +1,33 @@
-import { CLIENT_NAV } from './clientNav'
-import { openClientGroups, sidebarPlan } from './sidebarNav'
+import { RAIL_ITEMS, railActive, railHref, railItems, settingsHome } from './sidebarNav'
 
-const all = () => true
-const ids = (p: ReturnType<typeof sidebarPlan>) => p.groups.flatMap((g) => g.items.map((i) => i.id))
+const only = (...held: string[]) => (p: string) => held.includes(p)
 
-describe('sidebarPlan', () => {
-  it('lists every module when no client is selected', () => {
-    const p = sidebarPlan({ hasClient: false, can: all, hideSoon: false })
-    expect(ids(p)).toContain('bookkeeping')
-    expect(ids(p)).toContain('taxation')
-    expect(p.more).toEqual([])
+describe('the rail', () => {
+  it('is the firm places, labelled, in a fixed order, with no coming-soon entries', () => {
+    expect(railItems(() => true).map((i) => i.label)).toEqual(['Home', 'Clients', 'Pipeline', 'Alerts', 'Staff', 'Settings'])
+    expect(RAIL_ITEMS.every((i) => i.label.length > 0)).toBe(true)
   })
-  it('hides the coming-soon modules when asked', () => {
-    expect(ids(sidebarPlan({ hasClient: false, can: all, hideSoon: true }))).not.toContain('audit')
+  it('hides what the person may not see, but always keeps Settings', () => {
+    expect(railItems(() => false).map((i) => i.id)).toEqual(['settings'])
+    expect(railItems(only('client.view')).map((i) => i.id)).toEqual(['dashboard', 'clients', 'pipeline', 'alerts', 'staff', 'settings'])
   })
-  it('drops what the client screens already cover once a client is selected', () => {
-    const p = sidebarPlan({ hasClient: true, can: all, hideSoon: false })
-    expect(ids(p)).toEqual(['dashboard', 'clients', 'pipeline', 'alerts', 'staff', 'settings'])
-    expect(p.more.map((i) => i.id)).toEqual(['taxation', 'audit', 'compliance', 'ai', 'analytics'])
+  it('sends Settings to the first page the person may use', () => {
+    expect(settingsHome(only('team.view', 'firm.manage'))).toBe('/settings/team')
+    expect(settingsHome(only('firm.manage'))).toBe('/settings/firm')
+    expect(settingsHome(() => false)).toBe('/settings/preferences')
+    const settings = RAIL_ITEMS.find((i) => i.id === 'settings')!
+    expect(railHref(settings, only('firm.manage'))).toBe('/settings/firm')
+    expect(railHref(RAIL_ITEMS[0]!, () => true)).toBe('/dashboard')
+    expect(railHref(RAIL_ITEMS.find((i) => i.id === 'pipeline')!, () => true)).toBe('/pipeline')
   })
-  it('keeps the soon items out of More when hidden', () => {
-    expect(sidebarPlan({ hasClient: true, can: all, hideSoon: true }).more).toEqual([])
-  })
-  it('respects permissions', () => {
-    const p = sidebarPlan({ hasClient: true, can: () => false, hideSoon: true })
-    expect(ids(p)).toEqual(['settings'])
-  })
-})
-
-describe('openClientGroups', () => {
-  it('opens the first group and the one with the current screen', () => {
-    expect(openClientGroups(CLIENT_NAV, 'tds')).toEqual(['Get the data in', 'Compliance'])
-    expect(openClientGroups(CLIENT_NAV, '')).toEqual(['Get the data in'])
-    expect(openClientGroups(CLIENT_NAV, undefined)).toEqual(['Get the data in'])
+  it('lights a place from the address alone, and none inside a client', () => {
+    expect(railActive('/dashboard')).toBe('dashboard')
+    expect(railActive('/clients')).toBe('clients')
+    expect(railActive('/pipeline')).toBe('pipeline')
+    expect(railActive('/settings/team')).toBe('settings')
+    expect(railActive('/clients/c1')).toBeUndefined()
+    expect(railActive('/clients/c1/daybook')).toBeUndefined()
+    expect(railActive('/bookkeeping')).toBeUndefined()
+    expect(railActive('/soon/taxation')).toBeUndefined()
   })
 })

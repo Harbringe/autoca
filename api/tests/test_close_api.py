@@ -21,7 +21,7 @@ def test_the_report_has_its_controls_and_no_items_for_a_new_client(api, client_r
 def test_a_bad_date_says_what_to_send(api, client_record):
     response = api.get(f"{base(client_record)}/books/close/", {"through": "1-8-2025"})
 
-    assert response.status_code == 400 and "YYYY-MM-DD" in response.json()["fields"]["through"][0]
+    assert response.status_code == 400 and "YYYY-MM-DD" in response.json()["fields"]["through"]
 
 
 def test_explaining_something_that_is_not_open_is_refused_with_a_reason(api, client_record):

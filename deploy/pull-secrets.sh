@@ -38,6 +38,8 @@ while IFS= read -r line; do
     seed=""
     case "$key" in "?"*) seed=1; key="${key#?}" ;; esac
     case "$key" in "" | *[!A-Z0-9_]*) continue ;; esac
+    # The database owner and bootstrap credentials stay out of the web process's environment, whatever a parameter says.
+    case "$key" in *OWNER* | *POSTGRES* | AUTOCA_*) echo "pull-secrets: ${key} is never taken from Parameter Store; ignored."; continue ;; esac
     # Only a setting the app is known to read: listed in the reviewed deploy/prod.env.example, or already in .env.prod.
     # A made-up name from a parameter is ignored, so a new setting has to be added to that file first.
     if ! grep -q "^${key}=" deploy/prod.env.example && ! grep -q "^${key}=" .env.prod; then

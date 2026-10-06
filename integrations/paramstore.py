@@ -8,7 +8,7 @@ is stored anywhere):
 Any setting can live here: create a parameter named ``/autoca/prod/<SETTING_NAME>`` and it is written into
 ``.env.prod`` at the next deploy, replacing what was there.
 
-The exception is :data:`SEED_ONLY`: the three permanent keys and every database credential. Losing or changing one of
+The exception is :data:`SEED_ONLY`: the three permanent keys and the web role's database URL. Losing or changing one of
 those loses stored data or signs everyone out, so a parameter may *fill them in when the server has none* (a new
 server, or recovery from a lost file, which makes Parameter Store a backup of them) but never replaces a value the
 server already has. A difference is reported as a warning, by name only.
@@ -31,17 +31,7 @@ DEFAULT_REGION = "ap-south-1"
 
 #: Settings a parameter may fill in but never replace. See the module note.
 SEED_ONLY = frozenset(
-    {
-        "KMS_LOCAL_MASTER_KEY",
-        "BLIND_INDEX_KEY",
-        "DJANGO_SECRET_KEY",
-        "DATABASE_URL",
-        "DATABASE_OWNER_URL",
-        "POSTGRES_PASSWORD",
-        "POSTGRES_USER",
-        "APP_DB_PASSWORD",
-        "OWNER_DB_PASSWORD",
-    }
+    {"KMS_LOCAL_MASTER_KEY", "BLIND_INDEX_KEY", "DJANGO_SECRET_KEY", "DATABASE_URL"}
 )
 
 #: Names that can never be set from a parameter: they steer this very mechanism, or change how a process starts or
@@ -59,9 +49,18 @@ NEVER = frozenset(
         "IFS",
         "BASH_ENV",
         "ENV",
+        # The database owner and bootstrap credentials live in .env.owner and .env.db, apart from the web process on
+        # purpose: the web process runs as a role that row-level security binds, and must never hold the owner's.
+        "DATABASE_OWNER_URL",
+        "POSTGRES_PASSWORD",
+        "POSTGRES_USER",
+        "AUTOCA_OWNER_PASSWORD",
+        "AUTOCA_WEB_PASSWORD",
     }
 )
 #: Prefixes that are never settings: the dynamic loader, the language runtimes, and the container tooling.
+#: Any name containing one of these is refused as well, so a differently spelled owner credential is caught too.
+NEVER_CONTAINS = ("OWNER", "POSTGRES")
 NEVER_PREFIXES = (
     "LD_",
     "DYLD_",
@@ -88,6 +87,7 @@ def usable(name: str, value: str) -> bool:
         bool(_NAME.fullmatch(name))
         and name not in NEVER
         and not name.startswith(NEVER_PREFIXES)
+        and not any(part in name for part in NEVER_CONTAINS)
         and "\n" not in value
         and "\r" not in value
         and value != ""

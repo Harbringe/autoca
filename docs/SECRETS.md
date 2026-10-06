@@ -16,11 +16,13 @@ to that file first, in a reviewed change. Names that change how a process starts
 **String** for plain settings such as `LLM_MODEL` or `LLM_BATCH_SIZE`.
 
 **Seed-only settings.** The three permanent keys (`KMS_LOCAL_MASTER_KEY`, `BLIND_INDEX_KEY`, `DJANGO_SECRET_KEY`) and
-the database credentials are different: changing one loses stored data or signs everyone out. A parameter may
+the web role's `DATABASE_URL` are different: changing one loses stored data or signs everyone out. A parameter may
 *fill one in when the server has none* (a new server, or recovery after a lost file) but never replaces a value the
 server already has. If the two differ, the deploy log says so by name and keeps the server's. Storing them here is
 therefore a safe backup of them, which the database dump deliberately is not.
 
+The database **owner** and bootstrap credentials (`DATABASE_OWNER_URL`, `POSTGRES_*`, `AUTOCA_*_PASSWORD`, anything with OWNER or POSTGRES in the name) are
+never taken from Parameter Store: they stay in `.env.owner` and `.env.db`, apart from the web process on purpose.
 `PARAMETER_PREFIX` and `PARAMETER_REGION` cannot be set from a parameter. Empty values and values with a line break are
 ignored.
 
@@ -59,6 +61,20 @@ Repeat for `/autoca/prod/LLM_MODEL` (value `gpt-6-luna`, type String is fine) an
 
 Whoever may *write* parameters is whoever may set the app's settings, so give `ssm:PutParameter` on `/autoca/prod/*` to
 the administrators only.
+
+## Importing a whole .env file at once
+
+Instead of creating parameters one by one, `deploy/import_env.py` reads an `.env` file and creates them all. Run it in
+**AWS CloudShell** (the `>_` icon in the console toolbar; already signed in, Python and boto3 included), region Mumbai:
+
+1. Actions -> Upload file: `deploy/import_env.py`, and your env file (call it `env.txt`).
+2. `python3 import_env.py env.txt` shows what it would do and writes nothing.
+3. `python3 import_env.py env.txt --apply` creates `/autoca/prod/NAME` for each setting, as a SecureString.
+4. `rm env.txt` when done.
+
+It prints only names, never values. A parameter that already exists is left alone unless you add `--overwrite`. Comments,
+blank and empty lines, and the names the server refuses (above) are skipped and listed. Settings the server does not
+know are created but ignored at deploy with a line in the log until they are added to `deploy/prod.env.example`.
 
 ## Using it
 

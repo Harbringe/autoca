@@ -241,6 +241,8 @@ def _key(text) -> str:
 #: a small .xlsx can unpack to gigabytes (zip compresses repetitive sheets about a thousand to one), and a sheet can
 #: declare a million rows, on a host with 2 GB shared by everything else.
 MAX_ROWS = 100_000
+#: A register has a dozen columns. A sheet that declares thousands would otherwise pad every row out to that width.
+MAX_COLS = 200
 MAX_XLSX_UNPACKED_BYTES = 60 * 1024 * 1024
 MAX_XLSX_MEMBERS = 500
 
@@ -262,7 +264,7 @@ def _read_table(data: bytes, filename: str) -> list[list]:
             raise GstParseError(f"Cannot open this Excel file: {exc}") from exc
         ws = wb.worksheets[0]
         rows = []
-        for row in ws.iter_rows(values_only=True):
+        for row in ws.iter_rows(values_only=True, max_col=MAX_COLS):
             rows.append(list(row))
             if len(rows) > MAX_ROWS:
                 raise GstParseError(f"This sheet has more than {MAX_ROWS:,} rows.")

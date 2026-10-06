@@ -75,7 +75,7 @@ _COMPILED = [(m, re.compile(p), d) for m, p, d in ACTIONS]
 
 def describe(method: str, path: str, clients: dict) -> tuple[str, str | None]:
     for m, pattern, text in _COMPILED:
-        if m != method:
+        if m != method and not (method == "HEAD" and m == "GET"):
             continue
         match = pattern.match(path)
         if match:

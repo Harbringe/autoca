@@ -26,6 +26,8 @@ from core.http import client_ip, request_id
 logger = logging.getLogger("autoca.audit")
 
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+#: HEAD runs the same view as GET (the number is decrypted, the file fetched) and only drops the body.
+READ_METHODS = {"GET", "HEAD"}
 
 #: Reads that hand over something sensitive and so are recorded like a write: a stored statement being downloaded, and a
 #: bank account being opened (its number is decrypted for the response).
@@ -47,7 +49,7 @@ class AuditMiddleware:
         response = self.get_response(request)
 
         if request.method in MUTATING_METHODS or (
-            request.method == "GET" and any(p.match(request.path) for p in SENSITIVE_READS)
+            request.method in READ_METHODS and any(p.fullmatch(request.path_info) for p in SENSITIVE_READS)
         ):
             self._record(request, response, time.monotonic() - started)
 

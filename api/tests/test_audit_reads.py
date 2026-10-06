@@ -24,3 +24,15 @@ def test_opening_a_bank_account_is_recorded(api, client_record, statement):
     assert any(p.endswith(f"/bank-accounts/{account_id}/") for p in paths)
     # Listing accounts shows them masked and is not a sensitive read.
     assert not any(p.endswith("/bank-accounts/") for p in paths)
+
+
+def test_a_head_request_for_an_account_is_recorded_too(api, client_record, statement):
+    accounts = api.get(f"{base(client_record)}/bank-accounts/").json()
+    accounts = accounts["results"] if isinstance(accounts, dict) else accounts
+    account_id = accounts[0]["id"]
+
+    api.head(f"{base(client_record)}/bank-accounts/{account_id}/")
+
+    with firm_context(client_record.firm_id):
+        methods = set(AuditLog.objects.filter(path__endswith=f"/bank-accounts/{account_id}/").values_list("method", flat=True))
+    assert "HEAD" in methods

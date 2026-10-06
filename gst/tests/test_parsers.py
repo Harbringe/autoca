@@ -131,3 +131,20 @@ def test_a_workbook_that_unpacks_to_far_too_much_is_refused(monkeypatch):
 def test_something_that_is_not_a_workbook_is_refused():
     with pytest.raises(GstParseError, match="not a valid Excel"):
         parse_register(b"not a zip", "reg.xlsx")
+
+
+def test_a_sheet_that_declares_thousands_of_columns_is_read_no_wider_than_the_cap(monkeypatch):
+    from openpyxl import Workbook
+
+    from gst.parsers import MAX_COLS, _read_table
+
+    book = Workbook()
+    sheet = book.active
+    sheet["A1"] = "Supplier GSTIN"
+    sheet.cell(row=1, column=MAX_COLS + 300, value="far away")
+    buffer = io.BytesIO()
+    book.save(buffer)
+
+    rows = _read_table(buffer.getvalue(), "reg.xlsx")
+
+    assert rows and all(len(row) <= MAX_COLS for row in rows)

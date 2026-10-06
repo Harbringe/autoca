@@ -554,7 +554,7 @@ def _parse_xlsx(data: bytes) -> ParsedMasters:
     try:
         for sheet in workbook.worksheets:
             rows = []
-            for row in sheet.iter_rows(values_only=True):
+            for row in sheet.iter_rows(values_only=True, max_col=200):
                 rows.append(list(row))
                 if len(rows) > MAX_SHEET_ROWS:
                     raise TallyParseError(f"This sheet has more than {MAX_SHEET_ROWS:,} rows.")

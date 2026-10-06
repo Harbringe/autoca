@@ -181,6 +181,123 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/assets/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description A client's fixed assets and what each is worth.
+         *
+         *     An asset's cost comes from a purchase the books already hold, so the register and the ledger agree. Depreciation is
+         *     computed from the asset's terms for whatever year is asked, never stored.
+         */
+        get: operations["clients_assets_list"];
+        put?: never;
+        /**
+         * Register an asset
+         * @description Needs `journal.approve`. With `bill`, the cost cannot exceed what that purchase put on the ledger and has not already been registered; a purchase of a fixed asset that is not registered is an open item.
+         */
+        post: operations["clients_assets_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/assets/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * @description A client's fixed assets and what each is worth.
+         *
+         *     An asset's cost comes from a purchase the books already hold, so the register and the ledger agree. Depreciation is
+         *     computed from the asset's terms for whatever year is asked, never stored.
+         */
+        get: operations["clients_assets_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/assets/{id}/dispose/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Record the sale of an asset
+         * @description A client's fixed assets and what each is worth.
+         *
+         *     An asset's cost comes from a purchase the books already hold, so the register and the ledger agree. Depreciation is
+         *     computed from the asset's terms for whatever year is asked, never stored.
+         */
+        post: operations["clients_assets_dispose_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/assets/{id}/remove/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove an asset from the register
+         * @description A client's fixed assets and what each is worth.
+         *
+         *     An asset's cost comes from a purchase the books already hold, so the register and the ledger agree. Depreciation is
+         *     computed from the asset's terms for whatever year is asked, never stored.
+         */
+        post: operations["clients_assets_remove_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/assets/schedule/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Depreciation schedule for a year
+         * @description A client's fixed assets and what each is worth.
+         *
+         *     An asset's cost comes from a purchase the books already hold, so the register and the ledger agree. Depreciation is
+         *     computed from the asset's terms for whatever year is asked, never stored.
+         */
+        get: operations["clients_assets_schedule_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/assistant/next-batch/": {
         parameters: {
             query?: never;
@@ -2320,6 +2437,118 @@ export interface components {
             /** @description For each row placed on a supplier's or customer's own account: which of the party's bills it pays, or whether it is held on account or as an advance. Such a row is refused without one, and is never approved as part of a whole band. */
             settlements?: components["schemas"]["RowSettlementRequest"][];
         };
+        Asset: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: uuid */
+            ledger: string;
+            ledger_name: string;
+            /** Format: uuid */
+            bill: string | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            cost_paise: number;
+            cost_display: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            residual_paise: number;
+            /** Format: date */
+            put_to_use: string;
+            method: string;
+            method_display: string;
+            life_years: number;
+            rate_bp: number;
+            /** Format: date */
+            disposed_on: string | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            disposal_paise: number | null;
+        };
+        /**
+         * @description * `SLM` - Straight line (Companies Act)
+         *     * `WDV` - Written-down value, by days in use (Companies Act)
+         *     * `WDV_IT` - Written-down value, 180-day rule (Income-tax)
+         * @enum {string}
+         */
+        AssetCreateMethodEnum: "SLM" | "WDV" | "WDV_IT";
+        AssetCreateRequest: {
+            name: string;
+            /**
+             * Format: uuid
+             * @description A ledger under Fixed Assets.
+             */
+            ledger: string;
+            /**
+             * Format: uuid
+             * @description The purchase it was bought on. The cost cannot exceed what that purchase put on the ledger.
+             */
+            bill?: string | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            cost_paise: number;
+            /**
+             * Format: int64
+             * @description What it is worth at the end of its life.
+             * @default 0
+             */
+            residual_paise: number;
+            /** Format: date */
+            put_to_use: string;
+            method: components["schemas"]["AssetCreateMethodEnum"];
+            /**
+             * @description Straight line only.
+             * @default 0
+             */
+            life_years: number;
+            /**
+             * @description Written-down value only: 1500 is 15%.
+             * @default 0
+             */
+            rate_bp: number;
+        };
+        AssetRequest: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /** Format: uuid */
+            ledger: string;
+            ledger_name: string;
+            /** Format: uuid */
+            bill: string | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            cost_paise: number;
+            cost_display: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            residual_paise: number;
+            /** Format: date */
+            put_to_use: string;
+            method: string;
+            method_display: string;
+            life_years: number;
+            rate_bp: number;
+            /** Format: date */
+            disposed_on: string | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            disposal_paise: number | null;
+        };
         AssignRequest: {
             /** Format: uuid */
             member: string;
@@ -2936,7 +3165,7 @@ export interface components {
             readonly party_candidates: unknown;
             readonly rcm: boolean;
             readonly tds_section: components["schemas"]["TdsSectionEnum"];
-            readonly method: components["schemas"]["MethodEnum"];
+            readonly method: components["schemas"]["MethodB54Enum"];
             readonly method_display: string;
             /** @description Why the model suggested what it did, in one sentence a reviewer can check. */
             readonly rationale: string;
@@ -3139,6 +3368,16 @@ export interface components {
          * @enum {string}
          */
         Direction745Enum: "DR" | "CR";
+        DisposeRequest: {
+            /** Format: date */
+            disposed_on: string;
+            /**
+             * Format: int64
+             * @description What it was sold for.
+             * @default 0
+             */
+            proceeds_paise: number;
+        };
         Document: {
             /** Format: uuid */
             readonly id: string;
@@ -3688,7 +3927,7 @@ export interface components {
             readonly is_debit: boolean;
             readonly is_posted: boolean;
             readonly needs_review: boolean;
-            readonly method: components["schemas"]["MethodEnum"];
+            readonly method: components["schemas"]["MethodB54Enum"];
             readonly method_display: string;
         };
         /**
@@ -3850,7 +4089,7 @@ export interface components {
          *     * `LLM` - Suggested by a language model
          * @enum {string}
          */
-        MethodEnum: "RULE" | "UNRESOLVED" | "REVIEWED" | "LLM";
+        MethodB54Enum: "RULE" | "UNRESOLVED" | "REVIEWED" | "LLM";
         Metric: {
             key: string;
             label: string;
@@ -4283,6 +4522,21 @@ export interface components {
         };
         OwnerTransferred: {
             owner: components["schemas"]["Person"];
+        };
+        PaginatedAssetList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["Asset"][];
         };
         PaginatedBankAccountList: {
             /** @example 123 */
@@ -5178,6 +5432,50 @@ export interface components {
             groups: components["schemas"]["ReportGroup"][];
             /** @description Rows with an action and no decision, matched rows excluded. */
             actions: components["schemas"]["ReportAction"][];
+        };
+        Schedule: {
+            /** @description The starting year: 2025 is FY 2025-26. */
+            financial_year: number;
+            rows: components["schemas"]["ScheduleRow"][];
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            total_depreciation_paise: number;
+            total_depreciation_display: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            total_closing_paise: number;
+            total_closing_display: string;
+        };
+        ScheduleRow: {
+            asset: components["schemas"]["Asset"];
+            days_in_use: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            opening_paise: number;
+            opening_display: string;
+            /**
+             * Format: int64
+             * @description Charged for the year. Computed from the terms, never stored.
+             */
+            depreciation_paise: number;
+            depreciation_display: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            closing_paise: number;
+            closing_display: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            accumulated_paise: number;
         };
         /**
          * @description * `B2B` - B2B
@@ -6173,6 +6471,160 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaginatedJournalEntryList"];
+                };
+            };
+        };
+    };
+    clients_assets_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedAssetList"];
+                };
+            };
+        };
+    };
+    clients_assets_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AssetCreateRequest"];
+                "multipart/form-data": components["schemas"]["AssetCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Asset"];
+                };
+            };
+        };
+    };
+    clients_assets_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Asset"];
+                };
+            };
+        };
+    };
+    clients_assets_dispose_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DisposeRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DisposeRequest"];
+                "multipart/form-data": components["schemas"]["DisposeRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Asset"];
+                };
+            };
+        };
+    };
+    clients_assets_remove_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AssetRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["AssetRequest"];
+                "multipart/form-data": components["schemas"]["AssetRequest"];
+            };
+        };
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    clients_assets_schedule_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Starting year: 2025 is FY 2025-26. Default the current year. */
+                fy?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Schedule"];
                 };
             };
         };

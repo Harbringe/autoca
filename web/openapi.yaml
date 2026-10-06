@@ -324,6 +324,230 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedJournalEntryList'
           description: ''
+  /api/v1/clients/{client_id}/assets/:
+    get:
+      operationId: clients_assets_list
+      description: |-
+        A client's fixed assets and what each is worth.
+
+        An asset's cost comes from a purchase the books already hold, so the register and the ledger agree. Depreciation is
+        computed from the asset's terms for whatever year is asked, never stored.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - assets
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedAssetList'
+          description: ''
+    post:
+      operationId: clients_assets_create
+      description: Needs `journal.approve`. With `bill`, the cost cannot exceed what
+        that purchase put on the ledger and has not already been registered; a purchase
+        of a fixed asset that is not registered is an open item.
+      summary: Register an asset
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - assets
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AssetCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AssetCreateRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+          description: ''
+  /api/v1/clients/{client_id}/assets/{id}/:
+    get:
+      operationId: clients_assets_retrieve
+      description: |-
+        A client's fixed assets and what each is worth.
+
+        An asset's cost comes from a purchase the books already hold, so the register and the ledger agree. Depreciation is
+        computed from the asset's terms for whatever year is asked, never stored.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - assets
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+          description: ''
+  /api/v1/clients/{client_id}/assets/{id}/dispose/:
+    post:
+      operationId: clients_assets_dispose_create
+      description: |-
+        A client's fixed assets and what each is worth.
+
+        An asset's cost comes from a purchase the books already hold, so the register and the ledger agree. Depreciation is
+        computed from the asset's terms for whatever year is asked, never stored.
+      summary: Record the sale of an asset
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - assets
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DisposeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DisposeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DisposeRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+          description: ''
+  /api/v1/clients/{client_id}/assets/{id}/remove/:
+    post:
+      operationId: clients_assets_remove_create
+      description: |-
+        A client's fixed assets and what each is worth.
+
+        An asset's cost comes from a purchase the books already hold, so the register and the ledger agree. Depreciation is
+        computed from the asset's terms for whatever year is asked, never stored.
+      summary: Remove an asset from the register
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - assets
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssetRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/AssetRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/AssetRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/clients/{client_id}/assets/schedule/:
+    get:
+      operationId: clients_assets_schedule_retrieve
+      description: |-
+        A client's fixed assets and what each is worth.
+
+        An asset's cost comes from a purchase the books already hold, so the register and the ledger agree. Depreciation is
+        computed from the asset's terms for whatever year is asked, never stored.
+      summary: Depreciation schedule for a year
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: 'Starting year: 2025 is FY 2025-26. Default the current year.'
+      tags:
+      - assets
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Schedule'
+          description: ''
   /api/v1/clients/{client_id}/assistant/next-batch/:
     post:
       operationId: clients_assistant_next_batch_create
@@ -4932,6 +5156,219 @@ components:
             which of the party''s bills it pays, or whether it is held on account
             or as an advance. Such a row is refused without one, and is never approved
             as part of a whole band.'
+    Asset:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        ledger:
+          type: string
+          format: uuid
+        ledger_name:
+          type: string
+        bill:
+          type: string
+          format: uuid
+          nullable: true
+        cost_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        cost_display:
+          type: string
+        residual_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        put_to_use:
+          type: string
+          format: date
+        method:
+          type: string
+        method_display:
+          type: string
+        life_years:
+          type: integer
+        rate_bp:
+          type: integer
+        disposed_on:
+          type: string
+          format: date
+          nullable: true
+        disposal_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - bill
+      - cost_display
+      - cost_paise
+      - disposal_paise
+      - disposed_on
+      - id
+      - ledger
+      - ledger_name
+      - life_years
+      - method
+      - method_display
+      - name
+      - put_to_use
+      - rate_bp
+      - residual_paise
+    AssetCreateMethodEnum:
+      enum:
+      - SLM
+      - WDV
+      - WDV_IT
+      type: string
+      description: |-
+        * `SLM` - Straight line (Companies Act)
+        * `WDV` - Written-down value, by days in use (Companies Act)
+        * `WDV_IT` - Written-down value, 180-day rule (Income-tax)
+    AssetCreateRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        ledger:
+          type: string
+          format: uuid
+          description: A ledger under Fixed Assets.
+        bill:
+          type: string
+          format: uuid
+          nullable: true
+          description: The purchase it was bought on. The cost cannot exceed what
+            that purchase put on the ledger.
+        cost_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 1
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        residual_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+          description: What it is worth at the end of its life.
+        put_to_use:
+          type: string
+          format: date
+        method:
+          $ref: '#/components/schemas/AssetCreateMethodEnum'
+        life_years:
+          type: integer
+          maximum: 100
+          minimum: 0
+          default: 0
+          description: Straight line only.
+        rate_bp:
+          type: integer
+          maximum: 10000
+          minimum: 0
+          default: 0
+          description: 'Written-down value only: 1500 is 15%.'
+      required:
+      - cost_paise
+      - ledger
+      - method
+      - name
+      - put_to_use
+    AssetRequest:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          minLength: 1
+        ledger:
+          type: string
+          format: uuid
+        ledger_name:
+          type: string
+          minLength: 1
+        bill:
+          type: string
+          format: uuid
+          nullable: true
+        cost_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        cost_display:
+          type: string
+          minLength: 1
+        residual_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        put_to_use:
+          type: string
+          format: date
+        method:
+          type: string
+          minLength: 1
+        method_display:
+          type: string
+          minLength: 1
+        life_years:
+          type: integer
+        rate_bp:
+          type: integer
+        disposed_on:
+          type: string
+          format: date
+          nullable: true
+        disposal_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - bill
+      - cost_display
+      - cost_paise
+      - disposal_paise
+      - disposed_on
+      - id
+      - ledger
+      - ledger_name
+      - life_years
+      - method
+      - method_display
+      - name
+      - put_to_use
+      - rate_bp
+      - residual_paise
     AssignRequest:
       type: object
       properties:
@@ -6312,7 +6749,7 @@ components:
           readOnly: true
         method:
           allOf:
-          - $ref: '#/components/schemas/MethodEnum'
+          - $ref: '#/components/schemas/MethodB54Enum'
           readOnly: true
         method_display:
           type: string
@@ -6768,6 +7205,21 @@ components:
       description: |-
         * `DR` - Debit
         * `CR` - Credit
+    DisposeRequest:
+      type: object
+      properties:
+        disposed_on:
+          type: string
+          format: date
+        proceeds_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+          description: What it was sold for.
+      required:
+      - disposed_on
     Document:
       type: object
       properties:
@@ -8027,7 +8479,7 @@ components:
           readOnly: true
         method:
           allOf:
-          - $ref: '#/components/schemas/MethodEnum'
+          - $ref: '#/components/schemas/MethodB54Enum'
           readOnly: true
         method_display:
           type: string
@@ -8402,7 +8854,7 @@ components:
           description: An existing, in-use ledger of the same client.
       required:
       - into
-    MethodEnum:
+    MethodB54Enum:
       enum:
       - RULE
       - UNRESOLVED
@@ -9311,6 +9763,29 @@ components:
           $ref: '#/components/schemas/Person'
       required:
       - owner
+    PaginatedAssetList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Asset'
     PaginatedBankAccountList:
       type: object
       required:
@@ -10968,6 +11443,91 @@ components:
       - signed_off_at
       - status
       - summary
+    Schedule:
+      type: object
+      properties:
+        financial_year:
+          type: integer
+          description: 'The starting year: 2025 is FY 2025-26.'
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/ScheduleRow'
+        total_depreciation_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        total_depreciation_display:
+          type: string
+        total_closing_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        total_closing_display:
+          type: string
+      required:
+      - financial_year
+      - rows
+      - total_closing_display
+      - total_closing_paise
+      - total_depreciation_display
+      - total_depreciation_paise
+    ScheduleRow:
+      type: object
+      properties:
+        asset:
+          $ref: '#/components/schemas/Asset'
+        days_in_use:
+          type: integer
+        opening_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        opening_display:
+          type: string
+        depreciation_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Charged for the year. Computed from the terms, never stored.
+        depreciation_display:
+          type: string
+        closing_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        closing_display:
+          type: string
+        accumulated_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - accumulated_paise
+      - asset
+      - closing_display
+      - closing_paise
+      - days_in_use
+      - depreciation_display
+      - depreciation_paise
+      - opening_display
+      - opening_paise
     SectionEnum:
       enum:
       - B2B

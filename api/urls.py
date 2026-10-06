@@ -16,6 +16,7 @@ from __future__ import annotations
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from api.views.assets import AssetViewSet
 from api.views.assistant import NextBatchView
 from api.views.audit import AuditLogView
 from api.views.banking import (
@@ -68,6 +69,7 @@ per_client.register("ledgers", LedgerAccountViewSet, basename="client-ledger")
 per_client.register("parties", PartyViewSet, basename="client-party")
 per_client.register("bills", BillViewSet, basename="client-bill")
 per_client.register("invoices", InvoiceReadingViewSet, basename="client-invoice")
+per_client.register("assets", AssetViewSet, basename="client-asset")
 per_client.register("rules", RuleViewSet, basename="client-rule")
 per_client.register("review-queue", ReviewQueueViewSet, basename="client-review-queue")
 

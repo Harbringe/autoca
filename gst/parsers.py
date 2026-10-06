@@ -23,6 +23,7 @@ import datetime
 import io
 import json
 import re
+import zipfile
 from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
@@ -236,23 +237,48 @@ def _key(text) -> str:
     return re.sub(r"[^a-z0-9]", "", str(text or "").lower())
 
 
+#: A purchase register or GSTR-2B export is a few thousand rows. These bound what one upload can make the server hold:
+#: a small .xlsx can unpack to gigabytes (zip compresses repetitive sheets about a thousand to one), and a sheet can
+#: declare a million rows, on a host with 2 GB shared by everything else.
+MAX_ROWS = 100_000
+MAX_XLSX_UNPACKED_BYTES = 60 * 1024 * 1024
+MAX_XLSX_MEMBERS = 500
+
+
 def _read_table(data: bytes, filename: str) -> list[list]:
     name = filename.lower()
     if name.endswith((".xlsx", ".xlsm")):
         from openpyxl import load_workbook  # local: only spreadsheet uploads need it
 
         try:
+            infos = zipfile.ZipFile(io.BytesIO(data)).infolist()
+        except zipfile.BadZipFile as exc:
+            raise GstParseError("This is not a valid Excel file.") from exc
+        if len(infos) > MAX_XLSX_MEMBERS or sum(i.file_size for i in infos) > MAX_XLSX_UNPACKED_BYTES:
+            raise GstParseError("This workbook is too large once unpacked to be a purchase register.")
+        try:
             wb = load_workbook(io.BytesIO(data), read_only=True, data_only=True)
         except Exception as exc:  # openpyxl raises a zoo of types on a bad file
             raise GstParseError(f"Cannot open this Excel file: {exc}") from exc
         ws = wb.worksheets[0]
-        return [list(r) for r in ws.iter_rows(values_only=True)]
+        rows = []
+        for row in ws.iter_rows(values_only=True):
+            rows.append(list(row))
+            if len(rows) > MAX_ROWS:
+                raise GstParseError(f"This sheet has more than {MAX_ROWS:,} rows.")
+        wb.close()
+        return rows
     if name.endswith((".csv", ".txt")):
         try:
             text = data.decode("utf-8-sig")
         except UnicodeDecodeError:
             text = data.decode("latin-1")
-        return [list(r) for r in csv.reader(io.StringIO(text))]
+        rows = []
+        for row in csv.reader(io.StringIO(text)):
+            rows.append(list(row))
+            if len(rows) > MAX_ROWS:
+                raise GstParseError(f"This file has more than {MAX_ROWS:,} rows.")
+        return rows
     raise GstParseError("Upload an .xlsx or .csv file.")
 
 

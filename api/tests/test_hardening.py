@@ -206,3 +206,19 @@ def test_a_bank_account_cannot_be_created_by_hand(api, client_record):
     response = api.post(f"/api/v1/clients/{client_record.pk}/bank-accounts/", {"ledger_name": "X"}, format="json")
 
     assert response.status_code == 405
+
+
+def test_one_person_cannot_use_up_the_uploads_of_everyone(api, client_record, settings, monkeypatch):
+    from rest_framework.throttling import SimpleRateThrottle
+
+    monkeypatch.setattr(SimpleRateThrottle, "THROTTLE_RATES", {**SimpleRateThrottle.THROTTLE_RATES, "upload": "2/hour"})
+    from django.core.cache import cache
+
+    cache.clear()
+    url = f"/api/v1/clients/{client_record.pk}/statements/upload/"
+
+    codes = [api.post(url, {}, format="multipart").status_code for _ in range(4)]
+
+    assert codes[:2] == [400, 400]  # refused for the missing file, but still counted
+    assert codes[2:] == [429, 429]
+    cache.clear()

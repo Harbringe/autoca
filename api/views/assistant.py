@@ -8,6 +8,7 @@ from rest_framework.views import APIView
 
 from api.permissions import HasFirmPermission
 from api.serializers.classify import NextBatchRequestSerializer, NextBatchSerializer
+from api.throttles import enforce
 from classify.queue import process_next_batch
 from core.access import get_visible_client
 from core.db.session import firm_context
@@ -44,6 +45,7 @@ class NextBatchView(APIView):
         responses={200: NextBatchSerializer},
     )
     def post(self, request, client_id=None):
+        enforce(request, self, "model")
         payload = NextBatchRequestSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         with firm_context(request.firm.pk):

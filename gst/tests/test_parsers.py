@@ -106,3 +106,28 @@ def test_column_mapping_override():
         csv_bytes(text), "r.csv", mapping={"gstin": "Vendor GST", "invoice_no": "Ref", "taxable": "Amt"}
     )
     assert inv.invoice_no == "9" and inv.gstin == G and inv.taxable_paise == 10000
+
+
+def test_a_register_with_too_many_rows_is_refused(monkeypatch):
+    monkeypatch.setattr("gst.parsers.MAX_ROWS", 3)
+    text = "Supplier GSTIN,Bill No,Bill Date,Taxable Value\n" + "\n".join(f"{G},I{i},12-08-2026,1" for i in range(10))
+
+    with pytest.raises(GstParseError, match="more than"):
+        parse_register(csv_bytes(text), "reg.csv")
+
+
+def test_a_workbook_that_unpacks_to_far_too_much_is_refused(monkeypatch):
+    import zipfile
+
+    monkeypatch.setattr("gst.parsers.MAX_XLSX_UNPACKED_BYTES", 1000)
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        archive.writestr("xl/worksheets/sheet1.xml", "A" * 100_000)
+
+    with pytest.raises(GstParseError, match="too large"):
+        parse_register(buffer.getvalue(), "reg.xlsx")
+
+
+def test_something_that_is_not_a_workbook_is_refused():
+    with pytest.raises(GstParseError, match="not a valid Excel"):
+        parse_register(b"not a zip", "reg.xlsx")

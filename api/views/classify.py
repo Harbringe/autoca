@@ -38,6 +38,7 @@ from api.serializers.classify import (
 from api.serializers.core import JobSerializer
 from api.serializers.partyreports import PartyStatementSerializer, statement_payload
 from api.serializers.settlement import SettlementContextSerializer
+from api.throttles import enforce
 from api.views.base import ClientScopedMixin, FirmScopedViewSet
 from api.views.partyreports import date_param
 from api.views.settlement import build_context
@@ -375,6 +376,7 @@ class ReviewQueueViewSet(
     )
     @action(detail=False, methods=["post"], url_path="suggest")
     def suggest(self, request, client_id=None):
+        enforce(request, self, "model")
         client = self.client
         if not has_permission(request.membership, "transaction.classify"):
             raise PermissionDenied("Your role does not permit transaction.classify.")
@@ -414,6 +416,7 @@ class ReviewQueueViewSet(
     )
     @action(detail=False, methods=["post"], url_path="recategorize")
     def recategorize(self, request, client_id=None):
+        enforce(request, self, "model")
         client = self.client
         if not has_permission(request.membership, "transaction.classify"):
             raise PermissionDenied("Your role does not permit transaction.classify.")

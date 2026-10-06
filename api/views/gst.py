@@ -22,6 +22,7 @@ from rest_framework.response import Response
 
 from api.pagination import DefaultPagination
 from api.permissions import HasFirmPermission
+from api.throttles import enforce
 from core.access import get_visible_client
 from gst import report, services
 from gst.matching import ItcStatus, MatchKind, Section
@@ -397,6 +398,7 @@ class RunViewSet(viewsets.GenericViewSet):
         return Response(report.run_report(_run_of(client, pk)))
 
     def _upload(self, request, client_id, pk, loader):
+        enforce(request, self, "upload")
         client = get_visible_client(request, client_id)
         run = _run_of(client, pk)
         payload = UploadSerializer(data=request.data)

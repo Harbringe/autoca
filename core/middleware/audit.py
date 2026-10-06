@@ -15,6 +15,7 @@ and the RLS policy on the audit table applies to it like anything else.
 from __future__ import annotations
 
 import logging
+import re
 import time
 
 from django.db import DatabaseError
@@ -25,6 +26,14 @@ from core.http import client_ip, request_id
 logger = logging.getLogger("autoca.audit")
 
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
+
+#: Reads that hand over something sensitive and so are recorded like a write: a stored statement being downloaded, and a
+#: bank account being opened (its number is decrypted for the response).
+_UUID = r"[0-9a-fA-F-]{36}"
+SENSITIVE_READS = (
+    re.compile(rf"^/api/v1/documents/{_UUID}/download/$"),
+    re.compile(rf"^/api/v1/clients/{_UUID}/bank-accounts/{_UUID}/$"),
+)
 
 
 class AuditMiddleware:
@@ -37,7 +46,9 @@ class AuditMiddleware:
 
         response = self.get_response(request)
 
-        if request.method in MUTATING_METHODS:
+        if request.method in MUTATING_METHODS or (
+            request.method == "GET" and any(p.match(request.path) for p in SENSITIVE_READS)
+        ):
             self._record(request, response, time.monotonic() - started)
 
         response["X-Request-ID"] = request.request_id

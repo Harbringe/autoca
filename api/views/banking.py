@@ -23,6 +23,7 @@ from api.serializers.banking import (
     StatementUploadSerializer,
 )
 from api.serializers.core import JobSerializer
+from api.throttles import enforce
 from api.views.base import ClientScopedMixin, FirmScopedViewSet
 from banking.ingest import confirm_opening_balance, ingest_statement
 from banking.models import BankAccount, Statement, StatementTransaction
@@ -65,6 +66,7 @@ class StatementUploadView(viewsets.GenericViewSet):
         responses={202: JobSerializer},
     )
     def create(self, request, client_id=None):
+        enforce(request, self, "upload")
         client = get_visible_client(request, client_id)
         payload = self.get_serializer(data=request.data)
         payload.is_valid(raise_exception=True)

@@ -516,6 +516,110 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/clients/{client_id}/assets/depreciation/:
+    get:
+      operationId: clients_assets_depreciation_retrieve
+      description: |-
+        A client's fixed assets and what each is worth.
+
+        An asset's cost comes from a purchase the books already hold, so the register and the ledger agree. Depreciation is
+        computed from the asset's terms for whatever year is asked, never stored.
+      summary: Is a year's depreciation booked?
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: 'Starting year: 2025 is FY 2025-26. Default the current year.'
+      tags:
+      - assets
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepreciationStatus'
+          description: ''
+    post:
+      operationId: clients_assets_depreciation_create
+      description: 'One journal entry dated 31 March: Dr Depreciation, Cr each asset''s
+        own ledger. Once per year. Refused inside sealed books. Needs `journal.approve`.'
+      summary: Book a year's depreciation
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - assets
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepreciationYearRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DepreciationYearRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DepreciationYearRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepreciationStatus'
+          description: ''
+  /api/v1/clients/{client_id}/assets/depreciation/remove/:
+    post:
+      operationId: clients_assets_depreciation_remove_create
+      description: |-
+        A client's fixed assets and what each is worth.
+
+        An asset's cost comes from a purchase the books already hold, so the register and the ledger agree. Depreciation is
+        computed from the asset's terms for whatever year is asked, never stored.
+      summary: Take a year's depreciation out of the books
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - assets
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DepreciationYearRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DepreciationYearRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DepreciationYearRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DepreciationStatus'
+          description: ''
   /api/v1/clients/{client_id}/assets/schedule/:
     get:
       operationId: clients_assets_schedule_retrieve
@@ -7197,6 +7301,57 @@ components:
       required:
       - kind
       - match
+    DepreciationStatus:
+      type: object
+      properties:
+        year:
+          type: integer
+          description: 'Starting year: 2025 is FY 2025-26.'
+        planned_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: What the register says the year's depreciation is now.
+        planned_display:
+          type: string
+        posted_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: What was booked, or null if the year is not booked.
+        posted_display:
+          type: string
+          nullable: true
+        entry:
+          type: string
+          format: uuid
+          nullable: true
+          description: The journal entry that booked it.
+        stale:
+          type: boolean
+          description: 'The register has changed since it was booked: remove the posting
+            and book it again.'
+      required:
+      - entry
+      - planned_display
+      - planned_paise
+      - posted_display
+      - posted_paise
+      - stale
+      - year
+    DepreciationYearRequest:
+      type: object
+      properties:
+        fy:
+          type: integer
+          description: 'Starting year: 2025 is FY 2025-26. Default the current year.'
+        note:
+          type: string
+          default: ''
+          maxLength: 500
     Direction745Enum:
       enum:
       - DR

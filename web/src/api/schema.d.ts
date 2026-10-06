@@ -275,6 +275,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/assets/depreciation/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Is a year's depreciation booked?
+         * @description A client's fixed assets and what each is worth.
+         *
+         *     An asset's cost comes from a purchase the books already hold, so the register and the ledger agree. Depreciation is
+         *     computed from the asset's terms for whatever year is asked, never stored.
+         */
+        get: operations["clients_assets_depreciation_retrieve"];
+        put?: never;
+        /**
+         * Book a year's depreciation
+         * @description One journal entry dated 31 March: Dr Depreciation, Cr each asset's own ledger. Once per year. Refused inside sealed books. Needs `journal.approve`.
+         */
+        post: operations["clients_assets_depreciation_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/assets/depreciation/remove/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Take a year's depreciation out of the books
+         * @description A client's fixed assets and what each is worth.
+         *
+         *     An asset's cost comes from a purchase the books already hold, so the register and the ledger agree. Depreciation is
+         *     computed from the asset's terms for whatever year is asked, never stored.
+         */
+        post: operations["clients_assets_depreciation_remove_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/assets/schedule/": {
         parameters: {
             query?: never;
@@ -3359,6 +3409,35 @@ export interface components {
             /** Format: uuid */
             match: string;
             kind: components["schemas"]["DecisionKindEnum"];
+            /** @default  */
+            note: string;
+        };
+        DepreciationStatus: {
+            /** @description Starting year: 2025 is FY 2025-26. */
+            year: number;
+            /**
+             * Format: int64
+             * @description What the register says the year's depreciation is now.
+             */
+            planned_paise: number;
+            planned_display: string;
+            /**
+             * Format: int64
+             * @description What was booked, or null if the year is not booked.
+             */
+            posted_paise: number | null;
+            posted_display: string | null;
+            /**
+             * Format: uuid
+             * @description The journal entry that booked it.
+             */
+            entry: string | null;
+            /** @description The register has changed since it was booked: remove the posting and book it again. */
+            stale: boolean;
+        };
+        DepreciationYearRequest: {
+            /** @description Starting year: 2025 is FY 2025-26. Default the current year. */
+            fy?: number;
             /** @default  */
             note: string;
         };
@@ -6602,6 +6681,84 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    clients_assets_depreciation_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Starting year: 2025 is FY 2025-26. Default the current year. */
+                fy?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepreciationStatus"];
+                };
+            };
+        };
+    };
+    clients_assets_depreciation_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DepreciationYearRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DepreciationYearRequest"];
+                "multipart/form-data": components["schemas"]["DepreciationYearRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepreciationStatus"];
+                };
+            };
+        };
+    };
+    clients_assets_depreciation_remove_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["DepreciationYearRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["DepreciationYearRequest"];
+                "multipart/form-data": components["schemas"]["DepreciationYearRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DepreciationStatus"];
+                };
             };
         };
     };

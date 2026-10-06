@@ -9,7 +9,7 @@ import { Plus } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { messageOf } from '@/api/errors'
-import { assetSchedule, bills as billsQuery, useAssetAction, useRegisterAsset } from '@/api/queries/bills'
+import { assetSchedule, bills as billsQuery, depreciationStatus, useAssetAction, useBookDepreciation, useRegisterAsset } from '@/api/queries/bills'
 import { ledgers as ledgersQuery } from '@/api/queries/books'
 import { clientDetail } from '@/api/queries/clients'
 import type { Asset } from '@/api/types'
@@ -32,6 +32,8 @@ export function AssetsScreen({ clientId }: { clientId: string }) {
   const [year, setYear] = useState(() => financialYearOf(new Date()))
   const schedule = useQuery(assetSchedule(clientId, year))
   const action = useAssetAction(clientId)
+  const booked = useQuery(depreciationStatus(clientId, year))
+  const book = useBookDepreciation(clientId)
   const [adding, setAdding] = useState(false)
   const [selling, setSelling] = useState<Asset | null>(null)
   const mayEdit = can('journal.approve') && !!client.data?.can_post
@@ -49,8 +51,42 @@ export function AssetsScreen({ clientId }: { clientId: string }) {
     }
   }
 
+  async function bookYear(remove = false) {
+    try {
+      await book.mutateAsync({ year, remove })
+      toast.success(remove ? 'Depreciation taken out of the books' : `Depreciation for FY ${fyLabel(year)} booked`)
+    } catch (e) {
+      toast.error(messageOf(e))
+    }
+  }
+  const status = booked.data
+
   return (
     <div className="grid gap-4">
+      {status && status.planned_paise > 0 && (
+        <div className="no-print flex flex-wrap items-center justify-between gap-3 rounded-md border p-3 text-sm" role="status">
+          <div>
+            {status.posted_paise === null ? (
+              <>FY {fyLabel(year)}’s depreciation of <strong>{status.planned_display}</strong> is not booked yet. Until it is, the books do not show it.</>
+            ) : status.stale ? (
+              <span className="text-destructive">
+                The register has changed since {status.posted_display} was booked (it now says {status.planned_display}). Take it out and book it again.
+              </span>
+            ) : (
+              <>Booked for FY {fyLabel(year)}: <strong>{status.posted_display}</strong>, as one journal entry dated 31 March.</>
+            )}
+          </div>
+          {mayEdit && (
+            <div className="flex gap-2">
+              {status.posted_paise === null ? (
+                <Button size="sm" onClick={() => void bookYear()} disabled={book.isPending}>Book depreciation</Button>
+              ) : (
+                <Button size="sm" variant="outline" onClick={() => void bookYear(true)} disabled={book.isPending}>Take it out</Button>
+              )}
+            </div>
+          )}
+        </div>
+      )}
       <div className="no-print flex flex-wrap items-center justify-between gap-3">
         <label className="flex items-center gap-2 text-sm">
           <span className="text-muted-foreground">Year</span>

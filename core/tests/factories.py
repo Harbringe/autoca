@@ -47,6 +47,7 @@ from ledger.models import (
     BooksEvent,
     ChangeAction,
     CloseAcknowledgement,
+    DepreciationPosting,
     Direction,
     EntryChange,
     FixedAsset,
@@ -413,6 +414,14 @@ def _fixed_asset(firm, **kw):
     )
 
 
+def _depreciation_posting(firm, **kw):
+    client = kw.get("client") or _client(firm)
+    entry = JournalEntry.objects.create(
+        firm=firm, client=client, entry_no=1, financial_year=2025, entry_date=datetime.date(2026, 3, 31), voucher_type="Journal"
+    )
+    return DepreciationPosting.objects.create(firm=firm, client=client, financial_year=2025, entry=entry, total_paise=1000)
+
+
 def _bill_allocation(firm, **kw):
     """A payment line on the party's own ledger, settling the bill in full."""
     bill = kw.get("bill") or _bill(firm)
@@ -480,6 +489,7 @@ FACTORIES = {
     InvoiceReading: _invoice_reading,
     CloseAcknowledgement: _close_acknowledgement,
     FixedAsset: _fixed_asset,
+    DepreciationPosting: _depreciation_posting,
 }
 
 #: Firm is firm-scoped by primary key rather than by a firm_id column, so it is

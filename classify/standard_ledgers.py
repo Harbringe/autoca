@@ -17,6 +17,7 @@ STANDARD_LEDGERS: list[tuple[str, str]] = [
     ("Electricity Charges", G.INDIRECT_EXPENSE),
     ("Telephone & Internet", G.INDIRECT_EXPENSE),
     ("Office Expenses", G.INDIRECT_EXPENSE),
+    ("Depreciation", G.INDIRECT_EXPENSE),
     ("Printing & Stationery", G.INDIRECT_EXPENSE),
     ("Postage & Courier", G.INDIRECT_EXPENSE),
     ("Travelling Expenses", G.INDIRECT_EXPENSE),

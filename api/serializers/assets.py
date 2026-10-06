@@ -112,3 +112,28 @@ def schedule_payload(year: int, items) -> dict:
         "total_closing_paise": closing,
         "total_closing_display": format_inr(closing),
     }
+
+
+class DepreciationStatusSerializer(serializers.Serializer):
+    year = serializers.IntegerField(help_text="Starting year: 2025 is FY 2025-26.")
+    planned_paise = PaiseField(help_text="What the register says the year's depreciation is now.")
+    planned_display = serializers.CharField()
+    posted_paise = PaiseField(allow_null=True, help_text="What was booked, or null if the year is not booked.")
+    posted_display = serializers.CharField(allow_null=True)
+    entry = serializers.UUIDField(allow_null=True, help_text="The journal entry that booked it.")
+    stale = serializers.BooleanField(help_text="The register has changed since it was booked: remove the posting and book it again.")
+
+
+class DepreciationYearSerializer(serializers.Serializer):
+    fy = serializers.IntegerField(required=False, help_text="Starting year: 2025 is FY 2025-26. Default the current year.")
+    note = serializers.CharField(required=False, allow_blank=True, default="", max_length=500)
+
+
+def depreciation_payload(status: dict) -> dict:
+    from core.money import format_inr
+
+    return {
+        **status,
+        "planned_display": format_inr(status["planned_paise"]),
+        "posted_display": format_inr(status["posted_paise"]) if status["posted_paise"] is not None else None,
+    }

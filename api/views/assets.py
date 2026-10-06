@@ -15,9 +15,12 @@ from api.permissions import CanApprove, HasFirmPermission
 from api.serializers.assets import (
     AssetCreateSerializer,
     AssetSerializer,
+    DepreciationStatusSerializer,
+    DepreciationYearSerializer,
     DisposeSerializer,
     ScheduleSerializer,
     asset_payload,
+    depreciation_payload,
     schedule_payload,
 )
 from api.views.base import ClientScopedMixin
@@ -105,6 +108,56 @@ class AssetViewSet(
     def remove(self, request, client_id=None, pk=None):
         assets.remove(self.get_object(), membership=request.membership)
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    def _year(self, request) -> int:
+        raw = request.query_params.get("fy") or request.data.get("fy")
+        try:
+            return int(raw) if raw else financial_year(datetime.date.today())
+        except (TypeError, ValueError) as exc:
+            raise serializers.ValidationError({"fy": "A starting year, like 2025."}) from exc
+
+    @extend_schema(
+        summary="Is a year's depreciation booked?",
+        parameters=[OpenApiParameter("fy", int, description="Starting year: 2025 is FY 2025-26. Default the current year.")],
+        responses={200: DepreciationStatusSerializer},
+    )
+    @action(detail=False, methods=["get"], url_path="depreciation", pagination_class=None)
+    def depreciation(self, request, client_id=None):
+        status_ = assets.depreciation_status(self.client, self._year(request))
+        return Response(DepreciationStatusSerializer(depreciation_payload(status_)).data)
+
+    @extend_schema(
+        summary="Book a year's depreciation",
+        description=(
+            "One journal entry dated 31 March: Dr Depreciation, Cr each asset's own ledger. Once per year. Refused inside "
+            "sealed books. Needs `journal.approve`."
+        ),
+        request=DepreciationYearSerializer,
+        responses={201: DepreciationStatusSerializer},
+    )
+    @depreciation.mapping.post
+    def post_depreciation(self, request, client_id=None):
+        payload = DepreciationYearSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        year = payload.validated_data.get("fy") or financial_year(datetime.date.today())
+        assets.post_depreciation(self.client, year, membership=request.membership)
+        return Response(
+            DepreciationStatusSerializer(depreciation_payload(assets.depreciation_status(self.client, year))).data,
+            status=status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(
+        summary="Take a year's depreciation out of the books",
+        request=DepreciationYearSerializer,
+        responses={200: DepreciationStatusSerializer},
+    )
+    @action(detail=False, methods=["post"], url_path="depreciation/remove", permission_classes=[CanApprove])
+    def unpost_depreciation(self, request, client_id=None):
+        payload = DepreciationYearSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        year = payload.validated_data.get("fy") or financial_year(datetime.date.today())
+        assets.unpost_depreciation(self.client, year, membership=request.membership, note=payload.validated_data["note"])
+        return Response(DepreciationStatusSerializer(depreciation_payload(assets.depreciation_status(self.client, year))).data)
 
     @extend_schema(
         summary="Depreciation schedule for a year",

@@ -229,3 +229,23 @@ export function useAssetAction(clientId: string) {
     onSuccess: invalidate,
   })
 }
+
+/** Whether a year's depreciation is booked, and whether the register still agrees with what was booked. */
+export const depreciationStatus = (clientId: string, year: number) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'depreciation', year),
+    queryFn: () =>
+      raw.get<{ year: number; planned_paise: number; planned_display: string; posted_paise: number | null; posted_display: string | null; entry: string | null; stale: boolean }>(
+        `${V1}/clients/${clientId}/assets/depreciation/`,
+        { fy: year },
+      ),
+  })
+
+export function useBookDepreciation(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: ({ year, remove }: { year: number; remove?: boolean }) =>
+      raw.post<unknown>(`${V1}/clients/${clientId}/assets/depreciation/${remove ? 'remove/' : ''}`, { fy: year }),
+    onSuccess: invalidate,
+  })
+}

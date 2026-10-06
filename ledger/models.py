@@ -698,3 +698,26 @@ class FixedAsset(UUIDModel, FirmScopedModel):
 
     def __str__(self) -> str:
         return f"{self.name} ({format_inr(self.cost_paise)})"
+
+
+class DepreciationPosting(UUIDModel, FirmScopedModel):
+    """The journal entry that books one financial year's depreciation, so it is booked once and can be found again.
+
+    The entry itself is an ordinary Journal voucher (Dr Depreciation, Cr each asset ledger). This row is only the link from
+    the year to that entry, and what the register said when it was posted, so a later change to an asset is noticed
+    (``ledger.assets.depreciation_status``) instead of the books quietly disagreeing with the register.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="depreciation_postings")
+    financial_year = models.PositiveSmallIntegerField(help_text="Starting year: 2025 is FY 2025-26.")
+    entry = models.OneToOneField(JournalEntry, on_delete=models.PROTECT, related_name="depreciation_posting")
+    total_paise = models.BigIntegerField()
+
+    class Meta:
+        db_table = "ledger_depreciation_posting"
+        constraints = [
+            models.UniqueConstraint(fields=["firm", "client", "financial_year"], name="uniq_depreciation_per_year"),
+        ]
+
+    def __str__(self) -> str:
+        return f"Depreciation FY{self.financial_year} {format_inr(self.total_paise)}"

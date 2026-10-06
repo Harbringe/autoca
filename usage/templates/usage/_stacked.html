@@ -1,0 +1,7 @@
+{% if chart.empty %}<p class="usage-empty">{{ empty }}</p>{% else %}
+<div class="usage-scroll"><svg class="usage-chart usage-chart--half" viewBox="0 0 {{ chart.width }} {{ chart.height }}" role="img" aria-label="{{ summary }}">
+  {% for g in chart.grid %}<line class="usage-grid" x1="{{ chart.left }}" x2="{{ chart.right }}" y1="{{ g.y }}" y2="{{ g.y }}"/><text class="usage-axis" x="{{ chart.left|add:'-8' }}" y="{{ g.y }}" text-anchor="end" dominant-baseline="middle">{{ g.label }}</text>{% endfor %}
+  {% for b in chart.bars %}<g>{% for seg in b.segments %}<rect class="{{ seg.cls }}" x="{{ b.x }}" y="{{ seg.y }}" width="{{ b.w }}" height="{{ seg.h }}" rx="1.5"><title>{{ b.title }}</title></rect>{% endfor %}</g>{% endfor %}
+  {% for t in chart.ticks %}<text class="usage-axis" x="{{ t.x }}" y="{{ chart.label_y }}" text-anchor="middle">{{ t.label }}</text>{% endfor %}
+</svg></div>
+<ul class="usage-legend"><li><span class="usage-key usage-seg-ok"></span>Answered</li><li><span class="usage-key usage-seg-limited"></span>Rate limited</li><li><span class="usage-key usage-seg-failed"></span>Failed</li></ul>{% endif %}

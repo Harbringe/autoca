@@ -81,6 +81,43 @@
 
   <div class="usage-cols">
     <div class="usage-panel">
+      <div class="usage-panel-head"><h3 class="usage-h3">Calls per day</h3><span class="usage-faint">Last 30 days</span></div>
+      {% include "usage/_stacked.html" with chart=u.visuals.calls empty="No calls yet." summary="Calls per day for the last 30 days, split into answered, rate limited and failed." %}
+    </div>
+    <div class="usage-panel">
+      <div class="usage-panel-head"><h3 class="usage-h3">Busiest hours</h3><span class="usage-faint">Calls by hour of day, last 30 days</span></div>
+      {% include "usage/_bars.html" with chart=u.visuals.hours empty="No calls yet." summary="Calls by hour of the day over the last 30 days." %}
+    </div>
+  </div>
+
+  <div class="usage-cols">
+    <div class="usage-panel">
+      <div class="usage-panel-head"><h3 class="usage-h3">Served from cache</h3><span class="usage-faint">Share of input tokens, by day</span></div>
+      {% include "usage/_line.html" with chart=u.visuals.cache empty="No input recorded yet." summary="Share of input tokens served from the provider cache, by day." %}
+    </div>
+    <div class="usage-panel">
+      <div class="usage-panel-head"><h3 class="usage-h3">Average answer time</h3><span class="usage-faint">Seconds, by day</span></div>
+      {% include "usage/_line.html" with chart=u.visuals.latency empty="No answered calls yet." summary="Average seconds to answer, by day." %}
+    </div>
+  </div>
+
+  <div class="usage-trio">
+    <div class="usage-panel">
+      <div class="usage-panel-head"><h3 class="usage-h3">Where the tokens go</h3><span class="usage-faint">Last 30 days</span></div>
+      {% include "usage/_donut.html" with chart=u.visuals.tokens empty="No tokens yet." summary="Tokens split into input at full price, input served from cache, and output." %}
+    </div>
+    <div class="usage-panel">
+      <div class="usage-panel-head"><h3 class="usage-h3">Spend by model</h3><span class="usage-faint">Last 30 days</span></div>
+      {% include "usage/_donut.html" with chart=u.visuals.models empty="No calls yet." summary="Spend split by model." %}
+    </div>
+    <div class="usage-panel">
+      <div class="usage-panel-head"><h3 class="usage-h3">Spend by purpose</h3><span class="usage-faint">Last 30 days</span></div>
+      {% include "usage/_donut.html" with chart=u.visuals.purposes empty="No calls yet." summary="Spend split by purpose." %}
+    </div>
+  </div>
+
+  <div class="usage-cols">
+    <div class="usage-panel">
       <div class="usage-panel-head"><h3 class="usage-h3">By purpose</h3><span class="usage-faint">This month</span></div>
       <div class="usage-scroll"><table class="usage-table">
         <thead><tr><th scope="col">Purpose</th><th scope="col" class="num">Calls</th><th scope="col" class="num">Rows</th><th scope="col" class="num">Cost</th><th scope="col" class="usage-share-col">Share</th></tr></thead>

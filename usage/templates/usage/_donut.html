@@ -1,0 +1,10 @@
+{% if chart.empty %}<p class="usage-empty">{{ empty }}</p>{% else %}
+<div class="usage-donut">
+  <svg class="usage-ring" viewBox="0 0 {{ chart.size }} {{ chart.size }}" role="img" aria-label="{{ summary }}">
+    <circle class="usage-ring-track" cx="{{ chart.cx }}" cy="{{ chart.cy }}" r="{{ chart.r }}" fill="none" stroke-width="{{ chart.stroke }}"/>
+    {% for s in chart.slices %}<circle class="usage-ring-slice {{ s.cls }}" cx="{{ chart.cx }}" cy="{{ chart.cy }}" r="{{ chart.r }}" fill="none" stroke-width="{{ chart.stroke }}" stroke-dasharray="{{ s.dash }} {{ s.gap }}" stroke-dashoffset="{{ s.offset }}" transform="rotate(-90 {{ chart.cx }} {{ chart.cy }})"><title>{{ s.label }}: {{ s.shown }} ({{ s.percent }}%)</title></circle>{% endfor %}
+  </svg>
+  <ul class="usage-legend usage-legend--col">
+    {% for s in chart.slices %}<li><span class="usage-key {{ s.cls }}"></span><span class="usage-legend-name">{{ s.label }}</span><span class="usage-legend-val">{{ s.shown }} &middot; {{ s.percent }}%</span></li>{% endfor %}
+  </ul>
+</div>{% endif %}

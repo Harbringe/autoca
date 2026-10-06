@@ -7,9 +7,10 @@ from decimal import Decimal
 
 from django.conf import settings
 from django.db.models import Avg, Count, Q, Sum
-from django.db.models.functions import TruncDate
+from django.db.models.functions import ExtractHour, TruncDate
 from django.utils import timezone
 
+from usage import charts
 from usage.models import Outcome, Purpose, UsageEvent
 from usage.pricing import inr, usd
 
@@ -160,6 +161,127 @@ def build_chart(daily: list[dict]) -> dict:
     }
 
 
+def _count(v: float) -> str:
+    return f"{v:.0f}" if v == int(v) else f"{v:.1f}"
+
+
+def _day_label(d: datetime.date) -> str:
+    return f"{d:%d %b}"
+
+
+def build_visuals(days, rows, events, window_start, now) -> dict:
+    """The charts beside the spend chart: calls, cache, answer time, where tokens go, models, purposes and busy hours."""
+    labels = [_day_label(d) for d in days]
+
+    def get(d, key):
+        return rows[d][key] if d in rows else 0
+
+    answered = [int(get(d, "answered")) for d in days]
+    limited = [int(get(d, "limited")) for d in days]
+    failed = [int(get(d, "failed")) for d in days]
+    calls_titles = [
+        f"{_day_label(d)}: {a} answered, {r} rate limited, {f} failed"
+        for d, a, r, f in zip(days, answered, limited, failed, strict=True)
+    ]
+    hit, hit_titles, latency, latency_titles = [], [], [], []
+    for d in days:
+        inp, cached = int(get(d, "input_tokens") or 0), int(get(d, "cached_tokens") or 0)
+        hit.append(round(cached * 100 / inp) if inp else None)
+        hit_titles.append(
+            f"{_day_label(d)}: {round(cached * 100 / inp)}% from cache"
+            if inp
+            else f"{_day_label(d)}: no input"
+        )
+        ms = get(d, "latency")
+        latency.append(float(ms) / 1000 if ms else None)
+        latency_titles.append(
+            f"{_day_label(d)}: {float(ms) / 1000:.1f} s average"
+            if ms
+            else f"{_day_label(d)}: no answered calls"
+        )
+
+    window = events.filter(at__gte=window_start)
+    totals = window.aggregate(i=Sum("input_tokens"), c=Sum("cached_tokens"), o=Sum("output_tokens"))
+    inp, cached, out = int(totals["i"] or 0), int(totals["c"] or 0), int(totals["o"] or 0)
+    tokens = charts.donut(
+        [
+            ("Input, full price", max(inp - cached, 0), compact(max(inp - cached, 0))),
+            ("Input, from cache", cached, compact(cached)),
+            ("Output", out, compact(out)),
+        ]
+    )
+
+    by_model = list(
+        window.values("model")
+        .annotate(cost=Sum("cost_micro_usd"), calls=Count("id"))
+        .order_by("-cost", "-calls")[:6]
+    )
+    models = charts.donut(
+        [
+            (
+                m["model"] or "Unknown",
+                int(m["cost"] or 0) or int(m["calls"]),
+                money_usd(usd(int(m["cost"] or 0))),
+            )
+            for m in by_model
+        ]
+    )
+
+    by_purpose = list(
+        window.values("purpose")
+        .annotate(cost=Sum("cost_micro_usd"), calls=Count("id"))
+        .order_by("-cost", "-calls")
+    )
+    purposes = charts.donut(
+        [
+            (
+                Purpose(p["purpose"]).label if p["purpose"] in Purpose.values else p["purpose"],
+                int(p["cost"] or 0) or int(p["calls"]),
+                money_usd(usd(int(p["cost"] or 0))),
+            )
+            for p in by_purpose
+        ]
+    )
+
+    hours = [0] * 24
+    for r in window.annotate(h=ExtractHour("at")).values("h").annotate(c=Count("id")):
+        hours[int(r["h"])] = int(r["c"])
+    hour_labels = [f"{h:02d}:00" for h in range(24)]
+
+    return {
+        "calls": charts.stacked(
+            [
+                ("usage-seg-ok", answered),
+                ("usage-seg-limited", limited),
+                ("usage-seg-failed", failed),
+            ],
+            labels,
+            calls_titles,
+            width=600,
+            height=220,
+            fmt=_count,
+        ),
+        "cache": charts.line(
+            hit, labels, hit_titles, width=600, height=220, fmt=lambda v: f"{v:.0f}%", top=100
+        ),
+        "latency": charts.line(
+            latency, labels, latency_titles, width=600, height=220, fmt=lambda v: f"{v:.1f} s"
+        ),
+        "hours": charts.bars(
+            hours,
+            hour_labels,
+            [f"{h:02d}:00 to {h:02d}:59: {c} call(s)" for h, c in enumerate(hours)],
+            width=600,
+            height=220,
+            fmt=_count,
+            every=3,
+        ),
+        "tokens": tokens,
+        "models": models,
+        "purposes": purposes,
+    }
+
+
 def summary(now: datetime.datetime | None = None) -> dict:
     now = now or timezone.now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -174,7 +296,16 @@ def summary(now: datetime.datetime | None = None) -> dict:
         for r in events.filter(at__gte=window_start)
         .annotate(day=TruncDate("at"))
         .values("day")
-        .annotate(calls=Count("id"), cost=Sum("cost_micro_usd"))
+        .annotate(
+            calls=Count("id"),
+            cost=Sum("cost_micro_usd"),
+            answered=Count("id", filter=Q(outcome=Outcome.OK)),
+            limited=Count("id", filter=Q(outcome=Outcome.RATE_LIMITED)),
+            failed=Count("id", filter=Q(outcome=Outcome.ERROR)),
+            input_tokens=Sum("input_tokens"),
+            cached_tokens=Sum("cached_tokens"),
+            latency=Avg("latency_ms", filter=Q(outcome=Outcome.OK)),
+        )
     }
     days = [window_start.date() + datetime.timedelta(days=i) for i in range(DAYS)]
     peak = max((int(r["cost"] or 0) for r in daily_rows.values()), default=0)
@@ -190,6 +321,8 @@ def summary(now: datetime.datetime | None = None) -> dict:
         }
         for d in days
     ]
+
+    visuals = build_visuals(days, daily_rows, events, window_start, now)
 
     purposes = [
         {
@@ -235,6 +368,7 @@ def summary(now: datetime.datetime | None = None) -> dict:
         "today": today_totals,
         "month": month_totals,
         "chart": build_chart(daily),
+        "visuals": visuals,
         "daily": daily,
         "by_purpose": purposes,
         "by_firm": firms,

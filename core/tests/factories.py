@@ -46,6 +46,7 @@ from ledger.models import (
     BooksAction,
     BooksEvent,
     ChangeAction,
+    CloseAcknowledgement,
     Direction,
     EntryChange,
     InvoiceReading,
@@ -391,6 +392,12 @@ def _invoice_reading(firm, **kw):
     )
 
 
+def _close_acknowledgement(firm, **kw):
+    return CloseAcknowledgement.objects.create(
+        firm=firm, client=kw.get("client") or _client(firm), item_key=f"party_out_of_balance|party|{uuid.uuid4()}", note="stands"
+    )
+
+
 def _bill_allocation(firm, **kw):
     """A payment line on the party's own ledger, settling the bill in full."""
     bill = kw.get("bill") or _bill(firm)
@@ -456,6 +463,7 @@ FACTORIES = {
     Bill: _bill,
     BillAllocation: _bill_allocation,
     InvoiceReading: _invoice_reading,
+    CloseAcknowledgement: _close_acknowledgement,
 }
 
 #: Firm is firm-scoped by primary key rather than by a firm_id column, so it is

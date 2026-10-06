@@ -206,6 +206,11 @@ def sign_off(client, membership, *, through: datetime.date | None = None, note: 
     if unchecked.exists():
         raise AiEntriesUncheckedError(unchecked.count())
 
+    # Where the books and a document or the bank disagree, someone has fixed it or said why it can stand.
+    from ledger import close
+
+    close.require_clear(client)
+
     _renumber(client, membership.user, after=previous)
     Client.objects.filter(pk=client.pk).update(signed_off_through=through)
     client.signed_off_through = through

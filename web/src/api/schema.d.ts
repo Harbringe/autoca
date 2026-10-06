@@ -374,6 +374,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/books/close/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Close readiness
+         * @description The controls (rows posted, assistant entries checked, nothing in Suspense, each bank account against its statement) and every open item, with whether it blocks sign-off and whether someone has explained it. Computed on request: a fixed item is simply not here.
+         */
+        get: operations["clients_books_close_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/books/close/explain/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Explain an open item
+         * @description Records why one open item may stand. It stays listed; sign-off stops waiting on it. Needs `books.sign_off`.
+         */
+        post: operations["clients_books_close_explain_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/books/close/withdraw/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Withdraw an explanation
+         * @description Every control and open item for a client, and the reasons given for the ones that may stand.
+         */
+        post: operations["clients_books_close_withdraw_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/books/mark-reviewed/": {
         parameters: {
             query?: never;
@@ -2860,6 +2920,42 @@ export interface components {
             /** @description What the client's business does, in a few sentences. Shown to the model that suggests ledgers. */
             business_profile?: string;
         };
+        CloseCheck: {
+            name: string;
+            title: string;
+            ok: boolean;
+            detail: string;
+        };
+        CloseItem: {
+            /** @description Names this item for `explain`; stable for as long as it is the same item. */
+            key: string;
+            kind: string;
+            title: string;
+            summary: string;
+            amount_paise: number | null;
+            amount_display: string | null;
+            /** Format: date */
+            since: string | null;
+            link: components["schemas"]["OpenItemLink"] | null;
+            /** @description Sign-off waits until this is fixed or explained. */
+            blocking: boolean;
+            explained: boolean;
+            /** @description Why it can stand, when someone has said. */
+            note: string;
+            explained_by: string;
+        };
+        CloseReport: {
+            /**
+             * Format: date
+             * @description The date the report is as at: the latest entry unless asked.
+             */
+            through: string | null;
+            /** @description Every control passes and no blocking item is unexplained. */
+            ready: boolean;
+            unexplained_blocking: number;
+            checks: components["schemas"]["CloseCheck"][];
+            items: components["schemas"]["CloseItem"][];
+        };
         ConfirmPartyRequest: {
             /**
              * Format: uuid
@@ -2948,6 +3044,11 @@ export interface components {
          * @enum {string}
          */
         EntryKindEnum: "BANK" | "VOUCHER" | "JOURNAL";
+        ExplainRequest: {
+            item_key: string;
+            /** @description Why this can stand, in a few words. */
+            note: string;
+        };
         Firm: {
             /** Format: uuid */
             readonly id: string;
@@ -5569,6 +5670,9 @@ export interface components {
          * @enum {string}
          */
         VoucherTypeEnum: "Payment" | "Receipt" | "Contra" | "Journal" | "Purchase" | "Sales" | "Debit Note" | "Credit Note";
+        WithdrawRequest: {
+            item_key: string;
+        };
         /** @description Counts of work in the period, one per metric in `metrics`. Keys are the metric keys. */
         WorkTotals: {
             statements_uploaded: number;
@@ -6126,6 +6230,84 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BooksStatus"];
+                };
+            };
+        };
+    };
+    clients_books_close_retrieve: {
+        parameters: {
+            query?: {
+                /** @description The date to report as at, YYYY-MM-DD. Default the latest entry. */
+                through?: string;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloseReport"];
+                };
+            };
+        };
+    };
+    clients_books_close_explain_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExplainRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ExplainRequest"];
+                "multipart/form-data": components["schemas"]["ExplainRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloseReport"];
+                };
+            };
+        };
+    };
+    clients_books_close_withdraw_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WithdrawRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["WithdrawRequest"];
+                "multipart/form-data": components["schemas"]["WithdrawRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CloseReport"];
                 };
             };
         };

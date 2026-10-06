@@ -760,6 +760,109 @@ paths:
               schema:
                 $ref: '#/components/schemas/BooksStatus'
           description: ''
+  /api/v1/clients/{client_id}/books/close/:
+    get:
+      operationId: clients_books_close_retrieve
+      description: 'The controls (rows posted, assistant entries checked, nothing
+        in Suspense, each bank account against its statement) and every open item,
+        with whether it blocks sign-off and whether someone has explained it. Computed
+        on request: a fixed item is simply not here.'
+      summary: Close readiness
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: through
+        schema:
+          type: string
+        description: The date to report as at, YYYY-MM-DD. Default the latest entry.
+      tags:
+      - books
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloseReport'
+          description: ''
+  /api/v1/clients/{client_id}/books/close/explain/:
+    post:
+      operationId: clients_books_close_explain_create
+      description: Records why one open item may stand. It stays listed; sign-off
+        stops waiting on it. Needs `books.sign_off`.
+      summary: Explain an open item
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - books
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ExplainRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ExplainRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ExplainRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloseReport'
+          description: ''
+  /api/v1/clients/{client_id}/books/close/withdraw/:
+    post:
+      operationId: clients_books_close_withdraw_create
+      description: Every control and open item for a client, and the reasons given
+        for the ones that may stand.
+      summary: Withdraw an explanation
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - books
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/WithdrawRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/WithdrawRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/WithdrawRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CloseReport'
+          description: ''
   /api/v1/clients/{client_id}/books/mark-reviewed/:
     post:
       operationId: clients_books_mark_reviewed_create
@@ -6215,6 +6318,99 @@ components:
       required:
       - fy_start
       - name
+    CloseCheck:
+      type: object
+      properties:
+        name:
+          type: string
+        title:
+          type: string
+        ok:
+          type: boolean
+        detail:
+          type: string
+      required:
+      - detail
+      - name
+      - ok
+      - title
+    CloseItem:
+      type: object
+      properties:
+        key:
+          type: string
+          description: Names this item for `explain`; stable for as long as it is
+            the same item.
+        kind:
+          type: string
+        title:
+          type: string
+        summary:
+          type: string
+        amount_paise:
+          type: integer
+          nullable: true
+        amount_display:
+          type: string
+          nullable: true
+        since:
+          type: string
+          format: date
+          nullable: true
+        link:
+          allOf:
+          - $ref: '#/components/schemas/OpenItemLink'
+          nullable: true
+        blocking:
+          type: boolean
+          description: Sign-off waits until this is fixed or explained.
+        explained:
+          type: boolean
+        note:
+          type: string
+          description: Why it can stand, when someone has said.
+        explained_by:
+          type: string
+      required:
+      - amount_display
+      - amount_paise
+      - blocking
+      - explained
+      - explained_by
+      - key
+      - kind
+      - link
+      - note
+      - since
+      - summary
+      - title
+    CloseReport:
+      type: object
+      properties:
+        through:
+          type: string
+          format: date
+          nullable: true
+          description: 'The date the report is as at: the latest entry unless asked.'
+        ready:
+          type: boolean
+          description: Every control passes and no blocking item is unexplained.
+        unexplained_blocking:
+          type: integer
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/CloseCheck'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/CloseItem'
+      required:
+      - checks
+      - items
+      - ready
+      - through
+      - unexplained_blocking
     ConfirmPartyRequest:
       type: object
       properties:
@@ -6402,6 +6598,21 @@ components:
         * `BANK` - Posted from a bank statement row
         * `VOUCHER` - A purchase, sales or note voucher
         * `JOURNAL` - A journal voucher
+    ExplainRequest:
+      type: object
+      properties:
+        item_key:
+          type: string
+          minLength: 1
+          maxLength: 200
+        note:
+          type: string
+          minLength: 1
+          description: Why this can stand, in a few words.
+          maxLength: 500
+      required:
+      - item_key
+      - note
     Firm:
       type: object
       properties:
@@ -11623,6 +11834,15 @@ components:
         * `Sales` - Sales
         * `Debit Note` - Debit Note
         * `Credit Note` - Credit Note
+    WithdrawRequest:
+      type: object
+      properties:
+        item_key:
+          type: string
+          minLength: 1
+          maxLength: 200
+      required:
+      - item_key
     WorkTotals:
       type: object
       description: Counts of work in the period, one per metric in `metrics`. Keys

@@ -33,6 +33,7 @@ from api.views.classify import (
     ReviewQueueViewSet,
     RuleViewSet,
 )
+from api.views.close import CloseView
 from api.views.core import ClientViewSet, JobViewSet, MeView
 from api.views.documents import DocumentDownloadView, FirmDocumentListView
 from api.views.gst import RegistrationViewSet, RunSignOffView, RunViewSet
@@ -122,6 +123,21 @@ urlpatterns = [
         "clients/<uuid:client_id>/books/return/",
         BooksView.as_view({"post": "return_books"}),
         name="books-return",
+    ),
+    path(
+        "clients/<uuid:client_id>/books/close/",
+        CloseView.as_view({"get": "retrieve"}),
+        name="books-close",
+    ),
+    path(
+        "clients/<uuid:client_id>/books/close/explain/",
+        CloseView.as_view({"post": "explain"}),
+        name="books-close-explain",
+    ),
+    path(
+        "clients/<uuid:client_id>/books/close/withdraw/",
+        CloseView.as_view({"post": "withdraw"}),
+        name="books-close-withdraw",
     ),
     path(
         "clients/<uuid:client_id>/books/sign-off/",

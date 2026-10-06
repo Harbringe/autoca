@@ -31,6 +31,7 @@ lock at approval time rather than counted from existing entries.
 from __future__ import annotations
 
 from django.db import models
+from django.utils import timezone
 
 from banking.models import StatementTransaction
 from classify.models import LedgerAccount, Party
@@ -622,3 +623,29 @@ class InvoiceReading(UUIDModel, FirmScopedModel):
 
     def __str__(self) -> str:
         return f"Reading of {self.document_id} ({self.get_status_display()})"
+
+
+class CloseAcknowledgement(UUIDModel, FirmScopedModel):
+    """A person's reason why one open item may stand while the books are signed off.
+
+    It does not make the item go away: the item stays listed, and this records who said it could stand and why, which is
+    what lets sign-off go ahead. ``item_key`` names the item (see ``ledger.close.item_key``), so the reason stays with
+    that very item and lapses if the item is fixed.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="close_acknowledgements")
+    item_key = models.CharField(max_length=200)
+    note = models.CharField(max_length=500)
+    acknowledged_by = models.ForeignKey(
+        User, null=True, blank=True, on_delete=models.SET_NULL, related_name="close_acknowledgements"
+    )
+    acknowledged_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        db_table = "ledger_close_acknowledgement"
+        constraints = [
+            models.UniqueConstraint(fields=["firm", "client", "item_key"], name="uniq_close_ack_per_item"),
+        ]
+
+    def __str__(self) -> str:
+        return f"{self.item_key}: {self.note[:40]}"

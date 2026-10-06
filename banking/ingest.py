@@ -105,7 +105,7 @@ def ingest_statement(
         )
 
     document = get_pdf().extract(data)
-    parser = detect_parser(document, layout)
+    parser = detect_parser(document, layout) if layout else detect_parser(document)
     parsed = parser.parse(document)
 
     account = _account_for(client, parsed)

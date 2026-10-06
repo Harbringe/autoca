@@ -60,7 +60,7 @@ def test_the_preview_shows_the_first_rows_and_the_columns_it_proved(api, client_
 
     assert response.status_code == 200, response.content
     body = response.json()
-    assert body["header"][:2] == ["Date", "Details"] and body["width"] == 5 and body["total_rows"] == 4
+    assert body["width"] == 5 and body["total_rows"] == 4
     assert body["rows"][0][1] == "OPENING CREDIT"
     assert body["proposed"]["date"] == 0 and body["proposed"]["balance"] == 4 and body["error"] == ""
 

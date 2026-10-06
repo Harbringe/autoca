@@ -73,3 +73,25 @@ def test_skipped_notes_name_the_parameter_and_never_its_value():
     _, skipped = paramstore.settings_from([p("bad name", "super-secret-value")], PREFIX)
 
     assert "super-secret-value" not in skipped[0]
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "LD_PRELOAD",
+        "LD_LIBRARY_PATH",
+        "PYTHONPATH",
+        "PYTHONSTARTUP",
+        "DJANGO_SETTINGS_MODULE",
+        "DEBUG",
+        "PATH",
+        "COMPOSE_FILE",
+        "DOCKER_HOST",
+        "AWS_ACCESS_KEY_ID",
+        "BASH_ENV",
+    ],
+)
+def test_names_that_change_how_a_process_starts_are_never_accepted(name):
+    found, skipped = paramstore.settings_from([p(name, "v")], PREFIX)
+
+    assert found == {} and len(skipped) == 1

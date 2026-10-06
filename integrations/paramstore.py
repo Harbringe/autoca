@@ -44,8 +44,36 @@ SEED_ONLY = frozenset(
     }
 )
 
-#: Names that can never be set from a parameter, because they steer this very mechanism.
-NEVER = frozenset({PREFIX_ENV, REGION_ENV})
+#: Names that can never be set from a parameter: they steer this very mechanism, or change how a process starts or
+#: which code it loads, so a stray or malicious parameter could hijack the container.
+NEVER = frozenset(
+    {
+        PREFIX_ENV,
+        REGION_ENV,
+        "DJANGO_SETTINGS_MODULE",
+        "DEBUG",
+        "PATH",
+        "HOME",
+        "USER",
+        "SHELL",
+        "IFS",
+        "BASH_ENV",
+        "ENV",
+    }
+)
+#: Prefixes that are never settings: the dynamic loader, the language runtimes, and the container tooling.
+NEVER_PREFIXES = (
+    "LD_",
+    "DYLD_",
+    "PYTHON",
+    "NODE_",
+    "RUBY",
+    "PERL",
+    "COMPOSE_",
+    "DOCKER_",
+    "AWS_",
+    "BASH_",
+)
 
 _NAME = re.compile(r"[A-Z][A-Z0-9_]{0,99}")
 
@@ -59,6 +87,7 @@ def usable(name: str, value: str) -> bool:
     return (
         bool(_NAME.fullmatch(name))
         and name not in NEVER
+        and not name.startswith(NEVER_PREFIXES)
         and "\n" not in value
         and "\r" not in value
         and value != ""

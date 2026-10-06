@@ -4,7 +4,8 @@
 #   deploy/pull-secrets.sh
 #
 # Reads /autoca/prod/* and, for each setting, replaces the KEY=... line in .env.prod or adds it. The permanent
-# keys and database credentials are only filled in when missing, never replaced (see integrations/paramstore.py). A setting that is not in Parameter Store is left exactly as it
+# keys and database credentials are only filled in when missing, never replaced (see integrations/paramstore.py).
+# Only settings listed in deploy/prod.env.example (or already in .env.prod) are accepted; anything else is ignored. A setting that is not in Parameter Store is left exactly as it
 # is, so nothing breaks while you move settings over one at a time. The values never appear on screen, in the
 # deploy log, or on a command line: they pass through a private temporary file and an environment variable.
 #
@@ -37,6 +38,12 @@ while IFS= read -r line; do
     seed=""
     case "$key" in "?"*) seed=1; key="${key#?}" ;; esac
     case "$key" in "" | *[!A-Z0-9_]*) continue ;; esac
+    # Only a setting the app is known to read: listed in the reviewed deploy/prod.env.example, or already in .env.prod.
+    # A made-up name from a parameter is ignored, so a new setting has to be added to that file first.
+    if ! grep -q "^${key}=" deploy/prod.env.example && ! grep -q "^${key}=" .env.prod; then
+        echo "pull-secrets: ${key} is not a setting this server knows (add it to deploy/prod.env.example first); ignored."
+        continue
+    fi
     current="$(grep "^${key}=" .env.prod | head -n 1 | cut -d= -f2-)"
     [ "$current" = "$value" ] && continue
     if [ -n "$seed" ] && [ -n "$current" ]; then

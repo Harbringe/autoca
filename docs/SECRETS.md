@@ -8,8 +8,11 @@ Nothing about GitHub changes. GitHub still holds only what CI and deploy need; i
 
 ## What lives there
 
-Any setting. Create a parameter named `/autoca/prod/<SETTING_NAME>` (capitals, digits and underscores) and its value is
-written into `.env.prod` at the next deploy, replacing what was there. Use **SecureString** for anything secret and
+Any setting the app knows. Create a parameter named `/autoca/prod/<SETTING_NAME>` and its value is written into
+`.env.prod` at the next deploy, replacing what was there. "Knows" means the name is listed in `deploy/prod.env.example` (or
+is already in the server's `.env.prod`); a made-up name is ignored with a line in the deploy log, so a new setting is added
+to that file first, in a reviewed change. Names that change how a process starts (`LD_*`, `PYTHON*`, `PATH`,
+`DJANGO_SETTINGS_MODULE`, `DEBUG`, `AWS_*`, `COMPOSE_*`, `DOCKER_*`) are refused outright. Use **SecureString** for anything secret and
 **String** for plain settings such as `LLM_MODEL` or `LLM_BATCH_SIZE`.
 
 **Seed-only settings.** The three permanent keys (`KMS_LOCAL_MASTER_KEY`, `BLIND_INDEX_KEY`, `DJANGO_SECRET_KEY`) and

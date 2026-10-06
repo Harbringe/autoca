@@ -18,7 +18,7 @@ export type ModuleId =
   | 'ai'
   | 'analytics'
   | 'staff'
-  | 'notifications'
+  | 'alerts'
   | 'settings'
 
 /** The client-scoped screens and the module each one belongs to. */
@@ -60,11 +60,12 @@ export const FIRM_LANDING: Partial<Record<ModuleId, string>> = {
 }
 
 /** Modules that have no screen yet; each has a page at /soon/<slug>. */
-export const SOON_MODULES = ['taxation', 'audit', 'compliance', 'ai', 'analytics', 'notifications'] as const
+export const SOON_MODULES = ['taxation', 'audit', 'compliance', 'ai', 'analytics'] as const
 export type SoonModule = (typeof SOON_MODULES)[number]
 
 const SEGMENT_MODULE: Record<string, ModuleId> = {
   dashboard: 'dashboard',
+  alerts: 'alerts',
   documents: 'documents',
   clients: 'clients',
   pipeline: 'pipeline',

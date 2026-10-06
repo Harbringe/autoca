@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppSplatRouteImport } from './routes/_app/$'
+import { Route as AppAlertsRouteImport } from './routes/_app/alerts'
 import { Route as AppBankRouteImport } from './routes/_app/bank'
 import { Route as AppBookkeepingRouteImport } from './routes/_app/bookkeeping'
 import { Route as AppDashboardRouteImport } from './routes/_app/dashboard'
@@ -64,6 +65,11 @@ const AppRoute = AppRouteImport.update({
 const AppSplatRoute = AppSplatRouteImport.update({
   id: '/$',
   path: '/$',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppAlertsRoute = AppAlertsRouteImport.update({
+  id: '/alerts',
+  path: '/alerts',
   getParentRoute: () => AppRoute,
 } as any)
 const AppBankRoute = AppBankRouteImport.update({
@@ -277,6 +283,7 @@ const AppClientsClientIdTeamRoute = AppClientsClientIdTeamRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/$': typeof AppSplatRoute
+  '/alerts': typeof AppAlertsRoute
   '/bank': typeof AppBankRoute
   '/bookkeeping': typeof AppBookkeepingRoute
   '/dashboard': typeof AppDashboardRoute
@@ -320,6 +327,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/$': typeof AppSplatRoute
+  '/alerts': typeof AppAlertsRoute
   '/bank': typeof AppBankRoute
   '/bookkeeping': typeof AppBookkeepingRoute
   '/dashboard': typeof AppDashboardRoute
@@ -363,6 +371,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_app': typeof AppRouteWithChildren
   '/_app/$': typeof AppSplatRoute
+  '/_app/alerts': typeof AppAlertsRoute
   '/_app/bank': typeof AppBankRoute
   '/_app/bookkeeping': typeof AppBookkeepingRoute
   '/_app/dashboard': typeof AppDashboardRoute
@@ -408,6 +417,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/$'
+    | '/alerts'
     | '/bank'
     | '/bookkeeping'
     | '/dashboard'
@@ -451,6 +461,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/$'
+    | '/alerts'
     | '/bank'
     | '/bookkeeping'
     | '/dashboard'
@@ -493,6 +504,7 @@ export interface FileRouteTypes {
     | '/'
     | '/_app'
     | '/_app/$'
+    | '/_app/alerts'
     | '/_app/bank'
     | '/_app/bookkeeping'
     | '/_app/dashboard'
@@ -561,6 +573,13 @@ declare module '@tanstack/react-router' {
       path: '/$'
       fullPath: '/$'
       preLoaderRoute: typeof AppSplatRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/alerts': {
+      id: '/_app/alerts'
+      path: '/alerts'
+      fullPath: '/alerts'
+      preLoaderRoute: typeof AppAlertsRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/bank': {
@@ -909,6 +928,7 @@ const AppClientsClientIdRouteRouteWithChildren =
 
 interface AppRouteChildren {
   AppSplatRoute: typeof AppSplatRoute
+  AppAlertsRoute: typeof AppAlertsRoute
   AppBankRoute: typeof AppBankRoute
   AppBookkeepingRoute: typeof AppBookkeepingRoute
   AppDashboardRoute: typeof AppDashboardRoute
@@ -928,6 +948,7 @@ interface AppRouteChildren {
 
 const AppRouteChildren: AppRouteChildren = {
   AppSplatRoute: AppSplatRoute,
+  AppAlertsRoute: AppAlertsRoute,
   AppBankRoute: AppBankRoute,
   AppBookkeepingRoute: AppBookkeepingRoute,
   AppDashboardRoute: AppDashboardRoute,

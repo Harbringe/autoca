@@ -238,3 +238,9 @@ export type FirmMetrics = Schemas['FirmMetrics']
 export type MetricsClient = Schemas['MetricsClient']
 export type MetricsTurnaround = Schemas['MetricsTurnaround']
 export type AttentionReason = Schemas['AttentionReason']
+
+// --- alerts (generated) -----------------------------------------------------------
+
+export type AlertFeed = Schemas['AlertFeed']
+export type Alert = Schemas['Alert']
+export type AlertModule = Alert['module']

@@ -40,11 +40,6 @@ const COPY: Record<SoonModule, Copy> = {
     sentence: 'Turnover, realisation and load across the firm.',
     until: { text: 'What each person did is counted under', to: '/staff', label: 'Staff performance' },
   },
-  notifications: {
-    name: 'Notifications',
-    sentence: 'Alerts for returns, sign-off requests and deadlines.',
-    until: { text: 'What is waiting is listed on', to: '/clients', label: 'Clients' },
-  },
 }
 
 export function isSoonModule(value: string): value is SoonModule {

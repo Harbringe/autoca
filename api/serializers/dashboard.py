@@ -131,6 +131,10 @@ class AttentionItemSerializer(MoneySerializerMixin, serializers.Serializer):
     client_name = serializers.CharField()
     text = serializers.CharField()
     amount_paise = PaiseField(allow_null=True)
+    to = serializers.CharField(help_text="The screen where this is fixed, as an app path.")
+    search = serializers.DictField(
+        child=serializers.CharField(), help_text="The query that screen needs."
+    )
 
 
 class DeadlineSerializer(serializers.Serializer):
@@ -146,3 +150,32 @@ class PortfolioSerializer(serializers.Serializer):
     attention = AttentionItemSerializer(many=True)
     deadlines = DeadlineSerializer(many=True)
     detailed = serializers.BooleanField()
+
+
+class AlertSerializer(MoneySerializerMixin, serializers.Serializer):
+    money = ("amount_paise",)
+
+    kind = serializers.CharField()
+    severity = serializers.ChoiceField(choices=["critical", "high", "medium"])
+    module = serializers.ChoiceField(choices=["bank", "bookkeeping", "reports", "gst", "documents"])
+    client = serializers.UUIDField(source="client_id")
+    client_name = serializers.CharField()
+    title = serializers.CharField(help_text="A few words: what is wrong.")
+    detail = serializers.CharField(help_text="A sentence: what, how much, since when.")
+    to = serializers.CharField(help_text="The screen where this is fixed, as an app path.")
+    search = serializers.DictField(
+        child=serializers.CharField(), help_text="The query that screen needs."
+    )
+    amount_paise = PaiseField(allow_null=True)
+    count = serializers.IntegerField(help_text="How many rows, entries or items this stands for.")
+
+
+class AlertCountsSerializer(serializers.Serializer):
+    total = serializers.IntegerField()
+    by_module = serializers.DictField(child=serializers.IntegerField())
+    by_severity = serializers.DictField(child=serializers.IntegerField())
+
+
+class AlertFeedSerializer(serializers.Serializer):
+    counts = AlertCountsSerializer()
+    alerts = AlertSerializer(many=True)

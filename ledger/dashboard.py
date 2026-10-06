@@ -19,6 +19,7 @@ from django.db.models import Sum
 
 from banking.models import BankAccount
 from core.fy import fy_bounds
+from ledger import alerts as alerts_mod
 from ledger import books, close, partyreports, tds
 from ledger.models import JournalEntry, JournalLine
 from ledger.overview import firm_overview
@@ -245,11 +246,10 @@ def portfolio(
         if detailed and client is not None:
             status = books.status(client)
             report = close.close_report(client)
-            overdue_tds, oldest = _tds_overdue(client, today) if include_money else (0, None)
+            overdue_tds = _tds_overdue(client, today)[0] if include_money else 0
             owing = owed(client, today) if include_money else None
             seal_due = _seal_due(client, today, status.signed_off_through)
             next_seal = _next_seal(client, today)
-            failing_bank = [c for c in report.checks if c.name.startswith("bank_") and not c.ok]
             row.update(
                 {
                     "approved_through": status.approved_through,
@@ -266,91 +266,15 @@ def portfolio(
                 row["payables_paise"] = owing[partyreports.PAYABLES]["total_paise"]
                 row["tds_overdue_paise"] = overdue_tds
             name = client.name
-            if overdue_tds:
-                attention.append(
-                    _item(
-                        "critical",
-                        client,
-                        f"TDS of {{amount}} was due by {oldest:%d-%m-%Y} and is not deposited.",
-                        overdue_tds,
-                        "tds",
-                    )
-                )
-            if (
-                seal_due
-                and status.approved_through
-                and status.approved_through >= seal_due[-1]
-                and not status.changed_since_approval
-            ):
-                attention.append(
-                    _item(
-                        "high",
-                        client,
-                        f"Approved and ready to seal through {seal_due[-1]:%d-%m-%Y}.",
-                        None,
-                        "seal",
-                    )
-                )
-            elif seal_due:
-                attention.append(
-                    _item(
-                        "high",
-                        client,
-                        f"The books were due to be sealed through {seal_due[-1]:%d-%m-%Y}.",
-                        None,
-                        "seal",
-                    )
-                )
-            if failing_bank:
-                attention.append(
-                    _item(
-                        "high",
-                        client,
-                        f"{len(failing_bank)} bank account(s) do not agree with their statement.",
-                        None,
-                        "bank",
-                    )
-                )
-            if report.unexplained_blocking:
-                attention.append(
-                    _item(
-                        "high",
-                        client,
-                        f"{report.unexplained_blocking} open item(s) block sealing until fixed or explained.",
-                        None,
-                        "open_items",
-                    )
-                )
-            if status.changed_since_approval:
-                attention.append(
-                    _item(
-                        "medium",
-                        client,
-                        f"{status.changed_since_approval} entr(ies) changed since the senior approved.",
-                        None,
-                        "approval",
-                    )
-                )
-            if base["months_missing"]:
-                attention.append(
-                    _item(
-                        "medium",
-                        client,
-                        f"Statements are missing for {len(base['months_missing'])} month(s).",
-                        None,
-                        "statements",
-                    )
-                )
-            if base["unresolved"] or base["pending_approval"]:
-                attention.append(
-                    _item(
-                        "medium",
-                        client,
-                        f"{base['unresolved'] + base['pending_approval']} bank row(s) are waiting in Review.",
-                        None,
-                        "review",
-                    )
-                )
+            alerts = alerts_mod.client_alerts(
+                client,
+                base=base,
+                today=today,
+                include_money=include_money,
+                status=status,
+                report=report,
+            )
+            attention.extend(_attention(alert) for alert in alerts)
             # What falls due soon.
             for month in tds.position(client) if include_money else ():
                 if month.unpaid_paise > 0 and today <= month.due <= today + datetime.timedelta(
@@ -359,6 +283,11 @@ def portfolio(
                     deadlines[(month.due, "TDS deposit")].append(name)
             if next_seal and next_seal <= today + datetime.timedelta(days=45):
                 deadlines[(next_seal, "Seal the books")].append(name)
+        elif client is not None:
+            alerts = alerts_mod.client_alerts(
+                client, base=base, today=today, include_money=include_money, detailed=False
+            )
+            attention.extend(_attention(alert) for alert in alerts)
         rows.append(row)
 
     attention.sort(key=lambda a: (SEVERITY[a["severity"]], a["client_name"]))
@@ -375,14 +304,14 @@ def portfolio(
     }
 
 
-def _item(severity: str, client, text: str, paise: int | None, kind: str) -> dict:
-    from core.money import format_inr
-
+def _attention(alert) -> dict:
     return {
-        "severity": severity,
-        "kind": kind,
-        "client": client.pk,
-        "client_name": client.name,
-        "text": text.replace("{amount}", format_inr(paise) if paise is not None else ""),
-        "amount_paise": paise,
+        "severity": alert.severity,
+        "kind": alert.kind,
+        "client": alert.client_id,
+        "client_name": alert.client_name,
+        "text": alert.detail,
+        "amount_paise": alert.amount_paise,
+        "to": alert.to,
+        "search": alert.search,
     }

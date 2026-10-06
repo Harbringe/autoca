@@ -273,6 +273,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/Client'
           description: ''
+  /api/v1/clients/{client_id}/alerts/:
+    get:
+      operationId: clients_alerts_retrieve
+      description: The same alerts as the firm feed, for one client.
+      summary: Alerts for one client
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: module
+        schema:
+          type: string
+        description: 'Only this module: bank, bookkeeping, reports, gst or documents.'
+      tags:
+      - clients
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertFeed'
+          description: ''
   /api/v1/clients/{client_id}/approvals/:
     post:
       operationId: clients_approvals_create
@@ -4592,6 +4620,32 @@ paths:
               schema:
                 $ref: '#/components/schemas/FirmRenamed'
           description: ''
+  /api/v1/firm/alerts/:
+    get:
+      operationId: firm_alerts_retrieve
+      description: 'Everything that wants a person, most serious first. Each alert
+        names its module and carries `to` and `search`, which open the screen where
+        it is fixed. `counts` always covers all modules, so a badge can show the total
+        while `module` narrows the list. Computed on request: a fixed problem is simply
+        gone. Amounts are left out (and so are TDS alerts) for a caller without `journal.view`.'
+      summary: Alerts across every client the caller may see
+      parameters:
+      - in: query
+        name: module
+        schema:
+          type: string
+        description: 'Only this module: bank, bookkeeping, reports, gst or documents.'
+      tags:
+      - clients
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AlertFeed'
+          description: ''
   /api/v1/firm/metrics/:
     get:
       operationId: firm_metrics_retrieve
@@ -5579,6 +5633,94 @@ components:
       description: |-
         * `DR` - DR
         * `CR` - CR
+    Alert:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        kind:
+          type: string
+        severity:
+          $ref: '#/components/schemas/SeverityEnum'
+        module:
+          $ref: '#/components/schemas/ModuleEnum'
+        client:
+          type: string
+          format: uuid
+        client_name:
+          type: string
+        title:
+          type: string
+          description: 'A few words: what is wrong.'
+        detail:
+          type: string
+          description: 'A sentence: what, how much, since when.'
+        to:
+          type: string
+          description: The screen where this is fixed, as an app path.
+        search:
+          type: object
+          additionalProperties:
+            type: string
+          description: The query that screen needs.
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        count:
+          type: integer
+          description: How many rows, entries or items this stands for.
+        amount_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - amount_display
+      - amount_paise
+      - client
+      - client_name
+      - count
+      - detail
+      - kind
+      - module
+      - search
+      - severity
+      - title
+      - to
+    AlertCounts:
+      type: object
+      properties:
+        total:
+          type: integer
+        by_module:
+          type: object
+          additionalProperties:
+            type: integer
+        by_severity:
+          type: object
+          additionalProperties:
+            type: integer
+      required:
+      - by_module
+      - by_severity
+      - total
+    AlertFeed:
+      type: object
+      properties:
+        counts:
+          $ref: '#/components/schemas/AlertCounts'
+        alerts:
+          type: array
+          items:
+            $ref: '#/components/schemas/Alert'
+      required:
+      - alerts
+      - counts
     Allocation:
       type: object
       description: Adds a ``*_display`` string beside every ``*_paise`` field named
@@ -5979,6 +6121,14 @@ components:
           nullable: true
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
+        to:
+          type: string
+          description: The screen where this is fixed, as an app path.
+        search:
+          type: object
+          additionalProperties:
+            type: string
+          description: The query that screen needs.
         amount_display:
           type: string
           nullable: true
@@ -5990,8 +6140,10 @@ components:
       - client
       - client_name
       - kind
+      - search
       - severity
       - text
+      - to
     AttentionReason:
       type: object
       properties:
@@ -9897,6 +10049,20 @@ components:
       - median_days_upload_to_posted
       - member
       - statements_completed
+    ModuleEnum:
+      enum:
+      - bank
+      - bookkeeping
+      - reports
+      - gst
+      - documents
+      type: string
+      description: |-
+        * `bank` - bank
+        * `bookkeeping` - bookkeeping
+        * `reports` - reports
+        * `gst` - gst
+        * `documents` - documents
     NextBatch:
       type: object
       description: What one call to the assistant did, and what to do next.

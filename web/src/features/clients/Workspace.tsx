@@ -8,6 +8,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { ChevronLeft, ChevronRight, Lock, Upload } from 'lucide-react'
 import { booksStatus, clientDetail, reviewSummary } from '@/api/queries/clients'
+import type { AlertModule } from '@/api/types'
 import { ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -21,6 +22,7 @@ import { useHotkey } from '@/lib/hotkeys'
 import { moduleOf, type ModuleId } from '@/lib/modules'
 import { REPORT_TABS } from '@/features/reports/tabs'
 import { useFy } from '@/features/shell/useFy'
+import { ModuleAlerts } from '@/features/alerts/AlertList'
 import { useSession } from '@/session/session'
 
 const MODULE_TITLE: Partial<Record<ModuleId, string>> = {
@@ -152,6 +154,10 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
           items={tabs}
           trailing={<AdjacentPages tabs={tabs} module={module} path={path} />}
         />
+      )}
+
+      {module && module !== 'clients' && module !== 'alerts' && can('client.view') && (
+        <ModuleAlerts module={module as AlertModule} clientId={clientId} />
       )}
 
       {explicit && latestYear !== undefined && !dataYears.includes(fy) && (

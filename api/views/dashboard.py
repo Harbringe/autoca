@@ -11,9 +11,14 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.permissions import HasFirmPermission
-from api.serializers.dashboard import ClientSnapshotSerializer, PortfolioSerializer
+from api.serializers.dashboard import (
+    AlertFeedSerializer,
+    ClientSnapshotSerializer,
+    PortfolioSerializer,
+)
 from core.access import get_visible_client
 from core.rbac import has_permission
+from ledger import alerts as alerts_mod
 from ledger import dashboard
 
 
@@ -79,3 +84,76 @@ class ClientSnapshotView(APIView):
                 {"fy": "Send the year the financial year starts in, like 2025."}
             )
         return Response(ClientSnapshotSerializer(dashboard.client_snapshot(client, year)).data)
+
+
+def _feed(alerts, module):
+    counts = alerts_mod.summarise(alerts)
+    shown = [a for a in alerts if a.module == module] if module else alerts
+    return Response(AlertFeedSerializer({"counts": counts, "alerts": shown}).data)
+
+
+def _module(request):
+    value = request.query_params.get("module")
+    if value and value not in alerts_mod.MODULES:
+        raise serializers.ValidationError(
+            {"module": f"Use one of: {', '.join(alerts_mod.MODULES)}."}
+        )
+    return value
+
+
+@extend_schema(tags=["clients"])
+class FirmAlertsView(APIView):
+    permission_classes = [HasFirmPermission]
+    required_permission = "client.view"
+
+    @extend_schema(
+        summary="Alerts across every client the caller may see",
+        description=(
+            "Everything that wants a person, most serious first. Each alert names its module and carries `to` and `search`, "
+            "which open the screen where it is fixed. `counts` always covers all modules, so a badge can show the total "
+            "while `module` narrows the list. Computed on request: a fixed problem is simply gone. Amounts are left out "
+            "(and so are TDS alerts) for a caller without `journal.view`."
+        ),
+        parameters=[
+            OpenApiParameter(
+                "module",
+                OpenApiTypes.STR,
+                description="Only this module: bank, bookkeeping, reports, gst or documents.",
+            )
+        ],
+        responses={200: AlertFeedSerializer},
+    )
+    def get(self, request):
+        module = _module(request)
+        alerts = alerts_mod.firm_alerts(
+            request.membership, include_money=has_permission(request.membership, "journal.view")
+        )
+        return _feed(alerts, module)
+
+
+@extend_schema(tags=["clients"])
+class ClientAlertsView(APIView):
+    permission_classes = [HasFirmPermission]
+    required_permission = "client.view"
+
+    @extend_schema(
+        summary="Alerts for one client",
+        description="The same alerts as the firm feed, for one client.",
+        parameters=[
+            OpenApiParameter(
+                "module",
+                OpenApiTypes.STR,
+                description="Only this module: bank, bookkeeping, reports, gst or documents.",
+            )
+        ],
+        responses={200: AlertFeedSerializer},
+    )
+    def get(self, request, client_id=None):
+        client = get_visible_client(request, client_id)
+        module = _module(request)
+        alerts = alerts_mod.client_alerts_for(
+            request.membership,
+            client,
+            include_money=has_permission(request.membership, "journal.view"),
+        )
+        return _feed(alerts, module)

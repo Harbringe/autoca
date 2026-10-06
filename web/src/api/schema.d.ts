@@ -157,6 +157,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/alerts/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Alerts for one client
+         * @description The same alerts as the firm feed, for one client.
+         */
+        get: operations["clients_alerts_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/approvals/": {
         parameters: {
             query?: never;
@@ -2045,6 +2065,26 @@ export interface paths {
         patch: operations["firm_partial_update"];
         trace?: never;
     };
+    "/api/v1/firm/alerts/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Alerts across every client the caller may see
+         * @description Everything that wants a person, most serious first. Each alert names its module and carries `to` and `search`, which open the screen where it is fixed. `counts` always covers all modules, so a badge can show the total while `module` narrows the list. Computed on request: a fixed problem is simply gone. Amounts are left out (and so are TDS alerts) for a caller without `journal.view`.
+         */
+        get: operations["firm_alerts_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/firm/metrics/": {
         parameters: {
             query?: never;
@@ -2641,6 +2681,47 @@ export interface components {
          */
         AccountSideEnum: "DR" | "CR";
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
+        Alert: {
+            kind: string;
+            severity: components["schemas"]["SeverityEnum"];
+            module: components["schemas"]["ModuleEnum"];
+            /** Format: uuid */
+            client: string;
+            client_name: string;
+            /** @description A few words: what is wrong. */
+            title: string;
+            /** @description A sentence: what, how much, since when. */
+            detail: string;
+            /** @description The screen where this is fixed, as an app path. */
+            to: string;
+            /** @description The query that screen needs. */
+            search: {
+                [key: string]: string;
+            };
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            amount_paise: number | null;
+            /** @description How many rows, entries or items this stands for. */
+            count: number;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly amount_display: string | null;
+        };
+        AlertCounts: {
+            total: number;
+            by_module: {
+                [key: string]: number;
+            };
+            by_severity: {
+                [key: string]: number;
+            };
+        };
+        AlertFeed: {
+            counts: components["schemas"]["AlertCounts"];
+            alerts: components["schemas"]["Alert"][];
+        };
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         Allocation: {
             /** Format: uuid */
             readonly id: string;
@@ -2850,6 +2931,12 @@ export interface components {
              * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
              */
             amount_paise: number | null;
+            /** @description The screen where this is fixed, as an app path. */
+            to: string;
+            /** @description The query that screen needs. */
+            search: {
+                [key: string]: string;
+            };
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly amount_display: string | null;
         };
@@ -4562,6 +4649,15 @@ export interface components {
              */
             median_days_request_to_sign_off: number | null;
         };
+        /**
+         * @description * `bank` - bank
+         *     * `bookkeeping` - bookkeeping
+         *     * `reports` - reports
+         *     * `gst` - gst
+         *     * `documents` - documents
+         * @enum {string}
+         */
+        ModuleEnum: "bank" | "bookkeeping" | "reports" | "gst" | "documents";
         /** @description What one call to the assistant did, and what to do next. */
         NextBatch: {
             /** @description Rows this call asked the model about. */
@@ -7163,6 +7259,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Client"];
+                };
+            };
+        };
+    };
+    clients_alerts_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Only this module: bank, bookkeeping, reports, gst or documents. */
+                module?: string;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertFeed"];
                 };
             };
         };
@@ -10468,6 +10588,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["FirmRenamed"];
+                };
+            };
+        };
+    };
+    firm_alerts_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Only this module: bank, bookkeeping, reports, gst or documents. */
+                module?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AlertFeed"];
                 };
             };
         };

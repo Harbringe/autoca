@@ -60,6 +60,7 @@ import { useHotkey } from '@/lib/hotkeys'
 import { JUMP_KEYS, moduleHref, type JumpKey } from '@/lib/jump'
 import { setSelectedClient, useSelectedClient } from '@/lib/selectedClient'
 import { ClientSection } from './ClientSection'
+import { AlertBell, useAlertCount } from '@/features/alerts/AlertBell'
 import { clientIdOf, moduleOf, type ModuleId } from '@/lib/modules'
 import { usePreferences, type Density, type Theme } from '@/lib/preferences'
 import { usePageTitle } from '@/lib/title'
@@ -123,7 +124,7 @@ const GROUPS: { label: string; items: NavEntry[] }[] = [
     label: 'Management',
     items: [
       { id: 'staff', label: 'Staff performance', icon: <Activity />, permission: 'client.view' },
-      { id: 'notifications', label: 'Notifications', icon: <Bell />, soon: true },
+      { id: 'alerts', label: 'Alerts', icon: <Bell />, permission: 'client.view' },
       { id: 'settings', label: 'Settings', icon: <Settings /> },
     ],
   },
@@ -183,6 +184,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   }, [urlClient])
   const clientId = urlClient ?? remembered ?? undefined
   const bankCount = useSidebarCount()
+  const alertCount = useAlertCount()
 
   const hrefFor = (entry: NavEntry): string => {
     if (entry.soon) return `/soon/${entry.id}`
@@ -233,6 +235,10 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
                         <span className="truncate">{item.label}</span>
                         {item.soon ? (
                           <span className={chip}>Soon</span>
+                        ) : item.id === 'alerts' && alertCount ? (
+                          <span className={cn(chip, 'num')} title="Things that need attention">
+                            {alertCount}
+                          </span>
                         ) : item.id === 'bank' && bankCount ? (
                           <span className={cn(chip, 'num')} title={clientId ? 'Rows waiting for this client' : 'Rows waiting across the firm'}>
                             {bankCount}
@@ -535,6 +541,7 @@ export function Shell() {
           <PaletteTrigger />
           <div className="ml-auto flex shrink-0 items-center gap-2 md:gap-3">
             <AssistantIndicator />
+            <AlertBell />
             <UserMenu onShortcuts={() => setShortcutsOpen(true)} />
           </div>
         </header>

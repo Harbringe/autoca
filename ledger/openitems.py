@@ -295,6 +295,63 @@ def payments_needing_an_invoice(client):
         )
 
 
+#: A payment to a supplier for something bought needs an invoice behind it; for an ordinary expense, only a large one does,
+#: so the list is not buried under rent, fuel and small items.
+LARGE_EXPENSE_PAISE = 50_000_00
+
+
+@detector("payment_without_invoice", "A payment to a supplier with no invoice on file")
+def payments_without_an_invoice(client):
+    """Money paid out for goods or services, to a named supplier, with no bill and no word on why.
+
+    The counterpart of ``payments_that_bypass_bills`` for a supplier that has no bills at all: the books show the cost but
+    nothing proves it. Said once either way (``NO_INVOICE_EXPECTED``, or ``NEEDS_INVOICE`` to keep it listed under its
+    own kind), it stops being listed. When an uploaded invoice for that supplier and amount is waiting, the summary says so.
+    """
+    from django.db.models import Exists, OuterRef
+
+    from classify.models import BillStatus, LedgerGroup, PartyRole
+    from ledger import invoice_intake
+    from ledger.models import InvoiceReading, ReadingStatus
+
+    bought = [LedgerGroup.PURCHASE, LedgerGroup.DIRECT_EXPENSE, LedgerGroup.FIXED_ASSET]
+    rows = (
+        _classified_rows(client)
+        .filter(
+            bill_status=BillStatus.UNSTATED,
+            party__isnull=False,
+            party__role__in=[PartyRole.VENDOR, PartyRole.BOTH],
+            transaction__debit_paise__gt=0,
+            ledger__party_record__isnull=True,
+        )
+        .exclude(Exists(Bill.objects.filter(party_id=OuterRef("party_id"))))
+        .filter(
+            Q(ledger__group__in=bought)
+            | Q(ledger__group=LedgerGroup.INDIRECT_EXPENSE, transaction__debit_paise__gte=LARGE_EXPENSE_PAISE)
+        )
+        .order_by("transaction__value_date")
+    )
+    waiting_totals = {
+        invoice_intake.fields_of(r).get("total_paise")
+        for r in InvoiceReading.objects.filter(firm_id=client.firm_id, client=client, status=ReadingStatus.OPEN)
+    }
+    for row in rows:
+        entry = _live_entry(row.transaction)
+        if entry is None:
+            continue
+        amount = row.transaction.amount_paise
+        hint = " An uploaded invoice for this amount is waiting to be booked." if amount in waiting_totals else ""
+        yield OpenItem(
+            kind="payment_without_invoice",
+            client_id=client.pk,
+            summary=f"{format_inr(amount)} paid to {row.party.canonical_name} on {row.transaction.value_date:%d-%m-%Y} "
+            f"(booked to {row.ledger.name}) has no invoice on file.{hint}",
+            amount_paise=amount,
+            since=row.transaction.value_date,
+            link={"type": "entry", "id": str(entry.pk)},
+        )
+
+
 def total_held(client) -> int:
     """Convenience for a summary: how much sits on account across all parties."""
     return (

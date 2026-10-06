@@ -134,14 +134,14 @@ function Actions({
     return <Button variant="outline" size="sm" onClick={() => onStatement(link.id)}>Open account</Button>
   }
   // A posted payment: settle it against bills, or say why it has no invoice.
-  const bypass = item.kind === 'payment_bypasses_bills' || item.kind === 'payment_needs_invoice'
+  const bypass = ['payment_bypasses_bills', 'payment_needs_invoice', 'payment_without_invoice'].includes(item.kind)
   return (
     <div className="flex gap-2">
       {mayFix && !bypass && <Button size="sm" onClick={() => onSettle(link.id)}>Settle</Button>}
       {mayFix && bypass && (
         <>
           <Button variant="outline" size="sm" onClick={() => onSay(link.id, 'NO_INVOICE_EXPECTED')}>No invoice expected</Button>
-          {item.kind === 'payment_bypasses_bills' && (
+          {(item.kind === 'payment_bypasses_bills' || item.kind === 'payment_without_invoice') && (
             <Button variant="outline" size="sm" onClick={() => onSay(link.id, 'NEEDS_INVOICE')}>Waiting for invoice</Button>
           )}
         </>

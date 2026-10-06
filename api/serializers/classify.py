@@ -15,6 +15,7 @@ from rest_framework import serializers
 from api.fields import PaiseField
 from api.serializers.banking import StatementTransactionSerializer
 from api.serializers.settlement import RowSettlementSerializer
+from classify import regex_guard
 from classify.models import (
     ClassificationRule,
     LedgerAccount,
@@ -28,11 +29,6 @@ from core.fy import financial_year
 from core.identifiers import is_valid_gstin
 from core.money import format_inr
 
-#: A quantifier applied to a group that itself contains a quantifier --
-#: ``(a+)+``, ``(\w*)*`` -- is the shape that makes a regex engine backtrack
-#: exponentially. A rule is evaluated against every row of every statement, so
-#: one such pattern from one member of staff would stall the firm's uploads.
-_NESTED_QUANTIFIER = re.compile(r"\([^()]*[+*][^()]*\)\s*[+*{]")
 MAX_RULE_PATTERN_LENGTH = 200
 
 
@@ -85,6 +81,39 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
                 "only in capital letters as the same ledger, and two would split the books."
             )
         return value
+
+    def validate(self, attrs):
+        """What a ledger is cannot be changed once the books rest on it.
+
+        Reports read a ledger's group live, so regrouping a ledger that has entries would change signed-off figures with
+        no entry and no lock. A bank account finds its ledger by name, and a party's account is tied to the party, so
+        neither is renamed or regrouped here. (A bank ledger is renamed with its account; the Tally import applies the
+        same rule to groups.)
+        """
+        ledger = self.instance
+        if ledger is None:
+            return attrs
+        from banking.models import BankAccount
+        from ledger.models import JournalLine
+
+        regroup = "group" in attrs and attrs["group"] != ledger.group
+        rename = "name" in attrs and attrs["name"] != ledger.name
+        if not (regroup or rename):
+            return attrs
+        if ledger.is_party_account:
+            raise serializers.ValidationError(
+                "This is a party's own account. Change it through the party; its name and group follow the party."
+            )
+        if BankAccount.objects.filter(client_id=ledger.client_id, ledger_name=ledger.name).exists():
+            raise serializers.ValidationError(
+                "This is a bank account's ledger. Rename it from the bank account, which moves its entries with it."
+            )
+        if regroup and JournalLine.objects.filter(ledger_account=ledger).exists():
+            raise serializers.ValidationError(
+                {"group": "Entries are already posted to this ledger, so its group cannot change. "
+                          "Post a journal entry to move the balance instead."}
+            )
+        return attrs
 
 
 class PartySerializer(serializers.ModelSerializer):
@@ -205,17 +234,10 @@ class ClassificationRuleSerializer(serializers.ModelSerializer):
                 {"pattern": f"At most {MAX_RULE_PATTERN_LENGTH} characters."}
             )
         if match_type == MatchType.REGEX:
-            if _NESTED_QUANTIFIER.search(pattern):
-                raise serializers.ValidationError(
-                    {
-                        "pattern": (
-                            "A repeated group containing a repetition -- like (a+)+ -- can "
-                            "take the matcher exponential time. Rewrite without nesting."
-                        )
-                    }
-                )
             try:
-                re.compile(pattern)
+                regex_guard.check(pattern)
+            except regex_guard.UnsafeRegex as exc:
+                raise serializers.ValidationError({"pattern": str(exc)}) from exc
             except re.error as exc:
                 raise serializers.ValidationError({"pattern": f"Not a valid regex: {exc}"}) from exc
 

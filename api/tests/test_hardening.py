@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 
 import pytest
+from rest_framework.test import APIClient
 
 from api.tests.conftest import sign_in
 from classify.models import LedgerAccount, LedgerGroup
@@ -177,3 +178,12 @@ def test_a_pdf_with_too_many_pages_is_refused_before_any_extraction(api, client_
     assert response.json()["code"] == "invalid"
     assert "11 pages" in response.json()["fields"]["file"][0]
     assert not Job.objects.exists()
+
+
+def test_the_api_schema_and_docs_need_a_signed_in_person():
+    anonymous = APIClient()
+
+    for path in ("/api/schema/", "/api/docs/", "/api/redoc/"):
+        response = anonymous.get(path)
+        assert response.status_code in (302, 401, 403), path
+        assert b"openapi" not in response.content[:200].lower(), path

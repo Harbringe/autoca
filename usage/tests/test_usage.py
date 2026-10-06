@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import uuid
+from decimal import Decimal
 from types import SimpleNamespace
 from unittest import mock
 
@@ -195,3 +196,58 @@ def test_nothing_on_the_usage_page_can_be_added_changed_or_deleted():
     assert not model_admin.has_add_permission(request)
     assert not model_admin.has_change_permission(request)
     assert not model_admin.has_delete_permission(request)
+
+
+# -- how the page shows its figures ------------------------------------------------------------------------------------
+
+
+def test_figures_are_shown_as_short_plain_strings():
+    from usage.summary import compact, money_inr, money_usd
+
+    assert (compact(999), compact(12_345), compact(4_500_000)) == ("999", "12.3k", "4.5M")
+    assert (money_usd(0), money_usd(Decimal("0.0123")), money_usd(Decimal("1234.5"))) == (
+        "$0.00",
+        "$0.0123",
+        "$1,234.50",
+    )
+    assert money_inr(Decimal("165.6")) == "₹165.60"
+
+
+def test_the_chart_is_empty_until_something_is_spent_and_then_draws_a_bar_a_day():
+    from usage.summary import build_chart
+
+    day = datetime.date(2026, 10, 1)
+    quiet = [
+        {
+            "date": day + datetime.timedelta(days=i),
+            "calls": 0,
+            "cost_micro": 0,
+            "cost_usd": Decimal(0),
+        }
+        for i in range(30)
+    ]
+    assert build_chart(quiet)["empty"] is True
+
+    quiet[29] = {**quiet[29], "calls": 4, "cost_micro": 2_000_000, "cost_usd": Decimal(2)}
+    chart = build_chart(quiet)
+    assert chart["empty"] is False and len(chart["bars"]) == 30
+    assert (
+        chart["bars"][29]["is_last"]
+        and float(chart["bars"][29]["h"]) > float(chart["bars"][0]["h"]) == 0
+    )
+
+
+def test_the_summary_carries_the_display_strings_the_template_uses():
+    now = timezone.now()
+    make(now, cost=2_000_000)
+
+    result = summary(now)
+
+    assert result["month"]["l"]["usd"] == "$2.00" and result["today"]["l"]["calls"] == "1"
+    assert result["chart"]["empty"] is False
+
+
+def test_the_page_has_its_stylesheet():
+    from django.contrib.staticfiles import finders
+
+    assert finders.find("usage/usage.css")

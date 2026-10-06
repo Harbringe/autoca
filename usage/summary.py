@@ -70,6 +70,96 @@ def _firm_names(ids) -> dict:
         return {}
 
 
+# ---------------------------------------------------------------------------
+# How figures are shown on the page. Plain strings, so the template never formats a number.
+# ---------------------------------------------------------------------------
+
+CHART_W, CHART_H = 1200, 240
+_LEFT, _RIGHT, _TOP, _BOTTOM = 56, 8, 10, 28
+
+
+def compact(n: int) -> str:
+    """12,345 -> 12.3k, 4,500,000 -> 4.5M. Whole numbers below a thousand."""
+    n = int(n)
+    if n >= 1_000_000:
+        return f"{n / 1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n / 1_000:.1f}k"
+    return str(n)
+
+
+def money_usd(value) -> str:
+    value = Decimal(value)
+    return f"${value:,.2f}" if value >= 1 or value == 0 else f"${value:.4f}"
+
+
+def money_inr(value) -> str:
+    return f"\u20b9{Decimal(value):,.2f}"
+
+
+def labels(t: dict) -> dict:
+    """The display strings for one block of totals."""
+    return {
+        "usd": money_usd(t["cost_usd"]),
+        "inr": money_inr(t["cost_inr"]),
+        "calls": f"{t['calls']:,}",
+        "input": compact(t["input_tokens"]),
+        "cached": compact(t["cached_tokens"]),
+        "output": compact(t["output_tokens"]),
+        "rows": f"{t['rows']:,}",
+        "pages": f"{t['pages']:,}",
+        "hit": f"{t['cache_hit_percent']}%" if t["cache_hit_percent"] is not None else "\u2014",
+        "errors": f"{t['error_percent']}%" if t["error_percent"] is not None else "\u2014",
+        "latency": f"{t['avg_latency_ms'] / 1000:.1f} s" if t["avg_latency_ms"] else "\u2014",
+        "per_row": money_usd(t["usd_per_row"]) if t["usd_per_row"] is not None else "\u2014",
+    }
+
+
+def build_chart(daily: list[dict]) -> dict:
+    """Bar geometry for the 30-day chart, as strings an SVG attribute can take. ``empty`` when nothing was spent."""
+    peak = max((d["cost_micro"] for d in daily), default=0)
+    if peak == 0:
+        return {"empty": True, "width": CHART_W, "height": CHART_H}
+    plot_w = CHART_W - _LEFT - _RIGHT
+    plot_h = CHART_H - _TOP - _BOTTOM
+    slot = plot_w / len(daily)
+    bar = max(slot * 0.68, 4)
+    base = _TOP + plot_h
+    bars, ticks = [], []
+    for i, d in enumerate(daily):
+        x = _LEFT + i * slot + (slot - bar) / 2
+        h = 0 if d["cost_micro"] == 0 else max(plot_h * d["cost_micro"] / peak, 2)
+        bars.append(
+            {
+                "x": f"{x:.1f}",
+                "y": f"{base - h:.1f}",
+                "w": f"{bar:.1f}",
+                "h": f"{h:.1f}",
+                "title": f"{d['date']:%d-%m-%Y}: {money_usd(d['cost_usd'])}, {d['calls']} call(s)",
+                "is_last": i == len(daily) - 1,
+                "has_spend": d["cost_micro"] > 0,
+            }
+        )
+        if i % 5 == 0 or i == len(daily) - 1:
+            ticks.append({"x": f"{x + bar / 2:.1f}", "label": f"{d['date']:%d %b}"})
+    grid = [
+        {"y": f"{base - plot_h * f:.1f}", "label": money_usd(usd(int(peak * f))) if f else "$0"}
+        for f in (0, 0.5, 1)
+    ]
+    return {
+        "empty": False,
+        "width": CHART_W,
+        "height": CHART_H,
+        "bars": bars,
+        "ticks": ticks,
+        "grid": grid,
+        "base": f"{base:.1f}",
+        "left": _LEFT,
+        "right": CHART_W - _RIGHT,
+        "label_y": f"{base + 18:.1f}",
+    }
+
+
 def summary(now: datetime.datetime | None = None) -> dict:
     now = now or timezone.now()
     today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
@@ -130,11 +220,21 @@ def summary(now: datetime.datetime | None = None) -> dict:
     ]
 
     month_totals = _totals(month)
+    today_totals = _totals(events.filter(at__gte=today_start))
+    month_cost = month_totals["cost_micro"] or 0
+    for block in purposes:
+        block["share"] = round(block["cost_micro"] * 100 / month_cost) if month_cost else 0
+        block["l"] = labels(block)
+    for f in firms:
+        f["share"] = round(int(f["cost_usd"] * 1_000_000) * 100 / month_cost) if month_cost else 0
+    month_totals["l"] = labels(month_totals)
+    today_totals["l"] = labels(today_totals)
     budget = Decimal(str(getattr(settings, "LLM_MONTHLY_BUDGET_USD", 0) or 0))
     return {
         "as_of": now,
-        "today": _totals(events.filter(at__gte=today_start)),
+        "today": today_totals,
         "month": month_totals,
+        "chart": build_chart(daily),
         "daily": daily,
         "by_purpose": purposes,
         "by_firm": firms,

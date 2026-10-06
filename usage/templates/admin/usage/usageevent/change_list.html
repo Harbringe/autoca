@@ -1,89 +1,12 @@
 {% extends "admin/change_list.html" %}
+{% load static %}
+
+{% block extrastyle %}
+{{ block.super }}
+<link rel="stylesheet" href="{% static 'usage/usage.css' %}">
+{% endblock %}
 
 {% block content %}
-{% with u=usage %}
-<div id="usage-summary">
-  <h2>Model spend</h2>
-  <p>
-    Costs are the provider's published prices at the time of each call, in US dollars, with a rupee estimate at
-    {{ u.usd_inr }} per dollar. Only counts and tokens are recorded, never what a call contained.
-  </p>
-
-  {% if u.budget_usd %}
-  <p>
-    Budget this month: <strong>${{ u.budget_usd }}</strong>.
-    Spent <strong>${{ u.month.cost_usd|floatformat:4 }}</strong>
-    ({{ u.budget_used_percent }}%){% if u.budget_over %} <strong>&mdash; over budget</strong>{% endif %}.
-    <progress value="{{ u.budget_used_percent }}" max="100">{{ u.budget_used_percent }}%</progress>
-  </p>
-  {% endif %}
-
-  <table>
-    <thead>
-      <tr><th></th><th>Calls</th><th>Failed</th><th>Rate limited</th><th>Input tokens</th><th>Cached</th><th>Output tokens</th><th>Avg time</th><th>Cost (USD)</th><th>Cost (INR, est.)</th></tr>
-    </thead>
-    <tbody>
-      <tr>
-        <th scope="row">Today</th>
-        <td>{{ u.today.calls }}</td><td>{{ u.today.failed }}</td><td>{{ u.today.rate_limited }}</td>
-        <td>{{ u.today.input_tokens }}</td><td>{{ u.today.cached_tokens }}{% if u.today.cache_hit_percent is not None %} ({{ u.today.cache_hit_percent }}%){% endif %}</td>
-        <td>{{ u.today.output_tokens }}</td><td>{{ u.today.avg_latency_ms }} ms</td>
-        <td>${{ u.today.cost_usd|floatformat:4 }}</td><td>&#8377;{{ u.today.cost_inr|floatformat:2 }}</td>
-      </tr>
-      <tr>
-        <th scope="row">This month</th>
-        <td>{{ u.month.calls }}</td><td>{{ u.month.failed }}</td><td>{{ u.month.rate_limited }}</td>
-        <td>{{ u.month.input_tokens }}</td><td>{{ u.month.cached_tokens }}{% if u.month.cache_hit_percent is not None %} ({{ u.month.cache_hit_percent }}%){% endif %}</td>
-        <td>{{ u.month.output_tokens }}</td><td>{{ u.month.avg_latency_ms }} ms</td>
-        <td>${{ u.month.cost_usd|floatformat:4 }}</td><td>&#8377;{{ u.month.cost_inr|floatformat:2 }}</td>
-      </tr>
-    </tbody>
-  </table>
-  {% if u.month.unpriced %}
-  <p><strong>{{ u.month.unpriced }} call(s) this month used a model with no price</strong> in <code>LLM_PRICES</code>, so their cost is not counted above.</p>
-  {% endif %}
-  {% if u.month.usd_per_row is not None %}
-  <p>About ${{ u.month.usd_per_row|floatformat:6 }} per row the model was asked about this month.</p>
-  {% endif %}
-
-  <h3>By purpose, this month</h3>
-  <table>
-    <thead><tr><th>Purpose</th><th>Calls</th><th>Rows</th><th>Pages</th><th>Cost (USD)</th></tr></thead>
-    <tbody>
-      {% for p in u.by_purpose %}
-      <tr><td>{{ p.label }}</td><td>{{ p.calls }}</td><td>{{ p.rows }}</td><td>{{ p.pages }}</td><td>${{ p.cost_usd|floatformat:4 }}</td></tr>
-      {% empty %}
-      <tr><td colspan="5">Nothing recorded this month.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  <h3>By firm, this month (top 10)</h3>
-  <table>
-    <thead><tr><th>Firm</th><th>Calls</th><th>Cost (USD)</th><th>Cost (INR, est.)</th></tr></thead>
-    <tbody>
-      {% for f in u.by_firm %}
-      <tr><td>{{ f.name }}</td><td>{{ f.calls }}</td><td>${{ f.cost_usd|floatformat:4 }}</td><td>&#8377;{{ f.cost_inr|floatformat:2 }}</td></tr>
-      {% empty %}
-      <tr><td colspan="4">Nothing recorded this month.</td></tr>
-      {% endfor %}
-    </tbody>
-  </table>
-
-  <h3>Spend by day, last 30 days</h3>
-  <table>
-    <thead><tr><th>Day</th><th>Calls</th><th>Cost (USD)</th><th>Against the busiest day</th></tr></thead>
-    <tbody>
-      {% for d in u.daily %}
-      <tr>
-        <td>{{ d.date|date:"d-m-Y" }}</td><td>{{ d.calls }}</td><td>${{ d.cost_usd|floatformat:4 }}</td>
-        <td><progress value="{{ d.percent_of_peak }}" max="100">{{ d.percent_of_peak }}%</progress></td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-</div>
-<h2>Every call</h2>
-{% endwith %}
+{% include "usage/_summary.html" %}
 {{ block.super }}
 {% endblock %}

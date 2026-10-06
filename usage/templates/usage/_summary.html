@@ -1,0 +1,113 @@
+{% with u=usage %}
+<section class="usage" aria-labelledby="usage-title">
+  <header class="usage-head">
+    <div>
+      <h2 id="usage-title" class="usage-title">Model spend</h2>
+      <p class="usage-sub">What the AI model costs, from every call it has been asked to make. Only counts and tokens are kept, never what a call said.</p>
+    </div>
+    <p class="usage-asof">As of {{ u.as_of|date:"d-m-Y H:i" }}<br>US dollars, with a rupee estimate at &#8377;{{ u.usd_inr }} per dollar</p>
+  </header>
+
+  <div class="usage-kpis">
+    <div class="usage-card{% if u.budget_over %} usage-card--alert{% endif %}">
+      <div class="usage-label">Spend this month</div>
+      <div class="usage-value">{{ u.month.l.usd }}</div>
+      <div class="usage-note">about {{ u.month.l.inr }}</div>
+      {% if u.budget_usd %}
+      <progress class="usage-meter{% if u.budget_over %} usage-meter--over{% endif %}" value="{{ u.budget_used_percent }}" max="100">{{ u.budget_used_percent }}%</progress>
+      <div class="usage-note">{{ u.budget_used_percent }}% of the ${{ u.budget_usd }} budget{% if u.budget_over %} &mdash; over budget{% endif %}</div>
+      {% else %}
+      <div class="usage-note usage-note--faint">No monthly budget set</div>
+      {% endif %}
+    </div>
+    <div class="usage-card">
+      <div class="usage-label">Spend today</div>
+      <div class="usage-value">{{ u.today.l.usd }}</div>
+      <div class="usage-note">about {{ u.today.l.inr }}</div>
+      <div class="usage-note usage-note--faint">{{ u.today.l.calls }} call{{ u.today.calls|pluralize }}</div>
+    </div>
+    <div class="usage-card">
+      <div class="usage-label">Calls this month</div>
+      <div class="usage-value">{{ u.month.l.calls }}</div>
+      <div class="usage-note">{{ u.month.failed }} failed &middot; {{ u.month.rate_limited }} rate limited</div>
+      <div class="usage-note usage-note--faint">Error rate {{ u.month.l.errors }}</div>
+    </div>
+    <div class="usage-card">
+      <div class="usage-label">Served from cache</div>
+      <div class="usage-value">{{ u.month.l.hit }}</div>
+      <div class="usage-note">of input tokens, billed at a tenth</div>
+      <div class="usage-note usage-note--faint">{{ u.month.l.cached }} of {{ u.month.l.input }} tokens</div>
+    </div>
+    <div class="usage-card">
+      <div class="usage-label">Cost per row</div>
+      <div class="usage-value">{{ u.month.l.per_row }}</div>
+      <div class="usage-note">per bank row asked about</div>
+      <div class="usage-note usage-note--faint">{{ u.month.l.rows }} rows, {{ u.month.l.pages }} pages</div>
+    </div>
+    <div class="usage-card">
+      <div class="usage-label">Average answer time</div>
+      <div class="usage-value">{{ u.month.l.latency }}</div>
+      <div class="usage-note">for calls that were answered</div>
+      <div class="usage-note usage-note--faint">{{ u.month.l.output }} tokens written</div>
+    </div>
+  </div>
+
+  {% if u.month.unpriced %}
+  <p class="usage-callout"><strong>{{ u.month.unpriced }} call{{ u.month.unpriced|pluralize }} this month used a model with no price</strong> in <code>LLM_PRICES</code>, so {{ u.month.unpriced|pluralize:"its cost is,their cost is" }} not counted above.</p>
+  {% endif %}
+
+  <div class="usage-panel">
+    <div class="usage-panel-head">
+      <h3 class="usage-h3">Spend by day</h3>
+      <span class="usage-faint">Last 30 days</span>
+    </div>
+    {% if u.chart.empty %}
+    <p class="usage-empty">No model calls have been recorded yet. Spend appears here as the assistant reads bank rows.</p>
+    {% else %}
+    <div class="usage-scroll"><svg class="usage-chart" viewBox="0 0 {{ u.chart.width }} {{ u.chart.height }}" role="img" aria-label="Spend by day for the last 30 days. Today: {{ u.today.l.usd }}. This month: {{ u.month.l.usd }}.">
+      {% for g in u.chart.grid %}
+      <line class="usage-grid" x1="{{ u.chart.left }}" x2="{{ u.chart.right }}" y1="{{ g.y }}" y2="{{ g.y }}"/>
+      <text class="usage-axis" x="{{ u.chart.left|add:'-8' }}" y="{{ g.y }}" text-anchor="end" dominant-baseline="middle">{{ g.label }}</text>
+      {% endfor %}
+      {% for b in u.chart.bars %}
+      <rect class="usage-bar{% if b.is_last %} usage-bar--today{% endif %}{% if not b.has_spend %} usage-bar--none{% endif %}" x="{{ b.x }}" y="{{ b.y }}" width="{{ b.w }}" height="{{ b.h }}" rx="2"><title>{{ b.title }}</title></rect>
+      {% endfor %}
+      {% for t in u.chart.ticks %}
+      <text class="usage-axis" x="{{ t.x }}" y="{{ u.chart.label_y }}" text-anchor="middle">{{ t.label }}</text>
+      {% endfor %}
+    </svg></div>
+    {% endif %}
+  </div>
+
+  <div class="usage-cols">
+    <div class="usage-panel">
+      <div class="usage-panel-head"><h3 class="usage-h3">By purpose</h3><span class="usage-faint">This month</span></div>
+      <div class="usage-scroll"><table class="usage-table">
+        <thead><tr><th scope="col">Purpose</th><th scope="col" class="num">Calls</th><th scope="col" class="num">Rows</th><th scope="col" class="num">Cost</th><th scope="col" class="usage-share-col">Share</th></tr></thead>
+        <tbody>
+          {% for p in u.by_purpose %}
+          <tr><th scope="row">{{ p.label }}</th><td class="num">{{ p.l.calls }}</td><td class="num">{{ p.l.rows }}</td><td class="num">{{ p.l.usd }}</td><td><progress class="usage-meter usage-meter--thin" value="{{ p.share }}" max="100">{{ p.share }}%</progress></td></tr>
+          {% empty %}
+          <tr><td colspan="5" class="usage-empty-cell">Nothing recorded this month.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+    </div>
+    <div class="usage-panel">
+      <div class="usage-panel-head"><h3 class="usage-h3">Top firms</h3><span class="usage-faint">This month</span></div>
+      <div class="usage-scroll"><table class="usage-table">
+        <thead><tr><th scope="col">Firm</th><th scope="col" class="num">Calls</th><th scope="col" class="num">Cost</th><th scope="col" class="num">&#8377; est.</th><th scope="col" class="usage-share-col">Share</th></tr></thead>
+        <tbody>
+          {% for f in u.by_firm %}
+          <tr><th scope="row">{{ f.name }}</th><td class="num">{{ f.calls }}</td><td class="num">${{ f.cost_usd|floatformat:4 }}</td><td class="num">&#8377;{{ f.cost_inr|floatformat:2 }}</td><td><progress class="usage-meter usage-meter--thin" value="{{ f.share }}" max="100">{{ f.share }}%</progress></td></tr>
+          {% empty %}
+          <tr><td colspan="5" class="usage-empty-cell">Nothing recorded this month.</td></tr>
+          {% endfor %}
+        </tbody>
+      </table></div>
+    </div>
+  </div>
+
+  <h3 class="usage-h3 usage-h3--list">Every call</h3>
+</section>
+{% endwith %}

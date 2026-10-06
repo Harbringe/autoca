@@ -1,0 +1,110 @@
+/* The usage and cost page of the platform admin.
+   A stylesheet and not inline styles, because the admin runs under a policy that allows only its own styles. */
+
+.usage {
+  --u-ink: #1f2933;
+  --u-muted: #5b6672;
+  --u-faint: #8a94a0;
+  --u-line: #e3e7eb;
+  --u-card: #ffffff;
+  --u-accent: #2f9e8a;
+  --u-accent-ink: #1f6f60;
+  --u-warn: #b45309;
+  --u-alert: #c2410c;
+  color: var(--u-ink);
+  font-size: 14px;
+  line-height: 1.45;
+  margin: 4px 0 8px;
+}
+
+.usage-head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 8px 24px;
+  margin: 0 0 16px;
+}
+.usage-title { margin: 0; font-size: 26px; line-height: 32px; font-weight: 600; letter-spacing: -0.01em; }
+.usage-sub { margin: 4px 0 0; max-width: 62ch; color: var(--u-muted); }
+.usage-asof { margin: 0; color: var(--u-faint); font-size: 12px; text-align: right; }
+
+/* The six figures at the top */
+.usage-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 14px;
+  margin: 0 0 16px;
+}
+.usage-card {
+  background: var(--u-card);
+  border: 1px solid var(--u-line);
+  border-radius: 10px;
+  padding: 14px 16px 12px;
+  box-shadow: 0 1px 2px rgba(31, 41, 51, 0.04);
+}
+.usage-card--alert { border-color: var(--u-alert); box-shadow: inset 3px 0 0 var(--u-alert); }
+.usage-label { font-size: 12px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--u-muted); }
+.usage-value { margin: 6px 0 2px; font-size: 30px; line-height: 36px; font-weight: 600; font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.usage-note { font-size: 13px; color: var(--u-muted); }
+.usage-note--faint { color: var(--u-faint); margin-top: 2px; }
+
+/* Progress bars: the browser draws the track; these only colour it. */
+.usage-meter { display: block; width: 100%; height: 8px; margin: 8px 0 4px; border: 0; border-radius: 4px; background: #e8ecef; overflow: hidden; appearance: none; }
+.usage-meter::-webkit-progress-bar { background: #e8ecef; border-radius: 4px; }
+.usage-meter::-webkit-progress-value { background: var(--u-accent); border-radius: 4px; }
+.usage-meter::-moz-progress-bar { background: var(--u-accent); border-radius: 4px; }
+.usage-meter--over::-webkit-progress-value { background: var(--u-alert); }
+.usage-meter--over::-moz-progress-bar { background: var(--u-alert); }
+.usage-meter--thin { height: 6px; margin: 0; min-width: 90px; }
+
+.usage-callout {
+  margin: 0 0 16px;
+  padding: 10px 14px;
+  border: 1px solid #f3d9a8;
+  border-left: 4px solid var(--u-warn);
+  border-radius: 6px;
+  background: #fff8ec;
+  color: #5c3a05;
+}
+
+/* Panels: the chart and the two tables */
+.usage-panel {
+  background: var(--u-card);
+  border: 1px solid var(--u-line);
+  border-radius: 10px;
+  padding: 16px 18px 12px;
+  margin: 0 0 16px;
+  box-shadow: 0 1px 2px rgba(31, 41, 51, 0.04);
+  min-width: 0;
+}
+.usage-panel-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin: 0 0 10px; }
+.usage-h3 { margin: 0; font-size: 16px; line-height: 22px; font-weight: 600; }
+.usage-h3--list { margin: 8px 0 0; }
+.usage-faint { color: var(--u-faint); font-size: 12px; }
+.usage-empty, .usage-empty-cell { color: var(--u-muted); margin: 8px 0 12px; }
+
+.usage-scroll { overflow-x: auto; }
+.usage-chart { display: block; width: 100%; min-width: 640px; height: auto; }
+.usage-grid { stroke: var(--u-line); stroke-width: 1; }
+.usage-axis { fill: var(--u-muted); font-size: 11px; font-family: inherit; font-variant-numeric: tabular-nums; }
+.usage-bar { fill: #9fd5c9; }
+.usage-bar:hover { fill: var(--u-accent); }
+.usage-bar--today { fill: var(--u-accent); }
+.usage-bar--none { fill: #d9dee3; }
+
+.usage-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); gap: 16px; }
+.usage-cols .usage-panel { margin: 0 0 16px; }
+
+.usage-table { width: 100%; min-width: 380px; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.usage-table th, .usage-table td { padding: 9px 8px; border-top: 1px solid var(--u-line); text-align: left; vertical-align: middle; }
+.usage-table thead th { border-top: 0; padding-top: 2px; font-size: 12px; font-weight: 600; color: var(--u-muted); letter-spacing: 0.03em; text-transform: uppercase; }
+.usage-table tbody th { font-weight: 500; color: var(--u-ink); }
+.usage-table .num { text-align: right; white-space: nowrap; }
+.usage-share-col { width: 120px; }
+
+@media (max-width: 720px) {
+  .usage-cols { grid-template-columns: minmax(0, 1fr); }
+  .usage-asof { text-align: left; }
+  .usage-value { font-size: 26px; line-height: 32px; }
+}

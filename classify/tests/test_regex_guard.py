@@ -10,7 +10,8 @@ import pytest
 from classify import regex_guard
 from classify.regex_guard import UnsafeRegex, check
 
-DANGEROUS = [r"(a+)+$", r"(a|aa)+$", r"(a|a)*$", r"(a?){25}a{25}", r"(\w*)*x", r"(a)\1", r"a*a*a*a*b", r"(.*a){12}"]
+DANGEROUS = [r"(a+)+$", r"(a|aa)+$", r"(a|a)*$", r"(a?){25}a{25}", r"(\w*)*x", r"(a)\1", r"a*a*a*a*b", r"(.*a){12}",
+    r"a{0,999}a{0,999}a{0,999}a{0,999}b", r"(a{1,30}){1,30}$"]
 ORDINARY = [
     r"UPI/[A-Z]+/\d{6,}",
     r"(?:HDFC|ICICI) BANK",

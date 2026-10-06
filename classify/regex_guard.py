@@ -6,7 +6,7 @@ reads the parsed pattern instead and refuses the shapes that cause trouble:
 
 * a repetition whose body contains another repetition or an alternation -- ``(a+)+``, ``(a|aa)+``, ``(a?){25}a{25}``;
 * a back-reference, which can make matching exponential on its own;
-* more than ``MAX_OPEN_REPEATS`` unbounded repetitions, whose product is a polynomial of that degree in the text length.
+* more than ``MAX_OPEN_REPEATS`` unbounded or very wide repetitions, whose product is a polynomial of that degree in the text length.
 
 Everything refused here has a plain rewrite, and the product's other match types cover what most rules need.
 """
@@ -21,9 +21,11 @@ except ImportError:  # pragma: no cover - older interpreters
     import sre_parse as _p
 
 MAX_OPEN_REPEATS = 3
+#: A bounded repetition wider than this counts as open-ended: ``a{0,999}`` costs what ``a*`` does.
+WIDE_REPEAT = 20
 #: Narrations are short; a pattern is never run against more than this much of one, which also bounds the cost of any
 #: polynomial pattern that is still allowed.
-MAX_TEXT_LENGTH = 1000
+MAX_TEXT_LENGTH = 300
 
 _REPEATS = {_c.MAX_REPEAT, _c.MIN_REPEAT, getattr(_c, "POSSESSIVE_REPEAT", _c.MAX_REPEAT)}
 _GROUPS = {_c.SUBPATTERN, getattr(_c, "ATOMIC_GROUP", _c.SUBPATTERN)}
@@ -45,9 +47,10 @@ def check(pattern: str) -> None:
                 raise UnsafeRegex("A back-reference (\1) can take the matcher exponential time. Rewrite without it.")
             if op in _REPEATS:
                 low, high, body = arg
-                if high == _c.MAXREPEAT:
+                wide = high == _c.MAXREPEAT or high > WIDE_REPEAT
+                if wide:
                     open_repeats += 1
-                if _has_repeat_or_choice(body) and (high == _c.MAXREPEAT or high > 1):
+                if _has_repeat_or_choice(body) and high > 1:
                     raise UnsafeRegex(
                         "A repeated group containing a repetition or an alternative -- like (a+)+ or (a|b)+ -- can "
                         "take the matcher exponential time. Rewrite without nesting."

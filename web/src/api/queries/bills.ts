@@ -7,7 +7,7 @@
 
 import { queryOptions, useMutation } from '@tanstack/react-query'
 import { raw } from '@/api/client'
-import type { AssetSchedule, Bill, CloseReport, FoundParties, InvoiceReading, BillCreateRequest, BillDetail, OpenItems, OpeningStanding, Outstanding, PartyStatement, SettlementContext } from '@/api/types'
+import type { AssetSchedule, TdsSummary, Bill, CloseReport, FoundParties, InvoiceReading, BillCreateRequest, BillDetail, OpenItems, OpeningStanding, Outstanding, PartyStatement, SettlementContext } from '@/api/types'
 import { allPages } from './books'
 import { clientKeys, useInvalidateClient, V1 } from './clients'
 
@@ -246,6 +246,22 @@ export function useBookDepreciation(clientId: string) {
   return useMutation({
     mutationFn: ({ year, remove }: { year: number; remove?: boolean }) =>
       raw.post<unknown>(`${V1}/clients/${clientId}/assets/depreciation/${remove ? 'remove/' : ''}`, { fy: year }),
+    onSuccess: invalidate,
+  })
+}
+
+/** TDS deducted, deposited and due, by section and month; and deposits that have no challan recorded. */
+export const tdsSummary = (clientId: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'tds'),
+    queryFn: () => raw.get<TdsSummary>(`${V1}/clients/${clientId}/tds/summary/`),
+  })
+
+export function useRecordChallan(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: (body: { entry: string; section: string; bsr_code: string; serial: string; paid_on: string }) =>
+      raw.post<unknown>(`${V1}/clients/${clientId}/tds/`, body),
     onSuccess: invalidate,
   })
 }

@@ -1818,6 +1818,67 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/tds/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The challans recorded for a client's TDS deposits. */
+        get: operations["clients_tds_list"];
+        put?: never;
+        /**
+         * Record the challan for a deposit
+         * @description Says which section a payment to TDS Payable was for and its BSR code and serial. One challan per payment. Needs `journal.approve`.
+         */
+        post: operations["clients_tds_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/tds/{id}/remove/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove a challan record
+         * @description The challans recorded for a client's TDS deposits.
+         */
+        post: operations["clients_tds_remove_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/tds/summary/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * TDS deducted, deposited and due, by section and month
+         * @description The challans recorded for a client's TDS deposits.
+         */
+        get: operations["clients_tds_summary_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{id}/": {
         parameters: {
             query?: never;
@@ -3159,6 +3220,32 @@ export interface components {
             /** Format: date */
             date: string;
             count: number;
+        };
+        Challan: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly entry: string;
+            readonly section: string;
+            readonly bsr_code: string;
+            readonly serial: string;
+            /** Format: date */
+            readonly paid_on: string;
+        };
+        ChallanCreateRequest: {
+            /**
+             * Format: uuid
+             * @description The bank payment to the tax department (booked to TDS Payable).
+             */
+            entry: string;
+            /** @description The section the challan is for, like 194C. */
+            section: string;
+            /** @description The seven-digit BSR code of the bank branch. */
+            bsr_code: string;
+            /** @description The five-digit challan serial number. */
+            serial: string;
+            /** Format: date */
+            paid_on: string;
         };
         Check: {
             name: string;
@@ -4647,6 +4734,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["Bill"][];
         };
+        PaginatedChallanList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["Challan"][];
+        };
         PaginatedClassificationList: {
             /** @example 123 */
             count: number;
@@ -6101,6 +6203,48 @@ export interface components {
          * @enum {string}
          */
         TallyRowActionEnum: "create" | "match" | "conflict" | "needs_group" | "skipped";
+        TdsMonth: {
+            /** @description The TDS section, or `?` where a deduction carried none. */
+            section: string;
+            financial_year: number;
+            /** @description 1 is April to June. */
+            quarter: number;
+            year: number;
+            month: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            deducted_paise: number;
+            deducted_display: string;
+            /**
+             * Format: int64
+             * @description Matched to this month, oldest deduction first, from the challans recorded for the section.
+             */
+            deposited_paise: number;
+            deposited_display: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            unpaid_paise: number;
+            unpaid_display: string;
+            /** Format: date */
+            due: string;
+            overdue: boolean;
+        };
+        TdsPayment: {
+            /** Format: uuid */
+            entry: string;
+            /** Format: date */
+            entry_date: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            amount_paise: number;
+            amount_display: string;
+        };
         /**
          * @description * `192` - 192 -- Salary
          *     * `194A` - 194A -- Interest other than securities
@@ -6112,6 +6256,10 @@ export interface components {
          * @enum {string}
          */
         TdsSectionEnum: "192" | "194A" | "194C" | "194H" | "194I" | "194J" | "194Q";
+        TdsSummary: {
+            months: components["schemas"]["TdsMonth"][];
+            payments_without_challan: components["schemas"]["TdsPayment"][];
+        };
         TeamClient: {
             /** @description Rows nobody has placed in a ledger yet. */
             unresolved: number;
@@ -9366,6 +9514,101 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TallyError"];
+                };
+            };
+        };
+    };
+    clients_tds_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedChallanList"];
+                };
+            };
+        };
+    };
+    clients_tds_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChallanCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ChallanCreateRequest"];
+                "multipart/form-data": components["schemas"]["ChallanCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Challan"];
+                };
+            };
+        };
+    };
+    clients_tds_remove_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    clients_tds_summary_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TdsSummary"];
                 };
             };
         };

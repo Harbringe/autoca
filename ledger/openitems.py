@@ -196,6 +196,43 @@ def invoices_waiting(client):
         )
 
 
+@detector("tds_not_deposited", "TDS deducted and not deposited by its due date")
+def tds_past_due(client):
+    """TDS deducted in a month is due by the 7th of the next (30 April for March); a deposit is matched oldest first."""
+    from ledger import tds
+
+    today = datetime.date.today()
+    for month in tds.position(client):
+        if month.unpaid_paise > 0 and today > month.due:
+            section = "an unspecified section" if month.section == tds.UNSPECIFIED else f"section {month.section}"
+            yield OpenItem(
+                kind="tds_not_deposited",
+                client_id=client.pk,
+                summary=(
+                    f"{format_inr(month.unpaid_paise)} of TDS deducted in {datetime.date(month.year, month.month, 1):%B %Y} "
+                    f"under {section} was due on {month.due:%d-%m-%Y} and is not deposited."
+                ),
+                amount_paise=month.unpaid_paise,
+                since=month.due,
+                link=None,
+            )
+
+
+@detector("tds_payment_without_challan", "A payment to TDS Payable with no challan recorded")
+def tds_payments_without_a_challan(client):
+    from ledger import tds
+
+    for entry, amount in tds.payments_without_challan(client):
+        yield OpenItem(
+            kind="tds_payment_without_challan",
+            client_id=client.pk,
+            summary=f"{format_inr(amount)} paid to TDS Payable on {entry.entry_date:%d-%m-%Y} has no challan (BSR code and serial) recorded.",
+            amount_paise=amount,
+            since=entry.entry_date,
+            link={"type": "entry", "id": str(entry.pk)},
+        )
+
+
 @detector("fixed_asset_unregistered", "A purchase of a fixed asset that is not in the asset register")
 def purchases_not_in_the_register(client):
     """What the books say was bought as a fixed asset, with nothing in the register to depreciate.

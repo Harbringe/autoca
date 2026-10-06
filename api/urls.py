@@ -48,6 +48,7 @@ from api.views.ledger import (
 from api.views.overview import FirmMetricsView, FirmOverviewView
 from api.views.partyreports import OpenItemsView, OutstandingView
 from api.views.tally import TallyImportViewSet
+from api.views.tds import TdsChallanViewSet
 from teams.views import FirmOwnerView, FirmSettingsView
 
 app_name = "api"
@@ -69,6 +70,7 @@ per_client.register("ledgers", LedgerAccountViewSet, basename="client-ledger")
 per_client.register("parties", PartyViewSet, basename="client-party")
 per_client.register("bills", BillViewSet, basename="client-bill")
 per_client.register("invoices", InvoiceReadingViewSet, basename="client-invoice")
+per_client.register("tds", TdsChallanViewSet, basename="client-tds")
 per_client.register("assets", AssetViewSet, basename="client-asset")
 per_client.register("rules", RuleViewSet, basename="client-rule")
 per_client.register("review-queue", ReviewQueueViewSet, basename="client-review-queue")

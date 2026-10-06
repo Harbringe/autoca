@@ -48,6 +48,7 @@ import { Route as AppClientsClientIdOpenItemsRouteImport } from './routes/_app/c
 import { Route as AppClientsClientIdReportsRouteImport } from './routes/_app/clients/$clientId/reports'
 import { Route as AppClientsClientIdReviewRouteImport } from './routes/_app/clients/$clientId/review'
 import { Route as AppClientsClientIdStatementsRouteImport } from './routes/_app/clients/$clientId/statements'
+import { Route as AppClientsClientIdTdsRouteImport } from './routes/_app/clients/$clientId/tds'
 import { Route as AppClientsClientIdTeamRouteImport } from './routes/_app/clients/$clientId/team'
 
 const IndexRoute = IndexRouteImport.update({
@@ -255,6 +256,11 @@ const AppClientsClientIdStatementsRoute =
     path: '/statements',
     getParentRoute: () => AppClientsClientIdRouteRoute,
   } as any)
+const AppClientsClientIdTdsRoute = AppClientsClientIdTdsRouteImport.update({
+  id: '/tds',
+  path: '/tds',
+  getParentRoute: () => AppClientsClientIdRouteRoute,
+} as any)
 const AppClientsClientIdTeamRoute = AppClientsClientIdTeamRouteImport.update({
   id: '/team',
   path: '/team',
@@ -299,6 +305,7 @@ export interface FileRoutesByFullPath {
   '/clients/$clientId/reports': typeof AppClientsClientIdReportsRoute
   '/clients/$clientId/review': typeof AppClientsClientIdReviewRoute
   '/clients/$clientId/statements': typeof AppClientsClientIdStatementsRoute
+  '/clients/$clientId/tds': typeof AppClientsClientIdTdsRoute
   '/clients/$clientId/team': typeof AppClientsClientIdTeamRoute
   '/clients/$clientId/': typeof AppClientsClientIdIndexRoute
 }
@@ -338,6 +345,7 @@ export interface FileRoutesByTo {
   '/clients/$clientId/reports': typeof AppClientsClientIdReportsRoute
   '/clients/$clientId/review': typeof AppClientsClientIdReviewRoute
   '/clients/$clientId/statements': typeof AppClientsClientIdStatementsRoute
+  '/clients/$clientId/tds': typeof AppClientsClientIdTdsRoute
   '/clients/$clientId/team': typeof AppClientsClientIdTeamRoute
   '/clients/$clientId': typeof AppClientsClientIdIndexRoute
 }
@@ -381,6 +389,7 @@ export interface FileRoutesById {
   '/_app/clients/$clientId/reports': typeof AppClientsClientIdReportsRoute
   '/_app/clients/$clientId/review': typeof AppClientsClientIdReviewRoute
   '/_app/clients/$clientId/statements': typeof AppClientsClientIdStatementsRoute
+  '/_app/clients/$clientId/tds': typeof AppClientsClientIdTdsRoute
   '/_app/clients/$clientId/team': typeof AppClientsClientIdTeamRoute
   '/_app/clients/$clientId/': typeof AppClientsClientIdIndexRoute
 }
@@ -424,6 +433,7 @@ export interface FileRouteTypes {
     | '/clients/$clientId/reports'
     | '/clients/$clientId/review'
     | '/clients/$clientId/statements'
+    | '/clients/$clientId/tds'
     | '/clients/$clientId/team'
     | '/clients/$clientId/'
   fileRoutesByTo: FileRoutesByTo
@@ -463,6 +473,7 @@ export interface FileRouteTypes {
     | '/clients/$clientId/reports'
     | '/clients/$clientId/review'
     | '/clients/$clientId/statements'
+    | '/clients/$clientId/tds'
     | '/clients/$clientId/team'
     | '/clients/$clientId'
   id:
@@ -505,6 +516,7 @@ export interface FileRouteTypes {
     | '/_app/clients/$clientId/reports'
     | '/_app/clients/$clientId/review'
     | '/_app/clients/$clientId/statements'
+    | '/_app/clients/$clientId/tds'
     | '/_app/clients/$clientId/team'
     | '/_app/clients/$clientId/'
   fileRoutesById: FileRoutesById
@@ -790,6 +802,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppClientsClientIdStatementsRouteImport
       parentRoute: typeof AppClientsClientIdRouteRoute
     }
+    '/_app/clients/$clientId/tds': {
+      id: '/_app/clients/$clientId/tds'
+      path: '/tds'
+      fullPath: '/clients/$clientId/tds'
+      preLoaderRoute: typeof AppClientsClientIdTdsRouteImport
+      parentRoute: typeof AppClientsClientIdRouteRoute
+    }
     '/_app/clients/$clientId/team': {
       id: '/_app/clients/$clientId/team'
       path: '/team'
@@ -835,6 +854,7 @@ interface AppClientsClientIdRouteRouteChildren {
   AppClientsClientIdReportsRoute: typeof AppClientsClientIdReportsRoute
   AppClientsClientIdReviewRoute: typeof AppClientsClientIdReviewRoute
   AppClientsClientIdStatementsRoute: typeof AppClientsClientIdStatementsRoute
+  AppClientsClientIdTdsRoute: typeof AppClientsClientIdTdsRoute
   AppClientsClientIdTeamRoute: typeof AppClientsClientIdTeamRoute
   AppClientsClientIdIndexRoute: typeof AppClientsClientIdIndexRoute
 }
@@ -855,6 +875,7 @@ const AppClientsClientIdRouteRouteChildren: AppClientsClientIdRouteRouteChildren
     AppClientsClientIdReportsRoute: AppClientsClientIdReportsRoute,
     AppClientsClientIdReviewRoute: AppClientsClientIdReviewRoute,
     AppClientsClientIdStatementsRoute: AppClientsClientIdStatementsRoute,
+    AppClientsClientIdTdsRoute: AppClientsClientIdTdsRoute,
     AppClientsClientIdTeamRoute: AppClientsClientIdTeamRoute,
     AppClientsClientIdIndexRoute: AppClientsClientIdIndexRoute,
   }

@@ -115,6 +115,20 @@ function Actions({
   onMove: (entry: string) => void
   onSay: (entry: string, status: Why) => void
 }) {
+  if (item.kind === 'tds_not_deposited' || item.kind === 'tds_payment_without_challan') {
+    return (
+      <Button size="sm" asChild>
+        <Link to="/clients/$clientId/tds" params={{ clientId }}>Open TDS</Link>
+      </Button>
+    )
+  }
+  if (item.kind === 'fixed_asset_unregistered') {
+    return (
+      <Button size="sm" asChild>
+        <Link to="/clients/$clientId/assets" params={{ clientId }}>Open assets</Link>
+      </Button>
+    )
+  }
   const link = item.link
   if (!link) return null
   if (link.type === 'bill') {

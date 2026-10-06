@@ -4049,6 +4049,123 @@ paths:
               schema:
                 $ref: '#/components/schemas/TallyError'
           description: ''
+  /api/v1/clients/{client_id}/tds/:
+    get:
+      operationId: clients_tds_list
+      description: The challans recorded for a client's TDS deposits.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - tds
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedChallanList'
+          description: ''
+    post:
+      operationId: clients_tds_create
+      description: Says which section a payment to TDS Payable was for and its BSR
+        code and serial. One challan per payment. Needs `journal.approve`.
+      summary: Record the challan for a deposit
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - tds
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChallanCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ChallanCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ChallanCreateRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Challan'
+          description: ''
+  /api/v1/clients/{client_id}/tds/{id}/remove/:
+    post:
+      operationId: clients_tds_remove_create
+      description: The challans recorded for a client's TDS deposits.
+      summary: Remove a challan record
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - tds
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/clients/{client_id}/tds/summary/:
+    get:
+      operationId: clients_tds_summary_retrieve
+      description: The challans recorded for a client's TDS deposits.
+      summary: TDS deducted, deposited and due, by section and month
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - tds
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TdsSummary'
+          description: ''
   /api/v1/clients/{id}/:
     get:
       operationId: clients_retrieve
@@ -6733,6 +6850,68 @@ components:
       required:
       - count
       - date
+    Challan:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        entry:
+          type: string
+          format: uuid
+          readOnly: true
+        section:
+          type: string
+          readOnly: true
+        bsr_code:
+          type: string
+          readOnly: true
+        serial:
+          type: string
+          readOnly: true
+        paid_on:
+          type: string
+          format: date
+          readOnly: true
+      required:
+      - bsr_code
+      - entry
+      - id
+      - paid_on
+      - section
+      - serial
+    ChallanCreateRequest:
+      type: object
+      properties:
+        entry:
+          type: string
+          format: uuid
+          description: The bank payment to the tax department (booked to TDS Payable).
+        section:
+          type: string
+          minLength: 1
+          description: The section the challan is for, like 194C.
+          maxLength: 16
+        bsr_code:
+          type: string
+          minLength: 1
+          description: The seven-digit BSR code of the bank branch.
+          maxLength: 7
+        serial:
+          type: string
+          minLength: 1
+          description: The five-digit challan serial number.
+          maxLength: 5
+        paid_on:
+          type: string
+          format: date
+      required:
+      - bsr_code
+      - entry
+      - paid_on
+      - section
+      - serial
     Check:
       type: object
       properties:
@@ -9987,6 +10166,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Bill'
+    PaginatedChallanList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Challan'
     PaginatedClassificationList:
       type: object
       required:
@@ -12702,6 +12904,90 @@ components:
         * `conflict` - conflict
         * `needs_group` - needs_group
         * `skipped` - skipped
+    TdsMonth:
+      type: object
+      properties:
+        section:
+          type: string
+          description: The TDS section, or `?` where a deduction carried none.
+        financial_year:
+          type: integer
+        quarter:
+          type: integer
+          description: 1 is April to June.
+        year:
+          type: integer
+        month:
+          type: integer
+        deducted_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        deducted_display:
+          type: string
+        deposited_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Matched to this month, oldest deduction first, from the challans
+            recorded for the section.
+        deposited_display:
+          type: string
+        unpaid_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        unpaid_display:
+          type: string
+        due:
+          type: string
+          format: date
+        overdue:
+          type: boolean
+      required:
+      - deducted_display
+      - deducted_paise
+      - deposited_display
+      - deposited_paise
+      - due
+      - financial_year
+      - month
+      - overdue
+      - quarter
+      - section
+      - unpaid_display
+      - unpaid_paise
+      - year
+    TdsPayment:
+      type: object
+      properties:
+        entry:
+          type: string
+          format: uuid
+        entry_date:
+          type: string
+          format: date
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        amount_display:
+          type: string
+      required:
+      - amount_display
+      - amount_paise
+      - entry
+      - entry_date
     TdsSectionEnum:
       enum:
       - '192'
@@ -12720,6 +13006,20 @@ components:
         * `194I` - 194I -- Rent
         * `194J` - 194J -- Professional or technical fees
         * `194Q` - 194Q -- Purchase of goods
+    TdsSummary:
+      type: object
+      properties:
+        months:
+          type: array
+          items:
+            $ref: '#/components/schemas/TdsMonth'
+        payments_without_challan:
+          type: array
+          items:
+            $ref: '#/components/schemas/TdsPayment'
+      required:
+      - months
+      - payments_without_challan
     TeamClient:
       type: object
       properties:

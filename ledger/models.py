@@ -721,3 +721,26 @@ class DepreciationPosting(UUIDModel, FirmScopedModel):
 
     def __str__(self) -> str:
         return f"Depreciation FY{self.financial_year} {format_inr(self.total_paise)}"
+
+
+class TdsChallan(UUIDModel, FirmScopedModel):
+    """The challan detail of one payment to the tax department: which section it was for, its BSR code and serial number.
+
+    The payment itself is an ordinary bank entry debited to ``TDS Payable``; this adds what the quarterly return needs.
+    One challan per payment, so a payment cannot be reported twice.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="tds_challans")
+    entry = models.OneToOneField(JournalEntry, on_delete=models.PROTECT, related_name="tds_challan")
+    section = models.CharField(max_length=16)
+    bsr_code = models.CharField(max_length=7)
+    serial = models.CharField(max_length=5)
+    paid_on = models.DateField()
+
+    class Meta:
+        db_table = "ledger_tds_challan"
+        ordering = ["paid_on"]
+        indexes = [models.Index(fields=["firm", "client", "section"], name="idx_tds_challan_section")]
+
+    def __str__(self) -> str:
+        return f"Challan {self.bsr_code}/{self.serial} for {self.section}"

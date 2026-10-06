@@ -56,6 +56,7 @@ from ledger.models import (
     JournalLine,
     LedgerImportRun,
     LedgerOpening,
+    TdsChallan,
     VoucherSequence,
     VoucherType,
 )
@@ -428,6 +429,22 @@ def _depreciation_posting(firm, **kw):
     return DepreciationPosting.objects.create(firm=firm, client=client, financial_year=2025, entry=entry, total_paise=1000)
 
 
+def _tds_challan(firm, **kw):
+    client = kw.get("client") or _client(firm)
+    entry = JournalEntry.objects.create(
+        firm=firm,
+        client=client,
+        entry_no=1,
+        financial_year=2025,
+        entry_date=datetime.date(2025, 5, 7),
+        voucher_type="Payment",
+        approved_at=django_timezone.now(),
+    )
+    return TdsChallan.objects.create(
+        firm=firm, client=client, entry=entry, section="194C", bsr_code="0510308", serial="00001", paid_on=datetime.date(2025, 5, 7)
+    )
+
+
 def _bill_allocation(firm, **kw):
     """A payment line on the party's own ledger, settling the bill in full."""
     bill = kw.get("bill") or _bill(firm)
@@ -496,6 +513,7 @@ FACTORIES = {
     CloseAcknowledgement: _close_acknowledgement,
     FixedAsset: _fixed_asset,
     DepreciationPosting: _depreciation_posting,
+    TdsChallan: _tds_challan,
 }
 
 #: Firm is firm-scoped by primary key rather than by a firm_id column, so it is

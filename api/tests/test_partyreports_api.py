@@ -76,7 +76,7 @@ def test_a_bad_side_or_date_says_what_to_send(api, client_record, ravi_with_two_
     date = outstanding(api, client_record, as_of="1-8-2025")
 
     assert side.status_code == 400 and "side" in side.json()["fields"]
-    assert date.status_code == 400 and "YYYY-MM-DD" in date.json()["fields"]["as_of"][0]
+    assert date.status_code == 400 and "YYYY-MM-DD" in date.json()["fields"]["as_of"]
 
 
 def test_read_only_members_can_read_the_reports(api, client_record, ravi_with_two_bills, reader):
@@ -183,7 +183,7 @@ def test_open_items_can_be_narrowed_to_one_kind_and_still_counts_the_rest(api, c
 def test_an_unknown_kind_says_what_the_kinds_are(api, client_record):
     response = open_items(api, client_record, kind="nonsense")
 
-    assert response.status_code == 400 and "bill_without_document" in response.json()["fields"]["kind"][0]
+    assert response.status_code == 400 and "bill_without_document" in response.json()["fields"]["kind"]
 
 
 def test_open_items_are_visible_to_read_only_members_but_not_to_another_firm(client_record, reader):

@@ -192,6 +192,7 @@ def test_a_settlement_for_a_row_that_is_not_being_approved_is_refused(api, clien
     row, amount, party, bill = on_the_partys_account(api, client_record, statement)
     other = review_queue(client_record).exclude(pk=row.pk).first()
     assert other is not None
+    place(api, other, make_ledger(api, client_record, "Office Expenses", "INDIRECT_EXPENSE")["id"])
 
     response = approvals(
         api, client_record,

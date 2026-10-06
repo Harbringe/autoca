@@ -19,6 +19,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Spinner } from '@/components/ui/spinner'
 import { PartyStatementDialog } from '@/features/bills/PartyStatementDialog'
 import { SettlementEditor } from '@/features/review/SettlementEditor'
+import { OpeningBillsDialog } from './OpeningBillsDialog'
 import { plural } from '@/lib/format'
 import { useSession } from '@/session/session'
 
@@ -30,6 +31,7 @@ export function OpenItemsScreen({ clientId }: { clientId: string }) {
   const list = useQuery(openItems(clientId, kind))
   const [settling, setSettling] = useState<string | null>(null)
   const [statement, setStatement] = useState<string | null>(null)
+  const [opening, setOpening] = useState<string | null>(null)
   const setStatus = useSetBillStatus(clientId)
   const mayFix = can('journal.approve')
 
@@ -78,7 +80,7 @@ export function OpenItemsScreen({ clientId }: { clientId: string }) {
               </div>
               <div className="flex items-center gap-3">
                 {item.amount_display && <Money display={item.amount_display} />}
-                <Actions clientId={clientId} item={item} mayFix={mayFix} onSettle={setSettling} onStatement={setStatement} onSay={(e, s) => void say(e, s)} />
+                <Actions clientId={clientId} item={item} mayFix={mayFix} onSettle={setSettling} onStatement={setStatement} onOpening={setOpening} onSay={(e, s) => void say(e, s)} />
               </div>
             </li>
           ))}
@@ -86,6 +88,7 @@ export function OpenItemsScreen({ clientId }: { clientId: string }) {
       )}
 
       {settling && <SettleDialog clientId={clientId} entryId={settling} onClose={() => setSettling(null)} />}
+      {opening && <OpeningBillsDialog clientId={clientId} partyId={opening} partyName="This party" onClose={() => setOpening(null)} />}
       {statement && <PartyStatementDialog clientId={clientId} partyId={statement} partyName="this party" onClose={() => setStatement(null)} />}
     </div>
   )
@@ -97,6 +100,7 @@ function Actions({
   mayFix,
   onSettle,
   onStatement,
+  onOpening,
   onSay,
 }: {
   clientId: string
@@ -104,6 +108,7 @@ function Actions({
   mayFix: boolean
   onSettle: (entry: string) => void
   onStatement: (party: string) => void
+  onOpening: (party: string) => void
   onSay: (entry: string, status: Why) => void
 }) {
   const link = item.link
@@ -114,6 +119,9 @@ function Actions({
         <Link to="/clients/$clientId/bills" params={{ clientId }} search={{ bill: link.id }}>Open bill</Link>
       </Button>
     )
+  }
+  if (link.type === 'party' && item.kind === 'party_opening_unbilled') {
+    return mayFix ? <Button size="sm" onClick={() => onOpening(link.id)}>Break into bills</Button> : null
   }
   if (link.type === 'party') {
     return <Button variant="outline" size="sm" onClick={() => onStatement(link.id)}>Open account</Button>

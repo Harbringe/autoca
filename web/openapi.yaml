@@ -2199,6 +2199,86 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/clients/{client_id}/parties/{id}/opening/:
+    get:
+      operationId: clients_parties_opening_retrieve
+      description: |-
+        Parties the client transacts with.
+
+        Separate from ledger heads because they answer different questions: the
+        ledger says what kind of expense it was, the party says who it was with.
+        Reverse-charge and TDS defaults live here, because they are properties of
+        who you are paying rather than of the category it was booked under.
+      summary: A party's imported opening balance and how much of it is broken into
+        bills
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpeningStanding'
+          description: ''
+  /api/v1/clients/{client_id}/parties/{id}/opening-bills/:
+    post:
+      operationId: clients_parties_opening_bills_create
+      description: Lists the invoices an imported opening balance is made of, so payments
+        can be settled against them. They make no journal entry (the balance is already
+        in the ledger), may not be dated on or after the date it stands at, and may
+        not add up to more than is left of it. All or nothing. Needs `journal.approve`.
+      summary: Break a party's opening balance into bills
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OpeningBillsRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/OpeningBillsRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/OpeningBillsRequestRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OpeningStanding'
+          description: ''
   /api/v1/clients/{client_id}/parties/{id}/statement/:
     get:
       operationId: clients_parties_statement_retrieve
@@ -7808,6 +7888,89 @@ components:
       required:
       - opening_as_of
       - opening_balance_paise
+    OpeningBillRequest:
+      type: object
+      properties:
+        reference:
+          type: string
+          minLength: 1
+          description: The invoice number on the supplier's (or our) invoice.
+          maxLength: 64
+        bill_date:
+          type: string
+          format: date
+          description: The invoice date. Must be before the date the opening balance
+            stands at.
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 1
+          format: int64
+          description: Whole paise still owing on that invoice.
+        due_date:
+          type: string
+          format: date
+          nullable: true
+      required:
+      - amount_paise
+      - bill_date
+      - reference
+    OpeningBillsRequestRequest:
+      type: object
+      properties:
+        bills:
+          type: array
+          items:
+            $ref: '#/components/schemas/OpeningBillRequest'
+      required:
+      - bills
+    OpeningStanding:
+      type: object
+      properties:
+        financial_year:
+          type: integer
+          nullable: true
+          description: The year the balance stands at the start of.
+        direction:
+          nullable: true
+          description: |-
+            DR: the party owes the client. CR: the client owes the party.
+
+            * `DR` - DR
+            * `CR` - CR
+          oneOf:
+          - $ref: '#/components/schemas/AccountSideEnum'
+          - $ref: '#/components/schemas/NullEnum'
+        opening_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: 'Signed like the ledger: debits positive.'
+        opening_display:
+          type: string
+        billed_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: How much is already broken into bills.
+        remaining_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: How much is not.
+        remaining_display:
+          type: string
+      required:
+      - billed_paise
+      - direction
+      - financial_year
+      - opening_display
+      - opening_paise
+      - remaining_display
+      - remaining_paise
     Outstanding:
       type: object
       properties:

@@ -930,6 +930,51 @@ export interface paths {
         patch: operations["clients_parties_partial_update"];
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/parties/{id}/opening/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A party's imported opening balance and how much of it is broken into bills
+         * @description Parties the client transacts with.
+         *
+         *     Separate from ledger heads because they answer different questions: the
+         *     ledger says what kind of expense it was, the party says who it was with.
+         *     Reverse-charge and TDS defaults live here, because they are properties of
+         *     who you are paying rather than of the category it was booked under.
+         */
+        get: operations["clients_parties_opening_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/parties/{id}/opening-bills/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Break a party's opening balance into bills
+         * @description Lists the invoices an imported opening balance is made of, so payments can be settled against them. They make no journal entry (the balance is already in the ledger), may not be dated on or after the date it stands at, and may not add up to more than is left of it. All or nothing. Needs `journal.approve`.
+         */
+        post: operations["clients_parties_opening_bills_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/parties/{id}/statement/": {
         parameters: {
             query?: never;
@@ -3535,6 +3580,53 @@ export interface components {
              * @description The date that balance was true. Normally the first day of the period.
              */
             opening_as_of: string;
+        };
+        OpeningBillRequest: {
+            /** @description The invoice number on the supplier's (or our) invoice. */
+            reference: string;
+            /**
+             * Format: date
+             * @description The invoice date. Must be before the date the opening balance stands at.
+             */
+            bill_date: string;
+            /**
+             * Format: int64
+             * @description Whole paise still owing on that invoice.
+             */
+            amount_paise: number;
+            /** Format: date */
+            due_date?: string | null;
+        };
+        OpeningBillsRequestRequest: {
+            bills: components["schemas"]["OpeningBillRequest"][];
+        };
+        OpeningStanding: {
+            /** @description The year the balance stands at the start of. */
+            financial_year: number | null;
+            /**
+             * @description DR: the party owes the client. CR: the client owes the party.
+             *
+             *     * `DR` - DR
+             *     * `CR` - CR
+             */
+            direction: (components["schemas"]["AccountSideEnum"] | components["schemas"]["NullEnum"]) | null;
+            /**
+             * Format: int64
+             * @description Signed like the ledger: debits positive.
+             */
+            opening_paise: number;
+            opening_display: string;
+            /**
+             * Format: int64
+             * @description How much is already broken into bills.
+             */
+            billed_paise: number;
+            /**
+             * Format: int64
+             * @description How much is not.
+             */
+            remaining_paise: number;
+            remaining_display: string;
         };
         Outstanding: {
             side: components["schemas"]["SideEnum"];
@@ -6916,6 +7008,56 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Party"];
+                };
+            };
+        };
+    };
+    clients_parties_opening_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpeningStanding"];
+                };
+            };
+        };
+    };
+    clients_parties_opening_bills_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpeningBillsRequestRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["OpeningBillsRequestRequest"];
+                "multipart/form-data": components["schemas"]["OpeningBillsRequestRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpeningStanding"];
                 };
             };
         };

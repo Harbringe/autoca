@@ -426,6 +426,10 @@ def confirm_run(run: LedgerImportRun, membership, user, resolutions: list[dict])
                 "Upload the file again so the preview matches what is there now."
             )
         _apply(run, user, resolutions)
+        # Imported suppliers and customers become parties, so their balances can be broken into bills and settled.
+        from ledger.openings import adopt_imported_party_ledgers
+
+        adopt_imported_party_ledgers(client)
         run.status = ImportStatus.CONFIRMED
         run.confirmed_by = user
         run.confirmed_at = timezone.now()

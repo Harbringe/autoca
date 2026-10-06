@@ -1,6 +1,6 @@
 # Party accounting, phase 1
 
-Status: **steps 1a and 1b are live; 1c is built and in CI** (2026-10-06); 1d and 1e are not. Written 2026-10-05.
+Status: **steps 1a to 1d are live; 1e is built and in CI** (2026-10-06). Written 2026-10-05.
 
 ## What step 1c built
 
@@ -308,3 +308,13 @@ Each step ships and is tested on its own.
 7. **The invoice identity for an unregistered supplier (no GSTIN).** Recommended: party id plus normalised invoice number, so the duplicate check still works and a later-added GSTIN does not orphan old bills (the key is recomputed and the old one kept as an alias).
 8. **Does a supplier payment booked directly to an expense head need a reason?** Recommended: yes, a short choice (no invoice expected, or needs invoice), as described in section 9A, so the bypass is visible.
 9. **Step 1a gets a new first item:** move the invoice-key functions to `core/identity.py` and point `gst/` at them, with no behaviour change, before any bill code is written. Recommended: yes, because every later join depends on one definition.
+
+## 1e. Tally openings and linking (built 2026-10-06)
+
+A chart import brings each supplier's and customer's balance as one number on a ledger with no party behind it, which is an island: the ledger says "owes 50,000", the bills say nothing, and the control check cannot agree.
+
+- **Linking.** `ledger.openings.adopt_imported_party_ledgers` gives every Sundry Debtors or Creditors ledger without a party one (a customer or a vendor by group), linked by the real foreign key, and links an existing party of the same name that has no ledger. It runs when a Tally import is confirmed, and is idempotent. This also closes the gap where an imported creditor's name had no party record.
+- **Opening bills.** `post_opening_bills` breaks the opening balance into `OPENING` bills (invoice number, date, amount). No journal entry: the balance is already in the ledger. Rules: the party must have an imported opening; each bill is dated before the date the balance stands at (a bill from the year is a voucher); the bills may not add up to more than is left; the same invoice cannot be listed twice; refused if the books are signed off through the opening date; all or nothing; one breakdown at a time per party (row lock). Direction comes from the sign of the opening.
+- **Open item.** `party_opening_unbilled` lists the part of an opening balance not yet broken into bills, so it cannot stay a lump sum silently.
+- **API and screen.** `GET parties/{id}/opening/` and `POST parties/{id}/opening-bills/` (needs `journal.approve`); the To fix screen offers "Break into bills" on that item.
+- **Known limit.** A later Tally re-import that changes the opening makes the party's ledger and its opening bills disagree, which the existing `party_out_of_balance` item reports; the bills are not rewritten automatically.

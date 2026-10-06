@@ -20,7 +20,7 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.response import Response
 
 from api.pagination import DefaultPagination
-from api.permissions import HasFirmPermission
+from api.permissions import CanApprove, HasFirmPermission
 from api.serializers.classify import (
     AcceptProposalSerializer,
     ClassificationRuleSerializer,
@@ -36,6 +36,11 @@ from api.serializers.classify import (
     TreatmentSerializer,
 )
 from api.serializers.core import JobSerializer
+from api.serializers.openings import (
+    OpeningBillsRequestSerializer,
+    OpeningStandingSerializer,
+    standing_payload,
+)
 from api.serializers.partyreports import PartyStatementSerializer, statement_payload
 from api.serializers.settlement import SettlementContextSerializer
 from api.throttles import enforce
@@ -70,7 +75,7 @@ from core.fy import financial_year, fy_bounds
 from core.jobs import run_job
 from core.models import Client
 from core.rbac import has_permission
-from ledger import billing
+from ledger import billing, openings
 from ledger import settlement as settling
 from ledger.learning import learn_from_decision
 from ledger.partyreports import party_statement
@@ -220,6 +225,37 @@ class PartyViewSet(ClientScopedMixin, FirmScopedViewSet):
         "PATCH": "party.manage",
         "DELETE": "party.manage",
     }
+
+    @extend_schema(
+        summary="A party's imported opening balance and how much of it is broken into bills",
+        responses={200: OpeningStandingSerializer},
+    )
+    @action(detail=True, methods=["get"], pagination_class=None, url_path="opening")
+    def opening(self, request, client_id=None, pk=None):
+        return Response(OpeningStandingSerializer(standing_payload(openings.opening_standing(self.get_object()))).data)
+
+    @extend_schema(
+        summary="Break a party's opening balance into bills",
+        description=(
+            "Lists the invoices an imported opening balance is made of, so payments can be settled against them. They make "
+            "no journal entry (the balance is already in the ledger), may not be dated on or after the date it stands at, "
+            "and may not add up to more than is left of it. All or nothing. Needs `journal.approve`."
+        ),
+        request=OpeningBillsRequestSerializer,
+        responses={201: OpeningStandingSerializer},
+    )
+    @action(detail=True, methods=["post"], url_path="opening-bills", permission_classes=[CanApprove])
+    def opening_bills(self, request, client_id=None, pk=None):
+        party = self.get_object()
+        payload = OpeningBillsRequestSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        items = [
+            openings.OpeningBillInput(b["reference"], b["bill_date"], b["amount_paise"], b["due_date"])
+            for b in payload.validated_data["bills"]
+        ]
+        openings.post_opening_bills(self.client, party, items, membership=request.membership)
+        standing = openings.opening_standing(Party.objects.get(pk=party.pk))
+        return Response(OpeningStandingSerializer(standing_payload(standing)).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(
         summary="A party's statement of account",

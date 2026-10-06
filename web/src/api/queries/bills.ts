@@ -7,7 +7,7 @@
 
 import { queryOptions, useMutation } from '@tanstack/react-query'
 import { raw } from '@/api/client'
-import type { Bill, BillCreateRequest, BillDetail, OpenItems, Outstanding, PartyStatement, SettlementContext } from '@/api/types'
+import type { Bill, BillCreateRequest, BillDetail, OpenItems, OpeningStanding, Outstanding, PartyStatement, SettlementContext } from '@/api/types'
 import { allPages } from './books'
 import { clientKeys, useInvalidateClient, V1 } from './clients'
 
@@ -99,6 +99,23 @@ export function useSettleEntry(clientId: string) {
   return useMutation({
     mutationFn: ({ entry, allocations, remainder }: { entry: string; allocations: { bill: string; amount_paise: number }[]; remainder: string | null }) =>
       raw.post<{ settled_paise: number }>(`${V1}/journal-entries/${entry}/settle/`, { allocations, remainder }),
+    onSuccess: invalidate,
+  })
+}
+
+/** A party's imported opening balance, and how much of it is already broken into bills. */
+export const partyOpening = (clientId: string, partyId: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'parties', partyId, 'opening'),
+    queryFn: () => raw.get<OpeningStanding>(`${V1}/clients/${clientId}/parties/${partyId}/opening/`),
+  })
+
+/** Break an opening balance into the invoices it is made of. */
+export function useBreakDownOpening(clientId: string, partyId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: (bills: { reference: string; bill_date: string; amount_paise: number }[]) =>
+      raw.post<OpeningStanding>(`${V1}/clients/${clientId}/parties/${partyId}/opening-bills/`, { bills }),
     onSuccess: invalidate,
   })
 }

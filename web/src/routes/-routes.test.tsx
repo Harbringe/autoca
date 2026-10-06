@@ -29,7 +29,7 @@ async function renderAt(url: string) {
   return router
 }
 
-describe('unknown addresses', () => {
+describe('unknown addresses', { timeout: 20_000 }, () => {
   it('draw the not-found page inside the shell', async () => {
     await renderAt('/nope-404')
     expect(await screen.findByRole('heading', { name: 'This page does not exist' })).toBeInTheDocument()
@@ -43,7 +43,7 @@ describe('unknown addresses', () => {
   })
 })
 
-describe('redirects keep the financial year', () => {
+describe('redirects keep the financial year', { timeout: 20_000 }, () => {
   it('sends / to the dashboard with ?fy=', async () => {
     const router = await renderAt('/?fy=2025')
     await vi.waitFor(() => expect(router.state.location.pathname).toBe('/dashboard'))

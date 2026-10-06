@@ -165,6 +165,31 @@ def parties_out_of_balance(client):
             )
 
 
+@detector("party_opening_unbilled", "An opening balance not yet broken into bills")
+def openings_without_bills(client):
+    """A party's imported opening balance that the bills do not account for.
+
+    Until it is broken into the invoices it is made of, no payment can be settled against what is really outstanding.
+    """
+    from classify.models import Party
+    from ledger import openings
+
+    for party in Party.objects.filter(firm_id=client.firm_id, client=client, ledger__isnull=False).select_related("ledger"):
+        standing = openings.opening_standing(party)
+        if standing.direction and standing.remaining_paise > 0:
+            yield OpenItem(
+                kind="party_opening_unbilled",
+                client_id=client.pk,
+                summary=(
+                    f"{party.canonical_name}'s opening balance of {format_inr(abs(standing.opening_paise))} has "
+                    f"{format_inr(standing.remaining_paise)} not yet broken into bills."
+                ),
+                amount_paise=standing.remaining_paise,
+                since=datetime.date(standing.financial_year, 4, 1),
+                link={"type": "party", "id": str(party.pk)},
+            )
+
+
 def _live_entry(transaction_row):
     """The entry that currently stands for a bank row, ignoring corrected ones."""
     return JournalEntry.objects.filter(

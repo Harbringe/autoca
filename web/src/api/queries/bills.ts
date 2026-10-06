@@ -265,3 +265,55 @@ export function useRecordChallan(clientId: string) {
     onSuccess: invalidate,
   })
 }
+
+/** The people the client pays a salary to. */
+export const employees = (clientId: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'employees'),
+    queryFn: () => allPages<{ id: string; name: string; is_active: boolean; ledger: string | null }>(`${V1}/clients/${clientId}/employees/`),
+  })
+
+/** Salary runs already booked, newest first. */
+export const payrollRuns = (clientId: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'payroll'),
+    queryFn: () =>
+      allPages<{ id: string; year: number; month: number; entry: string; gross_paise: number; gross_display: string; net_paise: number; net_display: string }>(
+        `${V1}/clients/${clientId}/payroll/`,
+      ),
+  })
+
+export function useAddEmployee(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: (name: string) => raw.post<unknown>(`${V1}/clients/${clientId}/employees/`, { name }),
+    onSuccess: invalidate,
+  })
+}
+
+export interface SalaryLine {
+  employee: string
+  gross_paise: number
+  pf_employee_paise: number
+  pf_employer_paise: number
+  esi_employee_paise: number
+  esi_employer_paise: number
+  tds_paise: number
+  other_deduction_paise: number
+}
+
+export function useBookSalaries(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: (body: { year: number; month: number; lines: SalaryLine[] }) => raw.post<unknown>(`${V1}/clients/${clientId}/payroll/`, body),
+    onSuccess: invalidate,
+  })
+}
+
+export function useRemoveSalaries(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: (id: string) => raw.post<unknown>(`${V1}/clients/${clientId}/payroll/${id}/remove/`, {}),
+    onSuccess: invalidate,
+  })
+}

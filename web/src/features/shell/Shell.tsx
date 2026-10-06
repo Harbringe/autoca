@@ -137,6 +137,7 @@ const SCREEN_TITLE: Record<string, string> = {
   'open-items': 'To fix',
   invoices: 'Invoices',
   tds: 'TDS',
+  payroll: 'Payroll',
   assets: 'Assets',
   ledgers: 'Ledgers',
   reports: 'Reports',

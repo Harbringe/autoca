@@ -22,6 +22,7 @@ import { StatCard } from '@/components/ui/stat-card'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDate, formatDateTime, plural } from '@/lib/format'
 import { useSession } from '@/session/session'
+import { ClosePanel } from './ClosePanel'
 import { SignOffDialog } from './SignOffDialog'
 import { BOOKS_STATE_HINT, BOOKS_STATE_LABEL, BOOKS_STATE_TONE, booksState } from './state'
 
@@ -141,6 +142,7 @@ export function BooksScreen({ clientId }: { clientId: string }) {
             </p>
           )}
         </Card>
+        <ClosePanel clientId={clientId} maySignOff={senior} />
       </div>
 
       <Card className="content-start p-5">

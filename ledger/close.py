@@ -25,6 +25,7 @@ from django.utils import timezone
 
 from banking.models import BankAccount
 from classify.models import LedgerGroup
+from core.access import require_sign_off
 from core.rbac import require_permission
 from ledger import books, openitems
 from ledger.models import CloseAcknowledgement, EntryMarker, JournalEntry, JournalLine
@@ -182,8 +183,12 @@ def _checks(client, through: datetime.date | None) -> list[Check]:
 
 @transaction.atomic
 def explain(client, item_key_: str, note: str, *, membership) -> CloseAcknowledgement:
-    """Record why one open item may stand. It stays listed; sign-off no longer waits on it."""
+    """Record why one open item may stand. It stays listed; sign-off no longer waits on it.
+
+    Only someone who may sign this client's books off can say an item may stand: the same rule as the sign-off itself.
+    """
     require_permission(membership, "books.sign_off")
+    require_sign_off(membership, client)
     note = (note or "").strip()
     if len(note) < 5:
         raise CloseError("Say why this can stand, in a few words.")
@@ -204,6 +209,7 @@ def explain(client, item_key_: str, note: str, *, membership) -> CloseAcknowledg
 @transaction.atomic
 def withdraw(client, item_key_: str, *, membership) -> None:
     require_permission(membership, "books.sign_off")
+    require_sign_off(membership, client)
     CloseAcknowledgement.objects.filter(firm_id=client.firm_id, client=client, item_key=item_key_).delete()
 
 

@@ -7,7 +7,7 @@
 
 import { queryOptions, useMutation } from '@tanstack/react-query'
 import { raw } from '@/api/client'
-import type { Bill, InvoiceReading, BillCreateRequest, BillDetail, OpenItems, OpeningStanding, Outstanding, PartyStatement, SettlementContext } from '@/api/types'
+import type { Bill, CloseReport, InvoiceReading, BillCreateRequest, BillDetail, OpenItems, OpeningStanding, Outstanding, PartyStatement, SettlementContext } from '@/api/types'
 import { allPages } from './books'
 import { clientKeys, useInvalidateClient, V1 } from './clients'
 
@@ -145,6 +145,30 @@ export function useDecideInvoice(clientId: string) {
   return useMutation({
     mutationFn: ({ id, action, bill }: { id: string; action: 'attach' | 'discard'; bill?: string }) =>
       raw.post<InvoiceReading>(`${V1}/clients/${clientId}/invoices/${id}/${action}/`, bill ? { bill } : {}),
+    onSuccess: invalidate,
+  })
+}
+
+/** Every control and open item between the books and sign-off, and the reasons given for the ones that may stand. */
+export const closeReport = (clientId: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'close'),
+    queryFn: () => raw.get<CloseReport>(`${V1}/clients/${clientId}/books/close/`),
+  })
+
+export function useExplainItem(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: ({ itemKey, note }: { itemKey: string; note: string }) =>
+      raw.post<CloseReport>(`${V1}/clients/${clientId}/books/close/explain/`, { item_key: itemKey, note }),
+    onSuccess: invalidate,
+  })
+}
+
+export function useWithdrawExplanation(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: (itemKey: string) => raw.post<CloseReport>(`${V1}/clients/${clientId}/books/close/withdraw/`, { item_key: itemKey }),
     onSuccess: invalidate,
   })
 }

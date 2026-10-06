@@ -544,6 +544,9 @@ VISION_READING = env_bool("VISION_READING", False)
 # clearer for small print and costs more.
 VISION_PAGES_PER_CALL = int(env("VISION_PAGES_PER_CALL", "3"))
 VISION_DPI = int(env("VISION_DPI", "150"))
+# The longest scan that will be read in one go. Each group of pages is a paid model call, so a very long file
+# is refused up front rather than costing a hundred calls.
+VISION_MAX_PAGES = int(env("VISION_MAX_PAGES", "40"))
 
 # The minutes a person would have spent placing and posting one row by hand. It
 # turns "rows the assistant posted" into an *estimate* of time saved

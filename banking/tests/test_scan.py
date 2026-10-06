@@ -64,7 +64,12 @@ class FakeVision:
 @pytest.fixture(autouse=True)
 def drawn_pages(monkeypatch, settings):
     settings.VISION_PAGES_PER_CALL = 3
-    monkeypatch.setattr(scan, "render_pages", lambda data, dpi=None: [b"png"] * 3)
+    monkeypatch.setattr(
+        scan,
+        "render_pages",
+        lambda data, dpi=None, first=0, count=None: [b"png"]
+        * len(range(first, min(3, first + (count or 3)))),
+    )
 
 
 def document(pages=3):
@@ -174,3 +179,13 @@ def test_a_real_pdf_is_drawn_one_png_per_page(monkeypatch):
     images = scan.render_pages(buffer.getvalue(), dpi=72)
 
     assert len(images) == 2 and all(i.startswith(b"\x89PNG") for i in images)
+
+
+def test_a_scan_longer_than_the_limit_is_refused_before_anything_is_sent(settings):
+    settings.VISION_MAX_PAGES = 2
+    vision = FakeVision(reply())
+
+    with pytest.raises(StatementParseError, match="Split it"):
+        scan.read_statement(b"pdf", document(), vision)
+
+    assert vision.calls == []

@@ -59,15 +59,18 @@ def enabled() -> bool:
     return bool(getattr(settings, "VISION_READING", False))
 
 
-def render_pages(data: bytes, *, dpi: int | None = None) -> list[bytes]:
-    """Every page of the PDF as PNG bytes, in order."""
+def render_pages(
+    data: bytes, *, dpi: int | None = None, first: int = 0, count: int | None = None
+) -> list[bytes]:
+    """PNG bytes for ``count`` pages of the PDF from page index ``first`` (all of them by default), in order."""
     import pypdfium2 as pdfium
 
     scale = (dpi or settings.VISION_DPI) / 72
     pdf = pdfium.PdfDocument(data)
     try:
+        stop = len(pdf) if count is None else min(len(pdf), first + count)
         out = []
-        for index in range(len(pdf)):
+        for index in range(first, stop):
             page = pdf[index]
             try:
                 buffer = io.BytesIO()
@@ -83,14 +86,23 @@ def render_pages(data: bytes, *, dpi: int | None = None) -> list[bytes]:
 
 
 def read_statement(data: bytes, document: PdfDocument, llm) -> ParsedStatement:
-    """Read ``data`` from its page images and return it only if it proves out."""
-    images = render_pages(data)
-    if len(images) != document.page_count:
-        raise StatementParseError("The pages could not all be drawn, so the scan was not read.")
+    """Read ``data`` from its page images and return it only if it proves out.
+
+    A scan costs a model call for every few pages and holds images in memory, so a document longer than
+    ``VISION_MAX_PAGES`` is refused before anything is drawn or sent, and the pages are drawn one group at a time.
+    """
+    limit = int(settings.VISION_MAX_PAGES)
+    if document.page_count > limit:
+        raise StatementParseError(
+            f"This scan has {document.page_count} pages; scans are read up to {limit} pages at a time. "
+            "Split it into months and upload each."
+        )
     per_call = max(1, int(settings.VISION_PAGES_PER_CALL))
     replies = []
-    for start in range(0, len(images), per_call):
-        group = images[start : start + per_call]
+    for start in range(0, document.page_count, per_call):
+        group = render_pages(data, first=start, count=per_call)
+        if len(group) != min(per_call, document.page_count - start):
+            raise StatementParseError("The pages could not all be drawn, so the scan was not read.")
         replies.append(_ask(llm, group, continued=start > 0))
     return _assemble(replies)
 

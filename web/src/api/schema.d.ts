@@ -2111,7 +2111,7 @@ export interface paths {
         };
         /**
          * The firm portfolio: health of every client, what needs attention, what falls due
-         * @description One row per client the caller may see, with books status, open items, unreconciled bank accounts, overdue TDS, receivables and payables; the things that need attention most serious first; and what falls due in the next 45 days. Beyond 60 clients the per-client detail is left out (`detailed: false`).
+         * @description One row per client the caller may see, with books status, open items, unreconciled bank accounts, overdue TDS, receivables and payables; the things that need attention most serious first; and what falls due in the next 45 days. Amounts (receivables, payables, TDS) are left out for a caller without `journal.view`. Beyond 60 clients the per-client detail is left out (`detailed: false`).
          */
         get: operations["firm_portfolio_retrieve"];
         put?: never;

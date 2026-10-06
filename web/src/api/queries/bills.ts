@@ -7,7 +7,7 @@
 
 import { queryOptions, useMutation } from '@tanstack/react-query'
 import { raw } from '@/api/client'
-import type { Bill, CloseReport, InvoiceReading, BillCreateRequest, BillDetail, OpenItems, OpeningStanding, Outstanding, PartyStatement, SettlementContext } from '@/api/types'
+import type { Bill, CloseReport, FoundParties, InvoiceReading, BillCreateRequest, BillDetail, OpenItems, OpeningStanding, Outstanding, PartyStatement, SettlementContext } from '@/api/types'
 import { allPages } from './books'
 import { clientKeys, useInvalidateClient, V1 } from './clients'
 
@@ -169,6 +169,22 @@ export function useWithdrawExplanation(clientId: string) {
   const invalidate = useInvalidateClient(clientId)
   return useMutation({
     mutationFn: (itemKey: string) => raw.post<CloseReport>(`${V1}/clients/${clientId}/books/close/withdraw/`, { item_key: itemKey }),
+    onSuccess: invalidate,
+  })
+}
+
+/** Counterparties in the statements that look like suppliers or customers, for a person to tick. */
+export const partyCandidates = (clientId: string, oneOffs = false) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'parties', 'found', oneOffs),
+    queryFn: () => raw.get<FoundParties>(`${V1}/clients/${clientId}/parties/found/`, oneOffs ? { one_offs: 'true' } : {}),
+  })
+
+export function useCreateFoundParties(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: (parties: { name: string; role: string }[]) =>
+      raw.post<{ created: number }>(`${V1}/clients/${clientId}/parties/found/`, { parties }),
     onSuccess: invalidate,
   })
 }

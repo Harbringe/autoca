@@ -1191,6 +1191,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/parties/found/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Counterparties in the statements that look like parties
+         * @description Everyone the client paid or was paid by who has no party yet, grouped by name and ranked by how often and how much. The client's own accounts, bank charges, tax, interest and cash are left out. A payee seen only once is left out unless `one_offs=true`. Nothing is created: a person ticks the real ones and posts them to `parties/found/`.
+         */
+        get: operations["clients_parties_found_retrieve"];
+        put?: never;
+        /**
+         * Create the parties a person ticked
+         * @description Makes a party for each name (or reuses one that exists) and attaches every row of theirs that has no party yet. Posted entries are not changed: a party is a label on the row. Needs `party.manage`.
+         */
+        post: operations["clients_parties_found_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/reports/balance-sheet/": {
         parameters: {
             query?: never;
@@ -2976,6 +3000,13 @@ export interface components {
             /** @description Defaults to the original entry's narration. */
             narration?: string;
         };
+        CreatePartiesRequest: {
+            parties: components["schemas"]["WantedPartyRequest"][];
+        };
+        CreatedParties: {
+            /** @description Parties made or found, one per name ticked. */
+            created: number;
+        };
         /**
          * @description * `accept_match` - Accept as a match
          *     * `claim_itc` - Claim the credit
@@ -3119,6 +3150,41 @@ export interface components {
             admins: components["schemas"]["Person"][];
             counts: components["schemas"]["FirmCounts"];
             can: components["schemas"]["FirmCan"];
+        };
+        FoundParties: {
+            count: number;
+            candidates: components["schemas"]["FoundParty"][];
+        };
+        FoundParty: {
+            /** @description The counterparty as the bank spelled it. */
+            name: string;
+            /** @description How many rows of this client's statements are with them. */
+            count: number;
+            /**
+             * Format: int64
+             * @description Total the client paid them.
+             */
+            paid_paise: number;
+            paid_display: string;
+            /**
+             * Format: int64
+             * @description Total the client received from them.
+             */
+            received_paise: number;
+            received_display: string;
+            /** Format: date */
+            first: string;
+            /** Format: date */
+            last: string;
+            /**
+             * @description From the direction of the money: paid out is a supplier, received a customer.
+             *
+             *     * `VENDOR` - Supplier
+             *     * `CUSTOMER` - Customer
+             *     * `BOTH` - Both supplier and customer
+             *     * `OTHER` - Other (lender, employee, related party)
+             */
+            suggested_role: components["schemas"]["SuggestedRoleEnum"];
         };
         GstError: {
             /** @description Stable code: gst_rule (409), gst_file_unreadable (422), invalid (400), not_found (404), forbidden (403). */
@@ -4335,7 +4401,7 @@ export interface components {
             /** Format: uuid */
             readonly id: string;
             canonical_name: string;
-            role?: components["schemas"]["PartyRoleEnum"];
+            role?: components["schemas"]["Role2a3Enum"];
             readonly role_display: string;
             /** Format: uuid */
             readonly ledger: string | null;
@@ -4361,7 +4427,7 @@ export interface components {
         };
         PartyRequest: {
             canonical_name: string;
-            role?: components["schemas"]["PartyRoleEnum"];
+            role?: components["schemas"]["Role2a3Enum"];
             /** @description Stored encrypted, with a keyed index so GST reconciliation can join on it. */
             gstin?: string;
             rcm_default?: boolean;
@@ -4376,14 +4442,6 @@ export interface components {
          * @enum {string}
          */
         PartyResolutionEnum: "AUTO" | "CANDIDATE" | "NEW" | "CONFIRMED";
-        /**
-         * @description * `VENDOR` - Supplier
-         *     * `CUSTOMER` - Customer
-         *     * `BOTH` - Both supplier and customer
-         *     * `OTHER` - Other (lender, employee, related party)
-         * @enum {string}
-         */
-        PartyRoleEnum: "VENDOR" | "CUSTOMER" | "BOTH" | "OTHER";
         PartyStatement: {
             /** Format: uuid */
             party: string;
@@ -4499,7 +4557,7 @@ export interface components {
         };
         PatchedPartyRequest: {
             canonical_name?: string;
-            role?: components["schemas"]["PartyRoleEnum"];
+            role?: components["schemas"]["Role2a3Enum"];
             /** @description Stored encrypted, with a keyed index so GST reconciliation can join on it. */
             gstin?: string;
             rcm_default?: boolean;
@@ -4904,6 +4962,14 @@ export interface components {
          * @enum {string}
          */
         Role170Enum: "FIRM_ADMIN" | "SENIOR_CA" | "STAFF" | "READ_ONLY";
+        /**
+         * @description * `VENDOR` - Supplier
+         *     * `CUSTOMER` - Customer
+         *     * `BOTH` - Both supplier and customer
+         *     * `OTHER` - Other (lender, employee, related party)
+         * @enum {string}
+         */
+        Role2a3Enum: "VENDOR" | "CUSTOMER" | "BOTH" | "OTHER";
         /** @description A person's decision about what one payment or receipt on a party's account is for. */
         RowSettlementRequest: {
             allocations?: components["schemas"]["SettlementAllocationRequest"][];
@@ -5166,6 +5232,14 @@ export interface components {
          * @enum {string}
          */
         Status58cEnum: "RECEIVED" | "PARSED" | "FAILED";
+        /**
+         * @description * `VENDOR` - Supplier
+         *     * `CUSTOMER` - Customer
+         *     * `BOTH` - Both supplier and customer
+         *     * `OTHER` - Other (lender, employee, related party)
+         * @enum {string}
+         */
+        SuggestedRoleEnum: "VENDOR" | "CUSTOMER" | "BOTH" | "OTHER";
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         TallyBankPanel: {
             /** Format: uuid */
@@ -5675,6 +5749,11 @@ export interface components {
          * @enum {string}
          */
         VoucherTypeEnum: "Payment" | "Receipt" | "Contra" | "Journal" | "Purchase" | "Sales" | "Debit Note" | "Credit Note";
+        WantedPartyRequest: {
+            name: string;
+            /** @default VENDOR */
+            role: components["schemas"]["Role2a3Enum"];
+        };
         WithdrawRequest: {
             item_key: string;
         };
@@ -7737,6 +7816,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PartyStatement"];
+                };
+            };
+        };
+    };
+    clients_parties_found_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Include payees seen only once. */
+                one_offs?: boolean;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FoundParties"];
+                };
+            };
+        };
+    };
+    clients_parties_found_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CreatePartiesRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CreatePartiesRequest"];
+                "multipart/form-data": components["schemas"]["CreatePartiesRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreatedParties"];
                 };
             };
         };

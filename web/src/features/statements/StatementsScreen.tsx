@@ -29,6 +29,7 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDate, plural } from '@/lib/format'
 import { useSession } from '@/session/session'
+import { PartiesFound } from './PartiesFound'
 import { OpeningBalance, useUpload } from './UploadDialog'
 
 export function StatementsScreen({ clientId }: { clientId: string }) {
@@ -153,6 +154,8 @@ export function StatementsScreen({ clientId }: { clientId: string }) {
           />
         )}
       </section>
+
+      <PartiesFound clientId={clientId} />
 
       <section className="grid gap-2" aria-labelledby="st-files">
         <h2 id="st-files" className="text-[15px] font-semibold text-heading">

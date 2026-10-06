@@ -2678,6 +2678,74 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartyStatement'
           description: ''
+  /api/v1/clients/{client_id}/parties/found/:
+    get:
+      operationId: clients_parties_found_retrieve
+      description: 'Everyone the client paid or was paid by who has no party yet,
+        grouped by name and ranked by how often and how much. The client''s own accounts,
+        bank charges, tax, interest and cash are left out. A payee seen only once
+        is left out unless `one_offs=true`. Nothing is created: a person ticks the
+        real ones and posts them to `parties/found/`.'
+      summary: Counterparties in the statements that look like parties
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: one_offs
+        schema:
+          type: boolean
+        description: Include payees seen only once.
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FoundParties'
+          description: ''
+    post:
+      operationId: clients_parties_found_create
+      description: 'Makes a party for each name (or reuses one that exists) and attaches
+        every row of theirs that has no party yet. Posted entries are not changed:
+        a party is a label on the row. Needs `party.manage`.'
+      summary: Create the parties a person ticked
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePartiesRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CreatePartiesRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CreatePartiesRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreatedParties'
+          description: ''
   /api/v1/clients/{client_id}/reports/balance-sheet/:
     get:
       operationId: clients_reports_balance_sheet_retrieve
@@ -6437,6 +6505,23 @@ components:
           description: Defaults to the original entry's narration.
       required:
       - treatment
+    CreatePartiesRequest:
+      type: object
+      properties:
+        parties:
+          type: array
+          items:
+            $ref: '#/components/schemas/WantedPartyRequest'
+      required:
+      - parties
+    CreatedParties:
+      type: object
+      properties:
+        created:
+          type: integer
+          description: Parties made or found, one per name ticked.
+      required:
+      - created
     DecisionKindEnum:
       enum:
       - accept_match
@@ -6807,6 +6892,69 @@ components:
       - id
       - name
       - owner
+    FoundParties:
+      type: object
+      properties:
+        count:
+          type: integer
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/FoundParty'
+      required:
+      - candidates
+      - count
+    FoundParty:
+      type: object
+      properties:
+        name:
+          type: string
+          description: The counterparty as the bank spelled it.
+        count:
+          type: integer
+          description: How many rows of this client's statements are with them.
+        paid_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Total the client paid them.
+        paid_display:
+          type: string
+        received_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Total the client received from them.
+        received_display:
+          type: string
+        first:
+          type: string
+          format: date
+        last:
+          type: string
+          format: date
+        suggested_role:
+          allOf:
+          - $ref: '#/components/schemas/SuggestedRoleEnum'
+          description: |-
+            From the direction of the money: paid out is a supplier, received a customer.
+
+            * `VENDOR` - Supplier
+            * `CUSTOMER` - Customer
+            * `BOTH` - Both supplier and customer
+            * `OTHER` - Other (lender, employee, related party)
+      required:
+      - count
+      - first
+      - last
+      - name
+      - paid_display
+      - paid_paise
+      - received_display
+      - received_paise
+      - suggested_role
     GstError:
       type: object
       properties:
@@ -9292,7 +9440,7 @@ components:
           type: string
           maxLength: 255
         role:
-          $ref: '#/components/schemas/PartyRoleEnum'
+          $ref: '#/components/schemas/Role2a3Enum'
         role_display:
           type: string
           readOnly: true
@@ -9361,7 +9509,7 @@ components:
           minLength: 1
           maxLength: 255
         role:
-          $ref: '#/components/schemas/PartyRoleEnum'
+          $ref: '#/components/schemas/Role2a3Enum'
         gstin:
           type: string
           description: Stored encrypted, with a keyed index so GST reconciliation
@@ -9388,18 +9536,6 @@ components:
         * `CANDIDATE` - Looks similar to a known party -- needs confirming
         * `NEW` - No known party looks like this
         * `CONFIRMED` - A person has confirmed which party this is
-    PartyRoleEnum:
-      enum:
-      - VENDOR
-      - CUSTOMER
-      - BOTH
-      - OTHER
-      type: string
-      description: |-
-        * `VENDOR` - Supplier
-        * `CUSTOMER` - Customer
-        * `BOTH` - Both supplier and customer
-        * `OTHER` - Other (lender, employee, related party)
     PartyStatement:
       type: object
       properties:
@@ -9630,7 +9766,7 @@ components:
           minLength: 1
           maxLength: 255
         role:
-          $ref: '#/components/schemas/PartyRoleEnum'
+          $ref: '#/components/schemas/Role2a3Enum'
         gstin:
           type: string
           description: Stored encrypted, with a keyed index so GST reconciliation
@@ -10414,6 +10550,18 @@ components:
         * `SENIOR_CA` - Senior CA
         * `STAFF` - Staff
         * `READ_ONLY` - Read only
+    Role2a3Enum:
+      enum:
+      - VENDOR
+      - CUSTOMER
+      - BOTH
+      - OTHER
+      type: string
+      description: |-
+        * `VENDOR` - Supplier
+        * `CUSTOMER` - Customer
+        * `BOTH` - Both supplier and customer
+        * `OTHER` - Other (lender, employee, related party)
     RowSettlementRequest:
       type: object
       description: A person's decision about what one payment or receipt on a party's
@@ -10925,6 +11073,18 @@ components:
         * `RECEIVED` - Received
         * `PARSED` - Parsed
         * `FAILED` - Could not be read
+    SuggestedRoleEnum:
+      enum:
+      - VENDOR
+      - CUSTOMER
+      - BOTH
+      - OTHER
+      type: string
+      description: |-
+        * `VENDOR` - Supplier
+        * `CUSTOMER` - Customer
+        * `BOTH` - Both supplier and customer
+        * `OTHER` - Other (lender, employee, related party)
     TallyBankPanel:
       type: object
       description: Adds a ``*_display`` string beside every ``*_paise`` field named
@@ -11840,6 +12000,19 @@ components:
         * `Sales` - Sales
         * `Debit Note` - Debit Note
         * `Credit Note` - Credit Note
+    WantedPartyRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        role:
+          allOf:
+          - $ref: '#/components/schemas/Role2a3Enum'
+          default: VENDOR
+      required:
+      - name
     WithdrawRequest:
       type: object
       properties:

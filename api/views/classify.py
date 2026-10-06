@@ -41,6 +41,12 @@ from api.serializers.openings import (
     OpeningStandingSerializer,
     standing_payload,
 )
+from api.serializers.partydiscovery import (
+    CreatedPartiesSerializer,
+    CreatePartiesSerializer,
+    FoundPartiesSerializer,
+    candidates_payload,
+)
 from api.serializers.partyreports import PartyStatementSerializer, statement_payload
 from api.serializers.settlement import SettlementContextSerializer
 from api.throttles import enforce
@@ -48,6 +54,7 @@ from api.views.base import ClientScopedMixin, FirmScopedViewSet
 from api.views.partyreports import date_param
 from api.views.settlement import build_context
 from banking.models import Statement
+from classify import party_discovery
 from classify.engine import (
     confirm_party as confirm_party_decision,
 )
@@ -225,6 +232,40 @@ class PartyViewSet(ClientScopedMixin, FirmScopedViewSet):
         "PATCH": "party.manage",
         "DELETE": "party.manage",
     }
+
+    @extend_schema(
+        summary="Counterparties in the statements that look like parties",
+        description=(
+            "Everyone the client paid or was paid by who has no party yet, grouped by name and ranked by how often and how "
+            "much. The client's own accounts, bank charges, tax, interest and cash are left out. A payee seen only once is "
+            "left out unless `one_offs=true`. Nothing is created: a person ticks the real ones and posts them to "
+            "`parties/found/`."
+        ),
+        parameters=[OpenApiParameter("one_offs", bool, description="Include payees seen only once.")],
+        responses={200: FoundPartiesSerializer},
+    )
+    @action(detail=False, methods=["get"], pagination_class=None, url_path="found")
+    def found(self, request, client_id=None):
+        items = party_discovery.candidates(self.client, include_one_offs=request.query_params.get("one_offs") == "true")
+        return Response(FoundPartiesSerializer(candidates_payload(items)).data)
+
+    @extend_schema(
+        summary="Create the parties a person ticked",
+        description=(
+            "Makes a party for each name (or reuses one that exists) and attaches every row of theirs that has no party "
+            "yet. Posted entries are not changed: a party is a label on the row. Needs `party.manage`."
+        ),
+        request=CreatePartiesSerializer,
+        responses={201: CreatedPartiesSerializer},
+    )
+    @found.mapping.post
+    def create_found(self, request, client_id=None):
+        if not has_permission(request.membership, "party.manage"):
+            raise PermissionDenied("Your role does not permit party.manage.")
+        payload = CreatePartiesSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        made = party_discovery.create_parties(self.client, payload.validated_data["parties"])
+        return Response({"created": len(made)}, status=status.HTTP_201_CREATED)
 
     @extend_schema(
         summary="A party's imported opening balance and how much of it is broken into bills",

@@ -1498,6 +1498,62 @@ paths:
               schema:
                 $ref: '#/components/schemas/GstError'
           description: ''
+  /api/v1/clients/{client_id}/gst/runs/{id}/register-from-books/:
+    post:
+      operationId: clients_gst_runs_register_from_books_create
+      description: |-
+        Builds the run's register from the month's purchase bills and the debit notes that reverse purchases, instead of an uploaded file, so what is matched against GSTR-2B is exactly what the books hold. Bills belong to the registration they were booked under; with one registration, bills booked with none belong to it. Replaces any earlier register. Requires `gst.prepare`.
+
+        Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched).
+      summary: Take the purchase register from the books
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - gst
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooksLoadResult'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
   /api/v1/clients/{client_id}/gst/runs/{id}/sign-off/:
     post:
       operationId: clients_gst_runs_sign_off_create
@@ -5664,6 +5720,23 @@ components:
         * `RETURNED` - Returned for changes
         * `SIGNED_OFF` - Signed off
         * `REOPENED` - Reopened
+    BooksLoadResult:
+      type: object
+      properties:
+        rows:
+          type: integer
+          description: Bills of the month taken into the register; they replace any
+            earlier register.
+        unassigned:
+          type: integer
+          description: Bills of the month booked with no GSTIN of the client's, left
+            out because the client has several registrations.
+        run:
+          $ref: '#/components/schemas/RunReport'
+      required:
+      - rows
+      - run
+      - unassigned
     BooksStatus:
       type: object
       properties:
@@ -10209,7 +10282,11 @@ components:
           nullable: true
         has_register:
           type: boolean
-          description: The purchase register has been uploaded.
+          description: The purchase register has been uploaded, or taken from the
+            books.
+        register_from_books:
+          type: boolean
+          description: The register is the books' own purchase bills, not a file.
         has_portal:
           type: boolean
           description: GSTR-2B has been uploaded.
@@ -10238,6 +10315,7 @@ components:
       - has_register
       - id
       - period_start
+      - register_from_books
       - registration
       - signed_off_at
       - status

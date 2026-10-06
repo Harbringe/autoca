@@ -152,7 +152,8 @@ def load_register(
     _require_open(run)
     invoices = parse_register(data, filename, mapping=mapping)
     run.register_document = _register_document(run, data, filename, DocumentKind.REGISTER, user)
-    run.save(update_fields=["register_document"])
+    run.register_from_books = False
+    run.save(update_fields=["register_document", "register_from_books"])
     run.register_rows.all().delete()
     rows = []
     for inv in invoices:

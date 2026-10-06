@@ -664,6 +664,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/gst/runs/{id}/register-from-books/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Take the purchase register from the books
+         * @description Builds the run's register from the month's purchase bills and the debit notes that reverse purchases, instead of an uploaded file, so what is matched against GSTR-2B is exactly what the books hold. Bills belong to the registration they were booked under; with one registration, bills booked with none belong to it. Replaces any earlier register. Requires `gst.prepare`.
+         *
+         *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched).
+         */
+        post: operations["clients_gst_runs_register_from_books_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/gst/runs/{id}/sign-off/": {
         parameters: {
             query?: never;
@@ -2640,6 +2662,13 @@ export interface components {
          * @enum {string}
          */
         BooksEventActionEnum: "REQUESTED" | "RETURNED" | "SIGNED_OFF" | "REOPENED";
+        BooksLoadResult: {
+            /** @description Bills of the month taken into the register; they replace any earlier register. */
+            rows: number;
+            /** @description Bills of the month booked with no GSTIN of the client's, left out because the client has several registrations. */
+            unassigned: number;
+            run: components["schemas"]["RunReport"];
+        };
         BooksStatus: {
             /** Format: date */
             signed_off_through: string | null;
@@ -4820,8 +4849,10 @@ export interface components {
             status: components["schemas"]["Status42dEnum"];
             /** Format: date-time */
             signed_off_at: string | null;
-            /** @description The purchase register has been uploaded. */
+            /** @description The purchase register has been uploaded, or taken from the books. */
             has_register: boolean;
+            /** @description The register is the books' own purchase bills, not a file. */
+            register_from_books: boolean;
             /** @description GSTR-2B has been uploaded. */
             has_portal: boolean;
             summary: components["schemas"]["ReportSummary"];
@@ -6739,6 +6770,60 @@ export interface operations {
                 };
             };
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+        };
+    };
+    clients_gst_runs_register_from_books_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BooksLoadResult"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

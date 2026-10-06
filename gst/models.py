@@ -99,6 +99,8 @@ class ReconRun(UUIDModel, FirmScopedModel):
     portal_document = models.ForeignKey(
         Document, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
     )
+    #: The register was built from the books' own bills (``gst.books``) rather than uploaded as a file.
+    register_from_books = models.BooleanField(default=False, db_default=False)
     status = models.CharField(max_length=16, choices=RunStatus.choices, default=RunStatus.DRAFT)
     created_by = models.ForeignKey(User, null=True, on_delete=models.SET_NULL, related_name="+")
     signed_off_by = models.ForeignKey(

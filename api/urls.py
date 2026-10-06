@@ -190,6 +190,11 @@ urlpatterns = [
         name="gst-run-register",
     ),
     path(
+        "clients/<uuid:client_id>/gst/runs/<uuid:pk>/register-from-books/",
+        RunViewSet.as_view({"post": "register_from_books"}),
+        name="gst-run-register-from-books",
+    ),
+    path(
         "clients/<uuid:client_id>/gst/runs/<uuid:pk>/portal/",
         RunViewSet.as_view({"post": "portal"}),
         name="gst-run-portal",

@@ -24,7 +24,7 @@ from api.pagination import DefaultPagination
 from api.permissions import HasFirmPermission
 from api.throttles import enforce
 from core.access import get_visible_client
-from gst import report, services
+from gst import books, report, services
 from gst.matching import ItcStatus, MatchKind, Section
 from gst.models import (
     DecisionKind,
@@ -242,7 +242,8 @@ class RunReportSerializer(serializers.Serializer):
     period_start = serializers.DateField(help_text="First day of the return month.")
     status = serializers.ChoiceField(choices=RunStatus.choices)
     signed_off_at = serializers.DateTimeField(allow_null=True)
-    has_register = serializers.BooleanField(help_text="The purchase register has been uploaded.")
+    has_register = serializers.BooleanField(help_text="The purchase register has been uploaded, or taken from the books.")
+    register_from_books = serializers.BooleanField(help_text="The register is the books' own purchase bills, not a file.")
     has_portal = serializers.BooleanField(help_text="GSTR-2B has been uploaded.")
     summary = ReportSummarySerializer()
     gstr3b = ReportGstr3bLineSerializer(
@@ -256,6 +257,14 @@ class RunReportSerializer(serializers.Serializer):
 
 class UploadResultSerializer(serializers.Serializer):
     rows = serializers.IntegerField(help_text="Rows read from the file; they replace any earlier upload.")
+    run = RunReportSerializer()
+
+
+class BooksLoadResultSerializer(serializers.Serializer):
+    rows = serializers.IntegerField(help_text="Bills of the month taken into the register; they replace any earlier register.")
+    unassigned = serializers.IntegerField(
+        help_text="Bills of the month booked with no GSTIN of the client's, left out because the client has several registrations."
+    )
     run = RunReportSerializer()
 
 
@@ -425,6 +434,24 @@ class RunViewSet(viewsets.GenericViewSet):
     )
     def register(self, request, client_id=None, pk=None):
         return self._upload(request, client_id, pk, services.load_register)
+
+    @extend_schema(
+        request=None,
+        summary="Take the purchase register from the books",
+        description=(
+            "Builds the run's register from the month's purchase bills and the debit notes that reverse purchases, "
+            "instead of an uploaded file, so what is matched against GSTR-2B is exactly what the books hold. Bills "
+            "belong to the registration they were booked under; with one registration, bills booked with none belong "
+            "to it. Replaces any earlier register. Requires `gst.prepare`." + _ERRORS + _RULE + "."
+        ),
+        responses=_responses(BooksLoadResultSerializer, rule=True),
+    )
+    def register_from_books(self, request, client_id=None, pk=None):
+        client = get_visible_client(request, client_id)
+        run = _run_of(client, pk)
+        loaded = books.load_register_from_books(run)
+        run.refresh_from_db()
+        return Response({"rows": loaded.rows, "unassigned": loaded.unassigned, "run": report.run_report(run)})
 
     @extend_schema(
         request={"multipart/form-data": UploadSerializer},

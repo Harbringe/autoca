@@ -131,7 +131,12 @@ export function RunPage({ clientId, runId }: { clientId: string; runId: string }
         gate={gate}
         canFinalise={canFinalise}
         stale={stale}
-        busy={{ match: actions.match.isPending, upload: actions.upload.isPending, signOff: actions.signOff.isPending }}
+        busy={{ match: actions.match.isPending, upload: actions.upload.isPending || actions.fromBooks.isPending, signOff: actions.signOff.isPending }}
+        onFromBooks={async () => {
+          const loaded = await actions.fromBooks.mutateAsync(runId)
+          setStale(true)
+          return loaded
+        }}
         onUpload={async (which, file) => {
           await actions.upload.mutateAsync({ runId, which, file })
           setStale(true)
@@ -216,6 +221,7 @@ function Steps({
   stale,
   busy,
   onUpload,
+  onFromBooks,
   onMatch,
   onSignOff,
 }: {
@@ -227,6 +233,7 @@ function Steps({
   stale: boolean
   busy: { match: boolean; upload: boolean; signOff: boolean }
   onUpload: (which: 'register' | 'portal', file: File) => Promise<unknown>
+  onFromBooks: () => Promise<{ rows: number; unassigned: number }>
   onMatch: () => Promise<unknown>
   onSignOff: () => void
 }) {
@@ -252,6 +259,23 @@ function Steps({
       toast.success(which === 'register' ? 'Purchase register uploaded' : 'GSTR-2B uploaded')
     } catch (e) {
       fail(which, e)
+    } finally {
+      setUploading(null)
+    }
+  }
+
+  async function fromBooks() {
+    clear('register')
+    setUploading('register')
+    try {
+      const loaded = await onFromBooks()
+      toast.success(
+        loaded.unassigned > 0
+          ? `Register taken from the books: ${plural(loaded.rows, 'bill')}. ${plural(loaded.unassigned, 'bill')} with no GSTIN of the client’s were left out.`
+          : `Register taken from the books: ${plural(loaded.rows, 'bill')}.`,
+      )
+    } catch (e) {
+      fail('register', e)
     } finally {
       setUploading(null)
     }
@@ -294,7 +318,7 @@ function Steps({
                 <span className="sr-only">{step.done ? ', done' : current === step.key ? ', next' : ', not yet'}</span>
               </div>
               <p className="text-[13px] text-muted-foreground">
-                {step.key === 'register' && (report.has_register ? 'Uploaded. A new file replaces it.' : `Your purchase register. Accepted: ${listFormats(REGISTER_FORMATS)}.`)}
+                {step.key === 'register' && (report.has_register ? (report.register_from_books ? 'Taken from the books. An uploaded file would replace it.' : 'Uploaded. A new file replaces it.') : `Your purchase register. Accepted: ${listFormats(REGISTER_FORMATS)}.`)}
                 {step.key === 'portal' && (report.has_portal ? 'Uploaded. A new file replaces it.' : `The return from the GST portal. Accepted: ${listFormats(PORTAL_FORMATS)}. A JSON file must be this GSTIN’s and this month’s.`)}
                 {step.key === 'match' &&
                   (stale
@@ -316,6 +340,9 @@ function Steps({
                   <input ref={registerInput} type="file" className="sr-only" tabIndex={-1} aria-label="Purchase register file" accept={REGISTER_FORMATS.join(',')} onChange={(e) => void picked('register', e.target.files, e.target)} />
                   <Button variant={prim('register')} size="sm" loading={uploading === 'register'} disabled={busy.upload && uploading !== 'register'} onClick={() => registerInput.current?.click()}>
                     <Upload /> {report.has_register ? 'Replace register' : 'Upload register'}
+                  </Button>
+                  <Button variant="secondary" size="sm" disabled={busy.upload} onClick={() => void fromBooks()}>
+                    {report.register_from_books ? 'Reload from the books' : 'Use the books'}
                   </Button>
                 </>
               )}

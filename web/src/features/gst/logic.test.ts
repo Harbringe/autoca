@@ -62,6 +62,7 @@ const report = (over: Partial<GstReport> = {}): GstReport => ({
   status: 'draft',
   signed_off_at: null,
   has_register: true,
+  register_from_books: false,
   has_portal: true,
   summary: { counts: {}, eligible_paise: 0, blocked_paise: 0, ineligible_paise: 0, rcm_liability_paise: 0, unclaimed_in_2b_paise: 0, unresolved: 0 },
   gstr3b: [],

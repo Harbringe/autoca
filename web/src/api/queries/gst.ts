@@ -63,6 +63,12 @@ export function useGstActions(clientId: string) {
       },
       onSuccess: (result) => keep(result.run),
     }),
+    // The register as the books hold it: the month's purchase bills, instead of a file.
+    fromBooks: useMutation({
+      mutationFn: (runId: string) =>
+        raw.post<{ rows: number; unassigned: number; run: GstReport }>(`${base(clientId)}/runs/${runId}/register-from-books/`),
+      onSuccess: (result) => keep(result.run),
+    }),
     match: useMutation({
       mutationFn: (runId: string) => raw.post<GstReport>(`${base(clientId)}/runs/${runId}/reconcile/`),
       onSuccess: keep,

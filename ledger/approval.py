@@ -74,7 +74,7 @@ def voucher_type_for(classification) -> str:
     outright.
     """
     ledger = classification.ledger
-    if classification.transaction.bank_account.kind == "LOAN":
+    if classification.transaction.bank_account.is_liability:
         return _loan_voucher_type(classification)
     if ledger is not None and ledger.is_bank_or_cash:
         return VoucherType.CONTRA
@@ -99,7 +99,7 @@ def _loan_involved(classification) -> bool:
     from classify.models import LedgerGroup
 
     ledger = classification.ledger
-    return classification.transaction.bank_account.kind == "LOAN" or (
+    return classification.transaction.bank_account.is_liability or (
         ledger is not None and ledger.group == LedgerGroup.LOAN
     )
 
@@ -228,6 +228,14 @@ def book_narration_for(classification) -> str:
     amount = format_inr(txn.amount_paise)
     party = classification.counterparty.strip()
     channel = classification.channel if classification.channel not in ("", "UNKNOWN") else "bank"
+    if txn.bank_account.kind == "CARD":
+        # A purchase or charge on the card raises what is owed; a payment or a refund lowers it.
+        bank_side = classification.ledger is not None and classification.ledger.is_bank_or_cash
+        if txn.is_debit:
+            head = f"Being {amount} spent on the card towards {ledger}"
+        else:
+            head = f"Being {amount} paid to the card from {ledger}" if bank_side else f"Being {amount} credited to the card against {ledger}"
+        return f"{head} (card statement: {txn.narration.strip()[:80]})"
     if txn.bank_account.kind == "LOAN":
         # A debit on the loan raises what is owed; a credit lowers it. "Paid" and "received" would read backwards.
         bank_side = classification.ledger is not None and classification.ledger.is_bank_or_cash

@@ -43,6 +43,8 @@ class AccountKind(models.TextChoices):
 
     BANK = "BANK", "Bank account"
     LOAN = "LOAN", "Loan account"
+    #: A credit card: what the client owes the card company. Like a loan, a debit raises the balance.
+    CARD = "CARD", "Credit card"
 
 
 class BankAccount(UUIDModel, FirmScopedModel):
@@ -152,7 +154,8 @@ class BankAccount(UUIDModel, FirmScopedModel):
         full number instead, because two accounts sharing a ledger would merge
         their books. A CA can rename either, or a Tally import can.
         """
-        bank = f"{self.bank_code.title()} Loan A/c" if self.kind == AccountKind.LOAN else f"{self.bank_code.title()} Bank A/c"
+        label = {AccountKind.LOAN: "Loan A/c", AccountKind.CARD: "Credit Card A/c"}.get(self.kind, "Bank A/c")
+        bank = f"{self.bank_code.title()} {label}"
         short = f"{bank} {self.account_last4}"
         clash = (
             BankAccount.objects.filter(client_id=self.client_id, ledger_name=short)
@@ -160,6 +163,11 @@ class BankAccount(UUIDModel, FirmScopedModel):
             .exists()
         )
         return f"{bank} {self.account_number}" if clash else short
+
+    @property
+    def is_liability(self) -> bool:
+        """What the account holds is owed by the client (a loan, a card): its balance rises with a debit."""
+        return self.kind in (AccountKind.LOAN, AccountKind.CARD)
 
     @property
     def has_opening_balance(self) -> bool:

@@ -107,10 +107,21 @@ THIS BATCH IS FROM A LOAN ACCOUNT STATEMENT, not a bank account. Read "direction
 - An instalment paid from the client's own bank account goes to that bank ledger, and the rationale should say it is an EMI."""
 
 
+CARD_ADDENDUM = """
+
+THIS BATCH IS FROM A CREDIT CARD STATEMENT, not a bank account. Read "direction" this way instead of the rule above:
+- "debit" is a purchase or a charge on the card: place it in the expense, purchase or asset ledger it was for. Annual fees, interest and late charges go to a bank-charges or interest-paid ledger.
+- "credit" is a payment made to the card (the other side is the client's BANK ledger it was paid from) or a refund or reversal of an earlier purchase (the other side is the ledger it was charged to).
+- Never place a credit in sales or income, and never open a ledger for the card company or the card: the card's own ledger is the account these rows come from and is not offered to you."""
+
+
 def system_prompt_for(batch) -> str:
     """The instructions for this batch: the standing ones, plus the loan note when the rows are from a loan."""
-    if batch and getattr(batch[0].transaction.bank_account, "kind", "BANK") == "LOAN":
+    kind = getattr(batch[0].transaction.bank_account, "kind", "BANK") if batch else "BANK"
+    if kind == "LOAN":
         return SYSTEM_PROMPT + LOAN_ADDENDUM
+    if kind == "CARD":
+        return SYSTEM_PROMPT + CARD_ADDENDUM
     return SYSTEM_PROMPT
 
 

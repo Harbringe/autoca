@@ -151,7 +151,7 @@ def contra_ledger_for(account) -> LedgerAccount:
     A loan account's ledger is a liability (Loans), not a bank account: it is what the client owes, and it must
     not be counted among the client's bank balances.
     """
-    group = LedgerGroup.LOAN if account.kind == "LOAN" else LedgerGroup.BANK
+    group = {"LOAN": LedgerGroup.LOAN, "CARD": LedgerGroup.CURRENT_LIABILITY}.get(account.kind, LedgerGroup.BANK)
     ledger, _ = LedgerAccount.objects.get_or_create(
         firm_id=account.firm_id,
         client=account.client,

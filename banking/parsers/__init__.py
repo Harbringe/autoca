@@ -35,6 +35,7 @@ from .base import (
     StatementParser,
     UnsupportedBankError,
 )
+from .card import CardStatementParser
 from .generic import GenericStatementParser
 
 #: Tried first, in order. Each must recognise only its own bank.
@@ -90,6 +91,10 @@ def detect_parser(document: PdfDocument, layout: dict | None = None) -> Statemen
     if kind == "loan":
         # Read as a loan, on the strength of its title: the balance is what is owed and rises with a debit.
         return GenericStatementParser(liability=True, layout=layout)
+    if kind == "credit card":
+        # Read as a card, on the strength of its title: what is owed rises with a purchase, and the proof is the printed
+        # previous balance and total due rather than a running balance.
+        return CardStatementParser()
     if kind:
         raise UnsupportedBankError(
             f"This is a {kind} statement, not a bank account statement, and {kind} statements are not read yet. "

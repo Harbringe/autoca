@@ -118,7 +118,7 @@ class Command(BaseCommand):
     def _chain(self, statement, rows, entries) -> str:
         running = statement.opening_balance_paise
         out = []
-        liability = statement.bank_account.kind == "LOAN"  # a loan's balance rises with a debit
+        liability = statement.bank_account.is_liability  # a loan's balance rises with a debit
         for row in rows:
             running += -row.signed_paise if liability else row.signed_paise
             drift = running - row.balance_paise

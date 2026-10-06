@@ -24,10 +24,12 @@ from django.db import transaction
 from django.db.models import BigIntegerField, F, Sum, Value
 from django.db.models.functions import Coalesce
 
+from classify.models import LedgerGroup, PartyRole
+from classify.treatment import Treatment
 from core.access import require_posting_rights
 from core.rbac import require_permission
 from ledger import billing, editing
-from ledger.models import AllocationKind, Bill, Direction, JournalLine
+from ledger.models import AllocationKind, Bill, Direction, JournalEntry, JournalLine
 
 #: How many of the oldest open bills are searched for a set that adds up to the payment exactly, and how big a set.
 #: Small on purpose: a payment that clears eight invoices to the paisa is a payment a person should look at.
@@ -222,6 +224,62 @@ def settle_entry(entry, settlement: Settlement, *, membership) -> int:
     if left <= 0:
         raise billing.BillingError("This entry is already fully allocated.")
     validate(line.party, line.direction, left, settlement)
+    apply(line, settlement, left)
+    return left
+
+
+def party_of_posted_payment(entry):
+    """Who a posted bank payment was with, as confirmed on its transaction, or a sentence saying why that is not known."""
+    editing.require_bank_entry(entry)
+    classification = entry.source_transaction.classification
+    party = classification.party
+    if party is None:
+        raise billing.BillingError(
+            "Nobody is recorded as the party of this payment. Say who it was with on the transaction first."
+        )
+    transaction_row = entry.source_transaction
+    paid_out = transaction_row.is_debit
+    fits = (PartyRole.VENDOR, PartyRole.BOTH) if paid_out else (PartyRole.CUSTOMER, PartyRole.BOTH)
+    if party.role not in fits:
+        raise billing.BillingError(
+            f"{party.canonical_name} is recorded as {party.get_role_display().lower()}, so a payment "
+            f"{'to' if paid_out else 'from'} them cannot go on their account as a "
+            f"{'supplier' if paid_out else 'customer'}. Change the party's role first."
+        )
+    return party
+
+
+@transaction.atomic
+def move_to_party_account(entry, settlement: Settlement, *, membership) -> int:
+    """Move an already-posted bank payment from whatever head it was booked to onto its party's own account, and settle it.
+
+    The case this is for: a payment was booked to Sales or an expense when it was posted, and the invoice for it arrived
+    later (or the party was only recognised later). Booked to the head, the same cost or revenue is counted twice once the
+    invoice is booked; moved onto the party's account, the invoice and the payment are two sides of one account and the
+    bill shows as paid.
+
+    A person decides every time, and says which bills it settles (or that it is held on account or as an advance). It is the
+    ordinary correction of a posted entry (``editing.revise_in_place``) followed by the ordinary settlement, in one
+    transaction, so if the settlement is refused nothing has moved. Books that are signed off cannot be corrected this way.
+    """
+    require_permission(membership, "journal.approve")
+    require_posting_rights(membership, entry.client)
+    party = party_of_posted_payment(entry)
+    if party.ledger_id and entry.lines.filter(ledger_account_id=party.ledger_id).exists():
+        raise billing.BillingError("This payment is already on the party's account. Settle it from the open items instead.")
+    direction = line_direction_for(entry.source_transaction)
+    amount = entry.source_transaction.amount_paise
+    # Check the person's answer first, so a refusal leaves the entry exactly where it was.
+    validate(party, direction, amount, settlement)
+    side = LedgerGroup.CREDITOR if entry.source_transaction.is_debit else LedgerGroup.DEBTOR
+    ledger = billing.party_ledger_for(party, side=side)
+    editing.revise_in_place(
+        entry,
+        Treatment(ledger=ledger, party=party),
+        actor=membership.user,
+        note=f"Moved onto {party.canonical_name}'s account to settle their bills",
+    )
+    line, left = party_line_of(JournalEntry.objects.get(pk=entry.pk))
     apply(line, settlement, left)
     return left
 

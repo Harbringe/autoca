@@ -9,7 +9,7 @@ import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { messageOf } from '@/api/errors'
-import { entrySettlement, openItems, useSetBillStatus, useSettleEntry } from '@/api/queries/bills'
+import { entryMoveContext, entrySettlement, openItems, useMoveToParty, useSetBillStatus, useSettleEntry } from '@/api/queries/bills'
 import type { OpenItem } from '@/api/types'
 import { Money } from '@/components/ca/Money'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
@@ -32,6 +32,7 @@ export function OpenItemsScreen({ clientId }: { clientId: string }) {
   const [settling, setSettling] = useState<string | null>(null)
   const [statement, setStatement] = useState<string | null>(null)
   const [opening, setOpening] = useState<string | null>(null)
+  const [moving, setMoving] = useState<string | null>(null)
   const setStatus = useSetBillStatus(clientId)
   const mayFix = can('journal.approve')
 
@@ -80,7 +81,7 @@ export function OpenItemsScreen({ clientId }: { clientId: string }) {
               </div>
               <div className="flex items-center gap-3">
                 {item.amount_display && <Money display={item.amount_display} />}
-                <Actions clientId={clientId} item={item} mayFix={mayFix} onSettle={setSettling} onStatement={setStatement} onOpening={setOpening} onSay={(e, s) => void say(e, s)} />
+                <Actions clientId={clientId} item={item} mayFix={mayFix} onSettle={setSettling} onStatement={setStatement} onOpening={setOpening} onMove={setMoving} onSay={(e, s) => void say(e, s)} />
               </div>
             </li>
           ))}
@@ -88,6 +89,7 @@ export function OpenItemsScreen({ clientId }: { clientId: string }) {
       )}
 
       {settling && <SettleDialog clientId={clientId} entryId={settling} onClose={() => setSettling(null)} />}
+      {moving && <SettleDialog clientId={clientId} entryId={moving} mode="move" onClose={() => setMoving(null)} />}
       {opening && <OpeningBillsDialog clientId={clientId} partyId={opening} partyName="This party" onClose={() => setOpening(null)} />}
       {statement && <PartyStatementDialog clientId={clientId} partyId={statement} partyName="this party" onClose={() => setStatement(null)} />}
     </div>
@@ -101,6 +103,7 @@ function Actions({
   onSettle,
   onStatement,
   onOpening,
+  onMove,
   onSay,
 }: {
   clientId: string
@@ -109,6 +112,7 @@ function Actions({
   onSettle: (entry: string) => void
   onStatement: (party: string) => void
   onOpening: (party: string) => void
+  onMove: (entry: string) => void
   onSay: (entry: string, status: Why) => void
 }) {
   const link = item.link
@@ -140,6 +144,7 @@ function Actions({
       {mayFix && !bypass && <Button size="sm" onClick={() => onSettle(link.id)}>Settle</Button>}
       {mayFix && bypass && (
         <>
+          {item.kind === 'payment_bypasses_bills' && <Button size="sm" onClick={() => onMove(link.id)}>Move to the party’s account</Button>}
           <Button variant="outline" size="sm" onClick={() => onSay(link.id, 'NO_INVOICE_EXPECTED')}>No invoice expected</Button>
           {(item.kind === 'payment_bypasses_bills' || item.kind === 'payment_without_invoice') && (
             <Button variant="outline" size="sm" onClick={() => onSay(link.id, 'NEEDS_INVOICE')}>Waiting for invoice</Button>
@@ -153,15 +158,22 @@ function Actions({
   )
 }
 
-function SettleDialog({ clientId, entryId, onClose }: { clientId: string; entryId: string; onClose: () => void }) {
-  const context = useQuery(entrySettlement(clientId, entryId))
-  const settle = useSettleEntry(clientId)
+function SettleDialog({ clientId, entryId, mode = 'settle', onClose }: { clientId: string; entryId: string; mode?: 'settle' | 'move'; onClose: () => void }) {
+  const moving = mode === 'move'
+  const context = useQuery(moving ? entryMoveContext(clientId, entryId) : entrySettlement(clientId, entryId))
+  const settleOnly = useSettleEntry(clientId)
+  const move = useMoveToParty(clientId)
+  const settle = moving ? move : settleOnly
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Settle a payment</DialogTitle>
-          <DialogDescription>Say which bills this posted payment clears. The rest is held on account or as an advance.</DialogDescription>
+          <DialogTitle>{moving ? 'Move a payment onto the party’s account' : 'Settle a payment'}</DialogTitle>
+          <DialogDescription>
+            {moving
+              ? 'This payment was booked to a head, so its invoice would be counted twice. Moving it puts it on the party’s account against the bills you pick, so the bill shows as paid.'
+              : 'Say which bills this posted payment clears. The rest is held on account or as an advance.'}
+          </DialogDescription>
         </DialogHeader>
         {context.isPending ? (
           <Spinner label="Looking up the open bills…" />
@@ -171,14 +183,14 @@ function SettleDialog({ clientId, entryId, onClose }: { clientId: string; entryI
           <SettlementEditor
             context={context.data}
             busy={settle.isPending}
-            confirmLabel="Settle"
+            confirmLabel={moving ? 'Move and settle' : 'Settle'}
             onSubmit={(d) => {
               if (d.problem) return
               settle.mutate(
                 { entry: entryId, allocations: d.allocations, remainder: d.remainder },
                 {
                   onSuccess: () => {
-                    toast.success('Settled')
+                    toast.success(moving ? 'Moved onto the party’s account and settled' : 'Settled')
                     onClose()
                   },
                   onError: (e) => toast.error(messageOf(e)),

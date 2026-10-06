@@ -213,6 +213,42 @@ class JournalEntryViewSet(
         )
 
     @extend_schema(
+        summary="The party's open bills for a posted payment that is not on their account yet",
+        description=(
+            "For a posted bank payment booked to some head (Sales, an expense) whose party is recorded: the party's open "
+            "bills and a suggestion of how the payment would clear them. Only a suggestion; nothing moves."
+        ),
+        responses={200: SettlementContextSerializer},
+    )
+    @action(detail=True, methods=["get"], url_path="move-to-party", pagination_class=None)
+    def move_to_party_context(self, request, pk=None):
+        entry = self.get_object()
+        party = settling.party_of_posted_payment(entry)
+        txn = entry.source_transaction
+        return Response(build_context(party, settling.line_direction_for(txn), txn.amount_paise))
+
+    @extend_schema(
+        summary="Move a posted payment onto its party's account and settle it",
+        description=(
+            "Corrects the posted entry so it sits on the party's own account instead of the head it was booked to, and "
+            "allocates it to the bills a person names (the rest held on account or as an advance), in one step. If the "
+            "settlement is refused nothing moves. A person decides every time. Refused inside signed-off books. Needs "
+            "`journal.approve`."
+        ),
+        request=SettleEntrySerializer,
+        responses={200: SettledSerializer},
+    )
+    @move_to_party_context.mapping.post
+    def move_to_party(self, request, pk=None):
+        entry = self.get_object()
+        payload = SettleEntrySerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        moved = settling.move_to_party_account(
+            entry, settlement_from(entry.client, request.firm.pk, payload.validated_data), membership=request.membership
+        )
+        return Response({"settled_paise": moved, "settled_display": format_inr(moved), "fully_allocated": True})
+
+    @extend_schema(
         summary="Say why a payment to a party with bills has no invoice against it",
         description=(
             "A payment booked to an expense head, to a party that has bills, goes round those bills; until someone says why "

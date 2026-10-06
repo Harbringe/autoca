@@ -1932,6 +1932,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/journal-entries/{id}/move-to-party/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The party's open bills for a posted payment that is not on their account yet
+         * @description For a posted bank payment booked to some head (Sales, an expense) whose party is recorded: the party's open bills and a suggestion of how the payment would clear them. Only a suggestion; nothing moves.
+         */
+        get: operations["journal_entries_move_to_party_retrieve"];
+        put?: never;
+        /**
+         * Move a posted payment onto its party's account and settle it
+         * @description Corrects the posted entry so it sits on the party's own account instead of the head it was booked to, and allocates it to the bills a person names (the rest held on account or as an advance), in one step. If the settlement is refused nothing moves. A person decides every time. Refused inside signed-off books. Needs `journal.approve`.
+         */
+        post: operations["journal_entries_move_to_party_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/journal-entries/{id}/remove/": {
         parameters: {
             query?: never;
@@ -9061,6 +9085,54 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["JournalEntry"];
+                };
+            };
+        };
+    };
+    journal_entries_move_to_party_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SettlementContext"];
+                };
+            };
+        };
+    };
+    journal_entries_move_to_party_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["SettleEntryRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["SettleEntryRequest"];
+                "multipart/form-data": components["schemas"]["SettleEntryRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Settled"];
                 };
             };
         };

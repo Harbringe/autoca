@@ -4210,6 +4210,69 @@ paths:
               schema:
                 $ref: '#/components/schemas/JournalEntry'
           description: ''
+  /api/v1/journal-entries/{id}/move-to-party/:
+    get:
+      operationId: journal_entries_move_to_party_retrieve
+      description: 'For a posted bank payment booked to some head (Sales, an expense)
+        whose party is recorded: the party''s open bills and a suggestion of how the
+        payment would clear them. Only a suggestion; nothing moves.'
+      summary: The party's open bills for a posted payment that is not on their account
+        yet
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SettlementContext'
+          description: ''
+    post:
+      operationId: journal_entries_move_to_party_create
+      description: Corrects the posted entry so it sits on the party's own account
+        instead of the head it was booked to, and allocates it to the bills a person
+        names (the rest held on account or as an advance), in one step. If the settlement
+        is refused nothing moves. A person decides every time. Refused inside signed-off
+        books. Needs `journal.approve`.
+      summary: Move a posted payment onto its party's account and settle it
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SettleEntryRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SettleEntryRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SettleEntryRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Settled'
+          description: ''
   /api/v1/journal-entries/{id}/remove/:
     post:
       operationId: journal_entries_remove_create

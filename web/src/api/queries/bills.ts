@@ -188,3 +188,20 @@ export function useCreateFoundParties(clientId: string) {
     onSuccess: invalidate,
   })
 }
+
+/** A posted payment booked to some head: its party's open bills, if it were moved onto the party's account. */
+export const entryMoveContext = (clientId: string, entryId: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'entry-move', entryId),
+    queryFn: () => raw.get<SettlementContext>(`${V1}/journal-entries/${entryId}/move-to-party/`),
+  })
+
+/** Move a posted payment onto its party's account and settle it, as a person decided. */
+export function useMoveToParty(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: ({ entry, allocations, remainder }: { entry: string; allocations: { bill: string; amount_paise: number }[]; remainder: string | null }) =>
+      raw.post<{ settled_paise: number }>(`${V1}/journal-entries/${entry}/move-to-party/`, { allocations, remainder }),
+    onSuccess: invalidate,
+  })
+}

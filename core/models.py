@@ -66,6 +66,14 @@ class FirmScopedModel(models.Model):
         abstract = True
 
 
+class ClosePeriod(models.TextChoices):
+    """How often a client's books are sealed. Books always run April to March, so these fall on the same dates every year."""
+
+    QUARTERLY = "QUARTERLY", "Quarterly (30 Jun, 30 Sep, 31 Dec, 31 Mar)"
+    HALF_YEARLY = "HALF_YEARLY", "Half-yearly (30 Sep, 31 Mar)"
+    YEARLY = "YEARLY", "Yearly (31 Mar)"
+
+
 class Client(UUIDModel, FirmScopedModel):
     """A client of a firm. The firm's customer -- one level below the tenant root."""
 
@@ -102,6 +110,12 @@ class Client(UUIDModel, FirmScopedModel):
     #: leaves (see ``classify.llm``); the UI tells the CA not to put names or
     #: numbers in it.
     business_profile = models.TextField(blank=True, default="", max_length=2000)
+
+    #: How often this client's books are sealed (permanently locked). A senior's approval says "this is good" and locks
+    #: nothing; the seal is what locks, and only on the dates this schedule names.
+    close_period = models.CharField(
+        max_length=12, choices=ClosePeriod.choices, default=ClosePeriod.QUARTERLY, db_default=ClosePeriod.QUARTERLY
+    )
 
     class Meta:
         db_table = "core_client"

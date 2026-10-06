@@ -96,7 +96,7 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
             <span className="truncate font-medium text-heading">{line.ledger_name}</span>
             {line.party_name && <span className="truncate text-muted-foreground">· {line.party_name}</span>}
             {e.marker && <Badge tone="assistant">{e.marker === 'AI_POSTED' ? 'Assistant posted' : 'Assistant changed'}</Badge>}
-            {e.is_locked && <Lock className="size-3.5 shrink-0 text-muted-foreground" aria-label="Signed off" />}
+            {e.is_locked && <Lock className="size-3.5 shrink-0 text-muted-foreground" aria-label="Sealed" />}
           </span>
           <div className="truncate text-xs text-muted-foreground" title={e.narration}>
             {e.narration}
@@ -392,7 +392,7 @@ function EntryDialog({ clientId, entry, onClose }: { clientId: string; entry: Jo
         >
           <p>
             The entry leaves the books and its bank transaction goes back to Review, where you can place it in a different ledger and post
-            it again. What the entry was is kept in its change log. Voucher numbers close up when the books are signed off.
+            it again. What the entry was is kept in its change log. Voucher numbers close up when the books are sealed.
           </p>
         </Confirm>
       </DialogContent>

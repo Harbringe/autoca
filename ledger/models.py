@@ -274,7 +274,10 @@ class JournalLine(UUIDModel, FirmScopedModel):
 class BooksAction(models.TextChoices):
     REQUESTED = "REQUESTED", "Approval requested"
     RETURNED = "RETURNED", "Returned for changes"
-    SIGNED_OFF = "SIGNED_OFF", "Signed off"
+    #: The senior says the books are good. Locks nothing: entries stay editable, and a change after this is reported.
+    APPROVED = "APPROVED", "Approved by the senior"
+    #: The permanent lock, on a date the client's schedule names. (Stored as SIGNED_OFF since the lock was first built.)
+    SIGNED_OFF = "SIGNED_OFF", "Sealed"
     REOPENED = "REOPENED", "Reopened"
 
 

@@ -123,7 +123,7 @@ export function ClientOverview({ clientId }: { clientId: string }) {
             : b.waiting
               ? `Possible once nothing is waiting (${b.waiting} now).`
               : b.signed_off_through && unsigned
-                ? `Entries after ${formatDate(b.signed_off_through)} (the last sign-off) have not been sent for review.`
+                ? `Entries after ${formatDate(b.signed_off_through)} (the last seal) have not been sent for review.`
                 : 'Ready to send.',
       action: b && !b.review_pending && b.can_request && link('/clients/$clientId/books', 'Send for review'),
     },
@@ -131,9 +131,9 @@ export function ClientOverview({ clientId }: { clientId: string }) {
       title: client.data?.lead ? 'Senior CA signs off' : 'A firm administrator signs off (no senior CA assigned)',
       done: hasStatements && !!b?.signed_off_through && !b.review_pending && !unsigned,
       status: b?.signed_off_through
-        ? `Signed off through ${formatDate(b.signed_off_through)}. Entries up to that date are locked.${unsigned ? ` Statements run to ${formatDate(unsigned)}.` : ''}`
+        ? `Sealed through ${formatDate(b.signed_off_through)}. Entries up to that date are locked.${unsigned ? ` Statements run to ${formatDate(unsigned)}.` : ''}`
         : 'Once signed, the period is locked and voucher numbers are made final.',
-      action: b?.review_pending && b.can_sign_off && link('/clients/$clientId/books', 'Review and sign off'),
+      action: b?.review_pending && b.can_sign_off && link('/clients/$clientId/books', 'Review and approve'),
     },
   ]
   const current = steps.findIndex((s) => !s.done)
@@ -242,7 +242,7 @@ export function ClientOverview({ clientId }: { clientId: string }) {
             tone={unchecked ? 'attention' : 'plain'}
           />
           <StatCard
-            label="Signed off to"
+            label="Sealed to"
             value={<span className="text-xl">{b?.signed_off_through ? formatDate(b.signed_off_through) : 'Not yet'}</span>}
             note={b?.review_pending ? 'A sign-off is waiting' : undefined}
             to="/clients/$clientId/books"

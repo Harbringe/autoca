@@ -6,6 +6,8 @@ request into a call, and the outcome into JSON.
 
 from __future__ import annotations
 
+import datetime
+
 from django.db import transaction
 from drf_spectacular.utils import extend_schema
 from rest_framework import serializers, status, viewsets
@@ -31,7 +33,10 @@ class RequiredNoteSerializer(serializers.Serializer):
 class SignOffSerializer(serializers.Serializer):
     through = serializers.DateField(
         required=False,
-        help_text="Lock everything dated on or before this. Defaults to the latest entry.",
+        help_text=(
+            "Seal everything dated on or before this, which must be a date the client's schedule names and that has "
+            "passed. Defaults to the latest such date the approval covers."
+        ),
     )
     note = serializers.CharField(required=False, allow_blank=True, default="", max_length=1000)
 
@@ -43,6 +48,13 @@ class SignOffSerializer(serializers.Serializer):
                 dict.fromkeys(unknown, "Not a field this request accepts. Send `through` and `note`.")
             )
         return super().to_internal_value(data)
+
+
+class ApproveSerializer(SignOffSerializer):
+    through = serializers.DateField(
+        required=False,
+        help_text="The senior has looked at everything dated on or before this. Defaults to the latest entry.",
+    )
 
 
 class MarkReviewedSerializer(serializers.Serializer):
@@ -69,6 +81,19 @@ class BooksStatusSerializer(serializers.Serializer):
     requested_by = serializers.CharField(allow_blank=True)
     requested_at = serializers.DateTimeField(allow_null=True)
     returned_note = serializers.CharField(allow_blank=True)
+    approved_through = serializers.DateField(
+        allow_null=True, help_text="The senior has approved the books through this date. Locks nothing."
+    )
+    approved_by = serializers.CharField(allow_blank=True)
+    approved_at = serializers.DateTimeField(allow_null=True)
+    changed_since_approval = serializers.IntegerField(
+        help_text="Entries inside the approved period added, changed or removed since the approval. Sealing waits for zero."
+    )
+    close_period = serializers.CharField(help_text="How often the books are sealed: QUARTERLY, HALF_YEARLY or YEARLY.")
+    sealable_dates = serializers.ListField(
+        child=serializers.DateField(), help_text="Dates the books could be sealed through now: scheduled, passed, and covered by the approval."
+    )
+    next_seal_date = serializers.DateField(allow_null=True, help_text="The next date on the client's schedule after the last seal.")
     waiting = serializers.IntegerField(help_text="Rows still needing a decision or a posting.")
     ai_posted = serializers.IntegerField(help_text="Entries the AI posted that nobody has yet looked at.")
     ai_revised = serializers.IntegerField(help_text="Entries the AI changed after a correction, unlooked-at.")
@@ -101,6 +126,26 @@ class BooksView(viewsets.GenericViewSet):
             "requested_by": current.requested_by,
             "requested_at": current.requested_at,
             "returned_note": current.returned_note,
+            "approved_through": current.approved_through,
+            "approved_by": current.approved_by,
+            "approved_at": current.approved_at,
+            "changed_since_approval": current.changed_since_approval,
+            "close_period": client.close_period,
+            "sealable_dates": (
+                books.seal_dates(
+                    client, upto=min(current.approved_through, datetime.date.today()), after=current.signed_off_through
+                )
+                if current.approved_through and not current.changed_since_approval
+                else []
+            ),
+            "next_seal_date": next(
+                iter(
+                    books.seal_dates(
+                        client, upto=datetime.date.today() + datetime.timedelta(days=400), after=current.signed_off_through
+                    )
+                ),
+                None,
+            ),
             "waiting": waiting,
             "ai_posted": unsigned.filter(marker=EntryMarker.AI_POSTED).count(),
             "ai_revised": unsigned.filter(marker=EntryMarker.AI_REVISED).count(),
@@ -156,11 +201,34 @@ class BooksView(viewsets.GenericViewSet):
         return self._respond(request, client)
 
     @extend_schema(
-        summary="Sign the books off",
+        summary="Approve the books (locks nothing)",
         description=(
-            "Locks everything up to the date signed. Voucher numbers are made "
+            "The senior says the books are good through a date. Entries stay editable; a change made afterwards inside that "
+            "period is counted in `changed_since_approval`, and sealing waits until the books are approved again. Refused "
+            "with the same readiness rules as sealing: nothing waiting, assistant entries checked, blocking open items "
+            "fixed or explained. Needs `books.sign_off` on this client."
+        ),
+        request=ApproveSerializer,
+        responses={200: BooksStatusSerializer},
+    )
+    def approve(self, request, client_id=None):
+        client = self._client(request, client_id)
+        payload = ApproveSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        books.approve(
+            client, request.membership, through=payload.validated_data.get("through"), note=payload.validated_data["note"]
+        )
+        return self._respond(request, client)
+
+    @extend_schema(
+        summary="Seal the books: the permanent lock",
+        description=(
+            "Only on a date the client's schedule names (quarterly, half-yearly or yearly) that has passed, and only after "
+            "a senior has approved the books with nothing changed since: refused with 409 `approval_needed` or "
+            "`not_a_seal_date` otherwise.\n\n"
+            "Locks everything up to the date sealed. Voucher numbers are made "
             "contiguous first. After this the database itself refuses to change "
-            "any of it; a later fix is a correcting entry dated after the sign-off.\n\n"
+            "any of it; a later fix is a correcting entry dated after the seal.\n\n"
             "Refused with 409 `ai_entries_unchecked` while any entry dated on or before "
             "the sign-off date is still marked as posted or changed by the assistant: a "
             "person checks them and uses `mark-reviewed` first. Unknown fields are "
@@ -178,6 +246,7 @@ class BooksView(viewsets.GenericViewSet):
             request.membership,
             through=payload.validated_data.get("through"),
             note=payload.validated_data["note"],
+            strict=True,
         )
         return self._respond(request, client)
 

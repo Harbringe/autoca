@@ -1,4 +1,4 @@
-// Sign-off, said properly: what gets locked (the date, the vouchers and their totals), and what
+// Sealing, said properly: what gets locked (the date, the vouchers and their totals), and what
 // stands in the way. The server refuses while assistant-posted entries up to the date are unchecked,
 // so the dialog shows the same count, disables the button with the reason, and offers the two ways out.
 
@@ -13,11 +13,11 @@ import { clientDetail, clientKeys, useInvalidateClient, V1 } from '@/api/queries
 import type { BooksStatus } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
 import { Button } from '@/components/ui/button'
-import { DateInput } from '@/components/ui/date-input'
+import { Select } from '@/components/ui/controls'
 import { Field } from '@/components/ui/field'
-import { formatDate, formatPaise, parseDate, plural } from '@/lib/format'
+import { formatDate, formatPaise, plural } from '@/lib/format'
 import { useSession } from '@/session/session'
-import { latestEntryDate, signOffPreview } from './state'
+import { signOffPreview } from './state'
 
 export function SignOffDialog({
   clientId,
@@ -35,20 +35,17 @@ export function SignOffDialog({
   const entries = useQuery({ ...journal(clientId), enabled: open })
   const invalidate = useInvalidateClient(clientId)
   const queryClient = useQueryClient()
-  const [text, setText] = useState('')
+  const [picked, setPicked] = useState('')
   const [marking, setMarking] = useState(false)
   const [markError, setMarkError] = useState<string | null>(null)
 
-  const latest = entries.data ? latestEntryDate(entries.data) : null
-  // Start from the latest entry; the person may edit it. Reset each time the dialog opens.
+  // Only the dates on the client's schedule that the approval covers can be chosen; start from the latest.
+  const dates = books.sealable_dates
   useEffect(() => {
-    if (open) setText('')
-  }, [open])
-  useEffect(() => {
-    if (open && latest && text === '') setText(formatDate(latest))
-  }, [open, latest, text])
+    if (open) setPicked(dates[dates.length - 1] ?? '')
+  }, [open, dates])
 
-  const date = parseDate(text)
+  const date = picked || null
   const preview = entries.data && date ? signOffPreview(entries.data, date, books.signed_off_through) : null
   const mayMark = can('journal.correct') && !!client.data?.can_post
 
@@ -69,7 +66,7 @@ export function SignOffDialog({
   let blockedReason: ReactNode = null
   if (entries.isPending) blockedReason = 'Reading the entries…'
   else if (entries.error) blockedReason = 'The entries could not be loaded, so what would be locked cannot be shown.'
-  else if (!date) blockedReason = 'Enter the date as DD-MM-YYYY.'
+  else if (!date) blockedReason = 'No sealing date has been reached that the approval covers.'
   else if (preview && preview.unchecked > 0)
     blockedReason = (
       <div className="grid gap-2">
@@ -78,7 +75,7 @@ export function SignOffDialog({
             {plural(preview.unchecked, 'entry', 'entries')} posted or changed by the assistant {preview.unchecked === 1 ? 'is' : 'are'} not yet
             checked.
           </strong>{' '}
-          The books cannot be signed off through {formatDate(date)} until a person has looked at them.
+          The books cannot be approved or sealed through {formatDate(date)} until a person has looked at them.
         </p>
         <div className="flex flex-wrap gap-2">
           <Button asChild size="sm" variant="outline">
@@ -105,19 +102,25 @@ export function SignOffDialog({
     <Confirm
       open={open}
       onOpenChange={onOpenChange}
-      title="Sign off the books?"
-      confirmLabel="Sign off"
+      title="Seal the books?"
+      confirmLabel="Seal"
       note="optional"
       blockedReason={blockedReason}
       onConfirm={async (note) => {
-        if (!date) throw new Error('Enter the date as DD-MM-YYYY.')
+        if (!date) throw new Error('Choose the date to seal through.')
         await raw.post<BooksStatus>(`${V1}/clients/${clientId}/books/sign-off/`, { note, through: date })
         await invalidate()
-        toast.success('Books signed off')
+        toast.success('Books sealed')
       }}
     >
-      <Field label="Sign off through" hint="Defaults to the latest entry. Change it to sign off an earlier month.">
-        {(p) => <DateInput {...p} value={text} onChange={(e) => setText(e.target.value)} />}
+      <Field label="Seal through" hint="The dates on this client’s schedule that have passed and that the approval covers.">
+        {(p) => (
+          <Select {...p} value={picked} onChange={(e) => setPicked(e.target.value)}>
+            {dates.map((d) => (
+              <option key={d} value={d}>{formatDate(d)}</option>
+            ))}
+          </Select>
+        )}
       </Field>
       {preview && date && (
         <div className="rounded-md border p-3">
@@ -136,7 +139,7 @@ export function SignOffDialog({
         </div>
       )}
       <p>
-        Those entries can no longer be changed or removed, only adjusted by a correcting entry after that date. Voucher numbers are renumbered
+        Sealing is permanent. Those entries can no longer be changed or removed, only adjusted by a correcting entry after that date. Voucher numbers are renumbered
         so they run without gaps, per voucher type and year.
       </p>
     </Confirm>

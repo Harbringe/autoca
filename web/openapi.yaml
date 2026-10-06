@@ -760,6 +760,44 @@ paths:
               schema:
                 $ref: '#/components/schemas/BooksStatus'
           description: ''
+  /api/v1/clients/{client_id}/books/approve/:
+    post:
+      operationId: clients_books_approve_create
+      description: 'The senior says the books are good through a date. Entries stay
+        editable; a change made afterwards inside that period is counted in `changed_since_approval`,
+        and sealing waits until the books are approved again. Refused with the same
+        readiness rules as sealing: nothing waiting, assistant entries checked, blocking
+        open items fixed or explained. Needs `books.sign_off` on this client.'
+      summary: Approve the books (locks nothing)
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - books
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApproveRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ApproveRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ApproveRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BooksStatus'
+          description: ''
   /api/v1/clients/{client_id}/books/close/:
     get:
       operationId: clients_books_close_retrieve
@@ -1007,10 +1045,12 @@ paths:
     post:
       operationId: clients_books_sign_off_create
       description: |-
-        Locks everything up to the date signed. Voucher numbers are made contiguous first. After this the database itself refuses to change any of it; a later fix is a correcting entry dated after the sign-off.
+        Only on a date the client's schedule names (quarterly, half-yearly or yearly) that has passed, and only after a senior has approved the books with nothing changed since: refused with 409 `approval_needed` or `not_a_seal_date` otherwise.
+
+        Locks everything up to the date sealed. Voucher numbers are made contiguous first. After this the database itself refuses to change any of it; a later fix is a correcting entry dated after the seal.
 
         Refused with 409 `ai_entries_unchecked` while any entry dated on or before the sign-off date is still marked as posted or changed by the assistant: a person checks them and uses `mark-reviewed` first. Unknown fields are refused with 400, so a misspelt `through` cannot sign off more than asked.
-      summary: Sign the books off
+      summary: 'Seal the books: the permanent lock'
       parameters:
       - in: path
         name: client_id
@@ -5981,13 +6021,15 @@ components:
       enum:
       - REQUESTED
       - RETURNED
+      - APPROVED
       - SIGNED_OFF
       - REOPENED
       type: string
       description: |-
         * `REQUESTED` - Approval requested
         * `RETURNED` - Returned for changes
-        * `SIGNED_OFF` - Signed off
+        * `APPROVED` - Approved by the senior
+        * `SIGNED_OFF` - Sealed
         * `REOPENED` - Reopened
     BooksLoadResult:
       type: object
@@ -6023,6 +6065,38 @@ components:
           nullable: true
         returned_note:
           type: string
+        approved_through:
+          type: string
+          format: date
+          nullable: true
+          description: The senior has approved the books through this date. Locks
+            nothing.
+        approved_by:
+          type: string
+        approved_at:
+          type: string
+          format: date-time
+          nullable: true
+        changed_since_approval:
+          type: integer
+          description: Entries inside the approved period added, changed or removed
+            since the approval. Sealing waits for zero.
+        close_period:
+          type: string
+          description: 'How often the books are sealed: QUARTERLY, HALF_YEARLY or
+            YEARLY.'
+        sealable_dates:
+          type: array
+          items:
+            type: string
+            format: date
+          description: 'Dates the books could be sealed through now: scheduled, passed,
+            and covered by the approval.'
+        next_seal_date:
+          type: string
+          format: date
+          nullable: true
+          description: The next date on the client's schedule after the last seal.
         waiting:
           type: integer
           description: Rows still needing a decision or a posting.
@@ -6043,13 +6117,20 @@ components:
       required:
       - ai_posted
       - ai_revised
+      - approved_at
+      - approved_by
+      - approved_through
       - can_request
       - can_sign_off
+      - changed_since_approval
+      - close_period
       - history
+      - next_seal_date
       - requested_at
       - requested_by
       - returned_note
       - review_pending
+      - sealable_dates
       - signed_off_through
       - waiting
     ByClient:
@@ -6456,6 +6537,15 @@ components:
         has_entries:
           type: boolean
           readOnly: true
+        close_period:
+          allOf:
+          - $ref: '#/components/schemas/ClosePeriodEnum'
+          description: |-
+            How often the books are sealed: QUARTERLY, HALF_YEARLY or YEARLY. A senior's approval locks nothing; the seal does.
+
+            * `QUARTERLY` - Quarterly (30 Jun, 30 Sep, 31 Dec, 31 Mar)
+            * `HALF_YEARLY` - Half-yearly (30 Sep, 31 Mar)
+            * `YEARLY` - Yearly (31 Mar)
       required:
       - can_post
       - can_sign_off
@@ -6481,6 +6571,15 @@ components:
           description: What the client's business does, in a few sentences. Shown
             to the model that suggests ledgers.
           maxLength: 2000
+        close_period:
+          allOf:
+          - $ref: '#/components/schemas/ClosePeriodEnum'
+          description: |-
+            How often the books are sealed: QUARTERLY, HALF_YEARLY or YEARLY. A senior's approval locks nothing; the seal does.
+
+            * `QUARTERLY` - Quarterly (30 Jun, 30 Sep, 31 Dec, 31 Mar)
+            * `HALF_YEARLY` - Half-yearly (30 Sep, 31 Mar)
+            * `YEARLY` - Yearly (31 Mar)
       required:
       - fy_start
       - name
@@ -6550,6 +6649,16 @@ components:
       - since
       - summary
       - title
+    ClosePeriodEnum:
+      enum:
+      - QUARTERLY
+      - HALF_YEARLY
+      - YEARLY
+      type: string
+      description: |-
+        * `QUARTERLY` - Quarterly (30 Jun, 30 Sep, 31 Dec, 31 Mar)
+        * `HALF_YEARLY` - Half-yearly (30 Sep, 31 Mar)
+        * `YEARLY` - Yearly (31 Mar)
     CloseReport:
       type: object
       properties:
@@ -9855,6 +9964,15 @@ components:
           description: What the client's business does, in a few sentences. Shown
             to the model that suggests ledgers.
           maxLength: 2000
+        close_period:
+          allOf:
+          - $ref: '#/components/schemas/ClosePeriodEnum'
+          description: |-
+            How often the books are sealed: QUARTERLY, HALF_YEARLY or YEARLY. A senior's approval locks nothing; the seal does.
+
+            * `QUARTERLY` - Quarterly (30 Jun, 30 Sep, 31 Dec, 31 Mar)
+            * `HALF_YEARLY` - Half-yearly (30 Sep, 31 Mar)
+            * `YEARLY` - Yearly (31 Mar)
     PatchedFirmSettingsRequest:
       type: object
       properties:
@@ -10941,8 +11059,9 @@ components:
         through:
           type: string
           format: date
-          description: Lock everything dated on or before this. Defaults to the latest
-            entry.
+          description: Seal everything dated on or before this, which must be a date
+            the client's schedule names and that has passed. Defaults to the latest
+            such date the approval covers.
         note:
           type: string
           default: ''

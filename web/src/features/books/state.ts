@@ -9,36 +9,45 @@ import { formatDate } from '@/lib/format'
 
 type BooksStatus = components['schemas']['BooksStatus']
 
-export type BooksState = 'draft' | 'awaiting_senior' | 'returned'
+export type BooksState = 'draft' | 'awaiting_senior' | 'returned' | 'approved'
 
-export function booksState(status: Pick<BooksStatus, 'review_pending' | 'history'>): BooksState {
+export function booksState(
+  status: Pick<BooksStatus, 'review_pending' | 'history'> & Partial<Pick<BooksStatus, 'approved_through' | 'signed_off_through'>>,
+): BooksState {
   if (status.review_pending) return 'awaiting_senior'
   // History is newest first. A return is the last word until someone acts again.
   const last = status.history[0]
-  return last?.action === 'RETURNED' ? 'returned' : 'draft'
+  if (last?.action === 'RETURNED') return 'returned'
+  // Approved and not yet sealed: the senior has said it is good, and nothing is locked.
+  const approved = status.approved_through
+  if (approved && (!status.signed_off_through || approved > status.signed_off_through)) return 'approved'
+  return 'draft'
 }
 
 export const BOOKS_STATE_LABEL: Record<BooksState, string> = {
   draft: 'Working draft',
   awaiting_senior: 'Sent for review',
   returned: 'Returned',
+  approved: 'Approved, not yet sealed',
 }
 
-export const BOOKS_STATE_TONE: Record<BooksState, 'neutral' | 'warning' | 'danger'> = {
+export const BOOKS_STATE_TONE: Record<BooksState, 'neutral' | 'warning' | 'danger' | 'done'> = {
   draft: 'neutral',
   awaiting_senior: 'warning',
   returned: 'danger',
+  approved: 'done',
 }
 
 export const BOOKS_STATE_HINT: Record<BooksState, string> = {
   draft: 'Not yet sent for review.',
-  awaiting_senior: 'Sent for review; not yet signed off or returned.',
+  awaiting_senior: 'Sent for review; not yet approved or returned.',
   returned: 'Sent back with a note by whoever reviewed them.',
+  approved: 'The senior has approved them. Nothing is locked until the period is sealed.',
 }
 
-/** "Signed off through 31-03-2026", or null while nothing is locked. */
+/** "Sealed through 31-03-2026", or null while nothing is locked. */
 export function lockLabel(status: Pick<BooksStatus, 'signed_off_through'>): string | null {
-  return status.signed_off_through ? `Signed off through ${formatDate(status.signed_off_through)}` : null
+  return status.signed_off_through ? `Sealed through ${formatDate(status.signed_off_through)}` : null
 }
 
 /**

@@ -23,10 +23,11 @@ import { Spinner } from '@/components/ui/spinner'
 import { formatDate, formatDateTime, plural } from '@/lib/format'
 import { useSession } from '@/session/session'
 import { ClosePanel } from './ClosePanel'
+import { SealSchedule } from './SealSchedule'
 import { SignOffDialog } from './SignOffDialog'
 import { BOOKS_STATE_HINT, BOOKS_STATE_LABEL, BOOKS_STATE_TONE, booksState } from './state'
 
-type Action = 'request' | 'return' | 'sign-off' | 'reopen' | 'mark-reviewed' | null
+type Action = 'request' | 'return' | 'approve' | 'sign-off' | 'reopen' | 'mark-reviewed' | null
 
 export function BooksScreen({ clientId }: { clientId: string }) {
   const { can } = useSession()
@@ -57,8 +58,11 @@ export function BooksScreen({ clientId }: { clientId: string }) {
             <Badge tone={BOOKS_STATE_TONE[state]}>{BOOKS_STATE_LABEL[state]}</Badge>
             {b.signed_off_through && (
               <Badge tone="info" icon={<Lock aria-hidden />}>
-                Signed off through {formatDate(b.signed_off_through)}
+                Sealed through {formatDate(b.signed_off_through)}
               </Badge>
+            )}
+            {b.approved_through && state === 'approved' && (
+              <Badge tone="done">Approved through {formatDate(b.approved_through)}</Badge>
             )}
             <span className="text-sm text-muted-foreground">{BOOKS_STATE_HINT[state]}</span>
           </div>
@@ -76,8 +80,25 @@ export function BooksScreen({ clientId }: { clientId: string }) {
               </div>
               <p className="text-muted-foreground">
                 Next step: look at {unchecked === 1 ? 'it' : 'them'} in the Day Book, then mark {unchecked === 1 ? 'it' : 'them'} as checked. The books
-                cannot be signed off until then.
+                cannot be approved or sealed until then.
               </p>
+            </div>
+          )}
+          {state === 'approved' && (
+            <div className="rounded-md border p-3 text-sm" role="status">
+              <div className="font-medium">
+                Approved by {b.approved_by || 'the senior'}
+                {b.approved_at ? ` on ${formatDateTime(b.approved_at)}` : ''}, through {b.approved_through ? formatDate(b.approved_through) : ''}.
+              </div>
+              <p className="text-muted-foreground">
+                Nothing is locked yet. Entries can still be changed; any change inside that period is counted here and the approval has to be
+                given again before sealing.
+              </p>
+              {b.changed_since_approval > 0 && (
+                <p className="mt-1 font-medium text-destructive">
+                  {plural(b.changed_since_approval, 'entry', 'entries')} changed since the approval. Approve again before sealing.
+                </p>
+              )}
             </div>
           )}
           {state === 'returned' && b.returned_note && (
@@ -89,7 +110,7 @@ export function BooksScreen({ clientId }: { clientId: string }) {
           {b.review_pending && (
             <p className="text-sm text-muted-foreground">
               Sent for review by {b.requested_by}
-              {b.requested_at ? ` on ${formatDateTime(b.requested_at)}` : ''}. Changes made now are still included when it is signed off.
+              {b.requested_at ? ` on ${formatDateTime(b.requested_at)}` : ''}. Changes made now are still included when it is approved.
             </p>
           )}
 
@@ -99,15 +120,20 @@ export function BooksScreen({ clientId }: { clientId: string }) {
                 <Send /> Send for review
               </Button>
             )}
+            {senior && (b.review_pending || (state === 'approved' && b.changed_since_approval > 0)) && (
+              <Button onClick={() => setAction('approve')} title={unchecked > 0 ? 'Assistant entries must be checked first' : undefined}>
+                <CheckCircle2 /> {b.review_pending ? 'Approve the books' : 'Approve again'}
+              </Button>
+            )}
             {senior && b.review_pending && (
-              <>
-                <Button onClick={() => setAction('sign-off')} title={unchecked > 0 ? 'Assistant entries must be checked first' : undefined}>
-                  <CheckCircle2 /> Sign off the books
-                </Button>
-                <Button variant="outline" onClick={() => setAction('return')}>
-                  <Undo2 /> Return with a note
-                </Button>
-              </>
+              <Button variant="outline" onClick={() => setAction('return')}>
+                <Undo2 /> Return with a note
+              </Button>
+            )}
+            {senior && b.sealable_dates.length > 0 && (
+              <Button variant="outline" onClick={() => setAction('sign-off')}>
+                <Lock /> Seal the books
+              </Button>
             )}
             {senior && b.signed_off_through && (
               <Button variant="outline" onClick={() => setAction('reopen')}>
@@ -138,10 +164,11 @@ export function BooksScreen({ clientId }: { clientId: string }) {
           )}
           {!senior && b.review_pending && (
             <p className="text-sm text-muted-foreground">
-              Waiting for {client.data?.lead?.name ?? 'a firm administrator (no senior CA is assigned)'} to sign off or return it.
+              Waiting for {client.data?.lead?.name ?? 'a firm administrator (no senior CA is assigned)'} to approve or return it.
             </p>
           )}
         </Card>
+        <SealSchedule clientId={clientId} books={b} mayChange={senior && can('client.update')} />
         <ClosePanel clientId={clientId} maySignOff={senior} />
       </div>
 
@@ -196,6 +223,20 @@ export function BooksScreen({ clientId }: { clientId: string }) {
         <p>The preparer sees your note and sends them again when done.</p>
       </Confirm>
       <SignOffDialog clientId={clientId} books={b} open={action === 'sign-off'} onOpenChange={(o) => !o && setAction(null)} />
+      <Confirm
+        open={action === 'approve'}
+        onOpenChange={(o) => !o && setAction(null)}
+        title="Approve the books?"
+        confirmLabel="Approve"
+        note="optional"
+        noteLabel="Note (optional)"
+        onConfirm={(note) => send('approve', { note }, 'Books approved')}
+      >
+        <p>
+          This says the books are good, through the latest entry. It locks nothing: entries stay editable, and a change made afterwards is
+          reported so you can approve again. The books are sealed later, on the client’s schedule.
+        </p>
+      </Confirm>
       <Confirm
         open={action === 'reopen'}
         onOpenChange={(o) => !o && setAction(null)}

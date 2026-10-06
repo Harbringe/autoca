@@ -374,6 +374,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/books/approve/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Approve the books (locks nothing)
+         * @description The senior says the books are good through a date. Entries stay editable; a change made afterwards inside that period is counted in `changed_since_approval`, and sealing waits until the books are approved again. Refused with the same readiness rules as sealing: nothing waiting, assistant entries checked, blocking open items fixed or explained. Needs `books.sign_off` on this client.
+         */
+        post: operations["clients_books_approve_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/books/close/": {
         parameters: {
             query?: never;
@@ -524,8 +544,10 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Sign the books off
-         * @description Locks everything up to the date signed. Voucher numbers are made contiguous first. After this the database itself refuses to change any of it; a later fix is a correcting entry dated after the sign-off.
+         * Seal the books: the permanent lock
+         * @description Only on a date the client's schedule names (quarterly, half-yearly or yearly) that has passed, and only after a senior has approved the books with nothing changed since: refused with 409 `approval_needed` or `not_a_seal_date` otherwise.
+         *
+         *     Locks everything up to the date sealed. Voucher numbers are made contiguous first. After this the database itself refuses to change any of it; a later fix is a correcting entry dated after the seal.
          *
          *     Refused with 409 `ai_entries_unchecked` while any entry dated on or before the sign-off date is still marked as posted or changed by the assistant: a person checks them and uses `mark-reviewed` first. Unknown fields are refused with 400, so a misspelt `through` cannot sign off more than asked.
          */
@@ -2785,11 +2807,12 @@ export interface components {
         /**
          * @description * `REQUESTED` - Approval requested
          *     * `RETURNED` - Returned for changes
-         *     * `SIGNED_OFF` - Signed off
+         *     * `APPROVED` - Approved by the senior
+         *     * `SIGNED_OFF` - Sealed
          *     * `REOPENED` - Reopened
          * @enum {string}
          */
-        BooksEventActionEnum: "REQUESTED" | "RETURNED" | "SIGNED_OFF" | "REOPENED";
+        BooksEventActionEnum: "REQUESTED" | "RETURNED" | "APPROVED" | "SIGNED_OFF" | "REOPENED";
         BooksLoadResult: {
             /** @description Bills of the month taken into the register; they replace any earlier register. */
             rows: number;
@@ -2805,6 +2828,25 @@ export interface components {
             /** Format: date-time */
             requested_at: string | null;
             returned_note: string;
+            /**
+             * Format: date
+             * @description The senior has approved the books through this date. Locks nothing.
+             */
+            approved_through: string | null;
+            approved_by: string;
+            /** Format: date-time */
+            approved_at: string | null;
+            /** @description Entries inside the approved period added, changed or removed since the approval. Sealing waits for zero. */
+            changed_since_approval: number;
+            /** @description How often the books are sealed: QUARTERLY, HALF_YEARLY or YEARLY. */
+            close_period: string;
+            /** @description Dates the books could be sealed through now: scheduled, passed, and covered by the approval. */
+            sealable_dates: string[];
+            /**
+             * Format: date
+             * @description The next date on the client's schedule after the last seal.
+             */
+            next_seal_date: string | null;
             /** @description Rows still needing a decision or a posting. */
             waiting: number;
             /** @description Entries the AI posted that nobody has yet looked at. */
@@ -2977,6 +3019,14 @@ export interface components {
             readonly can_sign_off: boolean;
             readonly can_post: boolean;
             readonly has_entries: boolean;
+            /**
+             * @description How often the books are sealed: QUARTERLY, HALF_YEARLY or YEARLY. A senior's approval locks nothing; the seal does.
+             *
+             *     * `QUARTERLY` - Quarterly (30 Jun, 30 Sep, 31 Dec, 31 Mar)
+             *     * `HALF_YEARLY` - Half-yearly (30 Sep, 31 Mar)
+             *     * `YEARLY` - Yearly (31 Mar)
+             */
+            close_period?: components["schemas"]["ClosePeriodEnum"];
         };
         ClientRequest: {
             name: string;
@@ -2987,6 +3037,14 @@ export interface components {
             fy_start: string;
             /** @description What the client's business does, in a few sentences. Shown to the model that suggests ledgers. */
             business_profile?: string;
+            /**
+             * @description How often the books are sealed: QUARTERLY, HALF_YEARLY or YEARLY. A senior's approval locks nothing; the seal does.
+             *
+             *     * `QUARTERLY` - Quarterly (30 Jun, 30 Sep, 31 Dec, 31 Mar)
+             *     * `HALF_YEARLY` - Half-yearly (30 Sep, 31 Mar)
+             *     * `YEARLY` - Yearly (31 Mar)
+             */
+            close_period?: components["schemas"]["ClosePeriodEnum"];
         };
         CloseCheck: {
             name: string;
@@ -3012,6 +3070,13 @@ export interface components {
             note: string;
             explained_by: string;
         };
+        /**
+         * @description * `QUARTERLY` - Quarterly (30 Jun, 30 Sep, 31 Dec, 31 Mar)
+         *     * `HALF_YEARLY` - Half-yearly (30 Sep, 31 Mar)
+         *     * `YEARLY` - Yearly (31 Mar)
+         * @enum {string}
+         */
+        ClosePeriodEnum: "QUARTERLY" | "HALF_YEARLY" | "YEARLY";
         CloseReport: {
             /**
              * Format: date
@@ -4596,6 +4661,14 @@ export interface components {
             fy_start?: string;
             /** @description What the client's business does, in a few sentences. Shown to the model that suggests ledgers. */
             business_profile?: string;
+            /**
+             * @description How often the books are sealed: QUARTERLY, HALF_YEARLY or YEARLY. A senior's approval locks nothing; the seal does.
+             *
+             *     * `QUARTERLY` - Quarterly (30 Jun, 30 Sep, 31 Dec, 31 Mar)
+             *     * `HALF_YEARLY` - Half-yearly (30 Sep, 31 Mar)
+             *     * `YEARLY` - Yearly (31 Mar)
+             */
+            close_period?: components["schemas"]["ClosePeriodEnum"];
         };
         PatchedFirmSettingsRequest: {
             name?: string;
@@ -5166,7 +5239,7 @@ export interface components {
         SignOffRequest: {
             /**
              * Format: date
-             * @description Lock everything dated on or before this. Defaults to the latest entry.
+             * @description Seal everything dated on or before this, which must be a date the client's schedule names and that has passed. Defaults to the latest such date the approval covers.
              */
             through?: string;
             /** @default  */
@@ -6372,6 +6445,33 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BooksStatus"];
+                };
+            };
+        };
+    };
+    clients_books_approve_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["ApproveRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ApproveRequest"];
+                "multipart/form-data": components["schemas"]["ApproveRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {

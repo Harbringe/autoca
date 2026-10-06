@@ -74,7 +74,7 @@ export function BillsScreen({ clientId, openId }: { clientId: string; openId?: s
         <span className="flex flex-wrap gap-1">
           {b.open_paise <= 0 && <Badge tone="done">Settled</Badge>}
           {!b.has_document && <Badge tone="attention"><FileWarning /> No file</Badge>}
-          {b.is_locked && <Badge tone="neutral"><Lock /> Signed off</Badge>}
+          {b.is_locked && <Badge tone="neutral"><Lock /> Sealed</Badge>}
         </span>
       ),
     },

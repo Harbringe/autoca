@@ -30,12 +30,15 @@ class ClientSerializer(serializers.ModelSerializer):
         model = Client
         fields = [
             "id", "name", "fy_start", "business_profile", "created_at", "lead", "can_sign_off", "can_post",
-            "has_entries",
+            "has_entries", "close_period",
         ]
         read_only_fields = ["id", "created_at", "lead", "can_sign_off", "can_post", "has_entries"]
         extra_kwargs = {
             "fy_start": {
                 "help_text": "First day of the client's financial year: always 1 April.",
+            },
+            "close_period": {
+                "help_text": "How often the books are sealed: QUARTERLY, HALF_YEARLY or YEARLY. A senior's approval locks nothing; the seal does.",
             },
             "business_profile": {
                 "help_text": "What the client's business does, in a few sentences. Shown to the model that suggests ledgers.",

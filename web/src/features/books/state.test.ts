@@ -9,6 +9,11 @@ describe('booksState', () => {
   it('is returned when the last word was a return', () => {
     expect(booksState({ review_pending: false, history: [event('RETURNED'), event('REQUESTED')] })).toBe('returned')
   })
+  it('is approved, not sealed, after the senior approves', () => {
+    const approved = { review_pending: false, history: [event('APPROVED')], approved_through: '2026-06-30', signed_off_through: null }
+    expect(booksState(approved)).toBe('approved')
+    expect(booksState({ ...approved, signed_off_through: '2026-06-30' })).toBe('draft')
+  })
   it('goes back to draft once a sign-off or reopen follows', () => {
     expect(booksState({ review_pending: false, history: [event('SIGNED_OFF'), event('RETURNED')] })).toBe('draft')
     expect(booksState({ review_pending: false, history: [event('REOPENED')] })).toBe('draft')
@@ -18,7 +23,7 @@ describe('booksState', () => {
 
 describe('lockLabel', () => {
   it('names the date the books are locked through', () => {
-    expect(lockLabel({ signed_off_through: '2026-03-31' })).toBe('Signed off through 31-03-2026')
+    expect(lockLabel({ signed_off_through: '2026-03-31' })).toBe('Sealed through 31-03-2026')
     expect(lockLabel({ signed_off_through: null })).toBeNull()
   })
 })

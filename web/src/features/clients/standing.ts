@@ -40,7 +40,7 @@ export function nextStep(input: {
       label: `Send for review${books.signed_off_through ? ` (after ${formatDate(books.signed_off_through)})` : ''}`,
       tone: 'attention',
     }
-  return { kind: 'done', label: 'Signed off to date', tone: 'done' }
+  return { kind: 'done', label: 'Sealed to date', tone: 'done' }
 }
 
 // --- the twelve months of a financial year --------------------------------------------------

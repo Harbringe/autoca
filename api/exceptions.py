@@ -59,6 +59,8 @@ DOMAIN_ERRORS = {
     # The books' review workflow, and the lock that follows sign-off.
     "NotReadyError": (status.HTTP_409_CONFLICT, "books_not_ready"),
     "AiEntriesUncheckedError": (status.HTTP_409_CONFLICT, "ai_entries_unchecked"),
+    "NotApprovedError": (status.HTTP_409_CONFLICT, "approval_needed"),
+    "NotASealDateError": (status.HTTP_409_CONFLICT, "not_a_seal_date"),
     "UnexplainedItemsError": (status.HTTP_409_CONFLICT, "open_items_unexplained"),
     "CloseError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "close_rule"),
     "NothingRequestedError": (status.HTTP_409_CONFLICT, "nothing_requested"),

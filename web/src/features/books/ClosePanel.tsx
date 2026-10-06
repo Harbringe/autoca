@@ -1,4 +1,4 @@
-// Before you sign off: every control and open item for this client, on one panel.
+// Before you approve or seal: every control and open item for this client, on one panel.
 //
 // Controls (rows posted, assistant entries checked, nothing in Suspense, each bank account against its statement) show as
 // passing or failing. Open items where the books and a document or the bank disagree block sign-off until they are fixed or
@@ -58,7 +58,7 @@ export function ClosePanel({ clientId, maySignOff }: { clientId: string; maySign
   return (
     <Card className="grid gap-4 p-5" aria-labelledby="close-heading">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="close-heading" className="text-base font-semibold">Before you sign off</h2>
+        <h2 id="close-heading" className="text-base font-semibold">Before you approve or seal</h2>
         <Badge tone={report.data.ready ? 'done' : 'attention'}>
           {report.data.ready
             ? 'Everything ties out'

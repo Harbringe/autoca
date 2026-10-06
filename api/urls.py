@@ -145,6 +145,11 @@ urlpatterns = [
         name="books-close-withdraw",
     ),
     path(
+        "clients/<uuid:client_id>/books/approve/",
+        BooksView.as_view({"post": "approve"}),
+        name="books-approve",
+    ),
+    path(
         "clients/<uuid:client_id>/books/sign-off/",
         BooksView.as_view({"post": "sign_off"}),
         name="books-sign-off",

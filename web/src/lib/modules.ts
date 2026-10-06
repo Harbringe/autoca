@@ -31,6 +31,7 @@ export const CLIENT_SCREEN_MODULE: Record<string, ModuleId> = {
   daybook: 'bookkeeping',
   'open-items': 'bookkeeping',
   invoices: 'bookkeeping',
+  assets: 'bookkeeping',
   ledgers: 'bookkeeping',
   masters: 'bookkeeping',
   books: 'bookkeeping',

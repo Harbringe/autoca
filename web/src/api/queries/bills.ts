@@ -7,7 +7,7 @@
 
 import { queryOptions, useMutation } from '@tanstack/react-query'
 import { raw } from '@/api/client'
-import type { Bill, CloseReport, FoundParties, InvoiceReading, BillCreateRequest, BillDetail, OpenItems, OpeningStanding, Outstanding, PartyStatement, SettlementContext } from '@/api/types'
+import type { AssetSchedule, Bill, CloseReport, FoundParties, InvoiceReading, BillCreateRequest, BillDetail, OpenItems, OpeningStanding, Outstanding, PartyStatement, SettlementContext } from '@/api/types'
 import { allPages } from './books'
 import { clientKeys, useInvalidateClient, V1 } from './clients'
 
@@ -202,6 +202,30 @@ export function useMoveToParty(clientId: string) {
   return useMutation({
     mutationFn: ({ entry, allocations, remainder }: { entry: string; allocations: { bill: string; amount_paise: number }[]; remainder: string | null }) =>
       raw.post<{ settled_paise: number }>(`${V1}/journal-entries/${entry}/move-to-party/`, { allocations, remainder }),
+    onSuccess: invalidate,
+  })
+}
+
+/** The asset register's depreciation schedule for one financial year (starting year, 2025 for FY 2025-26). */
+export const assetSchedule = (clientId: string, year: number) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'assets', year),
+    queryFn: () => raw.get<AssetSchedule>(`${V1}/clients/${clientId}/assets/schedule/`, { fy: year }),
+  })
+
+export function useRegisterAsset(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: (body: Record<string, unknown>) => raw.post<unknown>(`${V1}/clients/${clientId}/assets/`, body),
+    onSuccess: invalidate,
+  })
+}
+
+export function useAssetAction(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: ({ id, action, body }: { id: string; action: 'dispose' | 'remove'; body?: Record<string, unknown> }) =>
+      raw.post<unknown>(`${V1}/clients/${clientId}/assets/${id}/${action}/`, body ?? {}),
     onSuccess: invalidate,
   })
 }

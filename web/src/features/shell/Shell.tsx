@@ -136,6 +136,7 @@ const SCREEN_TITLE: Record<string, string> = {
   daybook: 'Day Book',
   'open-items': 'To fix',
   invoices: 'Invoices',
+  assets: 'Assets',
   ledgers: 'Ledgers',
   reports: 'Reports',
   books: 'Books & sign-off',

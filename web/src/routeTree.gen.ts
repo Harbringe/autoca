@@ -34,6 +34,7 @@ import { Route as AppSettingsPreferencesRouteImport } from './routes/_app/settin
 import { Route as AppSettingsTeamRouteImport } from './routes/_app/settings/team'
 import { Route as AppSoonModuleRouteImport } from './routes/_app/soon.$module'
 import { Route as AppClientsClientIdIndexRouteImport } from './routes/_app/clients/$clientId/index'
+import { Route as AppClientsClientIdAssetsRouteImport } from './routes/_app/clients/$clientId/assets'
 import { Route as AppClientsClientIdBillsRouteImport } from './routes/_app/clients/$clientId/bills'
 import { Route as AppClientsClientIdBookkeepingRouteImport } from './routes/_app/clients/$clientId/bookkeeping'
 import { Route as AppClientsClientIdBooksRouteImport } from './routes/_app/clients/$clientId/books'
@@ -173,6 +174,12 @@ const AppClientsClientIdIndexRoute = AppClientsClientIdIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppClientsClientIdRouteRoute,
 } as any)
+const AppClientsClientIdAssetsRoute =
+  AppClientsClientIdAssetsRouteImport.update({
+    id: '/assets',
+    path: '/assets',
+    getParentRoute: () => AppClientsClientIdRouteRoute,
+  } as any)
 const AppClientsClientIdBillsRoute = AppClientsClientIdBillsRouteImport.update({
   id: '/bills',
   path: '/bills',
@@ -278,6 +285,7 @@ export interface FileRoutesByFullPath {
   '/soon/$module': typeof AppSoonModuleRoute
   '/clients/': typeof AppClientsIndexRoute
   '/settings/': typeof AppSettingsIndexRoute
+  '/clients/$clientId/assets': typeof AppClientsClientIdAssetsRoute
   '/clients/$clientId/bills': typeof AppClientsClientIdBillsRoute
   '/clients/$clientId/bookkeeping': typeof AppClientsClientIdBookkeepingRoute
   '/clients/$clientId/books': typeof AppClientsClientIdBooksRoute
@@ -316,6 +324,7 @@ export interface FileRoutesByTo {
   '/soon/$module': typeof AppSoonModuleRoute
   '/clients': typeof AppClientsIndexRoute
   '/settings': typeof AppSettingsIndexRoute
+  '/clients/$clientId/assets': typeof AppClientsClientIdAssetsRoute
   '/clients/$clientId/bills': typeof AppClientsClientIdBillsRoute
   '/clients/$clientId/bookkeeping': typeof AppClientsClientIdBookkeepingRoute
   '/clients/$clientId/books': typeof AppClientsClientIdBooksRoute
@@ -358,6 +367,7 @@ export interface FileRoutesById {
   '/_app/soon/$module': typeof AppSoonModuleRoute
   '/_app/clients/': typeof AppClientsIndexRoute
   '/_app/settings/': typeof AppSettingsIndexRoute
+  '/_app/clients/$clientId/assets': typeof AppClientsClientIdAssetsRoute
   '/_app/clients/$clientId/bills': typeof AppClientsClientIdBillsRoute
   '/_app/clients/$clientId/bookkeeping': typeof AppClientsClientIdBookkeepingRoute
   '/_app/clients/$clientId/books': typeof AppClientsClientIdBooksRoute
@@ -400,6 +410,7 @@ export interface FileRouteTypes {
     | '/soon/$module'
     | '/clients/'
     | '/settings/'
+    | '/clients/$clientId/assets'
     | '/clients/$clientId/bills'
     | '/clients/$clientId/bookkeeping'
     | '/clients/$clientId/books'
@@ -438,6 +449,7 @@ export interface FileRouteTypes {
     | '/soon/$module'
     | '/clients'
     | '/settings'
+    | '/clients/$clientId/assets'
     | '/clients/$clientId/bills'
     | '/clients/$clientId/bookkeeping'
     | '/clients/$clientId/books'
@@ -479,6 +491,7 @@ export interface FileRouteTypes {
     | '/_app/soon/$module'
     | '/_app/clients/'
     | '/_app/settings/'
+    | '/_app/clients/$clientId/assets'
     | '/_app/clients/$clientId/bills'
     | '/_app/clients/$clientId/bookkeeping'
     | '/_app/clients/$clientId/books'
@@ -679,6 +692,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppClientsClientIdIndexRouteImport
       parentRoute: typeof AppClientsClientIdRouteRoute
     }
+    '/_app/clients/$clientId/assets': {
+      id: '/_app/clients/$clientId/assets'
+      path: '/assets'
+      fullPath: '/clients/$clientId/assets'
+      preLoaderRoute: typeof AppClientsClientIdAssetsRouteImport
+      parentRoute: typeof AppClientsClientIdRouteRoute
+    }
     '/_app/clients/$clientId/bills': {
       id: '/_app/clients/$clientId/bills'
       path: '/bills'
@@ -801,6 +821,7 @@ const AppSettingsRouteWithChildren = AppSettingsRoute._addFileChildren(
 )
 
 interface AppClientsClientIdRouteRouteChildren {
+  AppClientsClientIdAssetsRoute: typeof AppClientsClientIdAssetsRoute
   AppClientsClientIdBillsRoute: typeof AppClientsClientIdBillsRoute
   AppClientsClientIdBookkeepingRoute: typeof AppClientsClientIdBookkeepingRoute
   AppClientsClientIdBooksRoute: typeof AppClientsClientIdBooksRoute
@@ -820,6 +841,7 @@ interface AppClientsClientIdRouteRouteChildren {
 
 const AppClientsClientIdRouteRouteChildren: AppClientsClientIdRouteRouteChildren =
   {
+    AppClientsClientIdAssetsRoute: AppClientsClientIdAssetsRoute,
     AppClientsClientIdBillsRoute: AppClientsClientIdBillsRoute,
     AppClientsClientIdBookkeepingRoute: AppClientsClientIdBookkeepingRoute,
     AppClientsClientIdBooksRoute: AppClientsClientIdBooksRoute,

@@ -609,6 +609,8 @@ SPECTACULAR_SETTINGS = {
         "current state; `403` is a role boundary and is never disguised as a 404."
     ),
     "SERVE_INCLUDE_SCHEMA": False,
+    # The schema is a map of every endpoint and field. drf-spectacular defaults to AllowAny; it is for signed-in people.
+    "SERVE_PERMISSIONS": ["rest_framework.permissions.IsAuthenticated"],
     "COMPONENT_SPLIT_REQUEST": True,
     # Named so a generic "state" or "reason" choice set does not claim a bare component name.
     "ENUM_NAME_OVERRIDES": {

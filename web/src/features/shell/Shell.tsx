@@ -191,7 +191,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
       <div className="px-4 py-3.5 text-white">
         <Brand />
       </div>
-      <nav aria-label="Main" className="min-h-0 flex-1 overflow-y-auto px-2 pb-4">
+      <nav aria-label="Main" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-4">
         {GROUPS.map((group) => {
           const items = group.items.filter((item) => {
             if (item.permission && !can(item.permission)) return false

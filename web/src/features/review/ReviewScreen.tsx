@@ -285,7 +285,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
         </EmptyState>
       ) : (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,1fr)]">
-          <Card className="max-h-[70vh] overflow-auto">
+          <Card className="max-h-[70vh] overflow-auto overscroll-contain">
             {canPost && tickedRows.length > 0 && (
               <div className="sticky top-0 z-20 flex items-center gap-3 border-b bg-accent px-3 py-1.5 text-[13px]" role="status">
                 <span className="font-semibold">{tickedRows.length} selected</span>
@@ -625,7 +625,7 @@ function Decision({
   const legs = (row.entry_legs ?? []).map((leg) => (leg.is_bank ? leg : { ...leg, ledger: chosenLedger?.name ?? null }))
   const extras = [chosenParty?.canonical_name, tds && `TDS ${tds}`, rcm && 'Reverse charge'].filter(Boolean).join(' · ')
   return (
-    <Card className={cn('grid content-start gap-4 p-4', flat ? 'border-0 p-0 shadow-none' : 'xl:sticky xl:top-20 xl:max-h-[calc(100svh-6rem)] xl:overflow-auto')}>
+    <Card className={cn('grid content-start gap-4 p-4', flat ? 'border-0 p-0 shadow-none' : 'xl:sticky xl:top-20 xl:max-h-[calc(100svh-6rem)] xl:overflow-auto xl:overscroll-contain')}>
       <div>
         <div className="flex items-baseline justify-between gap-3">
           <span className="num text-sm text-muted-foreground">{formatDate(t.value_date)}</span>

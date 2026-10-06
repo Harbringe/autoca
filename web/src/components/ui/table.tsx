@@ -89,7 +89,7 @@ export function DataTable<T>({
       aria-label={caption}
       aria-busy={loading || undefined}
       tabIndex={0}
-      className={cn('relative overflow-auto rounded-lg border bg-card', className)}
+      className={cn('relative overflow-auto rounded-lg border bg-card', scrollHeight && 'overscroll-contain', className)}
       style={scrollHeight ? { maxHeight: scrollHeight } : undefined}
     >
       <table className="w-full text-left text-sm">

@@ -19,6 +19,7 @@ from django.utils import timezone
 from classify.models import CRYPTO_PURPOSE, Party
 from core.crypto import blind_index, decrypt_text_for_firm, encrypt_for_firm
 from core.identity import invoice_key, normalise_gstin
+from core.access import require_posting_rights
 from core.rbac import require_permission
 from documents.models import Document, DocumentKind, DocumentStatus, PipelineTier
 from integrations.pdf.base import PdfExtractionError
@@ -188,6 +189,7 @@ def _open_reading(reading: InvoiceReading) -> None:
 def attach_to_bill(reading: InvoiceReading, bill: Bill, *, membership) -> InvoiceReading:
     """Say that this file is the invoice behind a bill booked by hand. The bill is not touched; the link is the reading's."""
     require_permission(membership, "journal.approve")
+    require_posting_rights(membership, reading.client)
     _open_reading(reading)
     if bill.client_id != reading.client_id or bill.firm_id != reading.firm_id:
         raise IntakeError("That bill belongs to a different client.")
@@ -206,6 +208,7 @@ def attach_to_bill(reading: InvoiceReading, bill: Bill, *, membership) -> Invoic
 def discard(reading: InvoiceReading, *, membership) -> InvoiceReading:
     """Set a reading aside: the file stays on record, and it leaves the open items."""
     require_permission(membership, "journal.approve")
+    require_posting_rights(membership, reading.client)
     _open_reading(reading)
     reading.status = ReadingStatus.DISCARDED
     reading.decided_by = membership.user

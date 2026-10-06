@@ -196,6 +196,36 @@ def invoices_waiting(client):
         )
 
 
+@detector("fixed_asset_unregistered", "A purchase of a fixed asset that is not in the asset register")
+def purchases_not_in_the_register(client):
+    """What the books say was bought as a fixed asset, with nothing in the register to depreciate.
+
+    Without this the books and the register would be two copies of the same facts.
+    """
+    from ledger import assets
+
+    for bill in (
+        Bill.objects.filter(
+            firm_id=client.firm_id, client=client, kind=BillKind.PURCHASE, entry__lines__ledger_account__group="FIXED_ASSET"
+        )
+        .distinct()
+        .select_related("party")
+    ):
+        left = assets.unregistered(bill)
+        if left > 0:
+            yield OpenItem(
+                kind="fixed_asset_unregistered",
+                client_id=client.pk,
+                summary=(
+                    f"{bill.party.canonical_name}'s invoice {bill.reference} put {format_inr(left)} on a fixed-asset "
+                    f"ledger that is not in the asset register, so it is not being depreciated."
+                ),
+                amount_paise=left,
+                since=bill.bill_date,
+                link={"type": "bill", "id": str(bill.pk)},
+            )
+
+
 @detector("party_opening_unbilled", "An opening balance not yet broken into bills")
 def openings_without_bills(client):
     """A party's imported opening balance that the bills do not account for.

@@ -655,3 +655,46 @@ class CloseAcknowledgement(UUIDModel, FirmScopedModel):
 
     def __str__(self) -> str:
         return f"{self.item_key}: {self.note[:40]}"
+
+
+class AssetMethod(models.TextChoices):
+    SLM = "SLM", "Straight line (Companies Act)"
+    WDV = "WDV", "Written-down value, by days in use (Companies Act)"
+    WDV_IT = "WDV_IT", "Written-down value, 180-day rule (Income-tax)"
+
+
+class FixedAsset(UUIDModel, FirmScopedModel):
+    """One asset in the client's register: what it cost, when it was put to use, and how it is depreciated.
+
+    The cost comes from a purchase the books already hold (``bill``), so the register and the ledger are the same money seen
+    twice, not two copies that can drift: a purchase that debits a fixed-asset ledger and is not in the register is an open
+    item. Depreciation is *computed* from these terms (``ledger.depreciation``), never stored, so it is right whatever the
+    terms are changed to.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="fixed_assets")
+    name = models.CharField(max_length=200)
+    ledger = models.ForeignKey(LedgerAccount, on_delete=models.PROTECT, related_name="assets")
+    bill = models.ForeignKey(Bill, null=True, blank=True, on_delete=models.PROTECT, related_name="assets")
+    cost_paise = models.BigIntegerField()
+    residual_paise = models.BigIntegerField(default=0)
+    put_to_use = models.DateField()
+    method = models.CharField(max_length=8, choices=AssetMethod.choices, default=AssetMethod.SLM)
+    life_years = models.PositiveSmallIntegerField(default=0)
+    rate_bp = models.PositiveIntegerField(default=0, help_text="Annual rate in basis points: 1500 is 15%.")
+    disposed_on = models.DateField(null=True, blank=True)
+    disposal_paise = models.BigIntegerField(null=True, blank=True, help_text="What it was sold for.")
+
+    class Meta:
+        db_table = "ledger_fixed_asset"
+        ordering = ["put_to_use", "name"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(cost_paise__gt=0), name="ck_asset_cost_positive"),
+            models.CheckConstraint(
+                condition=models.Q(residual_paise__gte=0, residual_paise__lt=models.F("cost_paise")), name="ck_asset_residual_below_cost"
+            ),
+        ]
+        indexes = [models.Index(fields=["firm", "client"], name="idx_asset_client")]
+
+    def __str__(self) -> str:
+        return f"{self.name} ({format_inr(self.cost_paise)})"

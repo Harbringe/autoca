@@ -49,6 +49,7 @@ from ledger.models import (
     CloseAcknowledgement,
     Direction,
     EntryChange,
+    FixedAsset,
     InvoiceReading,
     JournalEntry,
     JournalLine,
@@ -398,6 +399,20 @@ def _close_acknowledgement(firm, **kw):
     )
 
 
+def _fixed_asset(firm, **kw):
+    client = kw.get("client") or _client(firm)
+    return FixedAsset.objects.create(
+        firm=firm,
+        client=client,
+        name="Machine",
+        ledger=_ledger_account(firm, client=client, group=LedgerGroup.FIXED_ASSET),
+        cost_paise=100_000,
+        put_to_use=datetime.date(2025, 4, 13),
+        method="SLM",
+        life_years=10,
+    )
+
+
 def _bill_allocation(firm, **kw):
     """A payment line on the party's own ledger, settling the bill in full."""
     bill = kw.get("bill") or _bill(firm)
@@ -464,6 +479,7 @@ FACTORIES = {
     BillAllocation: _bill_allocation,
     InvoiceReading: _invoice_reading,
     CloseAcknowledgement: _close_acknowledgement,
+    FixedAsset: _fixed_asset,
 }
 
 #: Firm is firm-scoped by primary key rather than by a firm_id column, so it is

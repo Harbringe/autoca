@@ -254,7 +254,7 @@ def _suggest(client, classifications, *, batch_size, replace: bool) -> SuggestRe
         return SuggestResult(considered=0, suggested=0, declined=0)
 
     # Every ledger in any status: proposals are checked against rejected names too.
-    known = list(LedgerAccount.objects.filter(firm_id=client.firm_id, client=client).select_related("party_record"))
+    known = list(LedgerAccount.objects.filter(firm_id=client.firm_id, client=client).select_related("party_record", "employee_record"))
     parties = list(Party.objects.filter(firm_id=client.firm_id, client=client, is_active=True))
     own_accounts = [a.account_number for a in client.bank_accounts.all()]
     spellings = list(PartyAlias.objects.filter(firm_id=client.firm_id, client=client))

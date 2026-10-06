@@ -256,7 +256,7 @@ def _claim(client, size: int) -> _Claim:
     )
     chart = _Chart(
         client,
-        list(LedgerAccount.objects.filter(firm_id=client.firm_id, client=client).select_related("party_record")),
+        list(LedgerAccount.objects.filter(firm_id=client.firm_id, client=client).select_related("party_record", "employee_record")),
         account.ledger_name,
     )
     return _Claim(
@@ -326,7 +326,7 @@ def _apply_batch(client, claim: _Claim, replies: dict) -> BatchOutcome:
 
     chart = _Chart(
         client,
-        list(LedgerAccount.objects.filter(firm_id=firm_id, client=client).select_related("party_record")),
+        list(LedgerAccount.objects.filter(firm_id=firm_id, client=client).select_related("party_record", "employee_record")),
         claim.account_ledger_name,
     )
     opened_before = chart.proposed = _recent_proposals(client)

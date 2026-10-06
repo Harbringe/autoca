@@ -17,9 +17,9 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from classify.models import CRYPTO_PURPOSE, Party
+from core.access import require_posting_rights
 from core.crypto import blind_index, decrypt_text_for_firm, encrypt_for_firm
 from core.identity import invoice_key, normalise_gstin
-from core.access import require_posting_rights
 from core.rbac import require_permission
 from documents.models import Document, DocumentKind, DocumentStatus, PipelineTier
 from integrations.pdf.base import PdfExtractionError

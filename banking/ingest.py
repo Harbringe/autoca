@@ -25,13 +25,14 @@ from dataclasses import dataclass
 
 from django.db import transaction
 
+from banking import scan
 from banking.models import BankAccount, Statement, StatementTransaction
 from banking.parsers import ParsedStatement, detect_parser
 from banking.parsers.base import StatementParseError
 from core.models import Client
 from core.money import format_inr
 from documents.models import Document, DocumentKind, DocumentStatus, PipelineTier
-from integrations.registry import get_pdf, get_storage
+from integrations.registry import get_llm, get_pdf, get_storage
 
 
 class StatementContinuityError(RuntimeError):
@@ -71,6 +72,12 @@ class StatementElsewhereError(RuntimeError):
     """The file was uploaded before, for a different client."""
 
 
+class _ScanReader:
+    """Stands in for a parser on a statement read from page images, so its rows say where they came from."""
+
+    version = "scan-1"
+
+
 def ingest_statement(
     *,
     client: Client,
@@ -105,8 +112,17 @@ def ingest_statement(
         )
 
     document = get_pdf().extract(data)
-    parser = detect_parser(document, layout) if layout else detect_parser(document)
-    parsed = parser.parse(document)
+    tier = PipelineTier.TEXT_LAYER
+    scanned = scan.needs_vision(document)
+    if scanned and scan.enabled():
+        # A page with no text cannot be read as text. The page images are read by the model instead, and what comes
+        # back must prove out against the statement's own balances like any other read.
+        parsed = scan.read_statement(data, document, get_llm())
+        parser = _ScanReader
+        tier = PipelineTier.VISION
+    else:
+        parser = detect_parser(document, layout) if layout else detect_parser(document)
+        parsed = parser.parse(document)
 
     account = _account_for(client, parsed)
     _check_continuity(account, parsed, allow_gap=allow_gap)
@@ -130,7 +146,7 @@ def ingest_statement(
         record.storage_key = storage_key or record.storage_key
         record.byte_size = len(data)
         record.page_count = document.page_count
-        record.pipeline_tier = PipelineTier.TEXT_LAYER
+        record.pipeline_tier = tier
         record.status = DocumentStatus.PARSED
         record.failure_reason = ""
         record.save()
@@ -174,7 +190,9 @@ def check_against_statement(account: BankAccount, *, balance_paise: int, as_of) 
     for -41,74,365.67) looks entirely plausible and misstates every balance from then on.
     """
     statement = (
-        Statement.objects.filter(firm_id=account.firm_id, bank_account=account, period_start=as_of).order_by("period_start").first()
+        Statement.objects.filter(firm_id=account.firm_id, bank_account=account, period_start=as_of)
+        .order_by("period_start")
+        .first()
     )
     if statement is None or statement.opening_balance_paise == int(balance_paise):
         return

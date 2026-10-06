@@ -65,8 +65,16 @@ __all__ = [
 #: Titles of statements that are not for a bank account. Matched only near the top of the first page, so a
 #: narration that mentions a loan EMI on a bank statement never trips it.
 _NOT_A_BANK_ACCOUNT = (
-    (re.compile(r"\bloan\s+(account\s+)?statement\b|\bhome\s+loan\s+statement\b", re.IGNORECASE), "loan"),
-    (re.compile(r"\bcredit\s+card\s+statement\b|\bstatement\s+of\s+credit\s+card\b", re.IGNORECASE), "credit card"),
+    (
+        re.compile(r"\bloan\s+(account\s+)?statement\b|\bhome\s+loan\s+statement\b", re.IGNORECASE),
+        "loan",
+    ),
+    (
+        re.compile(
+            r"\bcredit\s+card\s+statement\b|\bstatement\s+of\s+credit\s+card\b", re.IGNORECASE
+        ),
+        "credit card",
+    ),
 )
 _TITLE_AREA = 800
 
@@ -82,9 +90,9 @@ def _not_a_bank_account(document: PdfDocument) -> str | None:
 def detect_parser(document: PdfDocument, layout: dict | None = None) -> StatementParser:
     if not document.has_text_layer:
         raise NoTextLayerError(
-            "This PDF has no text layer, so it is a scan. OCR is the fallback "
-            "path for scanned statements and is not wired yet -- see "
-            "integrations/ocr/base.py before reaching for a vendor."
+            "This PDF has no text layer, so it is a scan. Reading scans by their page images is switched off "
+            "(VISION_READING), so it cannot be read. Switch it on in the server settings, or upload the "
+            "statement as downloaded from net banking."
         )
 
     kind = _not_a_bank_account(document)

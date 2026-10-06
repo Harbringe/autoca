@@ -520,17 +520,30 @@ INTEGRATION_OPTIONS = {
         "region": env("KMS_REGION"),
     },
     "llm": {
-        # Groq (dev). Key from the Groq console; the model is optional.
-        "api_key": env("GROQ_API_KEY"),
-        "model": env("GROQ_MODEL"),
-        "base_url": env("GROQ_BASE_URL"),
+        # The provider's key, model and endpoint. LLM_* names work for any provider; the GROQ_* names are
+        # kept so an existing Groq setup keeps working untouched.
+        "api_key": env("LLM_API_KEY") or env("GROQ_API_KEY"),
+        "model": env("LLM_MODEL") or env("GROQ_MODEL"),
+        "base_url": env("LLM_BASE_URL") or env("GROQ_BASE_URL"),
         "timeout_seconds": float(env("LLM_TIMEOUT_SECONDS", "30")),
+        # OpenAI only: some current models accept just their default temperature, so it is sent only when set.
+        "temperature": float(env("LLM_TEMPERATURE")) if env("LLM_TEMPERATURE") else None,
+        "token_param": env("LLM_TOKEN_PARAM", "max_completion_tokens"),
     },
 }
 
 # Rows per model call. Classification is not latency-sensitive; fewer, larger
 # calls share the system prompt and cost less.
 LLM_BATCH_SIZE = int(env("LLM_BATCH_SIZE", "25"))
+
+# Reading scanned or partly scanned statements by sending their page images to the model. OFF unless a firm
+# switches it on: page images cannot be masked the way narrations are, so the provider sees the whole page.
+# Whatever it reads must still pass the same running-balance proof as any other statement, or it is refused.
+VISION_READING = env_bool("VISION_READING", False)
+# Pages sent per call, and the resolution they are drawn at. More pages per call is cheaper; more dots is
+# clearer for small print and costs more.
+VISION_PAGES_PER_CALL = int(env("VISION_PAGES_PER_CALL", "3"))
+VISION_DPI = int(env("VISION_DPI", "150"))
 
 # The minutes a person would have spent placing and posting one row by hand. It
 # turns "rows the assistant posted" into an *estimate* of time saved

@@ -53,6 +53,7 @@ class PipelineTier(models.TextChoices):
     UNKNOWN = "UNKNOWN", "Not yet routed"
     TEXT_LAYER = "TEXT_LAYER", "Born-digital text layer"
     OCR = "OCR", "Optical character recognition"
+    VISION = "VISION", "Read from page images by a vision model"
     MANUAL = "MANUAL", "Keyed in by hand"
 
 
@@ -95,7 +96,9 @@ class Document(UUIDModel, FirmScopedModel):
             # The same file, uploaded twice, is one document. Scoped to the firm
             # rather than globally: two firms holding the same file is a
             # coincidence, and a shared row would be a cross-tenant link.
-            models.UniqueConstraint(fields=["firm", "sha256"], name="uniq_document_per_firm_sha256"),
+            models.UniqueConstraint(
+                fields=["firm", "sha256"], name="uniq_document_per_firm_sha256"
+            ),
         ]
         indexes = [
             models.Index(fields=["firm", "client", "kind"], name="idx_document_client_kind"),

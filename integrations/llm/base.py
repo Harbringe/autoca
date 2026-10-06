@@ -68,6 +68,16 @@ class LLMAdapter(abc.ABC):
         to degrade gracefully, and it can only do that against one exception.
         """
 
+    def complete_json_with_images(
+        self, system: str, user: str, images: list[bytes], *, max_tokens: int = 4096
+    ) -> LLMResponse:
+        """As :meth:`complete_json`, with page images (PNG bytes) beside the text.
+
+        Only a provider that can read images implements this. Everything else says so, and the
+        caller falls back to refusing the document rather than guessing.
+        """
+        raise LLMUnavailable(f"{self.name} cannot read page images.")
+
     def without_waiting(self) -> LLMAdapter:
         """An adapter for a caller that must not sit in a backoff.
 

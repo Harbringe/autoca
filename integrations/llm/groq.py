@@ -113,19 +113,27 @@ class GroqLLMAdapter(LLMAdapter):
             self._no_wait_twin = twin
         return self._no_wait_twin
 
+    #: What the provider is called in errors.
+    LABEL = "Groq"
+
+    def _request(self, system: str, user, max_tokens: int) -> dict:
+        """The chat-completions body. ``user`` is text, or a list of content parts (text and images)."""
+        return {
+            "model": self.model,
+            "temperature": 0,
+            "max_tokens": max_tokens,
+            "response_format": {"type": "json_object"},
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+        }
+
     def complete_json(self, system: str, user: str, *, max_tokens: int = 2048) -> LLMResponse:
-        body = json.dumps(
-            {
-                "model": self.model,
-                "temperature": 0,
-                "max_tokens": max_tokens,
-                "response_format": {"type": "json_object"},
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-            }
-        ).encode()
+        return self._complete(system, user, max_tokens)
+
+    def _complete(self, system: str, user, max_tokens: int) -> LLMResponse:
+        body = json.dumps(self._request(system, user, max_tokens)).encode()
 
         payload = self._post(body)
 
@@ -133,12 +141,12 @@ class GroqLLMAdapter(LLMAdapter):
             text = payload["choices"][0]["message"]["content"]
             usage = payload.get("usage") or {}
         except (KeyError, IndexError, TypeError) as exc:
-            raise LLMError("Groq returned a reply with no message in it.") from exc
+            raise LLMError(f"{self.LABEL} returned a reply with no message in it.") from exc
 
         try:
             json.loads(text)
         except (TypeError, ValueError) as exc:
-            raise LLMError("Groq returned a reply that is not JSON.") from exc
+            raise LLMError(f"{self.LABEL} returned a reply that is not JSON.") from exc
 
         return LLMResponse(
             text=text,
@@ -176,7 +184,7 @@ class GroqLLMAdapter(LLMAdapter):
                 code = _describe(*error)
                 if exc.code == 413 and _larger_than_the_limit(code):
                     # No amount of waiting fits this request into a minute; only a smaller one will.
-                    raise LLMError(f"Groq answered HTTP 413{code}; {TOO_LARGE}.") from exc
+                    raise LLMError(f"{self.LABEL} answered HTTP 413{code}; {TOO_LARGE}.") from exc
                 # A rate limit resets on Groq's clock, not ours: wait as long as it says,
                 # and allow more attempts, since a busy minute is not a failure.
                 rate_limited = exc.code == 429 or (exc.code == 413 and RATE_LIMIT_CODE in code)
@@ -184,23 +192,31 @@ class GroqLLMAdapter(LLMAdapter):
                     self._tokens_left = None
                     retry_after, daily = _limit_wait(exc, error[1])
                     raise LLMRateLimited(
-                        f"Groq answered HTTP {exc.code}{code}.", retry_after=retry_after, daily=daily
+                        f"{self.LABEL} answered HTTP {exc.code}{code}.",
+                        retry_after=retry_after,
+                        daily=daily,
                     ) from exc
                 limit = RATE_LIMIT_ATTEMPTS if rate_limited else self.max_attempts
                 if not (rate_limited or exc.code in RETRY_STATUSES) or attempt >= limit:
-                    raise LLMError(f"Groq answered HTTP {exc.code}{code}.") from exc
+                    raise LLMError(f"{self.LABEL} answered HTTP {exc.code}{code}.") from exc
                 if rate_limited:
                     self._tokens_left = None  # whatever the last reply said, it is spent
-                    wait = _retry_after(exc, default=MAX_RETRY_AFTER_SECONDS if exc.code == 413 else delay)
-                logger.warning("groq HTTP %s%s on attempt %d; retrying in %.0fs", exc.code, code, attempt, wait)
+                    wait = _retry_after(
+                        exc, default=MAX_RETRY_AFTER_SECONDS if exc.code == 413 else delay
+                    )
+                logger.warning(
+                    "groq HTTP %s%s on attempt %d; retrying in %.0fs", exc.code, code, attempt, wait
+                )
             except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
                 last_error = exc
                 if attempt >= self.max_attempts:
-                    raise LLMError(f"Groq could not be reached: {type(exc).__name__}.") from exc
+                    raise LLMError(
+                        f"{self.LABEL} could not be reached: {type(exc).__name__}."
+                    ) from exc
                 logger.warning("groq %s on attempt %d; retrying", type(exc).__name__, attempt)
             time.sleep(wait)
             delay *= 2
-        raise LLMError("Groq could not be reached.") from last_error
+        raise LLMError(f"{self.LABEL} could not be reached.") from last_error
 
     # -- pacing ----------------------------------------------------------------
 
@@ -221,12 +237,16 @@ class GroqLLMAdapter(LLMAdapter):
         wait = self._budget_refills_at - time.monotonic()
         if wait > 0 and not self._waits:
             raise LLMRateLimited(
-                "Groq's token budget for this minute is spent.", retry_after=wait, daily=False
+                f"{self.LABEL} token budget for this minute is spent.",
+                retry_after=wait,
+                daily=False,
             )
         if wait > 0:
             logger.info(
                 "groq budget has %d tokens left this minute, about %d needed; waiting %.0fs",
-                self._tokens_left, tokens_needed, wait,
+                self._tokens_left,
+                tokens_needed,
+                wait,
             )
             time.sleep(wait)
         self._tokens_left = None
@@ -235,7 +255,11 @@ class GroqLLMAdapter(LLMAdapter):
 def _larger_than_the_limit(code: str) -> bool:
     """True when Groq's counts say the request alone exceeds the limit (``requested`` > ``limit``)."""
     counts = dict(re.findall(r"\b(limit|requested) (\d+)", code))
-    return "limit" in counts and "requested" in counts and int(counts["requested"]) > int(counts["limit"])
+    return (
+        "limit" in counts
+        and "requested" in counts
+        and int(counts["requested"]) > int(counts["limit"])
+    )
 
 
 def _duration(value: str) -> float:
@@ -281,7 +305,9 @@ def _describe(code: str, message: str) -> str:
     if not code:
         return ""
     counts = re.findall(r"\b(Limit|Used|Requested)\s+(\d+)", message)
-    return f" ({code}: {', '.join(f'{k.lower()} {v}' for k, v in counts)})" if counts else f" ({code})"
+    return (
+        f" ({code}: {', '.join(f'{k.lower()} {v}' for k, v in counts)})" if counts else f" ({code})"
+    )
 
 
 def _error_code(exc: urllib.error.HTTPError) -> str:
@@ -294,8 +320,14 @@ def _limit_wait(exc: urllib.error.HTTPError, message: str) -> tuple[float, bool]
         seconds = float(exc.headers.get("retry-after", ""))
     except (TypeError, ValueError, AttributeError):
         try:
-            seconds = _duration(message.split("try again in", 1)[1].split()[0]) if "try again in" in message else 0.0
+            seconds = (
+                _duration(message.split("try again in", 1)[1].split()[0])
+                if "try again in" in message
+                else 0.0
+            )
         except IndexError:
             seconds = 0.0
     seconds = seconds or MAX_RETRY_AFTER_SECONDS
-    return max(seconds, 1.0), bool(_DAILY_LIMIT.search(message)) or seconds > DAILY_RETRY_AFTER_SECONDS
+    return max(seconds, 1.0), bool(
+        _DAILY_LIMIT.search(message)
+    ) or seconds > DAILY_RETRY_AFTER_SECONDS

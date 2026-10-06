@@ -535,7 +535,9 @@ class ClassificationRule(UUIDModel, FirmScopedModel):
         if self.match_type == MatchType.CHANNEL_IS:
             return facts.channel == self.pattern
         if self.match_type == MatchType.REGEX:
-            return bool(re.search(self.pattern, facts.raw, re.IGNORECASE))
+            from classify.regex_guard import MAX_TEXT_LENGTH
+
+            return bool(re.search(self.pattern, facts.raw[:MAX_TEXT_LENGTH], re.IGNORECASE))
 
         from classify.narration import normalise
 

@@ -169,6 +169,8 @@ class _Chart:
             # An imported Sundry Debtors or Creditors ledger is named after a person or business too, and has no Party row
             # until a bill is posted for it, so is_party_account cannot see it.
             and ledger.group not in PARTY_NAMED_GROUPS
+            # An employee's account is named after them.
+            and not hasattr(ledger, "employee_record")
         ]
 
     def by_name(self, name):
@@ -339,10 +341,13 @@ def _context_for(client, batch, pseudonymiser) -> dict:
             ledger__isnull=False,
         )
         .exclude(pk__in=batch_pks)
-        .values_list("counterparty", "ledger__name", "ledger__group", "ledger__party_record__id")
+        .values_list(
+            "counterparty", "ledger__name", "ledger__group", "ledger__party_record__id", "ledger__employee_record__id"
+        )
     )
     tally: Counter = Counter(
-        (party, _shown_ledger_name(name, group, party_id is not None)) for party, name, group, party_id in decided
+        (party, _shown_ledger_name(name, group, party_id is not None or employee_id is not None))
+        for party, name, group, party_id, employee_id in decided
     )
     per_party: dict[str, list] = {}
     for (party, ledger_name), times in tally.most_common():
@@ -361,7 +366,7 @@ def _context_for(client, batch, pseudonymiser) -> dict:
             counterparty__in=parties,
         )
         .exclude(pk__in=batch_pks)
-        .select_related("transaction", "ledger", "ledger__party_record")
+        .select_related("transaction", "ledger", "ledger__party_record", "ledger__employee_record")
         .order_by("transaction__value_date")[:RELATED_ROWS_MAX]
     )
     related = []
@@ -373,7 +378,11 @@ def _context_for(client, batch, pseudonymiser) -> dict:
             "direction": "debit" if txn.is_debit else "credit",
             "amount": _rupees(txn.amount_paise),
             "booked_to": (
-                _shown_ledger_name(sibling.ledger.name, sibling.ledger.group, sibling.ledger.is_party_account)
+                _shown_ledger_name(
+                    sibling.ledger.name,
+                    sibling.ledger.group,
+                    sibling.ledger.is_party_account or hasattr(sibling.ledger, "employee_record"),
+                )
                 if sibling.ledger
                 else None
             ),

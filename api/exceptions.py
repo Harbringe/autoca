@@ -71,6 +71,7 @@ DOMAIN_ERRORS = {
     "IntakeError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "invoice_intake"),
     "AssetError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "asset_rule"),
     "TdsError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "tds_rule"),
+    "PayrollError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "payroll_rule"),
     "WrongEntryKindError": (status.HTTP_409_CONFLICT, "wrong_entry_kind"),
     "MachineEditRefusedError": (status.HTTP_409_CONFLICT, "machine_edit_refused"),
     "StatementRemovalError": (status.HTTP_409_CONFLICT, "statement_in_use"),

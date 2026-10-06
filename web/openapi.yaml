@@ -1408,6 +1408,115 @@ paths:
               schema:
                 $ref: '#/components/schemas/BooksStatus'
           description: ''
+  /api/v1/clients/{client_id}/employees/:
+    get:
+      operationId: clients_employees_list
+      description: The people the client pays a salary to. Each gets an account of
+        their own on their first salary run.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - payroll
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedEmployeeList'
+          description: ''
+    post:
+      operationId: clients_employees_create
+      description: The people the client pays a salary to. Each gets an account of
+        their own on their first salary run.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - payroll
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EmployeeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EmployeeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EmployeeRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+          description: ''
+  /api/v1/clients/{client_id}/employees/{id}/:
+    patch:
+      operationId: clients_employees_partial_update
+      description: The people the client pays a salary to. Each gets an account of
+        their own on their first salary run.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - payroll
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedEmployeeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedEmployeeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedEmployeeRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Employee'
+          description: ''
   /api/v1/clients/{client_id}/gst/registrations/:
     get:
       operationId: clients_gst_registrations_list
@@ -3114,6 +3223,103 @@ paths:
               schema:
                 $ref: '#/components/schemas/CreatedParties'
           description: ''
+  /api/v1/clients/{client_id}/payroll/:
+    get:
+      operationId: clients_payroll_list
+      description: Monthly salary runs, each booked as one journal entry.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - payroll
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPayrollRunList'
+          description: ''
+    post:
+      operationId: clients_payroll_create
+      description: 'One journal entry dated the last day of the month: Dr Salaries
+        and the employer''s PF and ESI, Cr PF Payable, ESI Payable, TDS Payable (section
+        192) and each employee''s own account for their net. The figures are as typed
+        from the salary sheet. Once per month; refused inside sealed books. Needs
+        `journal.approve`.'
+      summary: Book a month of salaries
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - payroll
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayrollRunCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PayrollRunCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PayrollRunCreateRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PayrollRun'
+          description: ''
+  /api/v1/clients/{client_id}/payroll/{id}/remove/:
+    post:
+      operationId: clients_payroll_remove_create
+      description: Monthly salary runs, each booked as one journal entry.
+      summary: Take a month of salaries out of the books
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - payroll
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/clients/{client_id}/reports/balance-sheet/:
     get:
       operationId: clients_reports_balance_sheet_retrieve
@@ -7603,6 +7809,38 @@ components:
       - pipeline_tier
       - sha256
       - status
+    Employee:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 200
+        is_active:
+          type: boolean
+        ledger:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+      required:
+      - id
+      - ledger
+      - name
+    EmployeeRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        is_active:
+          type: boolean
+      required:
+      - name
     EntryChange:
       type: object
       properties:
@@ -10258,6 +10496,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Client'
+    PaginatedEmployeeList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Employee'
     PaginatedFirmDocumentList:
       type: object
       required:
@@ -10419,6 +10680,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Party'
+    PaginatedPayrollRunList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/PayrollRun'
     PaginatedRegistrationList:
       type: object
       required:
@@ -10812,6 +11096,15 @@ components:
             * `QUARTERLY` - Quarterly (30 Jun, 30 Sep, 31 Dec, 31 Mar)
             * `HALF_YEARLY` - Half-yearly (30 Sep, 31 Mar)
             * `YEARLY` - Yearly (31 Mar)
+    PatchedEmployeeRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        is_active:
+          type: boolean
     PatchedFirmSettingsRequest:
       type: object
       properties:
@@ -10894,6 +11187,127 @@ components:
       - narration
       - on_party_account
       - posted_to
+    PayrollLine:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        employee:
+          type: string
+          format: uuid
+          readOnly: true
+        employee_name:
+          type: string
+          readOnly: true
+        gross_paise:
+          type: integer
+          readOnly: true
+        gross_display:
+          type: string
+          readOnly: true
+        pf_employee_paise:
+          type: integer
+          readOnly: true
+        pf_employer_paise:
+          type: integer
+          readOnly: true
+        esi_employee_paise:
+          type: integer
+          readOnly: true
+        esi_employer_paise:
+          type: integer
+          readOnly: true
+        tds_paise:
+          type: integer
+          readOnly: true
+        other_deduction_paise:
+          type: integer
+          readOnly: true
+        net_paise:
+          type: integer
+          readOnly: true
+        net_display:
+          type: string
+          readOnly: true
+      required:
+      - employee
+      - employee_name
+      - esi_employee_paise
+      - esi_employer_paise
+      - gross_display
+      - gross_paise
+      - id
+      - net_display
+      - net_paise
+      - other_deduction_paise
+      - pf_employee_paise
+      - pf_employer_paise
+      - tds_paise
+    PayrollRun:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        year:
+          type: integer
+          readOnly: true
+        month:
+          type: integer
+          readOnly: true
+        entry:
+          type: string
+          format: uuid
+          readOnly: true
+        gross_paise:
+          type: integer
+          readOnly: true
+        gross_display:
+          type: string
+          readOnly: true
+        net_paise:
+          type: integer
+          readOnly: true
+        net_display:
+          type: string
+          readOnly: true
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/PayrollLine'
+          readOnly: true
+      required:
+      - entry
+      - gross_display
+      - gross_paise
+      - id
+      - lines
+      - month
+      - net_display
+      - net_paise
+      - year
+    PayrollRunCreateRequest:
+      type: object
+      properties:
+        year:
+          type: integer
+          maximum: 2100
+          minimum: 2017
+        month:
+          type: integer
+          maximum: 12
+          minimum: 1
+        lines:
+          type: array
+          items:
+            $ref: '#/components/schemas/SalaryLineRequest'
+      required:
+      - lines
+      - month
+      - year
     Period:
       type: object
       properties:
@@ -11800,6 +12214,69 @@ components:
       - signed_off_at
       - status
       - summary
+    SalaryLineRequest:
+      type: object
+      properties:
+        employee:
+          type: string
+          format: uuid
+        gross_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 1
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        pf_employee_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        pf_employer_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        esi_employee_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        esi_employer_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        tds_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+          description: Tax deducted on salary (section 192).
+        other_deduction_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - employee
+      - gross_paise
     Schedule:
       type: object
       properties:

@@ -725,6 +725,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/employees/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The people the client pays a salary to. Each gets an account of their own on their first salary run. */
+        get: operations["clients_employees_list"];
+        put?: never;
+        /** @description The people the client pays a salary to. Each gets an account of their own on their first salary run. */
+        post: operations["clients_employees_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/employees/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /** @description The people the client pays a salary to. Each gets an account of their own on their first salary run. */
+        patch: operations["clients_employees_partial_update"];
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/gst/registrations/": {
         parameters: {
             query?: never;
@@ -1398,6 +1433,47 @@ export interface paths {
          * @description Makes a party for each name (or reuses one that exists) and attaches every row of theirs that has no party yet. Posted entries are not changed: a party is a label on the row. Needs `party.manage`.
          */
         post: operations["clients_parties_found_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/payroll/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Monthly salary runs, each booked as one journal entry. */
+        get: operations["clients_payroll_list"];
+        put?: never;
+        /**
+         * Book a month of salaries
+         * @description One journal entry dated the last day of the month: Dr Salaries and the employer's PF and ESI, Cr PF Payable, ESI Payable, TDS Payable (section 192) and each employee's own account for their net. The figures are as typed from the salary sheet. Once per month; refused inside sealed books. Needs `journal.approve`.
+         */
+        post: operations["clients_payroll_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/payroll/{id}/remove/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Take a month of salaries out of the books
+         * @description Monthly salary runs, each booked as one journal entry.
+         */
+        post: operations["clients_payroll_remove_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -3558,6 +3634,18 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
         };
+        Employee: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            is_active?: boolean;
+            /** Format: uuid */
+            readonly ledger: string | null;
+        };
+        EmployeeRequest: {
+            name: string;
+            is_active?: boolean;
+        };
         EntryChange: {
             /** Format: uuid */
             readonly id: string;
@@ -4794,6 +4882,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["Client"][];
         };
+        PaginatedEmployeeList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["Employee"][];
+        };
         PaginatedFirmDocumentList: {
             /** @example 123 */
             count: number;
@@ -4898,6 +5001,21 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["Party"][];
+        };
+        PaginatedPayrollRunList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["PayrollRun"][];
         };
         PaginatedRegistrationList: {
             /** @example 123 */
@@ -5107,6 +5225,10 @@ export interface components {
              */
             close_period?: components["schemas"]["ClosePeriodEnum"];
         };
+        PatchedEmployeeRequest: {
+            name?: string;
+            is_active?: boolean;
+        };
         PatchedFirmSettingsRequest: {
             name?: string;
         };
@@ -5143,6 +5265,41 @@ export interface components {
             on_party_account: boolean;
             /** Format: uuid */
             entry: string | null;
+        };
+        PayrollLine: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            readonly employee: string;
+            readonly employee_name: string;
+            readonly gross_paise: number;
+            readonly gross_display: string;
+            readonly pf_employee_paise: number;
+            readonly pf_employer_paise: number;
+            readonly esi_employee_paise: number;
+            readonly esi_employer_paise: number;
+            readonly tds_paise: number;
+            readonly other_deduction_paise: number;
+            readonly net_paise: number;
+            readonly net_display: string;
+        };
+        PayrollRun: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly year: number;
+            readonly month: number;
+            /** Format: uuid */
+            readonly entry: string;
+            readonly gross_paise: number;
+            readonly gross_display: string;
+            readonly net_paise: number;
+            readonly net_display: string;
+            readonly lines: components["schemas"]["PayrollLine"][];
+        };
+        PayrollRunCreateRequest: {
+            year: number;
+            month: number;
+            lines: components["schemas"]["SalaryLineRequest"][];
         };
         Period: {
             /** Format: date */
@@ -5613,6 +5770,51 @@ export interface components {
             groups: components["schemas"]["ReportGroup"][];
             /** @description Rows with an action and no decision, matched rows excluded. */
             actions: components["schemas"]["ReportAction"][];
+        };
+        SalaryLineRequest: {
+            /** Format: uuid */
+            employee: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            gross_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             * @default 0
+             */
+            pf_employee_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             * @default 0
+             */
+            pf_employer_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             * @default 0
+             */
+            esi_employee_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             * @default 0
+             */
+            esi_employer_paise: number;
+            /**
+             * Format: int64
+             * @description Tax deducted on salary (section 192).
+             * @default 0
+             */
+            tds_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             * @default 0
+             */
+            other_deduction_paise: number;
         };
         Schedule: {
             /** @description The starting year: 2025 is FY 2025-26. */
@@ -7465,6 +7667,87 @@ export interface operations {
             };
         };
     };
+    clients_employees_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedEmployeeList"];
+                };
+            };
+        };
+    };
+    clients_employees_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["EmployeeRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["EmployeeRequest"];
+                "multipart/form-data": components["schemas"]["EmployeeRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Employee"];
+                };
+            };
+        };
+    };
+    clients_employees_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedEmployeeRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedEmployeeRequest"];
+                "multipart/form-data": components["schemas"]["PatchedEmployeeRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Employee"];
+                };
+            };
+        };
+    };
     clients_gst_registrations_list: {
         parameters: {
             query?: {
@@ -8802,6 +9085,80 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["CreatedParties"];
                 };
+            };
+        };
+    };
+    clients_payroll_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedPayrollRunList"];
+                };
+            };
+        };
+    };
+    clients_payroll_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PayrollRunCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PayrollRunCreateRequest"];
+                "multipart/form-data": components["schemas"]["PayrollRunCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PayrollRun"];
+                };
+            };
+        };
+    };
+    clients_payroll_remove_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

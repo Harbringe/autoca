@@ -50,6 +50,11 @@ STANDARD_LEDGERS: list[tuple[str, str]] = [
     ("Miscellaneous Income", G.INDIRECT_INCOME),
     ("GST Paid", G.DUTIES_AND_TAXES),
     ("TDS Payable", G.DUTIES_AND_TAXES),
+    ("PF Payable", G.DUTIES_AND_TAXES),
+    ("Other Payables", G.CURRENT_LIABILITY),
+    ("ESI Payable", G.DUTIES_AND_TAXES),
+    ("Employer PF Contribution", G.INDIRECT_EXPENSE),
+    ("Employer ESI Contribution", G.INDIRECT_EXPENSE),
     # The GST set a purchase or sales voucher posts to (ledger.billing). "GST Paid" above stays for books that
     # already use it.
     ("Input CGST", G.DUTIES_AND_TAXES),

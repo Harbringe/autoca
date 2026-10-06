@@ -49,6 +49,7 @@ from ledger.models import (
     CloseAcknowledgement,
     DepreciationPosting,
     Direction,
+    Employee,
     EntryChange,
     FixedAsset,
     InvoiceReading,
@@ -56,6 +57,8 @@ from ledger.models import (
     JournalLine,
     LedgerImportRun,
     LedgerOpening,
+    PayrollLine,
+    PayrollRun,
     TdsChallan,
     VoucherSequence,
     VoucherType,
@@ -445,6 +448,31 @@ def _tds_challan(firm, **kw):
     )
 
 
+def _employee(firm, **kw):
+    client = kw.get("client") or _client(firm)
+    return Employee.objects.create(firm=firm, client=client, name=f"Employee {uuid.uuid4().hex[:6]}")
+
+
+def _payroll_run(firm, **kw):
+    client = kw.get("client") or _client(firm)
+    entry = JournalEntry.objects.create(
+        firm=firm,
+        client=client,
+        entry_no=1,
+        financial_year=2025,
+        entry_date=datetime.date(2025, 4, 30),
+        voucher_type="Journal",
+        approved_at=django_timezone.now(),
+    )
+    return PayrollRun.objects.create(firm=firm, client=client, year=2025, month=4, entry=entry, gross_paise=1000, net_paise=900)
+
+
+def _payroll_line(firm, **kw):
+    run = kw.get("run") or _payroll_run(firm)
+    employee = Employee.objects.create(firm=firm, client=run.client, name=f"Employee {uuid.uuid4().hex[:6]}")
+    return PayrollLine.objects.create(firm=firm, run=run, employee=employee, gross_paise=1000, net_paise=900)
+
+
 def _bill_allocation(firm, **kw):
     """A payment line on the party's own ledger, settling the bill in full."""
     bill = kw.get("bill") or _bill(firm)
@@ -514,6 +542,9 @@ FACTORIES = {
     FixedAsset: _fixed_asset,
     DepreciationPosting: _depreciation_posting,
     TdsChallan: _tds_challan,
+    Employee: _employee,
+    PayrollRun: _payroll_run,
+    PayrollLine: _payroll_line,
 }
 
 #: Firm is firm-scoped by primary key rather than by a firm_id column, so it is

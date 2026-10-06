@@ -744,3 +744,62 @@ class TdsChallan(UUIDModel, FirmScopedModel):
 
     def __str__(self) -> str:
         return f"Challan {self.bsr_code}/{self.serial} for {self.section}"
+
+
+class Employee(UUIDModel, FirmScopedModel):
+    """A person the client pays a salary to, with an account of their own for what is owed them.
+
+    The account is a Current Liabilities ledger opened on their first salary run: a salary run credits what they are owed
+    to it, and the bank payment that pays them is placed on it by a person. Their name is personal data, so the ledger is
+    kept out of what the model is shown, like a party's account.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="employees")
+    name = models.CharField(max_length=200)
+    ledger = models.OneToOneField(
+        LedgerAccount, null=True, blank=True, on_delete=models.PROTECT, related_name="employee_record"
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        db_table = "ledger_employee"
+        ordering = ["name"]
+        constraints = [models.UniqueConstraint(fields=["firm", "client", "name"], name="uniq_employee_name_per_client")]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class PayrollRun(UUIDModel, FirmScopedModel):
+    """One month's salaries, booked as one journal entry. One run per month."""
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="payroll_runs")
+    year = models.PositiveSmallIntegerField()
+    month = models.PositiveSmallIntegerField()
+    entry = models.OneToOneField(JournalEntry, on_delete=models.PROTECT, related_name="payroll_run")
+    gross_paise = models.BigIntegerField()
+    net_paise = models.BigIntegerField()
+
+    class Meta:
+        db_table = "ledger_payroll_run"
+        ordering = ["-year", "-month"]
+        constraints = [models.UniqueConstraint(fields=["firm", "client", "year", "month"], name="uniq_payroll_per_month")]
+
+
+class PayrollLine(UUIDModel, FirmScopedModel):
+    """What one employee was paid in a run, and what was deducted. Figures are typed from the salary sheet, not computed."""
+
+    run = models.ForeignKey(PayrollRun, on_delete=models.CASCADE, related_name="lines")
+    employee = models.ForeignKey(Employee, on_delete=models.PROTECT, related_name="payroll_lines")
+    gross_paise = models.BigIntegerField()
+    pf_employee_paise = models.BigIntegerField(default=0)
+    pf_employer_paise = models.BigIntegerField(default=0)
+    esi_employee_paise = models.BigIntegerField(default=0)
+    esi_employer_paise = models.BigIntegerField(default=0)
+    tds_paise = models.BigIntegerField(default=0)
+    other_deduction_paise = models.BigIntegerField(default=0)
+    net_paise = models.BigIntegerField()
+
+    class Meta:
+        db_table = "ledger_payroll_line"
+        constraints = [models.UniqueConstraint(fields=["run", "employee"], name="uniq_payroll_line_per_employee")]

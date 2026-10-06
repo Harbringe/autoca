@@ -109,7 +109,7 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
   const upload_primary = module === 'bank'
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-4 [&>*]:min-w-0">
       <header className="no-print flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h1 className="text-[26px] leading-8 xl:text-[28px] xl:leading-[34px]">{title}</h1>

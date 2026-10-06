@@ -52,3 +52,7 @@ whitenoise==6.9.0
 # system font stack -- deliberately, rather than announcing each page load to a
 # third party.
 django-jazzmin==3.0.5
+
+# A transitive dependency of boto3 and requests, named here so a build can never resolve below the release that fixed
+# PYSEC-2026-4175/4176/4177 (2.8.0). The rest of the tree is still resolved at build time; a hash-locked file is the next step.
+urllib3>=2.8.0,<3

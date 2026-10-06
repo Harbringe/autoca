@@ -58,33 +58,47 @@ def test_repeated_failures_lock_the_account_out(settings):
     assert locked["Retry-After"] == "600"
 
 
-def test_the_lockout_follows_the_account_across_addresses(settings):
+def test_a_strangers_guesses_do_not_lock_the_owner_out_from_their_own_address(settings):
     settings.THROTTLE_LIMITS = {
         **settings.THROTTLE_LIMITS,
         "login": {"attempts": 2, "window_seconds": 600, "lockout_seconds": 600},
     }
     create_user("target@example.com", PASSWORD)
 
-    _login(HttpClient(REMOTE_ADDR="10.0.0.1"), "target@example.com", "wrong")
-    _login(HttpClient(REMOTE_ADDR="10.0.0.2"), "target@example.com", "wrong")
+    stranger = HttpClient(REMOTE_ADDR="10.0.0.1")
+    _login(stranger, "target@example.com", "wrong")
+    _login(stranger, "target@example.com", "wrong")
 
-    response = _login(HttpClient(REMOTE_ADDR="10.0.0.3"), "target@example.com", PASSWORD)
-    assert response.status_code == 429
+    assert _login(stranger, "target@example.com", PASSWORD).status_code == 429
+    assert _login(HttpClient(REMOTE_ADDR="10.0.0.3"), "target@example.com", PASSWORD).status_code == 200
 
 
-def test_one_address_failing_on_many_accounts_is_not_locked_out_for_now(settings):
-    """Interim (R1-40): the address is not trustworthy behind the shared proxy, so it must
-    not refuse on its own; one address would otherwise lock every user behind it."""
+def test_many_addresses_guessing_one_account_still_hit_the_account_line(settings):
     settings.THROTTLE_LIMITS = {
         **settings.THROTTLE_LIMITS,
-        "login": {"attempts": 2, "window_seconds": 600, "lockout_seconds": 600},
+        "login_account": {"attempts": 3, "window_seconds": 600, "lockout_seconds": 600},
+    }
+    create_user("target@example.com", PASSWORD)
+
+    for n in range(3):
+        _login(HttpClient(REMOTE_ADDR=f"10.1.0.{n}"), "target@example.com", "wrong")
+
+    assert _login(HttpClient(REMOTE_ADDR="10.1.0.99"), "target@example.com", PASSWORD).status_code == 429
+
+
+def test_one_address_spraying_many_accounts_is_stopped(settings):
+    settings.THROTTLE_LIMITS = {
+        **settings.THROTTLE_LIMITS,
+        "login_address": {"attempts": 3, "window_seconds": 600, "lockout_seconds": 600},
     }
     create_user("c@example.com", PASSWORD)
     http = HttpClient(REMOTE_ADDR="10.9.9.9")
-    for name in ("a", "b", "d", "e"):
+    for name in ("a", "b", "d"):
         assert _login(http, f"{name}@example.com", "wrong").status_code == 401
 
-    assert _login(http, "c@example.com", PASSWORD).status_code == 200
+    assert _login(http, "c@example.com", PASSWORD).status_code == 429
+    # Another address is unaffected.
+    assert _login(HttpClient(REMOTE_ADDR="10.9.9.8"), "c@example.com", PASSWORD).status_code == 200
 
 
 def test_the_account_lock_lasts_five_minutes_after_ten_failures(settings):

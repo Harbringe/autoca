@@ -387,12 +387,14 @@ CACHES = {
     )
 }
 
-# attempts within window_seconds -> locked out for lockout_seconds. Login is keyed on
-# the account only for now (interim, Rule 11); mfa on address and user; see core/throttle.py.
+# attempts within window_seconds -> locked out for lockout_seconds. See core/throttle.py.
 THROTTLE_LIMITS = {
-    # Interim (ARCHITECTURE Rule 11): keyed on the account only, and a short lock, until the
-    # client address can be trusted; see login_view.
+    # Sign-in is counted three ways (core.throttle.sign_in_*): per address and account together, so one person
+    # mistyping is locked out alone; per address, so one source cannot spray passwords across accounts; and per
+    # account with a much higher line, so many addresses guessing one account are still stopped.
     "login": {"attempts": 10, "window_seconds": 15 * 60, "lockout_seconds": 5 * 60},
+    "login_address": {"attempts": 40, "window_seconds": 15 * 60, "lockout_seconds": 15 * 60},
+    "login_account": {"attempts": 60, "window_seconds": 60 * 60, "lockout_seconds": 15 * 60},
     # TOTP codes are six digits and a window is thirty seconds. django-otp
     # throttles the device itself as well; this is the address-level backstop.
     "mfa": {"attempts": 6, "window_seconds": 10 * 60, "lockout_seconds": 15 * 60},

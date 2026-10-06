@@ -31,6 +31,8 @@ from django.contrib.admin.apps import AdminConfig
 from django.http import HttpResponse
 from django.utils.module_loading import import_string
 
+from core.http import client_ip
+
 
 class PlatformAdminSite(admin.AdminSite):
     """An admin site only the platform owner can open."""
@@ -63,7 +65,7 @@ class PlatformAdminSite(admin.AdminSite):
         account = typed.strip().lower()[:254]
         if account:
             try:
-                throttle.check("login", account)
+                throttle.sign_in_check(client_ip(request) or "", account)
             except throttle.Throttled as exc:
                 response = HttpResponse("Too many attempts. Try again later.", status=429, content_type="text/plain")
                 response["Retry-After"] = str(exc.retry_after)
@@ -71,7 +73,7 @@ class PlatformAdminSite(admin.AdminSite):
         response = super().login(request, extra_context)
         # A good password redirects; the form coming back to a POST means it was refused.
         if account and request.method == "POST" and response.status_code == 200:
-            throttle.record_failure("login", account)
+            throttle.sign_in_failed(client_ip(request) or "", account)
         return response
 
 

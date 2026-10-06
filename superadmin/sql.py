@@ -60,7 +60,9 @@ FUNCTIONS = (
     "app.superadmin_member_clients(uuid, uuid)",
 )
 
-_HEADER = "LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public"
+# pg_temp is listed last on purpose: PostgreSQL searches it FIRST unless it is named, so a session that could create a
+# temporary table called core_user would otherwise be read by these functions instead of the real one.
+_HEADER = "LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp"
 
 # ruff: noqa: S608 -- DDL from module constants only.
 FUNCTIONS_SQL = f"""

@@ -106,7 +106,7 @@ def login_view(request):
 
     # Refuse before hashing anything, so a locked-out caller costs nothing.
     try:
-        throttle.check("login", email)
+        throttle.sign_in_check(address, email)
     except throttle.Throttled as exc:
         security_log.warning("login refused (locked out) ip=%s", address)
         return _throttled(exc)
@@ -115,7 +115,7 @@ def login_view(request):
     if user is None:
         # One message for both wrong-email and wrong-password. Distinguishing
         # them turns this endpoint into a user-enumeration oracle.
-        throttle.record_failure("login", email)
+        throttle.sign_in_failed(address, email)
         security_log.info("login failed ip=%s", address)
         return JsonResponse(
             {"code": "invalid_credentials", "detail": "Invalid credentials."}, status=401

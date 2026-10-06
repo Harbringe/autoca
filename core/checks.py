@@ -234,3 +234,24 @@ def check_distinct_db_roles(app_configs, **kwargs):
             )
         ]
     return []
+
+
+@register(Tags.security, deploy=True)
+def check_keys_are_not_held_by_the_web_process(app_configs, **kwargs):
+    """With the local key adapter, the web process holds the master key itself.
+
+    ``LocalFernetKMSAdapter`` reads the master key and the blind-index key from the environment the web container is
+    given, so code execution in that process yields both the ciphertext and the keys. A managed key service keeps the
+    master key out of the process and lets the instance role be limited to using it. This says so at every release until
+    the deployment moves to one; it is a warning because the move is an infrastructure step, not a settings change.
+    """
+    adapter = str(settings.INTEGRATIONS.get("kms", ""))
+    if not settings.DEBUG and adapter.endswith("LocalFernetKMSAdapter"):
+        return [
+            Warning(
+                "The data-encryption master key is held in the web process's environment (LocalFernetKMSAdapter).",
+                hint="Move to integrations.kms.aws (KMS_BACKEND) with the instance role limited to one key; see docs/AWS.md.",
+                id="core.W017",
+            )
+        ]
+    return []

@@ -5,6 +5,10 @@ on:
     branches: [main, dev, prod]
   pull_request:
 
+# Nothing here writes to the repository, so the job token may only read it.
+permissions:
+  contents: read
+
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true

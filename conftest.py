@@ -63,3 +63,15 @@ def pytest_sessionstart(session):
                     time.sleep(0.5)
     except psycopg.Error as exc:  # pragma: no cover - environment-specific
         warnings.warn(f"could not clear stale test database {test_name!r}: {exc}", stacklevel=1)
+
+
+import pytest  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def _fresh_throttle_counts():
+    """Throttle counts live in the cache, which outlives a test: one test's failed sign-ins must not lock the next out."""
+    from django.core.cache import cache
+
+    cache.clear()
+    yield

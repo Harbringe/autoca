@@ -159,7 +159,7 @@ class ColumnMap:
 
     def get(self, row, role: str) -> str:
         index = getattr(self, role, None)
-        if index is None or index >= len(row):
+        if index is None or index < 0 or index >= len(row):
             return ""
         return row[index] or ""
 

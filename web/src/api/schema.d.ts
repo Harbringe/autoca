@@ -1513,6 +1513,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/statements/preview/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * See how a statement's table was read
+         * @description Nothing is stored. Returns the first rows of the transaction table the reader found, which column it believes is which when it got that far (`proposed`, counting from 0), and why it stopped (`error`), so a person can name the columns and upload again with `layout`. Needs `document.upload`.
+         */
+        post: operations["clients_statements_preview_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/statements/upload/": {
         parameters: {
             query?: never;
@@ -3425,6 +3445,22 @@ export interface components {
          * @enum {string}
          */
         KindBd8Enum: "CHART_OPENING";
+        LayoutPreview: {
+            /** @description The table's own header cells, if it has one. */
+            header: string[];
+            /** @description The first rows, cells shortened. */
+            rows: string[][];
+            /** @description Number of columns. */
+            width: number;
+            /** @description Transaction-shaped rows found in all. */
+            total_rows: number;
+            /** @description Role to column index, when the reader proved a layout. */
+            proposed: {
+                [key: string]: number;
+            };
+            /** @description Why the reader stopped, in words; blank when it read the table. */
+            error: string;
+        };
         LeadRequest: {
             /** Format: uuid */
             lead: string | null;
@@ -5206,6 +5242,11 @@ export interface components {
              * @description The statement PDF, as uploaded by the client.
              */
             file: string;
+            /**
+             * @description Only after a statement was refused for its columns: a JSON object naming which table column holds what, counting from 0, like `{"date": 0, "narration": 4, "debit": 5, "credit": 6, "balance": 7}`. The reader still proves it against the statement's own running balance.
+             * @default
+             */
+            layout: string;
             /**
              * @description Accept a statement that does not continue from the last one on file. A gap means a missing period, so this defaults to refusing; set it only when the earlier period genuinely is not available.
              * @default false
@@ -8289,6 +8330,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaginatedStatementTransactionList"];
+                };
+            };
+        };
+    };
+    clients_statements_preview_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["StatementUploadRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["StatementUploadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LayoutPreview"];
                 };
             };
         };

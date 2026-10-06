@@ -20,6 +20,7 @@ import { DateInput } from '@/components/ui/date-input'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { LayoutPicker } from './LayoutPicker'
 import { formatDate, formatPaise, parseDate, parseRupees, plural } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
@@ -58,18 +59,20 @@ type Phase =
   | { kind: 'reading'; file: File; job?: Job }
   | { kind: 'done'; file: File; result: IngestResult; statement: Statement | null; account: BankAccount | null }
   | { kind: 'failed'; file: File; job: Job }
+  | { kind: 'layout'; file: File; job: Job }
 
 function UploadDialog({ clientId, onClose }: { clientId: string; onClose: () => void }) {
   const [phase, setPhase] = useState<Phase>({ kind: 'choose', file: null })
   const invalidate = useInvalidateClient(clientId)
   const client = useQuery(clientDetail(clientId))
 
-  async function send(file: File, allowGap = false) {
+  async function send(file: File, allowGap = false, layout?: Record<string, number>) {
     setPhase({ kind: 'reading', file })
     try {
       const form = new FormData()
       form.append('file', file)
       if (allowGap) form.append('allow_gap', 'true')
+      if (layout) form.append('layout', JSON.stringify(layout))
       const created = await raw.post<Job>(`${V1}/clients/${clientId}/statements/upload/`, form)
       setPhase({ kind: 'reading', file, job: created })
       const job = await waitForJob(created, (update) => setPhase({ kind: 'reading', file, job: update }))
@@ -105,6 +108,15 @@ function UploadDialog({ clientId, onClose }: { clientId: string; onClose: () => 
             job={phase.job}
             onRetry={() => setPhase({ kind: 'choose', file: null })}
             onAllowGap={() => void send(phase.file, true)}
+            onLayout={() => setPhase({ kind: 'layout', file: phase.file, job: phase.job })}
+          />
+        )}
+        {phase.kind === 'layout' && (
+          <LayoutPicker
+            clientId={clientId}
+            file={phase.file}
+            onTry={(layout) => void send(phase.file, false, layout)}
+            onBack={() => setPhase({ kind: 'failed', file: phase.file, job: phase.job })}
           />
         )}
         {phase.kind === 'done' && (
@@ -227,7 +239,20 @@ function Reading({ file, job }: { file: File; job?: Job }) {
   )
 }
 
-function Failed({ job, onRetry, onAllowGap }: { job: Job; onRetry: () => void; onAllowGap: () => void }) {
+/** Failures that are about which column is which, where naming the columns can help. */
+const LAYOUT_CODES = new Set(['statement_unreadable', 'columns_not_inferred', 'balance_chain_broken'])
+
+function Failed({
+  job,
+  onRetry,
+  onAllowGap,
+  onLayout,
+}: {
+  job: Job
+  onRetry: () => void
+  onAllowGap: () => void
+  onLayout: () => void
+}) {
   const problem = UPLOAD_PROBLEMS[job.error_code] ?? { title: 'The statement was not imported', help: '' }
   return (
     <div className="grid gap-4">
@@ -244,6 +269,11 @@ function Failed({ job, onRetry, onAllowGap }: { job: Job; onRetry: () => void; o
         {job.error_code === 'statement_period_missing' && (
           <Button variant="outline" onClick={onAllowGap}>
             Import anyway, leaving the gap
+          </Button>
+        )}
+        {LAYOUT_CODES.has(job.error_code) && (
+          <Button variant="outline" onClick={onLayout}>
+            Show me how it was read
           </Button>
         )}
         <Button onClick={onRetry}>Choose another file</Button>

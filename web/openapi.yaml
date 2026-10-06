@@ -3359,6 +3359,41 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedStatementTransactionList'
           description: ''
+  /api/v1/clients/{client_id}/statements/preview/:
+    post:
+      operationId: clients_statements_preview_create
+      description: Nothing is stored. Returns the first rows of the transaction table
+        the reader found, which column it believes is which when it got that far (`proposed`,
+        counting from 0), and why it stopped (`error`), so a person can name the columns
+        and upload again with `layout`. Needs `document.upload`.
+      summary: See how a statement's table was read
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - statements
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StatementUploadRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StatementUploadRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LayoutPreview'
+          description: ''
   /api/v1/clients/{client_id}/statements/upload/:
     post:
       operationId: clients_statements_upload_create
@@ -7495,6 +7530,42 @@ components:
       - CHART_OPENING
       type: string
       description: '* `CHART_OPENING` - Chart of accounts and opening balances'
+    LayoutPreview:
+      type: object
+      properties:
+        header:
+          type: array
+          items:
+            type: string
+          description: The table's own header cells, if it has one.
+        rows:
+          type: array
+          items:
+            type: array
+            items:
+              type: string
+          description: The first rows, cells shortened.
+        width:
+          type: integer
+          description: Number of columns.
+        total_rows:
+          type: integer
+          description: Transaction-shaped rows found in all.
+        proposed:
+          type: object
+          additionalProperties:
+            type: integer
+          description: Role to column index, when the reader proved a layout.
+        error:
+          type: string
+          description: Why the reader stopped, in words; blank when it read the table.
+      required:
+      - error
+      - header
+      - proposed
+      - rows
+      - total_rows
+      - width
     LeadRequest:
       type: object
       properties:
@@ -11037,6 +11108,13 @@ components:
           type: string
           format: binary
           description: The statement PDF, as uploaded by the client.
+        layout:
+          type: string
+          default: ''
+          description: 'Only after a statement was refused for its columns: a JSON
+            object naming which table column holds what, counting from 0, like `{"date":
+            0, "narration": 4, "debit": 5, "credit": 6, "balance": 7}`. The reader
+            still proves it against the statement''s own running balance.'
         allow_gap:
           type: boolean
           default: false

@@ -78,7 +78,7 @@ def _not_a_bank_account(document: PdfDocument) -> str | None:
     return None
 
 
-def detect_parser(document: PdfDocument) -> StatementParser:
+def detect_parser(document: PdfDocument, layout: dict | None = None) -> StatementParser:
     if not document.has_text_layer:
         raise NoTextLayerError(
             "This PDF has no text layer, so it is a scan. OCR is the fallback "
@@ -89,13 +89,17 @@ def detect_parser(document: PdfDocument) -> StatementParser:
     kind = _not_a_bank_account(document)
     if kind == "loan":
         # Read as a loan, on the strength of its title: the balance is what is owed and rises with a debit.
-        return GenericStatementParser(liability=True)
+        return GenericStatementParser(liability=True, layout=layout)
     if kind:
         raise UnsupportedBankError(
             f"This is a {kind} statement, not a bank account statement, and {kind} statements are not read yet. "
             f"Its balance does not move like a bank account's, so reading it as one would post every row "
             f"backwards. Nothing was guessed."
         )
+
+    if layout:
+        # A person has named the columns, so the generic reader takes it from here, and still proves it.
+        return GenericStatementParser(layout=layout)
 
     matches = [parser for parser in DEDICATED_PARSERS if parser.detect(document)]
     if len(matches) > 1:
@@ -118,6 +122,6 @@ def detect_parser(document: PdfDocument) -> StatementParser:
     )
 
 
-def parse_statement(document: PdfDocument) -> ParsedStatement:
+def parse_statement(document: PdfDocument, layout: dict | None = None) -> ParsedStatement:
     """Detect the format and parse. Raises rather than returning a doubtful read."""
-    return detect_parser(document).parse(document)
+    return detect_parser(document, layout).parse(document)

@@ -112,7 +112,13 @@ class GenericStatementParser(StatementParser):
     #: balance chain to prove a column mapping against.
     MIN_ROWS = 3
 
-    def __init__(self, *, liability: bool = False):
+    #: The roles a person may assign to a column, and which are needed. Debit and credit go together, or one amount column.
+    LAYOUT_ROLES = ("date", "narration", "balance", "debit", "credit", "amount", "direction", "reference")
+
+    def __init__(self, *, liability: bool = False, layout: dict | None = None):
+        #: Column positions a person chose after inference failed ({"date": 0, "debit": 4, ...}). Still proved against the
+        #: statement's own balances: a person's choice is a better guess, not a way round the arithmetic.
+        self.layout = layout
         #: A loan statement: the balance is what is owed, so it rises with a debit. Chosen by the caller from the
         #: document's title (see banking.parsers), never discovered here.
         self.liability = liability
@@ -133,7 +139,9 @@ class GenericStatementParser(StatementParser):
             )
 
         try:
-            mapping = infer_columns(header, rows, liability=self.liability)
+            mapping = (
+                self._chosen_mapping(rows) if self.layout else infer_columns(header, rows, liability=self.liability)
+            )
         except ColumnInferenceError as exc:
             raise StatementParseError(str(exc)) from exc
 
@@ -166,6 +174,40 @@ class GenericStatementParser(StatementParser):
             kind="LOAN" if self.liability else "BANK",
             liability=self.liability,
         )
+
+    def _chosen_mapping(self, rows) -> ColumnMap:
+        """The columns a person named, accepted only if the arithmetic agrees."""
+        from .columns import _chain_breaks, _where_it_breaks
+
+        layout = {role: int(index) for role, index in self.layout.items() if role in self.LAYOUT_ROLES}
+        width = max(len(row) for row in rows)
+        if any(not 0 <= index < width for index in layout.values()):
+            raise ColumnInferenceError(f"A chosen column is outside the table, which has {width} columns.")
+        for needed in ("date", "balance"):
+            if needed not in layout:
+                raise ColumnInferenceError(f"Say which column is the {needed}.")
+        split = "debit" in layout and "credit" in layout
+        if not split and "amount" not in layout:
+            raise ColumnInferenceError("Say which columns are the debit and credit, or which one is the amount.")
+        mapping = ColumnMap(
+            date=layout["date"],
+            narration=layout.get("narration", -1),
+            balance=layout["balance"],
+            debit=layout.get("debit") if split else None,
+            credit=layout.get("credit") if split else None,
+            amount=None if split else layout["amount"],
+            direction=layout.get("direction"),
+            reference=layout.get("reference"),
+            source="chosen",
+        )
+        padded = [list(row) + [""] * (width - len(row)) for row in rows]
+        breaks, expected, found = _chain_breaks(padded, mapping, self.liability)
+        if breaks:
+            closest = {"mapping": mapping, "breaks": breaks, "expected": expected, "found": found}
+            raise ColumnInferenceError(
+                "The columns you chose do not reproduce the statement's own balances." + _where_it_breaks(padded, closest)
+            )
+        return mapping
 
     # -- gathering rows -----------------------------------------------------
 

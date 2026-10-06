@@ -17,6 +17,7 @@ from api.permissions import HasFirmPermission
 from api.serializers.banking import (
     BankAccountDetailSerializer,
     BankAccountSerializer,
+    LayoutPreviewSerializer,
     OpeningBalanceSerializer,
     StatementSerializer,
     StatementTransactionSerializer,
@@ -27,6 +28,7 @@ from api.throttles import enforce
 from api.views.base import ClientScopedMixin, FirmScopedViewSet
 from banking.ingest import confirm_opening_balance, ingest_statement
 from banking.models import BankAccount, Statement, StatementTransaction
+from banking.preview import preview as layout_preview
 from banking.removal import remove_statement
 from classify.engine import classify_statement
 from classify.queue import mark_waiting
@@ -34,6 +36,7 @@ from classify.seeds import rename_account_ledger, seed_client
 from core.access import get_visible_client, visible_client_ids
 from core.jobs import run_job
 from core.models import Job, JobStatus
+from integrations.registry import get_pdf
 
 
 @extend_schema(tags=["statements"])
@@ -88,12 +91,33 @@ class StatementUploadView(viewsets.GenericViewSet):
                 filename=upload.name,
                 user=request.user,
                 allow_gap=payload.validated_data["allow_gap"],
+                layout=payload.validated_data.get("layout"),
             ),
         )
         return Response(
             JobSerializer(outcome.job).data,
             status=status.HTTP_200_OK if outcome.reused else status.HTTP_202_ACCEPTED,
         )
+
+
+    @extend_schema(
+        summary="See how a statement's table was read",
+        description=(
+            "Nothing is stored. Returns the first rows of the transaction table the reader found, which column it believes "
+            "is which when it got that far (`proposed`, counting from 0), and why it stopped (`error`), so a person can "
+            "name the columns and upload again with `layout`. Needs `document.upload`."
+        ),
+        request=StatementUploadSerializer,
+        responses={200: LayoutPreviewSerializer},
+    )
+    def preview(self, request, client_id=None):
+        enforce(request, self, "upload")
+        get_visible_client(request, client_id)
+        payload = self.get_serializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        upload = payload.validated_data["file"]
+        document = get_pdf().extract(upload.read())
+        return Response(LayoutPreviewSerializer(layout_preview(document).__dict__).data)
 
 
 def _upload_key(client, data: bytes) -> str:
@@ -111,7 +135,7 @@ def _drop_job_for_removed_statement(firm_id, key: str) -> None:
         job.delete()
 
 
-def _ingest(*, client, data, filename, user, allow_gap) -> dict:
+def _ingest(*, client, data, filename, user, allow_gap, layout=None) -> dict:
     """Ingest, seed the client's baseline ledgers, classify by rules, and queue what is left.
 
     Seeding on every upload rather than at client creation is deliberate: a
@@ -124,6 +148,7 @@ def _ingest(*, client, data, filename, user, allow_gap) -> dict:
         filename=filename,
         uploaded_by=user,
         allow_gap=allow_gap,
+        layout=layout,
     )
     seed_client(client, created_by=user)
     classified = classify_statement(result.statement)

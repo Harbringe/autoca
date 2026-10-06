@@ -203,6 +203,38 @@ class StatementUploadSerializer(serializers.Serializer):
             )
         return upload
 
+    layout = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text=(
+            "Only after a statement was refused for its columns: a JSON object naming which table column holds what, "
+            "counting from 0, like `{\"date\": 0, \"narration\": 4, \"debit\": 5, \"credit\": 6, \"balance\": 7}`. "
+            "The reader still proves it against the statement's own running balance."
+        ),
+    )
+
+    def validate_layout(self, value):
+        if not value.strip():
+            return None
+        import json
+
+        from banking.parsers.generic import GenericStatementParser
+
+        try:
+            chosen = json.loads(value)
+        except ValueError as exc:
+            raise serializers.ValidationError("The layout is not valid JSON.") from exc
+        roles = GenericStatementParser.LAYOUT_ROLES
+        if not isinstance(chosen, dict) or not chosen:
+            raise serializers.ValidationError("Send an object like {\"date\": 0, \"balance\": 7, ...}.")
+        for role, index in chosen.items():
+            if role not in roles:
+                raise serializers.ValidationError(f"{role!r} is not a column role. Use: {', '.join(roles)}.")
+            if isinstance(index, bool) or not isinstance(index, int) or not 0 <= index < 60:
+                raise serializers.ValidationError(f"The column for {role!r} must be a whole number from 0 to 59.")
+        return chosen
+
     allow_gap = serializers.BooleanField(
         default=False,
         help_text=(
@@ -211,3 +243,12 @@ class StatementUploadSerializer(serializers.Serializer):
             "only when the earlier period genuinely is not available."
         ),
     )
+
+
+class LayoutPreviewSerializer(serializers.Serializer):
+    header = serializers.ListField(child=serializers.CharField(allow_blank=True), help_text="The table's own header cells, if it has one.")
+    rows = serializers.ListField(child=serializers.ListField(child=serializers.CharField(allow_blank=True)), help_text="The first rows, cells shortened.")
+    width = serializers.IntegerField(help_text="Number of columns.")
+    total_rows = serializers.IntegerField(help_text="Transaction-shaped rows found in all.")
+    proposed = serializers.DictField(child=serializers.IntegerField(), help_text="Role to column index, when the reader proved a layout.")
+    error = serializers.CharField(allow_blank=True, help_text="Why the reader stopped, in words; blank when it read the table.")

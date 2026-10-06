@@ -89,6 +89,11 @@ urlpatterns = [
     # Literal routes first, so intent beats pattern matching where both would
     # work at all.
     path(
+        "clients/<uuid:client_id>/statements/preview/",
+        StatementUploadView.as_view({"post": "preview"}),
+        name="statement-preview",
+    ),
+    path(
         "clients/<uuid:client_id>/statements/upload/",
         StatementUploadView.as_view({"post": "create"}),
         name="statement-upload",

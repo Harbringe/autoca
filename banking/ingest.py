@@ -79,6 +79,7 @@ def ingest_statement(
     uploaded_by=None,
     store_original: bool = True,
     allow_gap: bool = False,
+    layout: dict | None = None,
 ) -> IngestResult:
     """Parse ``data`` as a bank statement for ``client`` and persist its rows."""
     digest = Document.digest(data)
@@ -104,7 +105,7 @@ def ingest_statement(
         )
 
     document = get_pdf().extract(data)
-    parser = detect_parser(document)
+    parser = detect_parser(document, layout)
     parsed = parser.parse(document)
 
     account = _account_for(client, parsed)

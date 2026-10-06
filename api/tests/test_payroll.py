@@ -33,7 +33,7 @@ def run(api, client_record, lines, year=2025, month=5):
 
 def entry_lines(entry_id):
     entry = JournalEntry.objects.get(pk=entry_id)
-    return sorted((l.ledger_account.name, l.direction, l.amount_paise, l.tds_section) for l in entry.lines.select_related("ledger_account"))
+    return sorted((ln.ledger_account.name, ln.direction, ln.amount_paise, ln.tds_section) for ln in entry.lines.select_related("ledger_account"))
 
 
 def test_a_run_books_one_balanced_entry_with_each_employees_net_on_their_own_account(api, client_record):
@@ -54,7 +54,7 @@ def test_a_run_books_one_balanced_entry_with_each_employees_net_on_their_own_acc
     assert ("Salary Payable - Ravi Kumar", "CR", 26_400_00, "") in rows
     entry = JournalEntry.objects.get(pk=body["entry"])
     assert entry.entry_date == datetime.date(2025, 5, 31)
-    assert sum(l.signed_paise for l in entry.lines.all()) == 0
+    assert sum(ln.signed_paise for ln in entry.lines.all()) == 0
 
 
 def test_the_tds_on_salary_shows_on_the_tds_page_under_section_192(api, client_record):

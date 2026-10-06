@@ -121,7 +121,7 @@ CREDIT_WORDS = {"CR", "C", "CREDIT", "DEP", "DEPOSIT"}
 DATE_FORMATS = (
     "%d-%m-%Y", "%d/%m/%Y", "%d-%m-%y", "%d/%m/%y",
     "%d-%b-%Y", "%d %b %Y", "%d-%b-%y", "%d %b %y",
-    "%Y-%m-%d",
+    "%Y-%m-%d", "%d.%m.%Y", "%d.%m.%y", "%d-%B-%Y", "%d %B %Y", "%d-%B-%y", "%d %B %y", "%d %b, %Y",
 )
 
 #: How many rows may fail the arithmetic before a mapping is rejected. Zero.
@@ -260,14 +260,15 @@ def infer_columns(header: list[str] | None, rows: list[list[str]], *, liability:
             f"extracted with its columns merged."
         )
 
-    candidate = _best_mapping(rows, named, date_index, money_indices, profiles, liability)
+    closest: dict = {}
+    candidate = _best_mapping(rows, named, date_index, money_indices, profiles, liability, closest)
     if candidate is None:
         raise ColumnInferenceError(
             "No arrangement of this table's columns reproduces its own running "
             "balance. Either the balance column is not a running total, rows "
             "were lost in extraction, or the amounts and the balance disagree. "
             "Refusing to guess: a statement read into the wrong columns looks "
-            "entirely plausible and is inside out."
+            "entirely plausible and is inside out." + _where_it_breaks(rows, closest)
         )
     return candidate
 
@@ -364,7 +365,52 @@ def _pick_narration(named, profiles, used: set[int]) -> tuple[int, bool]:
     return best["index"], True
 
 
-def _best_mapping(rows, named, date_index, money_indices, profiles, liability=False) -> ColumnMap | None:
+def _where_it_breaks(rows, closest: dict) -> str:
+    """Say where the closest reading stops following the balance, so a person can look at that place in the PDF."""
+    mapping, breaks = closest.get("mapping"), closest.get("breaks")
+    if mapping is None or not breaks:
+        return ""
+    first = breaks[0]
+    row = rows[first]
+    date = as_date(mapping.get(row, "date"))
+    note = collapse(mapping.get(row, "narration"))[:40]
+    return (
+        f" The closest reading breaks at transaction {first + 1}"
+        f"{f' ({date:%d-%m-%Y})' if date else ''}{f', {note!r}' if note else ''}: "
+        f"the amounts say the balance should be {_show(closest['expected'])} but the statement shows {_show(closest['found'])}. "
+        f"{len(breaks)} of {len(rows) - 1} step{'s' if len(rows) - 1 != 1 else ''} do not follow. "
+        f"Look at the PDF around that row: a row may be missing, merged with its neighbour, or printed on a page that did not extract."
+    )
+
+
+def collapse(text: str) -> str:
+    return " ".join((text or "").split())
+
+
+def _show(paise) -> str:
+    return f"{paise / 100:,.2f}" if isinstance(paise, int) else "unreadable"
+
+
+def _chain_breaks(rows, mapping: ColumnMap, liability: bool = False):
+    """Every step whose balance change is not what its amount says, with what was expected and what was found."""
+    balances = [as_paise(mapping.get(row, "balance")) for row in rows]
+    breaks, expected, found = [], None, None
+    for index in range(1, len(rows)):
+        if balances[index] is None or balances[index - 1] is None:
+            breaks.append(index)
+            continue
+        signed = signed_amount(rows[index], mapping)
+        if signed is not None and liability:
+            signed = -signed
+        if signed is None or balances[index] - balances[index - 1] != signed:
+            if not breaks:
+                expected = None if signed is None else balances[index - 1] + signed
+                found = balances[index]
+            breaks.append(index)
+    return breaks, expected, found
+
+
+def _best_mapping(rows, named, date_index, money_indices, profiles, liability=False, closest=None) -> ColumnMap | None:
     """Try every plausible layout; return the first the arithmetic endorses.
 
     Ordered so the likeliest and most specific arrangements are tested first:
@@ -389,6 +435,7 @@ def _best_mapping(rows, named, date_index, money_indices, profiles, liability=Fa
             )
             if _reproduces_balances(rows, mapping, liability):
                 return mapping
+            _note_closest(closest, rows, mapping, liability)
 
         for amount_index in _single_amounts(named, others):
             direction_index = _direction_column(named, profiles, exclude={amount_index})
@@ -398,7 +445,19 @@ def _best_mapping(rows, named, date_index, money_indices, profiles, liability=Fa
             )
             if _reproduces_balances(rows, mapping, liability):
                 return mapping
+            _note_closest(closest, rows, mapping, liability)
     return None
+
+
+def _note_closest(closest, rows, mapping: ColumnMap, liability: bool) -> None:
+    """Remember the reading that follows the balance for longest, only to explain a failure."""
+    if closest is None:
+        return
+    breaks, expected, found = _chain_breaks(rows, mapping, liability)
+    # Fewest broken steps wins; a later first break breaks a tie (more of the table was right).
+    rank = (len(breaks), -(breaks[0] if breaks else 0))
+    if "rank" not in closest or rank < closest["rank"]:
+        closest.update(rank=rank, mapping=mapping, breaks=breaks, expected=expected, found=found)
 
 
 def _amount_pairs(named, others):

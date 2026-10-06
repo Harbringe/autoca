@@ -138,3 +138,72 @@ def test_a_statement_with_cr_dot_balances_and_a_same_day_reversal_is_read():
         running += txn.signed_paise
         assert running == txn.balance_paise
     assert statement.closing_balance_paise == 763969130
+
+
+# ---------------------------------------------------------------------------
+# Hardening: say where a table stops following its own balance; join wrapped narrations; ignore page totals.
+# ---------------------------------------------------------------------------
+
+PLAIN_HEADER = ["Date", "Narration", "Withdrawal", "Deposit", "Balance"]
+
+
+def test_a_statement_that_cannot_be_proved_says_where_its_balance_stops_following_the_amounts():
+    rows = [
+        ["01-04-2025", "OPENING CREDIT", "", "1000.00", "1000.00"],
+        ["02-04-2025", "RENT", "200.00", "", "800.00"],
+        # A row was lost in extraction: this one says 100 out of 800 but the balance is 500.
+        ["04-04-2025", "SHOP", "100.00", "", "500.00"],
+        ["05-04-2025", "SALARY", "", "50.00", "550.00"],
+    ]
+    with pytest.raises(StatementParseError) as refused:
+        parse_statement(document("Account statement", [PLAIN_HEADER, *rows]))
+
+    message = str(refused.value)
+    assert "breaks at transaction 3" in message and "04-04-2025" in message and "'SHOP'" in message
+    assert "should be 700.00 but the statement shows 500.00" in message
+    assert "missing, merged" in message
+
+
+def test_a_narration_that_wraps_onto_its_own_row_is_joined_to_the_row_above():
+    rows = [
+        ["01-04-2025", "NEFT/SUPPLIER ONE", "", "1000.00", "1000.00"],
+        ["", "REF 0042 FOR APRIL", "", "", ""],
+        ["02-04-2025", "RENT", "200.00", "", "800.00"],
+        ["03-04-2025", "SALARY", "", "50.00", "850.00"],
+    ]
+    statement = parse_statement(document("Account statement", [PLAIN_HEADER, *rows]))
+
+    assert len(statement) == 3
+    assert statement.transactions[0].narration == "NEFT/SUPPLIER ONE REF 0042 FOR APRIL"
+
+
+def test_a_page_footer_is_not_taken_for_the_end_of_a_narration():
+    rows = [
+        ["01-04-2025", "NEFT/SUPPLIER ONE", "", "1000.00", "1000.00"],
+        ["", "Page 1 of 3", "", "", ""],
+        ["02-04-2025", "RENT", "200.00", "", "800.00"],
+        ["03-04-2025", "SALARY", "", "50.00", "850.00"],
+    ]
+    statement = parse_statement(document("Account statement", [PLAIN_HEADER, *rows]))
+
+    assert statement.transactions[0].narration == "NEFT/SUPPLIER ONE"
+
+
+def test_page_totals_and_a_repeated_header_do_not_count_as_transactions():
+    rows = [
+        ["01-04-2025", "NEFT/SUPPLIER ONE", "", "1000.00", "1000.00"],
+        ["02-04-2025", "RENT", "200.00", "", "800.00"],
+        ["", "Page Total", "200.00", "1000.00", ""],
+        PLAIN_HEADER,
+        ["03-04-2025", "SALARY", "", "50.00", "850.00"],
+    ]
+    statement = parse_statement(document("Account statement", [PLAIN_HEADER, *rows]))
+
+    assert len(statement) == 3 and statement.closing_balance_paise == 85000
+
+
+@pytest.mark.parametrize(
+    "text", ["12.04.2025", "12 April 2025", "12-April-2025", "12 Apr, 2025", "12/04/25", "12-Apr-25", "2025-04-12"]
+)
+def test_the_dates_banks_print_are_read(text):
+    assert as_date(text) == datetime.date(2025, 4, 12)

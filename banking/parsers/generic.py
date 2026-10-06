@@ -62,7 +62,18 @@ SUMMARY_LABELS = {
     "transactiontotal": "totals",
     "total": "totals",
     "grandtotal": "totals",
+    "pagetotal": "totals",
+    "totals": "totals",
+    "subtotal": "totals",
+    "pagetotals": "totals",
+    "closingbalancecarriedforward": "closing",
+    "openingbalancebroughtforward": "opening",
+    "broughtforwardfrompreviouspage": "opening",
+    "carriedforwardtonextpage": "closing",
+    "ctd": "totals",
 }
+
+NOT_A_CONTINUATION = re.compile(r"\bpage\b|\bof\s+\d+|statement|account|printed|continued|date\s*:", re.IGNORECASE)
 
 ACCOUNT_NUMBER = re.compile(
     r"(?:account|a/c|acct)[^\n:]{0,24}(?:no|number|#)?[:\s.]+([0-9][0-9\s-]{6,22}[0-9])",
@@ -113,6 +124,7 @@ class GenericStatementParser(StatementParser):
 
     def parse(self, document: PdfDocument) -> ParsedStatement:
         header, rows, summaries = self._collect(document)
+        continuations = self._continuations
         if len(rows) < self.MIN_ROWS:
             raise StatementParseError(
                 f"Found only {len(rows)} transaction-shaped row(s). Either this "
@@ -133,7 +145,7 @@ class GenericStatementParser(StatementParser):
             )
 
         transactions = [
-            self._read_row(row, mapping, number)
+            self._read_row(row, mapping, number, continuations.get(id(row), ()))
             for number, row in enumerate(movements, start=1)
         ]
         opening, closing = self._bookend_balances(
@@ -167,6 +179,8 @@ class GenericStatementParser(StatementParser):
         header = None
         rows: list[list[str]] = []
         summaries: dict[str, list[list[str]]] = {}
+        # A narration that wraps can come out as a row of its own: text and nothing else. It belongs to the row above.
+        self._continuations: dict[int, list[str]] = {}
 
         for table in document.tables():
             for row in table:
@@ -186,8 +200,21 @@ class GenericStatementParser(StatementParser):
 
                 if self._looks_like_a_transaction(cells):
                     rows.append(cells)
+                elif rows and self._is_continuation(cells):
+                    self._continuations.setdefault(id(rows[-1]), []).append(
+                        collapse_whitespace(" ".join(c for c in cells if c.strip()))
+                    )
 
         return header, rows, summaries
+
+    @staticmethod
+    def _is_continuation(cells) -> bool:
+        """Text only: no date, no amount. The rest of a narration that did not fit on its line."""
+        if any(as_date(c) for c in cells) or any(as_paise(c) is not None for c in cells):
+            return False
+        filled = [c for c in cells if c.strip()]
+        # A page footer or a repeated title is not the end of a narration.
+        return len(filled) == 1 and not NOT_A_CONTINUATION.search(filled[0])
 
     @classmethod
     def _candidate_rows(cls, table) -> bool:
@@ -228,7 +255,7 @@ class GenericStatementParser(StatementParser):
     # -- rows into transactions ---------------------------------------------
 
     @staticmethod
-    def _read_row(row, mapping: ColumnMap, number: int) -> ParsedTransaction:
+    def _read_row(row, mapping: ColumnMap, number: int, continued=()) -> ParsedTransaction:
         date = as_date(mapping.get(row, "date"))
         if date is None:
             raise StatementParseError(
@@ -248,7 +275,7 @@ class GenericStatementParser(StatementParser):
         return ParsedTransaction(
             row_number=number,
             date=date,
-            narration=collapse_whitespace(mapping.get(row, "narration")),
+            narration=collapse_whitespace(" ".join([mapping.get(row, "narration"), *continued])),
             cheque_number=collapse_whitespace(mapping.get(row, "reference"))[:32],
             branch_code=collapse_whitespace(mapping.get(row, "branch"))[:16],
             debit_paise=-signed if signed < 0 else 0,

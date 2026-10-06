@@ -5575,10 +5575,11 @@ export interface components {
          * @description * `UNKNOWN` - Not yet routed
          *     * `TEXT_LAYER` - Born-digital text layer
          *     * `OCR` - Optical character recognition
+         *     * `VISION` - Read from page images by a vision model
          *     * `MANUAL` - Keyed in by hand
          * @enum {string}
          */
-        PipelineTierEnum: "UNKNOWN" | "TEXT_LAYER" | "OCR" | "MANUAL";
+        PipelineTierEnum: "UNKNOWN" | "TEXT_LAYER" | "OCR" | "VISION" | "MANUAL";
         /** @description What changed when a row was placed. */
         PlacementResult: {
             readonly classification: components["schemas"]["Classification"];

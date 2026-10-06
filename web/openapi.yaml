@@ -11826,12 +11826,14 @@ components:
       - UNKNOWN
       - TEXT_LAYER
       - OCR
+      - VISION
       - MANUAL
       type: string
       description: |-
         * `UNKNOWN` - Not yet routed
         * `TEXT_LAYER` - Born-digital text layer
         * `OCR` - Optical character recognition
+        * `VISION` - Read from page images by a vision model
         * `MANUAL` - Keyed in by hand
     PlacementResult:
       type: object

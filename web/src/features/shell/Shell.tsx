@@ -14,6 +14,7 @@ import {
   Building2,
   CalendarCheck,
   Calculator,
+  ChevronRight,
   ChevronsUpDown,
   Columns3,
   FileSpreadsheet,
@@ -59,6 +60,7 @@ import { parseFy } from '@/lib/fy'
 import { useHotkey } from '@/lib/hotkeys'
 import { JUMP_KEYS, moduleHref, type JumpKey } from '@/lib/jump'
 import { setSelectedClient, useSelectedClient } from '@/lib/selectedClient'
+import { sidebarPlan, type NavItem } from '@/lib/sidebarNav'
 import { ClientSection } from './ClientSection'
 import { AlertBell, useAlertCount } from '@/features/alerts/AlertBell'
 import { clientIdOf, moduleOf, type ModuleId } from '@/lib/modules'
@@ -71,64 +73,24 @@ import { usePalette } from './CommandPalette'
 import { ShortcutSheet } from './ShortcutSheet'
 import { useFy } from './useFy'
 
-interface NavEntry {
-  id: ModuleId
-  label: string
-  icon: ReactNode
-  /** Shown only to people holding this permission. */
-  permission?: string
-  /** No screen yet: the link goes to /soon/<id>. */
-  soon?: boolean
+const ICONS: Record<ModuleId, ReactNode> = {
+  dashboard: <LayoutDashboard />,
+  clients: <Users />,
+  pipeline: <Columns3 />,
+  documents: <FolderOpen />,
+  bookkeeping: <BookOpen />,
+  bank: <Landmark />,
+  gst: <FileSpreadsheet />,
+  taxation: <Calculator />,
+  audit: <ShieldCheck />,
+  compliance: <CalendarCheck />,
+  reports: <BarChart3 />,
+  ai: <Sparkles />,
+  analytics: <TrendingUp />,
+  staff: <Activity />,
+  alerts: <Bell />,
+  settings: <Settings />,
 }
-
-const GROUPS: { label: string; items: NavEntry[] }[] = [
-  {
-    label: 'Overview',
-    items: [
-      { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard />, permission: 'client.view' },
-      { id: 'clients', label: 'Clients', icon: <Users />, permission: 'client.view' },
-    ],
-  },
-  {
-    label: 'Workflow',
-    items: [
-      { id: 'pipeline', label: 'Work pipeline', icon: <Columns3 />, permission: 'client.view' },
-      { id: 'documents', label: 'Documents', icon: <FolderOpen />, permission: 'document.view' },
-    ],
-  },
-  {
-    label: 'Accounting',
-    items: [
-      { id: 'bookkeeping', label: 'Bookkeeping', icon: <BookOpen />, permission: 'report.view' },
-      { id: 'bank', label: 'Bank statements', icon: <Landmark />, permission: 'transaction.view' },
-      { id: 'gst', label: 'GST reconciliation', icon: <FileSpreadsheet />, permission: 'gst.view' },
-      { id: 'taxation', label: 'Taxation / ITR', icon: <Calculator />, soon: true },
-    ],
-  },
-  {
-    label: 'Assurance',
-    items: [
-      { id: 'audit', label: 'Audit', icon: <ShieldCheck />, soon: true },
-      { id: 'compliance', label: 'Compliance', icon: <CalendarCheck />, soon: true },
-    ],
-  },
-  {
-    label: 'Intelligence',
-    items: [
-      { id: 'reports', label: 'Reports', icon: <BarChart3 />, permission: 'report.view' },
-      { id: 'ai', label: 'AI assistant', icon: <Sparkles />, soon: true },
-      { id: 'analytics', label: 'Firm analytics', icon: <TrendingUp />, soon: true },
-    ],
-  },
-  {
-    label: 'Management',
-    items: [
-      { id: 'staff', label: 'Staff performance', icon: <Activity />, permission: 'client.view' },
-      { id: 'alerts', label: 'Alerts', icon: <Bell />, permission: 'client.view' },
-      { id: 'settings', label: 'Settings', icon: <Settings /> },
-    ],
-  },
-]
 
 const SCREEN_TITLE: Record<string, string> = {
   documents: 'Documents',
@@ -186,10 +148,43 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const bankCount = useSidebarCount()
   const alertCount = useAlertCount()
 
-  const hrefFor = (entry: NavEntry): string => {
+  const plan = sidebarPlan({ hasClient: !!clientId, can, hideSoon })
+  const [moreOpen, setMoreOpen] = useState(false)
+  const hrefFor = (entry: NavItem): string => {
     if (entry.soon) return `/soon/${entry.id}`
     if (entry.id === 'settings') return `/${settingsHome(can)}`
     return moduleHref(entry.id, clientId)
+  }
+  const renderItem = (item: NavItem) => {
+    const isActive = active === item.id
+    return (
+      <li key={item.id}>
+        <Link
+          to={hrefFor(item) as never}
+          onClick={onNavigate}
+          aria-current={isActive ? 'page' : undefined}
+          className={cn(
+            'relative flex h-9 items-center gap-2.5 rounded-md px-3 text-sm font-medium hover:bg-white/5 hover:text-white [&_svg]:size-4 [&_svg]:shrink-0',
+            item.soon ? 'text-sidebar-muted' : 'text-sidebar-foreground',
+            isActive && 'bg-sidebar-active text-white before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-sidebar-bar',
+          )}
+        >
+          {ICONS[item.id]}
+          <span className="truncate">{item.label}</span>
+          {item.soon ? (
+            <span className={chip}>Soon</span>
+          ) : item.id === 'alerts' && alertCount ? (
+            <span className={cn(chip, 'num')} title="Things that need attention">
+              {alertCount}
+            </span>
+          ) : item.id === 'bank' && bankCount && !clientId ? (
+            <span className={cn(chip, 'num')} title="Rows waiting across the firm">
+              {bankCount}
+            </span>
+          ) : null}
+        </Link>
+      </li>
+    )
   }
 
   const initials = (me?.full_name || me?.email || '?')
@@ -205,53 +200,32 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <Brand />
       </div>
       <nav aria-label="Main" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-4">
-        {clientId && <ClientSection clientId={clientId} path={path} onNavigate={onNavigate} />}
-        {GROUPS.map((group) => {
-          const items = group.items.filter((item) => {
-            if (item.permission && !can(item.permission)) return false
-            if (item.soon && hideSoon) return false
-            return true
-          })
-          if (items.length === 0) return null
-          return (
-            <div key={group.label} className="pt-2.5">
-              <div className="px-3 pb-1 text-xs font-medium text-sidebar-muted">{group.label}</div>
-              <ul className="grid gap-0.5">
-                {items.map((item) => {
-                  const isActive = active === item.id
-                  return (
-                    <li key={item.id}>
-                      <Link
-                        to={hrefFor(item) as never}
-                        onClick={onNavigate}
-                        aria-current={isActive ? 'page' : undefined}
-                        className={cn(
-                          'relative flex h-9 items-center gap-2.5 rounded-md px-3 text-sm font-medium hover:bg-white/5 hover:text-white [&_svg]:size-4 [&_svg]:shrink-0',
-                          item.soon ? 'text-sidebar-muted' : 'text-sidebar-foreground',
-                          isActive && 'bg-sidebar-active text-white before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-sidebar-bar',
-                        )}
-                      >
-                        {item.icon}
-                        <span className="truncate">{item.label}</span>
-                        {item.soon ? (
-                          <span className={chip}>Soon</span>
-                        ) : item.id === 'alerts' && alertCount ? (
-                          <span className={cn(chip, 'num')} title="Things that need attention">
-                            {alertCount}
-                          </span>
-                        ) : item.id === 'bank' && bankCount ? (
-                          <span className={cn(chip, 'num')} title={clientId ? 'Rows waiting for this client' : 'Rows waiting across the firm'}>
-                            {bankCount}
-                          </span>
-                        ) : null}
-                      </Link>
-                    </li>
-                  )
-                })}
+        {clientId && <ClientSection clientId={clientId} path={path} reviewCount={bankCount} onNavigate={onNavigate} />}
+        {plan.groups.map((group) => (
+          <div key={group.label} className="pt-2.5">
+            <div className="px-3 pb-1 text-xs font-medium text-sidebar-muted">{group.label}</div>
+            <ul className="grid gap-0.5">{group.items.map(renderItem)}</ul>
+          </div>
+        ))}
+        {plan.more.length > 0 && (
+          <div className="pt-2.5">
+            <button
+              type="button"
+              aria-expanded={moreOpen}
+              aria-controls="sidebar-more"
+              onClick={() => setMoreOpen((v) => !v)}
+              className="flex h-8 w-full items-center gap-1 rounded-md px-3 text-xs font-medium text-sidebar-muted hover:bg-white/5 hover:text-white"
+            >
+              <ChevronRight className={cn('size-3 shrink-0 transition-transform', moreOpen && 'rotate-90')} aria-hidden />
+              More (coming soon)
+            </button>
+            {moreOpen && (
+              <ul id="sidebar-more" className="grid gap-0.5">
+                {plan.more.map(renderItem)}
               </ul>
-            </div>
-          )
-        })}
+            )}
+          </div>
+        )}
       </nav>
       <div className="flex items-center gap-2.5 border-t border-white/10 px-4 py-3 text-xs text-sidebar-muted">
         <span className="grid size-8 shrink-0 place-items-center rounded-full bg-white/10 text-[13px] font-semibold text-sidebar-foreground" aria-hidden>
@@ -327,7 +301,7 @@ function FySelect() {
       aria-label="Financial year"
       value={fy}
       onChange={(e) => setFy(Number(e.target.value))}
-      className="h-9 shrink-0 rounded-md border border-input bg-card px-2.5 text-sm font-medium text-foreground"
+      className="h-9 w-[5.75rem] shrink-0 rounded-md border border-input bg-card px-1.5 text-sm font-medium text-foreground sm:w-auto sm:px-2.5"
     >
       {[...years]
         .sort((a, b) => b - a)
@@ -396,7 +370,7 @@ function UserMenu({ onShortcuts }: { onShortcuts: () => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Account and preferences" className="rounded-full bg-secondary text-[13px] font-semibold">
+        <Button variant="ghost" size="icon" aria-label="Account and preferences" className="rounded-full bg-secondary text-[13px] font-semibold max-sm:size-11">
           {initials}
         </Button>
       </DropdownMenuTrigger>
@@ -529,7 +503,7 @@ export function Shell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <OfflineStrip />
-        <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background px-3 md:gap-3 lg:px-6">
+        <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background px-2 sm:px-3 md:gap-3 lg:px-6">
           <Button variant="ghost" size="icon" className="size-11 shrink-0 lg:hidden" aria-label="Open menu" onClick={() => setMenuOpen(true)}>
             <Menu />
           </Button>
@@ -539,7 +513,7 @@ export function Shell() {
           <ClientPicker />
           <FySelect />
           <PaletteTrigger />
-          <div className="ml-auto flex shrink-0 items-center gap-2 md:gap-3">
+          <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-2 md:gap-3">
             <AssistantIndicator />
             <AlertBell />
             <UserMenu onShortcuts={() => setShortcutsOpen(true)} />

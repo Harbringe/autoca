@@ -141,10 +141,10 @@ export function ClientOverview({ clientId }: { clientId: string }) {
   const months = monthCoverage(fy, stmts.data?.results ?? [])
 
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-4 [&>*]:min-w-0">
       {can('report.view') && hasStatements && <FinancialSnapshot clientId={clientId} fy={fy} />}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
-        <div className="grid gap-4">
+        <div className="grid gap-4 [&>*]:min-w-0">
           <Card className="p-2">
             <h2 className="sr-only">What is next for these books</h2>
             <ol className="grid gap-1">

@@ -339,10 +339,10 @@ def _context_for(client, batch, pseudonymiser) -> dict:
             ledger__isnull=False,
         )
         .exclude(pk__in=batch_pks)
-        .values_list("counterparty", "ledger__name", "ledger__group", "ledger__party_record__isnull")
+        .values_list("counterparty", "ledger__name", "ledger__group", "ledger__party_record__id")
     )
     tally: Counter = Counter(
-        (party, _shown_ledger_name(name, group, not no_party)) for party, name, group, no_party in decided
+        (party, _shown_ledger_name(name, group, party_id is not None)) for party, name, group, party_id in decided
     )
     per_party: dict[str, list] = {}
     for (party, ledger_name), times in tally.most_common():

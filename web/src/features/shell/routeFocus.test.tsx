@@ -1,5 +1,5 @@
 import { render } from '@testing-library/react'
-import { focusPageHeading } from './routeFocus'
+import { focusPageHeading, setInputModality, trackInputModality, inputModality } from './routeFocus'
 
 function setup(extra = '') {
   const { container } = render(
@@ -35,5 +35,32 @@ describe('focusPageHeading', () => {
     expect(focusPageHeading(main)).toBe(false)
     expect(focusPageHeading(main, { force: true })).toBe(true)
     expect(document.activeElement).toBe(main)
+  })
+})
+
+describe('focus after a click', () => {
+  it('leaves the heading without a ring for pointer users, and with one for keyboard users', () => {
+    const main = setup()
+    setInputModality('pointer')
+    focusPageHeading(main)
+    const h1 = main.querySelector('h1') as HTMLElement
+    expect(h1).toHaveFocus()
+    expect(h1).toHaveAttribute('data-pointer-focus')
+    h1.blur()
+    expect(h1).not.toHaveAttribute('data-pointer-focus')
+    setInputModality('keyboard')
+    focusPageHeading(main)
+    expect(h1).toHaveFocus()
+    expect(h1).not.toHaveAttribute('data-pointer-focus')
+  })
+  it('follows the last input', () => {
+    const stop = trackInputModality()
+    document.dispatchEvent(new Event('pointerdown'))
+    expect(inputModality()).toBe('pointer')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Shift' }))
+    expect(inputModality()).toBe('pointer')
+    document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Tab' }))
+    expect(inputModality()).toBe('keyboard')
+    stop()
   })
 })

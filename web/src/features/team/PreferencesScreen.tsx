@@ -2,7 +2,6 @@
 
 import type { ReactNode } from 'react'
 import { PageHeader } from '@/components/ca/Page'
-import { Checkbox } from '@/components/ui/controls'
 import { ShortcutList } from '@/features/shell/ShortcutSheet'
 import { usePreferences, type Density, type Theme } from '@/lib/preferences'
 import { usePageTitle } from '@/lib/title'
@@ -46,16 +45,13 @@ function Panel({ id, title, children }: { id: string; title: string; children: R
 
 export function PreferencesScreen() {
   usePageTitle('Preferences')
-  const { theme, setTheme, density, setDensity, hideSoon, setHideSoon } = usePreferences()
+  const { theme, setTheme, density, setDensity } = usePreferences()
   return (
-    <div className="grid max-w-3xl gap-4">
+    <div className="grid max-w-3xl gap-4 [&>*]:min-w-0">
       <PageHeader title="Preferences" description="Kept in this browser. They change how you see the screen, not the firm’s books." className="mb-0" />
       <Panel id="pref-look" title="Look">
         <Choice legend="Theme" name="theme" options={THEMES} value={theme} onChange={setTheme} />
         <Choice legend="Rows" name="density" options={DENSITIES} value={density} onChange={setDensity} />
-      </Panel>
-      <Panel id="pref-menu" title="Sidebar">
-        <Checkbox label="Hide modules that are coming soon" checked={hideSoon} onChange={(e) => setHideSoon(e.target.checked)} />
       </Panel>
       <Panel id="pref-keys" title="Keyboard shortcuts">
         <p className="-mt-2 text-[13px] text-muted-foreground">The keys that work on this page. Press ? anywhere to see the ones for the screen you are on.</p>

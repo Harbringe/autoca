@@ -3,6 +3,8 @@ import { routeTree } from '@/routeTree.gen'
 import { JUMP_KEYS, moduleHref } from './jump'
 import { FIRM_LANDING, MODULE_CLIENT_SCREEN, SOON_MODULES, switchClientPath, type ModuleId } from './modules'
 import { nextTarget } from './overview'
+import { CLIENT_NAV, clientScreenPath } from './clientNav'
+import { railHref, railItems } from './sidebarNav'
 
 // Every address the app links to must be a screen of the route tree, not the not-found page. The
 // links are collected from the same functions the sidebar, palette, jump keys, dashboard and the
@@ -47,6 +49,11 @@ describe('route table', () => {
       ...Object.values(MODULE_CLIENT_SCREEN).map((s) => `/clients/${ID}/${s}`),
     ]
     expect(unresolved(paths as string[])).toEqual([])
+  })
+
+  it('resolves every rail link and every client panel link', () => {
+    const can = () => true
+    expect(unresolved([...railItems(can).map((i) => railHref(i, can)), ...CLIENT_NAV.map((i) => clientScreenPath(ID, i.screen))])).toEqual([])
   })
 
   it('resolves where switching client lands, from every module', () => {

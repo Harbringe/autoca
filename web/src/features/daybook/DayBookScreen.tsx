@@ -112,25 +112,25 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
   const mayUnpost = can('journal.approve') && !!client.data?.can_post
   const assistantEntries = inYear.filter(isAssistantEntry)
   return (
-    <div className="grid gap-3">
+    <div className="grid gap-3 [&>*]:min-w-0">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-muted-foreground">
           FY {fyLabel(fy)} · {plural(inYear.length, 'voucher')}
           {otherYears > 0 && ` · ${otherYears} in other years (change the year at the top)`}
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
             <Input aria-label="Search the Day Book" placeholder="Ledger, party or narration" className="w-60 pl-8" value={text} onChange={(e) => setText(e.target.value)} />
           </div>
-          <div className="flex gap-1 rounded-lg bg-muted p-1 text-sm">
+          <div className="flex max-w-full gap-1 overflow-x-auto rounded-lg bg-muted p-1 text-sm [scrollbar-width:none]">
             {['', ...TYPES].map((t) => (
               <button
                 key={t || 'all'}
                 type="button"
                 onClick={() => setType(t)}
                 aria-pressed={type === t}
-                className={cn('rounded-md px-2.5 py-1 text-muted-foreground', type === t && 'bg-card text-foreground shadow-xs')}
+                className={cn('shrink-0 whitespace-nowrap rounded-md px-2.5 py-1 text-muted-foreground max-sm:min-h-10', type === t && 'bg-card text-foreground shadow-xs')}
               >
                 {t || 'All'}
               </button>

@@ -1,279 +1,63 @@
-// The shell: a module sidebar, a top bar that says whose books you are in, and the page.
+// The shell: a slim rail for the firm's places, a client panel while a client is open, a top bar, the page.
 //
-// The sidebar mirrors the product's map (Overview, Workflow, Accounting, Assurance, Intelligence,
-// Management). Modules that are not built are real links to a "Coming soon" page, marked with a
-// "Soon" chip. The active module is derived from the address. Under 1024px the sidebar is a drawer.
+// Which navigation shows depends on the address and nothing else: any path outside /clients/<id>/...
+// is the firm's, a path inside it is that client's. Under 1024px the rail and panel become a drawer, and
+// a client's five most-used screens a strip under the top bar. One of the two layouts is mounted at a time.
 
-import { useQuery } from '@tanstack/react-query'
-import { Link, Outlet, useNavigate, useParams, useRouterState, useSearch } from '@tanstack/react-router'
-import {
-  Activity,
-  BarChart3,
-  Bell,
-  BookOpen,
-  Building2,
-  CalendarCheck,
-  Calculator,
-  ChevronRight,
-  ChevronsUpDown,
-  Columns3,
-  FileSpreadsheet,
-  FolderOpen,
-  Keyboard,
-  Landmark,
-  LayoutDashboard,
-  LogOut,
-  Menu,
-  Monitor,
-  Moon,
-  Rows3,
-  Search,
-  Settings,
-  ShieldCheck,
-  Sparkles,
-  Sun,
-  TrendingUp,
-  Users,
-  EyeOff,
-} from 'lucide-react'
+import { Link, Outlet, useNavigate, useRouterState, useSearch } from '@tanstack/react-router'
+import { Menu, Search, Sparkles, X } from 'lucide-react'
 import { Dialog as Drawer } from 'radix-ui'
-import { useEffect, useState, type ReactNode } from 'react'
-import { clientDetail, reviewSummary } from '@/api/queries/clients'
-import { firmOverview } from '@/api/queries/overview'
+import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
 import { Kbd } from '@/components/ui/kbd'
 import { useAssistantShort } from '@/features/assistant/useAssistant'
 import { Brand } from '@/features/auth/AuthLayout'
+import { AlertBell, useAlertCount } from '@/features/alerts/AlertBell'
+import { activeClientItem, clientScreenTitle } from '@/lib/clientNav'
 import { fyLabel, financialYearOf } from '@/lib/format'
 import { parseFy } from '@/lib/fy'
 import { useHotkey } from '@/lib/hotkeys'
 import { JUMP_KEYS, moduleHref, type JumpKey } from '@/lib/jump'
-import { setSelectedClient, useSelectedClient } from '@/lib/selectedClient'
-import { sidebarPlan, type NavItem } from '@/lib/sidebarNav'
-import { ClientSection } from './ClientSection'
-import { AlertBell, useAlertCount } from '@/features/alerts/AlertBell'
 import { clientIdOf, moduleOf, type ModuleId } from '@/lib/modules'
-import { usePreferences, type Density, type Theme } from '@/lib/preferences'
+import { railActive, railHref, railItems } from '@/lib/sidebarNav'
 import { usePageTitle } from '@/lib/title'
-import { useRouteFocus } from './routeFocus'
+import { useMediaQuery } from '@/lib/useMediaQuery'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { usePalette } from './CommandPalette'
+import { ClientNavList, PanelHeader, ClientPanel } from './ClientPanel'
+import { PhoneClientButton, ClientStrip } from './PhoneChrome'
+import { Rail, RAIL_ICONS } from './Rail'
+import { useRouteFocus } from './routeFocus'
 import { ShortcutSheet } from './ShortcutSheet'
 import { useFy } from './useFy'
+import { UserMenu } from './UserMenu'
 
-const ICONS: Record<ModuleId, ReactNode> = {
-  dashboard: <LayoutDashboard />,
-  clients: <Users />,
-  pipeline: <Columns3 />,
-  documents: <FolderOpen />,
-  bookkeeping: <BookOpen />,
-  bank: <Landmark />,
-  gst: <FileSpreadsheet />,
-  taxation: <Calculator />,
-  audit: <ShieldCheck />,
-  compliance: <CalendarCheck />,
-  reports: <BarChart3 />,
-  ai: <Sparkles />,
-  analytics: <TrendingUp />,
-  staff: <Activity />,
-  alerts: <Bell />,
-  settings: <Settings />,
-}
-
-const SCREEN_TITLE: Record<string, string> = {
+/** What the phone's top bar says in the firm's pages, where there is no client to name. */
+const FIRM_TITLE: Partial<Record<ModuleId, string>> = {
+  dashboard: 'Dashboard',
+  clients: 'Clients',
+  pipeline: 'Work pipeline',
+  alerts: 'Alerts',
+  staff: 'Staff performance',
+  settings: 'Settings',
   documents: 'Documents',
-  bookkeeping: 'Books overview',
-  statements: 'Statements',
-  review: 'Review',
-  bills: 'Purchases & Sales',
-  daybook: 'Day Book',
-  'open-items': 'To fix',
-  invoices: 'Invoices',
-  tds: 'TDS',
-  payroll: 'Payroll',
-  assets: 'Assets',
-  ledgers: 'Ledgers',
+  bookkeeping: 'Bookkeeping',
+  bank: 'Bank statements',
   reports: 'Reports',
-  books: 'Books & sign-off',
-  masters: 'Parties & rules',
-  team: 'Settings & team',
+  gst: 'GST reconciliation',
 }
 
 /** The browser tab names the screen. Screens outside a client, and the GST screens (which name the run), set their own title. */
 function useClientPageTitle() {
   const path = useRouterState({ select: (s) => s.location.pathname })
   const parts = path.split('/').filter(Boolean)
-  const title = parts[0] !== 'clients' ? undefined : parts.length === 1 ? 'Clients' : parts.length === 2 ? 'Client profile' : (SCREEN_TITLE[parts[2]!] ?? undefined)
+  const item = activeClientItem(path)
+  const title = parts[0] !== 'clients' ? undefined : parts.length === 1 ? 'Clients' : item && item.screen !== 'gst' ? clientScreenTitle(item) : undefined
   usePageTitle(title)
 }
 
-/** The small champagne chip on the dark sidebar: "Soon", or a real count. */
-const chip = 'ml-auto rounded-sm bg-sidebar-chip px-1.5 text-xs font-medium text-sidebar-chip-foreground'
-
-function useSidebarCount(): number | undefined {
-  const { can } = useSession()
-  const { clientId } = useParams({ strict: false }) as { clientId?: string }
-  const one = useQuery({ ...reviewSummary(clientId ?? ''), enabled: !!clientId && can('transaction.view') })
-  // The firm total is the overview's own total: one request, the same clients the list shows.
-  const firm = useQuery({ ...firmOverview(), enabled: !clientId })
-  if (clientId) return one.data?.total
-  if (!firm.data) return undefined
-  return firm.data.totals.unresolved + firm.data.totals.pending_approval
-}
-
-function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
-  const { can, me } = useSession()
-  const { hideSoon } = usePreferences()
-  const path = useRouterState({ select: (s) => s.location.pathname })
-  const active = moduleOf(path)
-  const { clientId: urlClient } = useParams({ strict: false }) as { clientId?: string }
-  // The client stays selected when the person steps out to the dashboard or the client list.
-  const remembered = useSelectedClient()
-  useEffect(() => {
-    if (urlClient) setSelectedClient(urlClient)
-  }, [urlClient])
-  const clientId = urlClient ?? remembered ?? undefined
-  const bankCount = useSidebarCount()
-  const alertCount = useAlertCount()
-
-  const plan = sidebarPlan({ hasClient: !!clientId, can, hideSoon })
-  const [moreOpen, setMoreOpen] = useState(false)
-  const hrefFor = (entry: NavItem): string => {
-    if (entry.soon) return `/soon/${entry.id}`
-    if (entry.id === 'settings') return `/${settingsHome(can)}`
-    return moduleHref(entry.id, clientId)
-  }
-  const renderItem = (item: NavItem) => {
-    const isActive = active === item.id
-    return (
-      <li key={item.id}>
-        <Link
-          to={hrefFor(item) as never}
-          onClick={onNavigate}
-          aria-current={isActive ? 'page' : undefined}
-          className={cn(
-            'relative flex h-9 items-center gap-2.5 rounded-md px-3 text-sm font-medium hover:bg-white/5 hover:text-white [&_svg]:size-4 [&_svg]:shrink-0',
-            item.soon ? 'text-sidebar-muted' : 'text-sidebar-foreground',
-            isActive && 'bg-sidebar-active text-white before:absolute before:inset-y-1.5 before:left-0 before:w-0.5 before:rounded-full before:bg-sidebar-bar',
-          )}
-        >
-          {ICONS[item.id]}
-          <span className="truncate">{item.label}</span>
-          {item.soon ? (
-            <span className={chip}>Soon</span>
-          ) : item.id === 'alerts' && alertCount ? (
-            <span className={cn(chip, 'num')} title="Things that need attention">
-              {alertCount}
-            </span>
-          ) : item.id === 'bank' && bankCount && !clientId ? (
-            <span className={cn(chip, 'num')} title="Rows waiting across the firm">
-              {bankCount}
-            </span>
-          ) : null}
-        </Link>
-      </li>
-    )
-  }
-
-  const initials = (me?.full_name || me?.email || '?')
-    .split(/[\s@.]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('')
-
-  return (
-    <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
-      <div className="px-4 py-3.5 text-white">
-        <Brand />
-      </div>
-      <nav aria-label="Main" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-4">
-        {clientId && <ClientSection clientId={clientId} path={path} reviewCount={bankCount} onNavigate={onNavigate} />}
-        {plan.groups.map((group) => (
-          <div key={group.label} className="pt-2.5">
-            <div className="px-3 pb-1 text-xs font-medium text-sidebar-muted">{group.label}</div>
-            <ul className="grid gap-0.5">{group.items.map(renderItem)}</ul>
-          </div>
-        ))}
-        {plan.more.length > 0 && (
-          <div className="pt-2.5">
-            <button
-              type="button"
-              aria-expanded={moreOpen}
-              aria-controls="sidebar-more"
-              onClick={() => setMoreOpen((v) => !v)}
-              className="flex h-8 w-full items-center gap-1 rounded-md px-3 text-xs font-medium text-sidebar-muted hover:bg-white/5 hover:text-white"
-            >
-              <ChevronRight className={cn('size-3 shrink-0 transition-transform', moreOpen && 'rotate-90')} aria-hidden />
-              More (coming soon)
-            </button>
-            {moreOpen && (
-              <ul id="sidebar-more" className="grid gap-0.5">
-                {plan.more.map(renderItem)}
-              </ul>
-            )}
-          </div>
-        )}
-      </nav>
-      <div className="flex items-center gap-2.5 border-t border-white/10 px-4 py-3 text-xs text-sidebar-muted">
-        <span className="grid size-8 shrink-0 place-items-center rounded-full bg-white/10 text-[13px] font-semibold text-sidebar-foreground" aria-hidden>
-          {initials}
-        </span>
-        <div className="min-w-0">
-          <div className="truncate text-[13px] font-medium text-sidebar-foreground">{me?.full_name || me?.email}</div>
-          <div className="truncate">{me?.role_display}</div>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-function settingsHome(can: (permission: string) => boolean): string {
-  return can('team.view') ? 'settings/team' : can('firm.manage') ? 'settings/firm' : 'settings/preferences'
-}
-
-/** Who's books these are. Opens the palette, which lists clients (and "All clients") as you type. */
-function ClientPicker() {
-  const { clientId } = useParams({ strict: false }) as { clientId?: string }
-  const palette = usePalette()
-  const client = useQuery({ ...clientDetail(clientId ?? ''), enabled: !!clientId })
-  const label = clientId ? (client.data?.name ?? '…') : 'All clients'
-  return (
-    <Button
-      variant="secondary"
-      className="min-w-0 flex-1 justify-between gap-2 px-3 sm:flex-none sm:min-w-52 sm:max-w-72"
-      onClick={() => palette.open()}
-      aria-label={`Client: ${label}. Change client`}
-      aria-haspopup="dialog"
-    >
-      <span className="flex min-w-0 items-center gap-2">
-        <Building2 className="text-muted-foreground" aria-hidden />
-        <span className="truncate">{label}</span>
-      </span>
-      <span className="flex shrink-0 items-center gap-1.5 text-muted-foreground">
-        <span className="hidden items-center gap-1 xl:flex">
-          <Kbd>Alt</Kbd>
-          <Kbd>C</Kbd>
-        </span>
-        <ChevronsUpDown className="!size-3.5" aria-hidden />
-      </span>
-    </Button>
-  )
-}
-
-/** Modules where the financial year in view means something. */
+/** Modules where the financial year in view means something under All clients. */
 const FY_MODULES: ModuleId[] = ['dashboard', 'clients', 'pipeline', 'bookkeeping', 'bank', 'gst', 'reports']
 
 /**
@@ -281,13 +65,13 @@ const FY_MODULES: ModuleId[] = ['dashboard', 'clients', 'pipeline', 'bookkeeping
  * that client's remembered year, written to `?fy=`. Under All clients it is a firm-level year, also
  * carried in `?fy=`, and picking a client afterwards keeps it.
  */
-function FySelect() {
+function FySelect({ className }: { className?: string }) {
   const path = useRouterState({ select: (s) => s.location.pathname })
   const { clientId, fy: clientFy, setFy: setClientFy, dataYears } = useFy()
   const search = useSearch({ strict: false }) as { fy?: unknown }
   const navigate = useNavigate()
   const module = moduleOf(path)
-  if (!module || !FY_MODULES.includes(module)) return null
+  if (!clientId && (!module || !FY_MODULES.includes(module))) return null
 
   const now = financialYearOf(new Date())
   const fy = clientId ? clientFy : (parseFy(search.fy) ?? now)
@@ -301,7 +85,7 @@ function FySelect() {
       aria-label="Financial year"
       value={fy}
       onChange={(e) => setFy(Number(e.target.value))}
-      className="h-9 w-[5.75rem] shrink-0 rounded-md border border-input bg-card px-1.5 text-sm font-medium text-foreground sm:w-auto sm:px-2.5"
+      className={cn('h-9 shrink-0 rounded-md border border-input bg-card px-2.5 text-sm font-medium text-foreground', className)}
     >
       {[...years]
         .sort((a, b) => b - a)
@@ -320,7 +104,7 @@ function PaletteTrigger() {
     <button
       type="button"
       onClick={() => palette.open()}
-      className="hidden h-9 min-w-0 max-w-sm flex-1 items-center gap-2 rounded-md border border-input bg-card px-3 text-sm text-faint hover:bg-hover lg:flex"
+      className="flex h-9 min-w-0 max-w-sm flex-1 items-center gap-2 rounded-md border border-input bg-card px-3 text-sm text-faint hover:bg-hover"
     >
       <Search className="size-4 shrink-0" aria-hidden />
       <span className="truncate">Search or jump</span>
@@ -358,61 +142,12 @@ function AssistantIndicator() {
   )
 }
 
-function UserMenu({ onShortcuts }: { onShortcuts: () => void }) {
-  const { me, signOut } = useSession()
-  const { theme, setTheme, density, setDensity, hideSoon, setHideSoon } = usePreferences()
-  const initials = (me?.full_name || me?.email || '?')
-    .split(/[\s@.]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part[0]?.toUpperCase())
-    .join('')
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Account and preferences" className="rounded-full bg-secondary text-[13px] font-semibold max-sm:size-11">
-          {initials}
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-64">
-        <div className="px-2 py-2">
-          <div className="truncate text-sm font-medium">{me?.full_name || me?.email}</div>
-          <div className="truncate text-xs text-muted-foreground">{me?.email}</div>
-          <div className="text-xs text-muted-foreground">{me?.role_display}</div>
-        </div>
-        <DropdownMenuSeparator />
-        <DropdownMenuLabel>Theme</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={theme} onValueChange={(v) => setTheme(v as Theme)}>
-          <DropdownMenuRadioItem value="light"><Sun /> Light</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="dark"><Moon /> Dark</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="system"><Monitor /> Match my device</DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-        <DropdownMenuLabel>Rows</DropdownMenuLabel>
-        <DropdownMenuRadioGroup value={density} onValueChange={(v) => setDensity(v as Density)}>
-          <DropdownMenuRadioItem value="comfortable"><Rows3 /> Comfortable</DropdownMenuRadioItem>
-          <DropdownMenuRadioItem value="compact"><Rows3 /> Compact</DropdownMenuRadioItem>
-        </DropdownMenuRadioGroup>
-        <DropdownMenuSeparator />
-        <DropdownMenuCheckboxItem checked={hideSoon} onCheckedChange={(v) => setHideSoon(v === true)}>
-          <EyeOff /> Hide modules that are coming soon
-        </DropdownMenuCheckboxItem>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem onSelect={onShortcuts}>
-          <Keyboard /> Keyboard shortcuts <Kbd className="ml-auto">?</Kbd>
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => void signOut()}>
-          <LogOut /> Sign out
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
-  )
-}
-
 /** `g` then a letter jumps to a module. Plain keys are ignored while a field has focus (the registry's rule). */
 function JumpKeys() {
   const { can } = useSession()
   const navigate = useNavigate()
-  const { clientId } = useParams({ strict: false }) as { clientId?: string }
+  const path = useRouterState({ select: (s) => s.location.pathname })
+  const clientId = clientIdOf(path)
   return (
     <>
       {JUMP_KEYS.map((jump) => (
@@ -448,11 +183,93 @@ function OfflineStrip() {
   )
 }
 
+/** The phone's menu: search, the year, the firm's places, then (inside a client) that client's screens and the person. */
+function DrawerBody({ clientId, onClose, onShortcuts }: { clientId?: string; onClose: () => void; onShortcuts: () => void }) {
+  const { can, me } = useSession()
+  const palette = usePalette()
+  const path = useRouterState({ select: (s) => s.location.pathname })
+  const active = railActive(path)
+  const alertCount = useAlertCount(!clientId)
+  return (
+    <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
+      <div className="flex items-center justify-between py-1.5 pl-4 pr-1.5 text-white">
+        <Brand />
+        <Drawer.Close asChild>
+          <Button variant="ghost" size="icon" className="size-11 text-sidebar-foreground hover:bg-white/10 hover:text-white" aria-label="Close menu">
+            <X />
+          </Button>
+        </Drawer.Close>
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-4">
+        <div className="grid gap-2 px-2 pb-2">
+          <button
+            type="button"
+            onClick={() => {
+              onClose()
+              setTimeout(() => palette.open(), 150)
+            }}
+            className="flex h-11 items-center gap-2 rounded-md bg-white/10 px-3 text-sm text-sidebar-foreground hover:bg-white/15"
+          >
+            <Search className="size-4" aria-hidden /> Search or jump
+          </button>
+          <FySelect className="h-11 w-full border-white/20 bg-white/10 text-sidebar-foreground [&>option]:text-foreground" />
+        </div>
+        <nav aria-label="Main" className="px-2">
+          <ul className="grid gap-0.5">
+            {railItems(can).map((item) => {
+              const isActive = active === item.id
+              const count = item.id === 'alerts' ? alertCount : 0
+              return (
+                <li key={item.id}>
+                  <Link
+                    to={railHref(item, can) as never}
+                    onClick={onClose}
+                    activeOptions={{ exact: true, includeSearch: false }}
+                    aria-current={isActive ? 'page' : undefined}
+                    className={cn(
+                      'relative flex h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground hover:bg-white/5 hover:text-white [&_svg]:size-[18px] [&_svg]:shrink-0',
+                      isActive && 'bg-sidebar-active text-white before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-full before:bg-sidebar-bar',
+                    )}
+                  >
+                    {RAIL_ICONS[item.id]}
+                    {item.long}
+                    {count > 0 && (
+                      <span className="num ml-auto rounded-sm bg-sidebar-chip px-1.5 text-xs font-medium text-sidebar-chip-foreground">
+                        {count}
+                        <span className="sr-only"> need attention</span>
+                      </span>
+                    )}
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
+        </nav>
+        {clientId && (
+          <section aria-label="This client" className="mt-3 border-t border-white/10 bg-sidebar-panel pb-2 pt-1">
+            <PanelHeader clientId={clientId} />
+            <ClientNavList clientId={clientId} touch onNavigate={onClose} />
+          </section>
+        )}
+      </div>
+      <div className="flex items-center gap-3 border-t border-white/10 px-3 py-2.5 text-xs text-sidebar-muted">
+        <UserMenu variant="drawer" onShortcuts={onShortcuts} />
+        <div className="min-w-0">
+          <div className="truncate text-[13px] font-medium text-sidebar-foreground">{me?.full_name || me?.email}</div>
+          <div className="truncate">{me?.role_display}</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Shell() {
   const [menuOpen, setMenuOpen] = useState(false)
   const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const navigate = useNavigate()
   const path = useRouterState({ select: (s) => s.location.pathname })
+  const desktop = useMediaQuery('(min-width: 1024px)')
+  const clientId = clientIdOf(path)
 
   useHotkey('?', 'Show keyboard shortcuts', () => setShortcutsOpen(true))
   const { can, me } = useSession()
@@ -462,14 +279,14 @@ export function Shell() {
   useHotkey('g t', 'Go to team & roles', () => can('team.view') && void navigate({ to: '/settings/team' }), 'Go to')
   useHotkey('g f', 'Go to firm settings', () => can('firm.manage') && void navigate({ to: '/settings/firm' }), 'Go to')
 
-  // The drawer closes when the person navigates, and when the window grows past the breakpoint.
+  // The drawer closes when the person navigates, and when the window grows into the desktop layout.
   useEffect(() => setMenuOpen(false), [path])
   useEffect(() => {
-    const query = matchMedia('(min-width: 1024px)')
-    const close = () => query.matches && setMenuOpen(false)
-    query.addEventListener('change', close)
-    return () => query.removeEventListener('change', close)
-  }, [])
+    if (desktop) setMenuOpen(false)
+  }, [desktop])
+
+  const module = moduleOf(path)
+  const firmName = me?.firm?.name
 
   return (
     <div className="flex min-h-svh">
@@ -484,41 +301,68 @@ export function Shell() {
         Skip to content
       </a>
 
-      <aside className="no-print sticky top-0 hidden h-svh w-[248px] shrink-0 lg:block">
-        <Sidebar />
-      </aside>
+      {desktop && (
+        <>
+          <aside aria-label="Firm" className="no-print sticky top-0 h-svh w-[72px] shrink-0">
+            <Rail onShortcuts={() => setShortcutsOpen(true)} />
+          </aside>
+          {clientId && (
+            <aside aria-label="Client" className="no-print sticky top-0 h-svh w-[216px] shrink-0">
+              <ClientPanel key={clientId} clientId={clientId} />
+            </aside>
+          )}
+        </>
+      )}
 
-      <Drawer.Root open={menuOpen} onOpenChange={setMenuOpen}>
-        <Drawer.Portal>
-          <Drawer.Overlay className="fixed inset-0 z-40 bg-black/45 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-[120ms] lg:hidden" />
-          <Drawer.Content
-            aria-describedby={undefined}
-            className="fixed inset-y-0 left-0 z-50 w-72 max-w-[85vw] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-[120ms] lg:hidden"
-          >
-            <Drawer.Title className="sr-only">Menu</Drawer.Title>
-            <Sidebar onNavigate={() => setMenuOpen(false)} />
-          </Drawer.Content>
-        </Drawer.Portal>
-      </Drawer.Root>
+      {!desktop && (
+        <Drawer.Root open={menuOpen} onOpenChange={setMenuOpen}>
+          <Drawer.Portal>
+            <Drawer.Overlay className="fixed inset-0 z-40 bg-black/45 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-[120ms]" />
+            <Drawer.Content
+              aria-describedby={undefined}
+              className="fixed inset-y-0 left-0 z-50 w-80 max-w-[88vw] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-[120ms]"
+            >
+              <Drawer.Title className="sr-only">Menu</Drawer.Title>
+              <DrawerBody clientId={clientId} onClose={() => setMenuOpen(false)} onShortcuts={() => setShortcutsOpen(true)} />
+            </Drawer.Content>
+          </Drawer.Portal>
+        </Drawer.Root>
+      )}
 
       <div className="flex min-w-0 flex-1 flex-col">
         <OfflineStrip />
         <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background px-2 sm:px-3 md:gap-3 lg:px-6">
-          <Button variant="ghost" size="icon" className="size-11 shrink-0 lg:hidden" aria-label="Open menu" onClick={() => setMenuOpen(true)}>
-            <Menu />
-          </Button>
-          {me?.firm?.name && (
-            <span className="hidden max-w-48 shrink-0 truncate border-r pr-3 text-[13px] font-medium text-muted-foreground xl:block">{me.firm.name}</span>
+          {clientId && <div className="absolute inset-x-0 top-0 h-[3px] bg-brand" aria-hidden />}
+          {desktop ? (
+            <>
+              {!clientId && (
+                <span className="hidden shrink-0 truncate text-[13px] font-medium text-muted-foreground xl:block">
+                  {firmName ? `${firmName} · All clients` : 'All clients'}
+                </span>
+              )}
+              <FySelect />
+              <PaletteTrigger />
+              <div className="ml-auto flex shrink-0 items-center gap-3">
+                <AssistantIndicator />
+                <AlertBell key={`bell-${clientId ?? "firm"}`} clientId={clientId} />
+                <UserMenu onShortcuts={() => setShortcutsOpen(true)} />
+              </div>
+            </>
+          ) : (
+            <>
+              <Button variant="ghost" size="icon" className="size-11 shrink-0" aria-label="Open menu" onClick={() => setMenuOpen(true)}>
+                <Menu />
+              </Button>
+              {clientId ? (
+                <PhoneClientButton key={clientId} clientId={clientId} />
+              ) : (
+                <div className="min-w-0 flex-1 truncate px-1 text-base font-semibold text-heading">{(module && FIRM_TITLE[module]) || 'AutoCA'}</div>
+              )}
+              <AlertBell key={`bell-${clientId ?? "firm"}`} clientId={clientId} />
+            </>
           )}
-          <ClientPicker />
-          <FySelect />
-          <PaletteTrigger />
-          <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-2 md:gap-3">
-            <AssistantIndicator />
-            <AlertBell />
-            <UserMenu onShortcuts={() => setShortcutsOpen(true)} />
-          </div>
         </header>
+        {!desktop && clientId && <ClientStrip clientId={clientId} />}
         <main id="content" tabIndex={-1} className="mx-auto w-full max-w-[1400px] flex-1 p-4 outline-none md:p-6">
           <Outlet />
         </main>

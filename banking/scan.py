@@ -19,6 +19,7 @@ from __future__ import annotations
 import io
 import json
 import re
+import time
 
 from django.conf import settings
 
@@ -31,6 +32,7 @@ from banking.parsers.base import (
 from banking.parsers.columns import as_date, as_paise
 from integrations.llm.base import LLMError, LLMRateLimited, LLMUnavailable
 from integrations.pdf.base import PdfDocument
+from usage.recorder import record
 
 SYSTEM = (
     "You copy the contents of scanned bank account statement pages into JSON. You do not calculate, correct, "
@@ -85,7 +87,7 @@ def render_pages(
         pdf.close()
 
 
-def read_statement(data: bytes, document: PdfDocument, llm) -> ParsedStatement:
+def read_statement(data: bytes, document: PdfDocument, llm, *, client=None) -> ParsedStatement:
     """Read ``data`` from its page images and return it only if it proves out.
 
     A scan costs a model call for every few pages and holds images in memory, so a document longer than
@@ -103,12 +105,13 @@ def read_statement(data: bytes, document: PdfDocument, llm) -> ParsedStatement:
         group = render_pages(data, first=start, count=per_call)
         if len(group) != min(per_call, document.page_count - start):
             raise StatementParseError("The pages could not all be drawn, so the scan was not read.")
-        replies.append(_ask(llm, group, continued=start > 0))
+        replies.append(_ask(llm, group, continued=start > 0, client=client))
     return _assemble(replies)
 
 
-def _ask(llm, group: list[bytes], *, continued: bool) -> dict:
+def _ask(llm, group: list[bytes], *, continued: bool, client=None) -> dict:
     prompt = INSTRUCTION.format(continued=", continuing from earlier pages" if continued else "")
+    started = time.monotonic()
     try:
         reply = llm.complete_json_with_images(SYSTEM, prompt, group, max_tokens=8192)
     except LLMUnavailable as exc:
@@ -116,11 +119,14 @@ def _ask(llm, group: list[bytes], *, continued: bool) -> dict:
             "This PDF is a scan and the model that reads scans is not set up. Set the model in the server settings."
         ) from exc
     except LLMRateLimited as exc:
+        _record(client, "RATE_LIMITED", None, started, len(group))
         raise StatementParseError(
             "The reading service is busy or its allowance is used up. Try this scan again in a few minutes."
         ) from exc
     except LLMError as exc:
+        _record(client, "ERROR", None, started, len(group))
         raise StatementParseError(f"The scan could not be read: {exc}") from exc
+    _record(client, "OK", reply, started, len(group))
     try:
         parsed = json.loads(reply.text)
     except ValueError as exc:
@@ -130,6 +136,19 @@ def _ask(llm, group: list[bytes], *, continued: bool) -> dict:
     if not isinstance(parsed, dict):
         raise StatementParseError("The scan was read, but the reply was not understandable.")
     return parsed
+
+
+def _record(client, outcome, response, started, pages) -> None:
+    """Count the call for the platform owner's usage page. Counts and tokens only; never the page images or what was read."""
+    record(
+        purpose="SCAN",
+        outcome=outcome,
+        response=response,
+        firm_id=getattr(client, "firm_id", None),
+        client_id=getattr(client, "pk", None),
+        latency_ms=int((time.monotonic() - started) * 1000),
+        pages=pages,
+    )
 
 
 def _first(replies: list[dict], key: str) -> str:

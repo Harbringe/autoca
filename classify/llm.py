@@ -41,6 +41,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from collections import Counter
 from dataclasses import dataclass
 
@@ -53,6 +54,7 @@ from classify.treatment import REVIEW_ADVISED, TdsSection, Treatment, band_for
 from core.masking import mask_text
 from integrations.llm.base import LLMError, LLMRateLimited
 from integrations.registry import get_llm
+from usage.recorder import record
 
 logger = logging.getLogger("autoca.llm")
 
@@ -164,7 +166,8 @@ class _Chart:
     @property
     def usable(self):
         return [
-            ledger for ledger in self.known
+            ledger
+            for ledger in self.known
             if ledger.is_active
             and ledger.status in (self.status.ACTIVE, self.status.PROPOSED)
             and ledger.name != self.own
@@ -218,8 +221,12 @@ class _Chart:
             return None
         before = len(self.known)
         ledger = resolve_proposal(
-            self.client, spec.get("name"), spec.get("group"), reason,
-            known=self.known, excluded_names=(self.own,),
+            self.client,
+            spec.get("name"),
+            spec.get("group"),
+            reason,
+            known=self.known,
+            excluded_names=(self.own,),
             allow_new=self.proposed < MAX_PROPOSALS_PER_RUN,
         )
         if len(self.known) > before:
@@ -227,7 +234,9 @@ class _Chart:
         return ledger
 
 
-def suggest_unresolved(client, *, classifications=None, batch_size: int | None = None) -> SuggestResult:
+def suggest_unresolved(
+    client, *, classifications=None, batch_size: int | None = None
+) -> SuggestResult:
     """Ask the model about every unresolved row for ``client`` (or the given ones)."""
     from classify.engine import unresolved_for
 
@@ -265,7 +274,11 @@ def _suggest(client, classifications, *, batch_size, replace: bool) -> SuggestRe
         return SuggestResult(considered=0, suggested=0, declined=0)
 
     # Every ledger in any status: proposals are checked against rejected names too.
-    known = list(LedgerAccount.objects.filter(firm_id=client.firm_id, client=client).select_related("party_record", "employee_record"))
+    known = list(
+        LedgerAccount.objects.filter(firm_id=client.firm_id, client=client).select_related(
+            "party_record", "employee_record"
+        )
+    )
     parties = list(Party.objects.filter(firm_id=client.firm_id, client=client, is_active=True))
     own_accounts = [a.account_number for a in client.bank_accounts.all()]
     spellings = list(PartyAlias.objects.filter(firm_id=client.firm_id, client=client))
@@ -284,8 +297,11 @@ def _suggest(client, classifications, *, batch_size, replace: bool) -> SuggestRe
         # contra for a self-transfer.
         chart.own = account.ledger_name
         pseudonymiser = Pseudonymiser(
-            client, parties=parties, account_holder=account.account_holder,
-            own_accounts=own_accounts, spellings=spellings,
+            client,
+            parties=parties,
+            account_holder=account.account_holder,
+            own_accounts=own_accounts,
+            spellings=spellings,
         )
         for start in range(0, len(account_rows), size):
             batch = account_rows[start : start + size]
@@ -295,8 +311,13 @@ def _suggest(client, classifications, *, batch_size, replace: bool) -> SuggestRe
             except LLMError as exc:
                 logger.warning("model tier unavailable for client %s: %s", client.pk, exc)
                 return SuggestResult(
-                    considered=len(rows), suggested=suggested, declined=declined,
-                    failed=True, error=str(exc), confirmed=confirmed, proposed=chart.proposed,
+                    considered=len(rows),
+                    suggested=suggested,
+                    declined=declined,
+                    failed=True,
+                    error=str(exc),
+                    confirmed=confirmed,
+                    proposed=chart.proposed,
                 )
             placed, passed, agreed = _apply(batch, replies, chart, pseudonymiser)
             suggested += placed
@@ -304,7 +325,10 @@ def _suggest(client, classifications, *, batch_size, replace: bool) -> SuggestRe
             confirmed += agreed
 
     return SuggestResult(
-        considered=len(rows), suggested=suggested, declined=declined, confirmed=confirmed,
+        considered=len(rows),
+        suggested=suggested,
+        declined=declined,
+        confirmed=confirmed,
         proposed=chart.proposed,
     )
 
@@ -353,7 +377,11 @@ def _context_for(client, batch, pseudonymiser) -> dict:
         )
         .exclude(pk__in=batch_pks)
         .values_list(
-            "counterparty", "ledger__name", "ledger__group", "ledger__party_record__id", "ledger__employee_record__id"
+            "counterparty",
+            "ledger__name",
+            "ledger__group",
+            "ledger__party_record__id",
+            "ledger__employee_record__id",
         )
     )
     tally: Counter = Counter(
@@ -383,21 +411,24 @@ def _context_for(client, batch, pseudonymiser) -> dict:
     related = []
     for sibling in siblings:
         txn = sibling.transaction
-        related.append({
-            "date": txn.value_date.strftime("%d-%m-%Y"),
-            "counterparty": pseudonymiser.party_token(sibling.counterparty),
-            "direction": "debit" if txn.is_debit else "credit",
-            "amount": _rupees(txn.amount_paise),
-            "booked_to": (
-                _shown_ledger_name(
-                    sibling.ledger.name,
-                    sibling.ledger.group,
-                    sibling.ledger.is_party_account or hasattr(sibling.ledger, "employee_record"),
-                )
-                if sibling.ledger
-                else None
-            ),
-        })
+        related.append(
+            {
+                "date": txn.value_date.strftime("%d-%m-%Y"),
+                "counterparty": pseudonymiser.party_token(sibling.counterparty),
+                "direction": "debit" if txn.is_debit else "credit",
+                "amount": _rupees(txn.amount_paise),
+                "booked_to": (
+                    _shown_ledger_name(
+                        sibling.ledger.name,
+                        sibling.ledger.group,
+                        sibling.ledger.is_party_account
+                        or hasattr(sibling.ledger, "employee_record"),
+                    )
+                    if sibling.ledger
+                    else None
+                ),
+            }
+        )
     return {"history": history, "related": related}
 
 
@@ -465,6 +496,37 @@ def group_alike(batch, pseudonymiser) -> list[list]:
     return list(groups.values())
 
 
+def _complete(llm, batch, shared_part, prompt, max_tokens):
+    if getattr(llm, "supports_shared_context", False):
+        # What is the same for every call for this client goes ahead as its own message, so the provider can
+        # serve it from its cache after the first call.
+        return llm.complete_json(
+            system_prompt_for(batch),
+            json.dumps(prompt, ensure_ascii=False),
+            max_tokens=max_tokens,
+            shared="Reference material for this client, the same for every request:\n"
+            + json.dumps(shared_part, ensure_ascii=False),
+        )
+    return llm.complete_json(
+        system_prompt_for(batch),
+        json.dumps({**shared_part, **prompt}, ensure_ascii=False),
+        max_tokens=max_tokens,
+    )
+
+
+def _record(chart, outcome, response, started, rows) -> None:
+    """Count the call for the platform owner's usage page. Counts and tokens only; never what was sent."""
+    record(
+        purpose="CLASSIFY",
+        outcome=outcome,
+        response=response,
+        firm_id=chart.client.firm_id,
+        client_id=chart.client.pk,
+        latency_ms=int((time.monotonic() - started) * 1000),
+        rows=rows,
+    )
+
+
 def _ask(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]:
     from classify.standard_ledgers import PROPOSABLE_GROUPS, STANDARD_LEDGERS
 
@@ -479,7 +541,11 @@ def _ask(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]:
         # Free text the CA wrote about this client: masked like any narration
         # so a stray PAN or account number never leaves. Absent, not empty,
         # when there is none, so the model is not told to weigh nothing.
-        **({"business": mask_text(profile)} if (profile := (chart.client.business_profile or "").strip()) else {}),
+        **(
+            {"business": mask_text(profile)}
+            if (profile := (chart.client.business_profile or "").strip())
+            else {}
+        ),
         "ledgers": [
             {"name": ledger.name, "group": ledger.get_group_display()} for ledger in usable
         ],
@@ -505,25 +571,27 @@ def _ask(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]:
     # Reasoning models spend part of this budget thinking before they answer; a
     # budget that only fits the answer truncates it, and JSON mode then rejects it.
     max_tokens = int(getattr(settings, "LLM_MAX_TOKENS", 8192))
-    if getattr(llm, "supports_shared_context", False):
-        # What is the same for every call for this client goes ahead as its own message, so the provider can
-        # serve it from its cache after the first call.
-        response = llm.complete_json(
-            system_prompt_for(batch),
-            json.dumps(prompt, ensure_ascii=False),
-            max_tokens=max_tokens,
-            shared="Reference material for this client, the same for every request:\n"
-            + json.dumps(shared_part, ensure_ascii=False),
+    started = time.monotonic()
+    try:
+        response = _complete(llm, batch, shared_part, prompt, max_tokens)
+    except LLMError as exc:
+        _record(
+            chart,
+            "RATE_LIMITED" if isinstance(exc, LLMRateLimited) else "ERROR",
+            None,
+            started,
+            len(keys),
         )
-    else:
-        response = llm.complete_json(
-            system_prompt_for(batch),
-            json.dumps({**shared_part, **prompt}, ensure_ascii=False),
-            max_tokens=max_tokens,
-        )
+        raise
+    _record(chart, "OK", response, started, len(keys))
     logger.info(
         "model tier: %d rows (%d asked), %d in (%d cached) / %d out tokens, model=%s",
-        len(batch), len(keys), response.input_tokens, response.cached_tokens, response.output_tokens, response.model,
+        len(batch),
+        len(keys),
+        response.input_tokens,
+        response.cached_tokens,
+        response.output_tokens,
+        response.model,
     )
     try:
         parsed = json.loads(response.text)
@@ -568,7 +636,9 @@ def _apply(batch, replies, chart, pseudonymiser) -> tuple[int, int, int]:
         classification.rationale = rationale or classification.rationale
         if narration:
             classification.book_narration = narration
-        elif any(not _is_reference(m.group(0)) for m in _TOKEN.finditer(classification.book_narration)):
+        elif any(
+            not _is_reference(m.group(0)) for m in _TOKEN.finditer(classification.book_narration)
+        ):
             classification.book_narration = ""
         # The question stays whenever the model was not sure, even with a ledger
         # named: the reviewer sees the guess and what would settle it together.
@@ -593,7 +663,16 @@ def _apply(batch, replies, chart, pseudonymiser) -> tuple[int, int, int]:
                 classification.confidence = 0.0
                 classification.review_band = band_for(0.0)
                 classification.needs_review = True
-                kept += ["ledger", "party", "rcm", "tds_section", "method", "confidence", "review_band", "needs_review"]
+                kept += [
+                    "ledger",
+                    "party",
+                    "rcm",
+                    "tds_section",
+                    "method",
+                    "confidence",
+                    "review_band",
+                    "needs_review",
+                ]
             classification.save(update_fields=kept)
             declined += 1
             continue
@@ -624,9 +703,18 @@ def _apply(batch, replies, chart, pseudonymiser) -> tuple[int, int, int]:
         classification.needs_review = True
         classification.reviewed_at = None
         classification.save(
-            update_fields=kept + [
-                "ledger", "party", "rcm", "tds_section", "method", "rule",
-                "confidence", "review_band", "needs_review", "reviewed_at",
+            update_fields=kept
+            + [
+                "ledger",
+                "party",
+                "rcm",
+                "tds_section",
+                "method",
+                "rule",
+                "confidence",
+                "review_band",
+                "needs_review",
+                "reviewed_at",
             ]
         )
         placed += 1
@@ -654,6 +742,7 @@ def _readable(text: str, pseudonymiser) -> str:
     reverse map -- it is a one-way hash by design -- so it becomes "an
     individual" rather than a guess at a name.
     """
+
     def swap(match):
         name = pseudonymiser.name_for_token(match.group(0))
         if name is None and _is_reference(match.group(0)):

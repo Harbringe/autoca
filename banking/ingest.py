@@ -117,7 +117,7 @@ def ingest_statement(
     if scanned and scan.enabled():
         # A page with no text cannot be read as text. The page images are read by the model instead, and what comes
         # back must prove out against the statement's own balances like any other read.
-        parsed = scan.read_statement(data, document, get_llm())
+        parsed = scan.read_statement(data, document, get_llm(), client=client)
         parser = _ScanReader
         tier = PipelineTier.VISION
     else:

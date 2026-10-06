@@ -100,6 +100,8 @@ INSTALLED_APPS = [
     "teams",
     # Removable add-on; see superadmin/README.md.
     "superadmin",
+    # Removable add-on: what the model costs, per call. See usage/models.py.
+    "usage",
 ]
 
 #: Dotted path to ``callable(request) -> bool``: may a signed-in user with no
@@ -542,6 +544,18 @@ LLM_BATCH_SIZE = int(env("LLM_BATCH_SIZE", "25"))
 # switches it on: page images cannot be masked the way narrations are, so the provider sees the whole page.
 # Whatever it reads must still pass the same running-balance proof as any other statement, or it is refused.
 VISION_READING = env_bool("VISION_READING", False)
+
+# What a model call costs, for the platform owner's usage page (usage/). US dollars per million tokens: ``input`` is
+# ordinary input, ``cached`` is input the provider served from its cache, ``output`` is what the model wrote. A model
+# not listed is recorded as "unpriced" rather than free. Prices are the provider's published list prices; change them here
+# when the provider does (a call is priced when it is recorded, so history is not rewritten).
+LLM_PRICES = {
+    "gpt-6-luna": {"input": 0.10, "cached": 0.01, "output": 0.50},
+}
+# For the rupee estimate beside each dollar figure. An estimate: a card's own rate and fees are not in it.
+USD_INR_RATE = float(env("USD_INR_RATE", "90"))
+# A monthly ceiling in US dollars for the usage page's budget bar. 0 shows no bar. It does not stop any call.
+LLM_MONTHLY_BUDGET_USD = float(env("LLM_MONTHLY_BUDGET_USD", "0"))
 # Pages sent per call, and the resolution they are drawn at. More pages per call is cheaper; more dots is
 # clearer for small print and costs more.
 VISION_PAGES_PER_CALL = int(env("VISION_PAGES_PER_CALL", "3"))

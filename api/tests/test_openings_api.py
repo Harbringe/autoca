@@ -46,7 +46,7 @@ def test_the_standing_says_what_is_owed_and_how_much_is_still_unexplained(api, c
     standing = opening(api, client_record, ravi).json()
 
     assert standing["financial_year"] == 2025 and standing["direction"] == "CR"
-    assert standing["opening_paise"] == OWED and standing["remaining_paise"] == OWED and standing["billed_paise"] == 0
+    assert standing["opening_paise"] == -OWED and standing["remaining_paise"] == OWED and standing["billed_paise"] == 0
     assert standing["opening_display"] == "₹5,000.00"
 
 

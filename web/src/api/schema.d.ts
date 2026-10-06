@@ -2066,11 +2066,20 @@ export interface components {
         BalanceCheck: {
             /** Format: date */
             as_of: string;
-            /** @description What the client's books say. */
+            /**
+             * Format: int64
+             * @description What the client's books say.
+             */
             ledger_balance_paise: number;
-            /** @description What the bank's own statement says. */
+            /**
+             * Format: int64
+             * @description What the bank's own statement says.
+             */
             statement_balance_paise: number;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             difference_paise: number;
             matches: boolean;
             /** @description Reconciles *and* nothing up to that date is still unposted. */
@@ -2090,17 +2099,35 @@ export interface components {
             liabilities: components["schemas"]["LedgerBalance"][];
             /** @description Ledgers whose group belongs on neither side of the sheet. They are in neither total, so `balances` is false while any exist; place them in a known group. */
             unclassified: components["schemas"]["LedgerBalance"][];
-            /** @description Net of the unclassified ledgers. Zero when there are none. */
+            /**
+             * Format: int64
+             * @description Net of the unclassified ledgers. Zero when there are none.
+             */
             unclassified_paise: number;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             total_assets_paise: number;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             total_liabilities_paise: number;
-            /** @description Liabilities plus the year's profit (or minus its loss). Equals total assets when the sheet balances. */
+            /**
+             * Format: int64
+             * @description Liabilities plus the year's profit (or minus its loss). Equals total assets when the sheet balances.
+             */
             total_liabilities_and_profit_paise: number;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             net_profit_paise: number;
-            /** @description Anything unanswered. A balance sheet with a suspense figure has a question on it. */
+            /**
+             * Format: int64
+             * @description Anything unanswered. A balance sheet with a suspense figure has a question on it.
+             */
             suspense_paise: number;
             balances: boolean;
             footer: components["schemas"]["ReportFooter"];
@@ -2216,7 +2243,10 @@ export interface components {
             readonly tds_paise: number;
             readonly rcm: boolean;
             readonly total_paise: number;
-            /** @description What is still unsettled: the total less everything allocated to it. Computed, never stored. */
+            /**
+             * Format: int64
+             * @description What is still unsettled: the total less everything allocated to it. Computed, never stored.
+             */
             readonly open_paise: number;
             /** Format: uuid */
             readonly entry: string | null;
@@ -2268,31 +2298,37 @@ export interface components {
             due_date?: string | null;
             heads: components["schemas"]["HeadRequest"][];
             /**
+             * Format: int64
              * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
              * @default 0
              */
             cgst_paise: number;
             /**
+             * Format: int64
              * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
              * @default 0
              */
             sgst_paise: number;
             /**
+             * Format: int64
              * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
              * @default 0
              */
             igst_paise: number;
             /**
+             * Format: int64
              * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
              * @default 0
              */
             cess_paise: number;
             /**
+             * Format: int64
              * @description Signed: positive when the invoice rounds up, negative when down.
              * @default 0
              */
             round_off_paise: number;
             /**
+             * Format: int64
              * @description Deducted when the bill is booked, so the supplier is owed the net. Purchases only.
              * @default 0
              */
@@ -2344,7 +2380,10 @@ export interface components {
             readonly tds_paise: number;
             readonly rcm: boolean;
             readonly total_paise: number;
-            /** @description What is still unsettled: the total less everything allocated to it. Computed, never stored. */
+            /**
+             * Format: int64
+             * @description What is still unsettled: the total less everything allocated to it. Computed, never stored.
+             */
             readonly open_paise: number;
             /** Format: uuid */
             readonly entry: string | null;
@@ -2786,7 +2825,10 @@ export interface components {
              * @description An expense, purchase, sales or asset ledger of this client.
              */
             ledger: string;
-            /** @description The taxable value that goes to this ledger. */
+            /**
+             * Format: int64
+             * @description The taxable value that goes to this ledger.
+             */
             amount_paise: number;
         };
         InviteCreated: {
@@ -2890,7 +2932,10 @@ export interface components {
             readonly financial_year: number;
             readonly fy_label: string;
             readonly narration: string;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             readonly total_paise: number;
             readonly lines: components["schemas"]["JournalLine"][];
             /** Format: uuid */
@@ -3004,15 +3049,30 @@ export interface components {
         LedgerBalance: {
             name: string;
             group: string;
-            /** @description Balance before the year. Debits positive. */
+            /**
+             * Format: int64
+             * @description Balance before the year. Debits positive.
+             */
             opening_paise: number;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             debit_paise: number;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             credit_paise: number;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             closing_debit_paise: number;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             closing_credit_paise: number;
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly opening_display: string | null;
@@ -3071,7 +3131,10 @@ export interface components {
             readonly narration: string;
             readonly book_narration: string;
             readonly counterparty: string;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             readonly amount_paise: number;
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly amount_display: string;
@@ -3387,7 +3450,10 @@ export interface components {
             /** Format: date */
             readonly due_date: string | null;
             readonly total_paise: number;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             readonly open_paise: number;
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly total_display: string | null;
@@ -3400,7 +3466,10 @@ export interface components {
             title: string;
             /** @description What is unmatched and about whom, as a sentence a CA can read. */
             summary: string;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             amount_paise: number | null;
             amount_display: string | null;
             /**
@@ -3456,7 +3525,10 @@ export interface components {
          *     balance from then on.
          */
         OpeningBalanceRequest: {
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             opening_balance_paise: number;
             /**
              * Format: date
@@ -3474,10 +3546,16 @@ export interface components {
             bucket_paise: {
                 [key: string]: number;
             };
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             on_account_paise: number;
             on_account_display: string;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             total_paise: number;
             total_display: string;
         };
@@ -3495,7 +3573,10 @@ export interface components {
             age_days: number;
             /** @description The ageing bucket: 0-30, 31-60, 61-90 or Over 90. */
             bucket: string;
-            /** @description Still owing on the report date. Negative for a note that reverses a bill. */
+            /**
+             * Format: int64
+             * @description Still owing on the report date. Negative for a note that reverses a bill.
+             */
             open_paise: number;
             open_display: string;
         };
@@ -3509,10 +3590,16 @@ export interface components {
             bucket_paise: {
                 [key: string]: number;
             };
-            /** @description Money held on account or as an advance, as a negative: it reduces what is owed. */
+            /**
+             * Format: int64
+             * @description Money held on account or as an advance, as a negative: it reduces what is owed.
+             */
             on_account_paise: number;
             on_account_display: string;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             total_paise: number;
             total_display: string;
         };
@@ -3878,17 +3965,29 @@ export interface components {
             date_from: string;
             /** Format: date */
             date_to: string;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             opening_paise: number;
             opening_display: string;
             rows: components["schemas"]["PartyStatementRow"][];
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             total_debit_paise: number;
             total_debit_display: string;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             total_credit_paise: number;
             total_credit_display: string;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             closing_paise: number;
             closing_display: string;
         };
@@ -3898,13 +3997,22 @@ export interface components {
             voucher_type: string;
             entry_no: number;
             narration: string;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             debit_paise: number;
             debit_display: string;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             credit_paise: number;
             credit_display: string;
-            /** @description Debits positive, like the ledger: an amount owed to the party is negative. */
+            /**
+             * Format: int64
+             * @description Debits positive, like the ledger: an amount owed to the party is negative.
+             */
             balance_paise: number;
             balance_display: string;
             /** Format: uuid */
@@ -4018,11 +4126,20 @@ export interface components {
         ProfitAndLoss: {
             income: components["schemas"]["LedgerBalance"][];
             expenses: components["schemas"]["LedgerBalance"][];
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             total_income_paise: number;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             total_expenses_paise: number;
-            /** @description Positive is a profit, negative a loss. */
+            /**
+             * Format: int64
+             * @description Positive is a profit, negative a loss.
+             */
             net_profit_paise: number;
             footer: components["schemas"]["ReportFooter"];
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
@@ -4034,7 +4151,10 @@ export interface components {
         };
         Proposal: {
             allocations: components["schemas"]["ProposedAllocation"][];
-            /** @description What is left after the bills, to be held on account or as an advance. */
+            /**
+             * Format: int64
+             * @description What is left after the bills, to be held on account or as an advance.
+             */
             remainder_paise: number;
             remainder_display: string;
             /**
@@ -4050,7 +4170,10 @@ export interface components {
         ProposedAllocation: {
             /** Format: uuid */
             bill: string;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             amount_paise: number;
             amount_display: string;
         };
@@ -4391,7 +4514,10 @@ export interface components {
             remainder?: (components["schemas"]["RemainderEnum"] | components["schemas"]["NullEnum"]) | null;
         };
         Settled: {
-            /** @description How much of the entry was allocated by this request. */
+            /**
+             * Format: int64
+             * @description How much of the entry was allocated by this request.
+             */
             settled_paise: number;
             settled_display: string;
             /** @description Nothing of the entry is left unallocated. */
@@ -4400,13 +4526,19 @@ export interface components {
         SettlementAllocationRequest: {
             /** Format: uuid */
             bill: string;
-            /** @description How much of this bill the payment clears. */
+            /**
+             * Format: int64
+             * @description How much of this bill the payment clears.
+             */
             amount_paise: number;
         };
         /** @description Everything the screen needs to ask the question and suggest an answer. */
         SettlementContext: {
             party: components["schemas"]["PartyRef"];
-            /** @description What moved, in whole paise. */
+            /**
+             * Format: int64
+             * @description What moved, in whole paise.
+             */
             amount_paise: number;
             amount_display: string;
             /**
@@ -4418,7 +4550,10 @@ export interface components {
             direction: components["schemas"]["AccountSideEnum"];
             bills: components["schemas"]["OpenBill"][];
             proposal: components["schemas"]["Proposal"];
-            /** @description For an entry already posted: how much of it is already allocated. */
+            /**
+             * Format: int64
+             * @description For an entry already posted: how much of it is already allocated.
+             */
             already_allocated_paise: number;
         };
         /**
@@ -4502,7 +4637,10 @@ export interface components {
             readonly debit_paise: number;
             readonly credit_paise: number;
             readonly balance_paise: number;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             readonly amount_paise: number;
             readonly is_debit: boolean;
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
@@ -4558,9 +4696,15 @@ export interface components {
             /** Format: uuid */
             account_id: string;
             label: string;
-            /** @description The opening already confirmed on the bank account, or null. */
+            /**
+             * Format: int64
+             * @description The opening already confirmed on the bank account, or null.
+             */
             ours_paise: number | null;
-            /** @description Tally's opening for this ledger. Debits positive. */
+            /**
+             * Format: int64
+             * @description Tally's opening for this ledger. Debits positive.
+             */
             tally_paise: number;
             /**
              * @description `propose`: no opening is confirmed yet, so Tally's will be written to the bank account. `agree`: the same figure, nothing to do. `conflict`: two different figures; choose one in `bank`. `nothing`: no opening confirmed and none in the file. The ledger never gets a second copy of the number.
@@ -4615,11 +4759,20 @@ export interface components {
             skipped: number;
             with_opening: number;
             bank_conflicts: number;
-            /** @description Total of the debit openings in the file, if every default is taken. */
+            /**
+             * Format: int64
+             * @description Total of the debit openings in the file, if every default is taken.
+             */
             debit_paise: number;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             credit_paise: number;
-            /** @description Debits less credits. Zero when the file's openings balance; otherwise exactly what the reports show as Difference in opening balances. */
+            /**
+             * Format: int64
+             * @description Debits less credits. Zero when the file's openings balance; otherwise exactly what the reports show as Difference in opening balances.
+             */
             difference_paise: number;
             /** @description Entries already posted in that year. The Trial Balance changes by the openings. */
             entries_in_year: number;
@@ -4769,11 +4922,20 @@ export interface components {
             /** @description Openings written to a bank account instead. */
             bank_openings: number;
             skipped: number;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             debit_paise: number;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             credit_paise: number;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             difference_paise: number;
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly debit_display: string | null;
@@ -4824,7 +4986,10 @@ export interface components {
              *     * `PURCHASE` - Purchase Accounts
              */
             our_group: (components["schemas"]["LedgerGroupEnum"] | components["schemas"]["NullEnum"]) | null;
-            /** @description Debits positive, credits negative. Zero when the file gives none. */
+            /**
+             * Format: int64
+             * @description Debits positive, credits negative. Zero when the file gives none.
+             */
             opening_paise: number;
             /**
              * @description `create` a new ledger; `match` an existing one (same name, same group); `conflict` the person must choose (see `conflict`); `needs_group` a group of the firm's own, choose one of ours; `skipped` not imported, with the reason.
@@ -4986,9 +5151,15 @@ export interface components {
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         TrialBalance: {
             rows: components["schemas"]["LedgerBalance"][];
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             total_debit_paise: number;
-            /** @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal. */
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
             total_credit_paise: number;
             /** @description False means something reached the books without going through a voucher. */
             balances: boolean;

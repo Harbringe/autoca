@@ -26,6 +26,7 @@ changes, at the moment it changes it.
 from django.conf import settings
 from django.contrib import admin
 from django.contrib.admin.apps import AdminConfig
+from django.http import HttpResponse
 from django.utils.module_loading import import_string
 
 
@@ -44,6 +45,29 @@ class PlatformAdminSite(admin.AdminSite):
             # No add-on configured: Django's own is_staff rule stands.
             return True
         return bool(import_string(path)(request.user))
+
+    def login(self, request, extra_context=None):
+        """The admin's own password form, behind the same brake as the app's login.
+
+        Django's form has no limit of its own, and ``/admin/`` is reachable from the internet. The counter is the one the
+        app's login uses (keyed on the account), so a locked account is locked on both doors. The second factor still
+        follows the password; this is the missing brake on the first step.
+        """
+        from core import throttle
+
+        account = str(request.POST.get("username", ""))[:254].strip().lower() if request.method == "POST" else ""
+        if account:
+            try:
+                throttle.check("login", account)
+            except throttle.Throttled as exc:
+                response = HttpResponse("Too many attempts. Try again later.", status=429, content_type="text/plain")
+                response["Retry-After"] = str(exc.retry_after)
+                return response
+        response = super().login(request, extra_context)
+        # A good password redirects; the form coming back to a POST means it was refused.
+        if account and request.method == "POST" and response.status_code == 200:
+            throttle.record_failure("login", account)
+        return response
 
 
 class PlatformAdminConfig(AdminConfig):

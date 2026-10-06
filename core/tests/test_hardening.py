@@ -293,3 +293,35 @@ def test_gstin_check_character_matches_gstns_published_example():
     assert is_valid_gstin("27AAPFU0939F1ZV")
     assert not is_valid_gstin("27AAPFU0939F1ZW")  # one character off
     assert not is_valid_gstin("00AAPFU0939F1ZV")  # no such state
+
+
+def test_the_admin_login_form_is_behind_the_same_brake(settings):
+    settings.THROTTLE_LIMITS = {
+        **settings.THROTTLE_LIMITS,
+        "login": {"attempts": 2, "window_seconds": 600, "lockout_seconds": 600},
+    }
+    create_user("owner@example.com", PASSWORD)
+    http = HttpClient()
+    form = {"username": "owner@example.com", "password": "wrong", "next": "/admin/"}
+
+    first = http.post("/admin/login/", form)
+    second = http.post("/admin/login/", form)
+    third = http.post("/admin/login/", form)
+
+    assert first.status_code == 200 and second.status_code == 200  # the form again, refused
+    assert third.status_code == 429 and third["Retry-After"] == "600"
+    # The account is locked on the app's own login too.
+    assert _login(http, "owner@example.com", PASSWORD).status_code == 429
+
+
+def test_a_switched_off_login_loses_its_live_session():
+    from core.auth.backends import EmailBackend
+
+    user = create_user("gone@example.com", PASSWORD)
+    backend = EmailBackend()
+    assert backend.get_user(user.pk) == user
+
+    user.is_active = False
+    user.save()
+
+    assert backend.get_user(user.pk) is None

@@ -8,6 +8,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.exceptions import MethodNotAllowed
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
@@ -196,6 +197,10 @@ class BankAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
     serializer_class = BankAccountSerializer
     http_method_names = ["get", "patch", "post", "head", "options"]
     required_permission = {"GET": "client.view", "PATCH": "ledger.manage", "POST": "ledger.manage"}
+
+    def create(self, request, *args, **kwargs):
+        # POST stays routable for the opening-balance action, but an account is made by uploading a statement.
+        raise MethodNotAllowed("POST")
 
     def get_serializer_class(self):
         return BankAccountDetailSerializer if self.action == "retrieve" else self.serializer_class

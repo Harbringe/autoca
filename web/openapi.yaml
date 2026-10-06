@@ -4279,6 +4279,7 @@ components:
           items:
             type: string
             format: uuid
+          maxItems: 5000
         band:
           $ref: '#/components/schemas/BandEnum'
         settlements:
@@ -4410,12 +4411,21 @@ components:
           format: date
         ledger_balance_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: What the client's books say.
         statement_balance_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: What the bank's own statement says.
         difference_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         matches:
@@ -4477,25 +4487,43 @@ components:
             in a known group.
         unclassified_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Net of the unclassified ledgers. Zero when there are none.
         total_assets_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         total_liabilities_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         total_liabilities_and_profit_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Liabilities plus the year's profit (or minus its loss). Equals
             total assets when the sheet balances.
         net_profit_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         suspense_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Anything unanswered. A balance sheet with a suspense figure
             has a question on it.
         balances:
@@ -4804,6 +4832,9 @@ components:
           readOnly: true
         open_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           readOnly: true
           description: 'What is still unsettled: the total less everything allocated
             to it. Computed, never stored.'
@@ -4956,36 +4987,49 @@ components:
             $ref: '#/components/schemas/HeadRequest'
         cgst_paise:
           type: integer
+          maximum: 1000000000000000000
           minimum: 0
+          format: int64
           default: 0
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         sgst_paise:
           type: integer
+          maximum: 1000000000000000000
           minimum: 0
+          format: int64
           default: 0
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         igst_paise:
           type: integer
+          maximum: 1000000000000000000
           minimum: 0
+          format: int64
           default: 0
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         cess_paise:
           type: integer
+          maximum: 1000000000000000000
           minimum: 0
+          format: int64
           default: 0
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         round_off_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           default: 0
           description: 'Signed: positive when the invoice rounds up, negative when
             down.'
         tds_paise:
           type: integer
+          maximum: 1000000000000000000
           minimum: 0
+          format: int64
           default: 0
           description: Deducted when the bill is booked, so the supplier is owed the
             net. Purchases only.
@@ -5094,6 +5138,9 @@ components:
           readOnly: true
         open_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           readOnly: true
           description: 'What is still unsettled: the total less everything allocated
             to it. Computed, never stored.'
@@ -6184,7 +6231,9 @@ components:
           description: An expense, purchase, sales or asset ledger of this client.
         amount_paise:
           type: integer
+          maximum: 1000000000000000000
           minimum: 1
+          format: int64
           description: The taxable value that goes to this ledger.
       required:
       - amount_paise
@@ -6427,6 +6476,9 @@ components:
           readOnly: true
         total_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           readOnly: true
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
@@ -6709,21 +6761,36 @@ components:
           type: string
         opening_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Balance before the year. Debits positive.
         debit_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         credit_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         closing_debit_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         closing_credit_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         opening_display:
@@ -6852,6 +6919,9 @@ components:
           readOnly: true
         amount_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           readOnly: true
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
@@ -7567,6 +7637,9 @@ components:
           readOnly: true
         open_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           readOnly: true
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
@@ -7604,6 +7677,9 @@ components:
           description: What is unmatched and about whom, as a sentence a CA can read.
         amount_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           nullable: true
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
@@ -7719,6 +7795,9 @@ components:
       properties:
         opening_balance_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         opening_as_of:
@@ -7750,16 +7829,25 @@ components:
           type: object
           additionalProperties:
             type: integer
+            maximum: 1000000000000000000
+            minimum: -1000000000000000000
+            format: int64
             description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
               a decimal.
         on_account_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         on_account_display:
           type: string
         total_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         total_display:
@@ -7801,6 +7889,9 @@ components:
           description: 'The ageing bucket: 0-30, 31-60, 61-90 or Over 90.'
         open_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Still owing on the report date. Negative for a note that reverses
             a bill.
         open_display:
@@ -7834,17 +7925,26 @@ components:
           type: object
           additionalProperties:
             type: integer
+            maximum: 1000000000000000000
+            minimum: -1000000000000000000
+            format: int64
             description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
               a decimal.
           description: What is owing in each ageing bucket.
         on_account_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: 'Money held on account or as an advance, as a negative: it
             reduces what is owed.'
         on_account_display:
           type: string
         total_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         total_display:
@@ -8503,6 +8603,9 @@ components:
           format: date
         opening_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         opening_display:
@@ -8513,18 +8616,27 @@ components:
             $ref: '#/components/schemas/PartyStatementRow'
         total_debit_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         total_debit_display:
           type: string
         total_credit_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         total_credit_display:
           type: string
         closing_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         closing_display:
@@ -8557,18 +8669,27 @@ components:
           type: string
         debit_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         debit_display:
           type: string
         credit_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         credit_display:
           type: string
         balance_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: 'Debits positive, like the ledger: an amount owed to the party
             is negative.'
         balance_display:
@@ -8815,14 +8936,23 @@ components:
             $ref: '#/components/schemas/LedgerBalance'
         total_income_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         total_expenses_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         net_profit_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Positive is a profit, negative a loss.
         footer:
           $ref: '#/components/schemas/ReportFooter'
@@ -8860,6 +8990,9 @@ components:
             $ref: '#/components/schemas/ProposedAllocation'
         remainder_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: What is left after the bills, to be held on account or as an
             advance.
         remainder_display:
@@ -8887,6 +9020,9 @@ components:
           format: uuid
         amount_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         amount_display:
@@ -9532,6 +9668,9 @@ components:
       properties:
         settled_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: How much of the entry was allocated by this request.
         settled_display:
           type: string
@@ -9550,7 +9689,9 @@ components:
           format: uuid
         amount_paise:
           type: integer
+          maximum: 1000000000000000000
           minimum: 1
+          format: int64
           description: How much of this bill the payment clears.
       required:
       - amount_paise
@@ -9564,6 +9705,9 @@ components:
           $ref: '#/components/schemas/PartyRef'
         amount_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: What moved, in whole paise.
         amount_display:
           type: string
@@ -9583,6 +9727,9 @@ components:
           $ref: '#/components/schemas/Proposal'
         already_allocated_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: 'For an entry already posted: how much of it is already allocated.'
       required:
       - already_allocated_paise
@@ -9776,6 +9923,9 @@ components:
           readOnly: true
         amount_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           readOnly: true
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
@@ -9881,10 +10031,16 @@ components:
           type: string
         ours_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           nullable: true
           description: The opening already confirmed on the bank account, or null.
         tally_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Tally's opening for this ledger. Debits positive.
         status:
           allOf:
@@ -10002,14 +10158,23 @@ components:
           type: integer
         debit_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Total of the debit openings in the file, if every default is
             taken.
         credit_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         difference_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Debits less credits. Zero when the file's openings balance;
             otherwise exactly what the reports show as Difference in opening balances.
         entries_in_year:
@@ -10280,14 +10445,23 @@ components:
           type: integer
         debit_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         credit_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         difference_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         debit_display:
@@ -10377,6 +10551,9 @@ components:
           - $ref: '#/components/schemas/NullEnum'
         opening_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Debits positive, credits negative. Zero when the file gives
             none.
         action:
@@ -10666,10 +10843,16 @@ components:
             $ref: '#/components/schemas/LedgerBalance'
         total_debit_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         total_credit_paise:
           type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
         balances:

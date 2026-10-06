@@ -187,3 +187,22 @@ def test_the_api_schema_and_docs_need_a_signed_in_person():
         response = anonymous.get(path)
         assert response.status_code in (302, 401, 403), path
         assert b"openapi" not in response.content[:200].lower(), path
+
+
+def test_an_absurd_amount_is_a_field_error_not_a_server_error(api, client_record):
+    from api.tests.test_bills import make_ledger, make_party, post_bill, voucher
+
+    party = make_party(api, client_record)
+    purchases = make_ledger(api, client_record)
+    body = voucher(party, purchases, heads=[{"ledger": purchases["id"], "amount_paise": 10**30}])
+
+    response = post_bill(api, client_record, body)
+
+    assert response.status_code == 400, response.content
+    assert "amount_paise" in str(response.json())
+
+
+def test_a_bank_account_cannot_be_created_by_hand(api, client_record):
+    response = api.post(f"/api/v1/clients/{client_record.pk}/bank-accounts/", {"ledger_name": "X"}, format="json")
+
+    assert response.status_code == 405

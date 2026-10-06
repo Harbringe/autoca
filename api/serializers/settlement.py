@@ -26,7 +26,7 @@ class SettlementAllocationSerializer(serializers.Serializer):
 class SettlementSerializer(serializers.Serializer):
     """A person's decision about what one payment or receipt on a party's account is for."""
 
-    allocations = SettlementAllocationSerializer(many=True, required=False, default=list)
+    allocations = SettlementAllocationSerializer(many=True, required=False, default=list, max_length=200)
     remainder = serializers.ChoiceField(
         choices=HOLD_CHOICES, required=False, allow_null=True, default=None,
         help_text=(

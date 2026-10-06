@@ -547,13 +547,13 @@ class ApproveSerializer(serializers.Serializer):
     """
 
     classifications = serializers.ListField(
-        child=serializers.UUIDField(), required=False, allow_empty=False
+        child=serializers.UUIDField(), required=False, allow_empty=False, max_length=5000
     )
     band = serializers.ChoiceField(
         choices=[ReviewBand.HIGH, ReviewBand.ADVISED, ReviewBand.JUDGEMENT], required=False
     )
     settlements = RowSettlementSerializer(
-        many=True, required=False,
+        many=True, required=False, max_length=500,
         help_text=(
             "For each row placed on a supplier's or customer's own account: which of the party's bills it pays, or "
             "whether it is held on account or as an advance. Such a row is refused without one, and is never approved "

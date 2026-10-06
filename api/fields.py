@@ -23,7 +23,7 @@ from __future__ import annotations
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
-from core.money import format_inr
+from core.money import MAX_PAISE, format_inr
 
 
 class PaiseField(serializers.IntegerField):
@@ -34,6 +34,9 @@ class PaiseField(serializers.IntegerField):
             "help_text",
             "Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.",
         )
+        # Bounded so an absurd amount is a field error, not a database overflow and a 500.
+        kwargs.setdefault("max_value", MAX_PAISE)
+        kwargs.setdefault("min_value", -MAX_PAISE)
         super().__init__(**kwargs)
 
 

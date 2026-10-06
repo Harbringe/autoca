@@ -1,7 +1,7 @@
 # Hand-over: where AutoCA stands (written 2026-10-07)
 
 For a Claude session picking this up cold (for example a cloud session started with `claude --cloud`). Read this first,
-then `docs/dashboards-plan.md`, `docs/SECRETS.md`, `docs/AWS.md`. Your own memory notes do not carry over.
+then `docs/memory/MEMORY.md` (the project notes, redacted: decisions, standing rules, state of each area), `docs/dashboards-plan.md`, `docs/SECRETS.md`, `docs/AWS.md`. Account numbers, addresses and names were removed from the notes on purpose; ask the user if you need one.
 
 ## How to work with this user (standing rules)
 

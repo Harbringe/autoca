@@ -1,0 +1,13 @@
+---
+name: loan-statements-and-deploy-pipeline
+description: "Loan statements are read and posted (live 2026-10-05, commit c6d9aa0); push to prod auto-deploys via GitHub Actions + SSM. What exists, the design rules, and what is still open."
+metadata:
+  node_type: memory
+  type: project
+---
+
+**Deploy pipeline (live 2026-10-05):** `git push origin dev:main && git push origin dev:prod` -> CI on prod -> `.github/workflows/deploy.yml` (workflow_run) signs in to AWS by OIDC and runs SSM document `autoca-deploy` (deploy/ssm-document.json) with the commit id -> `deploy/deploy.sh <commit>` on the server (/srv/autoca, as ssm-user). IAM role `autoca-github-deploy` may only SendCommand that document to instance <instance id>. The OIDC `sub` claim is GitHub's ID form `repo:Harbringe@<id>/autoca@<id>:ref:refs/heads/{main,prod}`, NOT the plain name (that cost a failed run). Deploy only fires for a green CI *push* to prod in this repo. CI is fully green (lint backlog cleared, Django 5.2.17 / cryptography 50 / DRF 3.17.2 upgrades). No Docker/Postgres on the dev laptop: DB tests only run in CI; ruff + pure tests run locally.
+
+**Loan statements (live):** a statement titled "Loan Account Statement" is read with `liability` polarity (balance rises with a debit; debit/credit kept as printed so posting is unchanged). Polarity comes from the title only, NEVER as a fallback after a bank read fails (a swapped-column bank statement would otherwise pass and post backwards). `BankAccount.kind` BANK|LOAN (db_default BANK; the repo's migration-compat test demands a db_default on new NOT NULL columns). Loan ledger group = LOAN. Vouchers: interest/charges = Journal, instalment = Payment, disbursal = Receipt. `_mirror_for` also matches Payment/Receipt twins when a loan is involved, so an EMI on both the bank's and the loan's statement posts once in either order. Reconciliation compares owed vs printed. The LLM gets a LOAN_ADDENDUM so it does not file an EMI as income. Credit card statements are still refused (no running balance; needs opening+purchases-payments=due proof). Real test file: Karur Vysya home loan PDF parses 72 rows.
+
+**Open / known limits:** an EMI the CA split into principal + interest on the bank side (3-line entry) will not match the loan statement's 2-line instalment, so it can double count. Loan account ledger is named from bank_code ("Generic Loan A/c 0601") since the generic parser has no bank name. needs_attention wording still says "bank account". Not yet tried end to end on the live app with the real loan PDF (user to upload). Also fixed: wrapped dates ("30-Mar-" / "2026") in `as_date`, which had rejected an ICICI current account in overdraft.

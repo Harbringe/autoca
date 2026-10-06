@@ -1,0 +1,16 @@
+- [AutoCA Phase 1 state](autoca-phase1-state.md) — what's built, Groq/no-Tally/any-bank decisions, clear demo PII from dev DB
+- [Teams feature](teams-feature.md) — Senior CA teams, client leads/assignments, sign-off rule, work tracking; core/access.py is the rule
+- [Removable add-ons](removable-addons.md) — build operator/experimental features as self-contained, easy-to-delete units
+- [TODO: import client ledgers from Tally](todo-import-client-ledgers-from-tally.md) — deferred; client's own chart as default, not started
+- [TODO: scanned + locked statement PDFs](todo-scanned-and-locked-statement-pdfs.md) — vision-model reading for scans, password-per-use for locked PDFs; designs agreed, not built
+- [Render 502 upload hotfix](render-502-upload-hotfix-pending.md) — root cause found; no-wait fix pushed to origin/main (7461dbe); redeploy/502-gone not yet confirmed
+- [AWS migration + Bedrock (on hold)](aws-migration-and-bedrock-on-hold.md) — account quotas are 0 pending AWS support; hosting plan, `in.` profiles, no key stored
+- [TODO: speed up statement removal](todo-speed-up-statement-removal.md) — 715 queries/3.9s measured; bulk-delete plan; check Render region
+- [Web frontend + CA reviewer](web-frontend-and-ca-reviewer.md) — web/ rebuild, QA loop with synthetic firm, shared-DB cautions
+- [Agent team](agent-team.md) — 9 agents in .claude/agents, start with claude --agent orchestrator, safety rules in web/qa/TEAM.md
+- [Loan statements + deploy pipeline](loan-statements-and-deploy-pipeline.md) — push to prod auto-deploys; loan statements read/posted (live), limits and OIDC gotcha
+- [Books of record + full reconciliation](books-of-record-and-full-reconciliation.md) — AutoCA is final books; party-wise accounting approved; phased plan, nothing built past bank+loan
+- [Rule: no islands, reconcile everything](feedback-no-islands-reconcile-everything.md) — every feature must link documents together; check for islands and risks before building
+- [Never git stash](feedback-never-git-stash.md) — happened twice in chained commands; use diff/show/worktree instead
+- [TODO: security audit fixes](todo-security-audit-fixes.md) — A-01..A-16 open, order agreed, name-aliasing design; report in docs/
+- [Open list (start here)](todo-open-list.md) — TOP PRIORITY: role dashboards (docs/dashboards-plan.md); then everything still open 2026-10-06

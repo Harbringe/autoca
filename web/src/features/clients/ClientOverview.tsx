@@ -13,6 +13,7 @@ import { Card } from '@/components/ui/card'
 import { StatCard, StatGrid } from '@/components/ui/stat-card'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
+import { FinancialSnapshot } from './FinancialSnapshot'
 import { useUpload } from '@/features/statements/UploadDialog'
 import { unsignedThrough } from '@/features/books/state'
 import { useFy } from '@/features/shell/useFy'
@@ -141,6 +142,7 @@ export function ClientOverview({ clientId }: { clientId: string }) {
 
   return (
     <div className="grid gap-4">
+      {can('report.view') && hasStatements && <FinancialSnapshot clientId={clientId} fy={fy} />}
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
         <div className="grid gap-4">
           <Card className="p-2">

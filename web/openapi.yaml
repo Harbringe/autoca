@@ -1408,6 +1408,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/BooksStatus'
           description: ''
+  /api/v1/clients/{client_id}/dashboard/:
+    get:
+      operationId: clients_dashboard_retrieve
+      description: Income, expense and profit by month for a financial year; the biggest
+        expense heads; bank, card and loan balances; what customers owe and what is
+        owed to suppliers (with the part over 90 days); GST and TDS balances; and
+        where the books stand. Read from the journal, never stored.
+      summary: One client position and trend
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: 'The year the financial year starts in. Default: the current
+          one.'
+      tags:
+      - books
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientSnapshot'
+          description: ''
   /api/v1/clients/{client_id}/employees/:
     get:
       operationId: clients_employees_list
@@ -4643,6 +4675,27 @@ paths:
               schema:
                 $ref: '#/components/schemas/OwnerTransferred'
           description: ''
+  /api/v1/firm/portfolio/:
+    get:
+      operationId: firm_portfolio_retrieve
+      description: 'One row per client the caller may see, with books status, open
+        items, unreconciled bank accounts, overdue TDS, receivables and payables;
+        the things that need attention most serious first; and what falls due in the
+        next 45 days. Beyond 60 clients the per-client detail is left out (`detailed:
+        false`).'
+      summary: 'The firm portfolio: health of every client, what needs attention,
+        what falls due'
+      tags:
+      - clients
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Portfolio'
+          description: ''
   /api/v1/jobs/:
     get:
       operationId: jobs_list
@@ -5492,6 +5545,31 @@ components:
           maxLength: 255
         group:
           $ref: '#/components/schemas/LedgerGroupEnum'
+    AccountBalance:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        label:
+          type: string
+        kind:
+          type: string
+        balance_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: As the books hold it. For a card or loan, the amount owed.
+        balance_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - balance_display
+      - balance_paise
+      - kind
+      - label
     AccountSideEnum:
       enum:
       - DR
@@ -5876,6 +5954,43 @@ components:
             for.
       required:
       - bill
+    AttentionItem:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        severity:
+          $ref: '#/components/schemas/SeverityEnum'
+        kind:
+          type: string
+        client:
+          type: string
+          format: uuid
+        client_name:
+          type: string
+        text:
+          type: string
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        amount_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - amount_display
+      - amount_paise
+      - client
+      - client_name
+      - kind
+      - severity
+      - text
     AttentionReason:
       type: object
       properties:
@@ -7519,6 +7634,113 @@ components:
       required:
       - fy_start
       - name
+    ClientSnapshot:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        financial_year:
+          type: integer
+          description: The year the financial year starts in.
+        as_of:
+          type: string
+          format: date
+        income_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        expense_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        profit_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        trend:
+          type: array
+          items:
+            $ref: '#/components/schemas/TrendMonth'
+        top_expenses:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopExpense'
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountBalance'
+        owed:
+          $ref: '#/components/schemas/Owed'
+        gst_net_payable_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: 'GST collected less input credit, in the books. Negative: a
+            credit is carried.'
+        tds_payable_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: TDS deducted and not yet deposited, in the books.
+        books:
+          $ref: '#/components/schemas/SnapshotBooks'
+        attention:
+          $ref: '#/components/schemas/SnapshotAttention'
+        income_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        expense_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        profit_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        gst_net_payable_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        tds_payable_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - accounts
+      - as_of
+      - attention
+      - books
+      - expense_display
+      - expense_paise
+      - financial_year
+      - gst_net_payable_display
+      - gst_net_payable_paise
+      - income_display
+      - income_paise
+      - owed
+      - profit_display
+      - profit_paise
+      - tds_payable_display
+      - tds_payable_paise
+      - top_expenses
+      - trend
     CloseCheck:
       type: object
       properties:
@@ -7665,6 +7887,22 @@ components:
           description: Parties made or found, one per name ticked.
       required:
       - created
+    Deadline:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        label:
+          type: string
+        clients:
+          type: array
+          items:
+            type: string
+      required:
+      - clients
+      - date
+      - label
     DecisionKindEnum:
       enum:
       - accept_match
@@ -10340,6 +10578,54 @@ components:
       - pending_approval
       - review_pending
       - unresolved
+    Owed:
+      type: object
+      properties:
+        receivables:
+          $ref: '#/components/schemas/OwedSide'
+        payables:
+          $ref: '#/components/schemas/OwedSide'
+      required:
+      - payables
+      - receivables
+    OwedSide:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        total_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        over_90_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Of the bills, how much is more than 90 days old.
+        top:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopParty'
+        total_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        over_90_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - over_90_display
+      - over_90_paise
+      - top
+      - total_display
+      - total_paise
     OwnerRequest:
       type: object
       properties:
@@ -11419,6 +11705,161 @@ components:
       - classification
       - rule_created
       - rule_learned
+    Portfolio:
+      type: object
+      properties:
+        totals:
+          $ref: '#/components/schemas/OverviewTotals'
+        by_stage:
+          $ref: '#/components/schemas/OverviewByStage'
+        clients:
+          type: array
+          items:
+            $ref: '#/components/schemas/PortfolioClient'
+        attention:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttentionItem'
+        deadlines:
+          type: array
+          items:
+            $ref: '#/components/schemas/Deadline'
+        detailed:
+          type: boolean
+      required:
+      - attention
+      - by_stage
+      - clients
+      - deadlines
+      - detailed
+      - totals
+    PortfolioClient:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        lead:
+          allOf:
+          - $ref: '#/components/schemas/OverviewLead'
+          nullable: true
+        stage:
+          $ref: '#/components/schemas/StageEnum'
+        next_step:
+          $ref: '#/components/schemas/OverviewNextStep'
+        unresolved:
+          type: integer
+          description: Rows nobody has placed in a ledger.
+        pending_approval:
+          type: integer
+          description: Rows with a ledger, not yet posted.
+        assistant_waiting:
+          type: integer
+          description: Unplaced rows still queued for the assistant.
+        ai_unchecked:
+          type: integer
+          description: Entries after the last sign-off that the assistant posted or
+            changed and nobody has checked.
+        review_pending:
+          type: boolean
+          description: The books have been sent for review and not yet decided.
+        signed_off_through:
+          type: string
+          format: date
+          nullable: true
+        last_statement_end:
+          type: string
+          format: date
+          nullable: true
+        months_missing:
+          type: array
+          items:
+            type: string
+          description: Months (YYYY-MM) inside a bank account's run of statements
+            that none of its statements touches.
+        detail:
+          type: boolean
+          description: False for a very large firm, where only the stage and next
+            step are worked out.
+        approved_through:
+          type: string
+          format: date
+          nullable: true
+        changed_since_approval:
+          type: integer
+        seal_due:
+          type: string
+          format: date
+          nullable: true
+          description: The latest sealing date that has passed unsealed.
+        next_seal_date:
+          type: string
+          format: date
+          nullable: true
+        open_items:
+          type: integer
+        blocking_unexplained:
+          type: integer
+        failing_controls:
+          type: integer
+        tds_overdue_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        receivables_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        payables_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        tds_overdue_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        receivables_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        payables_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - ai_unchecked
+      - assistant_waiting
+      - detail
+      - id
+      - last_statement_end
+      - lead
+      - months_missing
+      - name
+      - next_step
+      - payables_display
+      - pending_approval
+      - receivables_display
+      - review_pending
+      - signed_off_through
+      - stage
+      - tds_overdue_display
+      - unresolved
     ProfitAndLoss:
       type: object
       description: Adds a ``*_display`` string beside every ``*_paise`` field named
@@ -12490,6 +12931,16 @@ components:
       - direction
       - party
       - proposal
+    SeverityEnum:
+      enum:
+      - critical
+      - high
+      - medium
+      type: string
+      description: |-
+        * `critical` - critical
+        * `high` - high
+        * `medium` - medium
     SideEnum:
       enum:
       - payables
@@ -12511,6 +12962,47 @@ components:
           type: string
           default: ''
           maxLength: 1000
+    SnapshotAttention:
+      type: object
+      properties:
+        open_items:
+          type: integer
+        blocking_unexplained:
+          type: integer
+        failing_controls:
+          type: array
+          items:
+            type: string
+      required:
+      - blocking_unexplained
+      - failing_controls
+      - open_items
+    SnapshotBooks:
+      type: object
+      properties:
+        approved_through:
+          type: string
+          format: date
+          nullable: true
+        signed_off_through:
+          type: string
+          format: date
+          nullable: true
+          description: Sealed through this date.
+        changed_since_approval:
+          type: integer
+        close_period:
+          type: string
+        next_seal_date:
+          type: string
+          format: date
+          nullable: true
+      required:
+      - approved_through
+      - changed_since_approval
+      - close_period
+      - next_seal_date
+      - signed_off_through
     SourceEnum:
       enum:
       - SEED
@@ -13657,6 +14149,52 @@ components:
           description: The latest 200, newest first.
       required:
       - results
+    TopExpense:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        ledger:
+          type: string
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        amount_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - amount_display
+      - amount_paise
+      - ledger
+    TopParty:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        name:
+          type: string
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        amount_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - amount_display
+      - amount_paise
+      - name
     TreatmentRequest:
       type: object
       description: |-
@@ -13701,6 +14239,58 @@ components:
             automatically from now on. Set false for a genuine one-off.
       required:
       - ledger
+    TrendMonth:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        month:
+          type: string
+          description: YYYY-MM.
+        income_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        expense_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        profit_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        income_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        expense_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        profit_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - expense_display
+      - expense_paise
+      - income_display
+      - income_paise
+      - month
+      - profit_display
+      - profit_paise
     TrialBalance:
       type: object
       description: Adds a ``*_display`` string beside every ``*_paise`` field named

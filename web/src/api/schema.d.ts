@@ -725,6 +725,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/dashboard/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One client position and trend
+         * @description Income, expense and profit by month for a financial year; the biggest expense heads; bank, card and loan balances; what customers owe and what is owed to suppliers (with the part over 90 days); GST and TDS balances; and where the books stand. Read from the journal, never stored.
+         */
+        get: operations["clients_dashboard_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/employees/": {
         parameters: {
             query?: never;
@@ -2082,6 +2102,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/firm/portfolio/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The firm portfolio: health of every client, what needs attention, what falls due
+         * @description One row per client the caller may see, with books status, open items, unreconciled bank accounts, overdue TDS, receivables and payables; the things that need attention most serious first; and what falls due in the next 45 days. Beyond 60 clients the per-client detail is left out (`detailed: false`).
+         */
+        get: operations["firm_portfolio_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/jobs/": {
         parameters: {
             query?: never;
@@ -2582,6 +2622,18 @@ export interface components {
             name?: string;
             group?: components["schemas"]["LedgerGroupEnum"];
         };
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
+        AccountBalance: {
+            label: string;
+            kind: string;
+            /**
+             * Format: int64
+             * @description As the books hold it. For a card or loan, the amount owed.
+             */
+            balance_paise: number;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly balance_display: string | null;
+        };
         /**
          * @description * `DR` - DR
          *     * `CR` - CR
@@ -2784,6 +2836,22 @@ export interface components {
              * @description The bill, booked by hand earlier, that this file is the invoice for.
              */
             bill: string;
+        };
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
+        AttentionItem: {
+            severity: components["schemas"]["SeverityEnum"];
+            kind: string;
+            /** Format: uuid */
+            client: string;
+            client_name: string;
+            text: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            amount_paise: number | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly amount_display: string | null;
         };
         AttentionReason: {
             /**
@@ -3490,6 +3558,54 @@ export interface components {
              */
             close_period?: components["schemas"]["ClosePeriodEnum"];
         };
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
+        ClientSnapshot: {
+            /** @description The year the financial year starts in. */
+            financial_year: number;
+            /** Format: date */
+            as_of: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            income_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            expense_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            profit_paise: number;
+            trend: components["schemas"]["TrendMonth"][];
+            top_expenses: components["schemas"]["TopExpense"][];
+            accounts: components["schemas"]["AccountBalance"][];
+            owed: components["schemas"]["Owed"];
+            /**
+             * Format: int64
+             * @description GST collected less input credit, in the books. Negative: a credit is carried.
+             */
+            gst_net_payable_paise: number;
+            /**
+             * Format: int64
+             * @description TDS deducted and not yet deposited, in the books.
+             */
+            tds_payable_paise: number;
+            books: components["schemas"]["SnapshotBooks"];
+            attention: components["schemas"]["SnapshotAttention"];
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly income_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly expense_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly profit_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly gst_net_payable_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly tds_payable_display: string | null;
+        };
         CloseCheck: {
             name: string;
             title: string;
@@ -3559,6 +3675,12 @@ export interface components {
         CreatedParties: {
             /** @description Parties made or found, one per name ticked. */
             created: number;
+        };
+        Deadline: {
+            /** Format: date */
+            date: string;
+            label: string;
+            clients: string[];
         };
         /**
          * @description * `accept_match` - Accept as a match
@@ -4779,6 +4901,28 @@ export interface components {
             /** @description Missing months summed over clients. */
             months_missing: number;
         };
+        Owed: {
+            receivables: components["schemas"]["OwedSide"];
+            payables: components["schemas"]["OwedSide"];
+        };
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
+        OwedSide: {
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            total_paise: number;
+            /**
+             * Format: int64
+             * @description Of the bills, how much is more than 90 days old.
+             */
+            over_90_paise: number;
+            top: components["schemas"]["TopParty"][];
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly total_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly over_90_display: string | null;
+        };
         OwnerRequest: {
             /** Format: uuid */
             member: string;
@@ -5352,6 +5496,75 @@ export interface components {
             readonly also_revised: number;
             /** @description How many rows became certain enough to be posted automatically. */
             readonly auto_posted: number;
+        };
+        Portfolio: {
+            totals: components["schemas"]["OverviewTotals"];
+            by_stage: components["schemas"]["OverviewByStage"];
+            clients: components["schemas"]["PortfolioClient"][];
+            attention: components["schemas"]["AttentionItem"][];
+            deadlines: components["schemas"]["Deadline"][];
+            detailed: boolean;
+        };
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
+        PortfolioClient: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            lead: components["schemas"]["OverviewLead"] | null;
+            stage: components["schemas"]["StageEnum"];
+            next_step: components["schemas"]["OverviewNextStep"];
+            /** @description Rows nobody has placed in a ledger. */
+            unresolved: number;
+            /** @description Rows with a ledger, not yet posted. */
+            pending_approval: number;
+            /** @description Unplaced rows still queued for the assistant. */
+            assistant_waiting: number;
+            /** @description Entries after the last sign-off that the assistant posted or changed and nobody has checked. */
+            ai_unchecked: number;
+            /** @description The books have been sent for review and not yet decided. */
+            review_pending: boolean;
+            /** Format: date */
+            signed_off_through: string | null;
+            /** Format: date */
+            last_statement_end: string | null;
+            /** @description Months (YYYY-MM) inside a bank account's run of statements that none of its statements touches. */
+            months_missing: string[];
+            /** @description False for a very large firm, where only the stage and next step are worked out. */
+            detail: boolean;
+            /** Format: date */
+            approved_through?: string | null;
+            changed_since_approval?: number;
+            /**
+             * Format: date
+             * @description The latest sealing date that has passed unsealed.
+             */
+            seal_due?: string | null;
+            /** Format: date */
+            next_seal_date?: string | null;
+            open_items?: number;
+            blocking_unexplained?: number;
+            failing_controls?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            tds_overdue_paise?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            receivables_paise?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            payables_paise?: number;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly tds_overdue_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly receivables_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly payables_display: string | null;
         };
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         ProfitAndLoss: {
@@ -5933,6 +6146,13 @@ export interface components {
             already_allocated_paise: number;
         };
         /**
+         * @description * `critical` - critical
+         *     * `high` - high
+         *     * `medium` - medium
+         * @enum {string}
+         */
+        SeverityEnum: "critical" | "high" | "medium";
+        /**
          * @description * `payables` - payables
          *     * `receivables` - receivables
          * @enum {string}
@@ -5946,6 +6166,24 @@ export interface components {
             through?: string;
             /** @default  */
             note: string;
+        };
+        SnapshotAttention: {
+            open_items: number;
+            blocking_unexplained: number;
+            failing_controls: string[];
+        };
+        SnapshotBooks: {
+            /** Format: date */
+            approved_through: string | null;
+            /**
+             * Format: date
+             * @description Sealed through this date.
+             */
+            signed_off_through: string | null;
+            changed_since_approval: number;
+            close_period: string;
+            /** Format: date */
+            next_seal_date: string | null;
         };
         /**
          * @description * `SEED` - Built in
@@ -6541,6 +6779,28 @@ export interface components {
             /** @description The latest 200, newest first. */
             results: components["schemas"]["TeamEvent"][];
         };
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
+        TopExpense: {
+            ledger: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            amount_paise: number;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly amount_display: string | null;
+        };
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
+        TopParty: {
+            name: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            amount_paise: number;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly amount_display: string | null;
+        };
         /**
          * @description One complete accounting decision: where it goes, who it was with, and its tax.
          *
@@ -6582,6 +6842,32 @@ export interface components {
              * @default true
              */
             learn: boolean;
+        };
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
+        TrendMonth: {
+            /** @description YYYY-MM. */
+            month: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            income_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            expense_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            profit_paise: number;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly income_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly expense_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly profit_display: string | null;
         };
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         TrialBalance: {
@@ -7672,6 +7958,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BooksStatus"];
+                };
+            };
+        };
+    };
+    clients_dashboard_retrieve: {
+        parameters: {
+            query?: {
+                /** @description The year the financial year starts in. Default: the current one. */
+                fy?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientSnapshot"];
                 };
             };
         };
@@ -10226,6 +10536,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OwnerTransferred"];
+                };
+            };
+        };
+    };
+    firm_portfolio_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Portfolio"];
                 };
             };
         };

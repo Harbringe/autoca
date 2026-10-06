@@ -36,6 +36,7 @@ from api.views.classify import (
 )
 from api.views.close import CloseView
 from api.views.core import ClientViewSet, JobViewSet, MeView
+from api.views.dashboard import ClientSnapshotView, PortfolioView
 from api.views.documents import DocumentDownloadView, FirmDocumentListView
 from api.views.gst import RegistrationViewSet, RunSignOffView, RunViewSet
 from api.views.invoices import InvoiceReadingViewSet
@@ -255,6 +256,8 @@ urlpatterns = [
     path("team/", include("teams.urls")),
     path("firm/", FirmSettingsView.as_view(), name="firm-settings"),
     path("firm/overview/", FirmOverviewView.as_view(), name="firm-overview"),
+    path("firm/portfolio/", PortfolioView.as_view(), name="firm-portfolio"),
+    path("clients/<uuid:client_id>/dashboard/", ClientSnapshotView.as_view(), name="client-dashboard"),
     path("firm/metrics/", FirmMetricsView.as_view(), name="firm-metrics"),
     path("firm/owner/", FirmOwnerView.as_view(), name="firm-owner"),
     path("audit/", AuditLogView.as_view(), name="audit-log"),

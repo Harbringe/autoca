@@ -188,6 +188,14 @@ export type OverviewClient = Schemas['OverviewClient']
 export type OverviewTotals = Schemas['OverviewTotals']
 export type Stage = Schemas['StageEnum']
 
+// --- reporting dashboards (generated) -----------------------------------------
+
+export type Portfolio = Schemas['Portfolio']
+export type PortfolioClient = Schemas['PortfolioClient']
+export type AttentionItem = Schemas['AttentionItem']
+export type Deadline = Schemas['Deadline']
+export type ClientSnapshot = Schemas['ClientSnapshot']
+
 // --- firm and audit ---------------------------------------------------------
 
 export type FirmSettings = Schemas['FirmResponse']

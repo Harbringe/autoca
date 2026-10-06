@@ -8,7 +8,7 @@ import {
   RefreshCw,
   Users,
 } from 'lucide-react'
-import { useMemo } from 'react'
+import { useMemo, useState } from 'react'
 import { firmOverview } from '@/api/queries/overview'
 import { teamEvents } from '@/api/queries/team'
 import type { FirmOverview, OverviewClient } from '@/api/types'
@@ -21,33 +21,85 @@ import { formatDateLong, formatDateTime, plural } from '@/lib/format'
 import { describeEvent } from '@/lib/team'
 import { hasWork, needsAttention, nextTarget, STAGES, STAGE_LABEL, STAGE_TONE } from '@/lib/overview'
 import { usePageTitle } from '@/lib/title'
+import { PortfolioView } from './PortfolioView'
 import { ThisPeriod } from '@/features/work/MeasuredFigures'
 import { useSession } from '@/session/session'
 
 const LIVE_REFRESH_MS = 15_000
 
+type Tab = 'portfolio' | 'operations'
+
+const TABS: { id: Tab; label: string }[] = [
+  { id: 'portfolio', label: 'Portfolio' },
+  { id: 'operations', label: 'Operations' },
+]
+
+function readTab(): Tab {
+  try {
+    return localStorage.getItem('dashboard-tab') === 'operations' ? 'operations' : 'portfolio'
+  } catch {
+    return 'portfolio'
+  }
+}
+
 export function DashboardScreen() {
   usePageTitle('Dashboard')
-  const { me, can } = useSession()
-  const queryClient = useQueryClient()
-  const overview = useQuery({ ...firmOverview(), refetchInterval: LIVE_REFRESH_MS, refetchIntervalInBackground: false })
-  const updated = overview.dataUpdatedAt ? new Date(overview.dataUpdatedAt) : null
+  const { me } = useSession()
+  const [tab, setTab] = useState<Tab>(readTab)
+  const choose = (next: Tab) => {
+    setTab(next)
+    try {
+      localStorage.setItem('dashboard-tab', next)
+    } catch {
+      // Remembering the tab is a convenience; the screen works without it.
+    }
+  }
   const localNow = new Date()
   const localDate = `${localNow.getFullYear()}-${String(localNow.getMonth() + 1).padStart(2, '0')}-${String(localNow.getDate()).padStart(2, '0')}`
   const today = formatDateLong(localDate)
-  const header = <PageHeader title="Dashboard" description={`${me?.firm?.name ?? 'Your firm'} · ${today}`} />
+  return (
+    <div className="grid gap-5 [&>*]:min-w-0">
+      <PageHeader title="Dashboard" description={`${me?.firm?.name ?? 'Your firm'} · ${today}`} />
+      <div role="tablist" aria-label="Dashboard view" className="no-print -mb-1 flex gap-1 border-b">
+        {TABS.map((t) => (
+          <button
+            key={t.id}
+            type="button"
+            role="tab"
+            id={`dash-tab-${t.id}`}
+            aria-selected={tab === t.id}
+            aria-controls={`dash-panel-${t.id}`}
+            onClick={() => choose(t.id)}
+            className="-mb-px flex h-10 items-center border-b-2 border-transparent px-3 text-sm font-medium text-muted-foreground hover:text-foreground aria-selected:border-primary aria-selected:text-heading"
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
+      <div role="tabpanel" id={`dash-panel-${tab}`} aria-labelledby={`dash-tab-${tab}`}>
+        {tab === 'portfolio' ? <PortfolioView /> : <OperationsView />}
+      </div>
+    </div>
+  )
+}
+
+function OperationsView() {
+  const { can } = useSession()
+  const queryClient = useQueryClient()
+  const overview = useQuery({ ...firmOverview(), refetchInterval: LIVE_REFRESH_MS, refetchIntervalInBackground: false })
+  const updated = overview.dataUpdatedAt ? new Date(overview.dataUpdatedAt) : null
   const refresh = () => void queryClient.invalidateQueries({ queryKey: ['clients', 'overview'] })
 
   if (overview.error) {
-    return <>{header}<ErrorState error={overview.error} retry={() => void overview.refetch()} /></>
+    return <ErrorState error={overview.error} retry={() => void overview.refetch()} />
   }
   if (overview.isLoading || !overview.data) {
-    return <>{header}<div aria-busy="true" aria-live="polite" className="grid gap-4"><span className="sr-only">Loading the dashboard</span><StatGrid aria-hidden>{Array.from({ length: 4 }, (_, i) => <div key={i} className="skeleton h-24 rounded-lg" />)}</StatGrid><div className="skeleton h-64 rounded-lg" aria-hidden /></div></>
+    return <div aria-busy="true" aria-live="polite" className="grid gap-4"><span className="sr-only">Loading the dashboard</span><StatGrid aria-hidden>{Array.from({ length: 4 }, (_, i) => <div key={i} className="skeleton h-24 rounded-lg" />)}</StatGrid><div className="skeleton h-64 rounded-lg" aria-hidden /></div>
   }
 
   const { totals, by_stage, clients } = overview.data
   if (totals.clients === 0) {
-    return <>{header}<EmptyState title="No clients yet" action={can('client.create') && <Button asChild><Link to="/clients"><FileUp /> Add your first client</Link></Button>}>A client is one set of books. Add one, then upload its bank statement.</EmptyState></>
+    return <EmptyState title="No clients yet" action={can('client.create') && <Button asChild><Link to="/clients"><FileUp /> Add your first client</Link></Button>}>A client is one set of books. Add one, then upload its bank statement.</EmptyState>
   }
 
   const withWork = clients.filter(hasWork).length
@@ -60,7 +112,6 @@ export function DashboardScreen() {
 
   return (
     <div className="grid gap-6 [&>*]:min-w-0">
-      {header}
       <section aria-label="Live firm status" className="overflow-hidden rounded-xl border bg-card shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b px-5 py-3">
           <div className="flex items-center gap-2.5">
@@ -95,7 +146,7 @@ export function DashboardScreen() {
         <StatGrid>
           <StatCard label="Rows to place" value={totals.unresolved} note={totals.unresolved ? `Across ${plural(placing, 'client')}` : 'No rows need a ledger'} to="/pipeline" tone={totals.unresolved ? 'attention' : 'plain'} />
           <StatCard label="Ready to post" value={totals.pending_approval} note={totals.pending_approval ? `Across ${plural(posting, 'client')}` : 'No approvals waiting'} to="/pipeline" tone={totals.pending_approval ? 'attention' : 'plain'} />
-          <StatCard label="Awaiting sign-off" value={totals.review_pending} note="Books sent for senior review" to="/pipeline" tone={totals.review_pending ? 'attention' : 'plain'} />
+          <StatCard label="Awaiting approval" value={totals.review_pending} note="Books sent for senior review" to="/pipeline" tone={totals.review_pending ? 'attention' : 'plain'} />
           <StatCard label="Assistant queue" value={totals.assistant_waiting} note={`${totals.ai_unchecked} assistant ${totals.ai_unchecked === 1 ? 'entry' : 'entries'} also need checking`} to="/bank" tone={totals.assistant_waiting || totals.ai_unchecked ? 'attention' : 'plain'} />
         </StatGrid>
       </section>
@@ -128,7 +179,7 @@ function QueueMix({ unresolved, posting, review, unchecked, waiting }: { unresol
   const items = [
     { label: 'Place a ledger', value: unresolved, color: 'bg-accent-foreground', text: 'text-accent-foreground' },
     { label: 'Ready to post', value: posting, color: 'bg-info', text: 'text-info' },
-    { label: 'Senior sign-off', value: review, color: 'bg-primary', text: 'text-primary' },
+    { label: 'Senior approval', value: review, color: 'bg-primary', text: 'text-primary' },
     { label: 'Check assistant entries', value: unchecked, color: 'bg-destructive', text: 'text-destructive' },
     { label: 'Assistant reading', value: waiting, color: 'bg-success', text: 'text-success' },
   ]

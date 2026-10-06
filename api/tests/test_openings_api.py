@@ -111,3 +111,20 @@ def test_a_read_only_member_may_read_the_standing_but_not_break_it_down(client_r
 
     assert opening(viewer, client_record, ravi).status_code == 200
     assert break_down(viewer, client_record, ravi, ("OLD-1", "2025-01-10", 1_000_00)).status_code == 403
+
+
+def test_imported_debtor_and_creditor_ledgers_become_parties_once(api, client_record):
+    from api.tests.test_bills import make_ledger
+    from ledger.openings import adopt_imported_party_ledgers
+
+    make_ledger(api, client_record, "Imported Supplier", "CREDITOR")
+    make_ledger(api, client_record, "Imported Customer", "DEBTOR")
+    make_ledger(api, client_record, "Office Rent", "INDIRECT_EXPENSE")
+
+    with firm_context(client_record.firm_id):
+        first = adopt_imported_party_ledgers(client_record)
+        second = adopt_imported_party_ledgers(client_record)
+        roles = {p.canonical_name: p.role for p in Party.objects.filter(client=client_record, ledger__isnull=False)}
+
+    assert first == 2 and second == 0
+    assert roles == {"Imported Supplier": "VENDOR", "Imported Customer": "CUSTOMER"}

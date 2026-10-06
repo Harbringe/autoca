@@ -54,15 +54,6 @@ def test_a_card_statement_is_imported_as_a_credit_card_account(api, client_recor
     assert account["kind"] == "CARD" and account["account_last4"] == "1234"
 
 
-def test_the_cards_own_ledger_is_a_liability_not_a_bank_balance(api, client_record):
-    upload(api, client_record)
-
-    ledgers = api.get(f"{base(client_record)}/ledgers/", {"page_size": 200}).json()["results"]
-
-    card = next(row for row in ledgers if "Credit Card" in row["name"])
-    assert card["group"] == "CURRENT_LIABILITY"
-
-
 def test_a_purchase_posts_as_a_journal_and_a_payment_from_the_bank_as_a_payment(api, client_record):
     from core.db.session import firm_context
     from ledger.models import JournalEntry
@@ -82,3 +73,8 @@ def test_a_purchase_posts_as_a_journal_and_a_payment_from_the_bank_as_a_payment(
     with firm_context(client_record.firm_id):
         types = {e.source_transaction.narration[:8]: e.voucher_type for e in JournalEntry.objects.filter(client=client_record).select_related("source_transaction")}
     assert types == {"SWIGGY B": "Journal", "PAYMENT ": "Payment"}
+    with firm_context(client_record.firm_id):
+        from classify.models import LedgerAccount
+
+        card = LedgerAccount.objects.get(client=client_record, name__contains="Credit Card")
+    assert card.group == "CURRENT_LIABILITY"

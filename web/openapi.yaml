@@ -6124,6 +6124,10 @@ components:
           type: string
           readOnly: true
           description: Parser identifier, e.g. AXIS.
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/Kind673Enum'
+          readOnly: true
         account_last4:
           type: string
           readOnly: true
@@ -6166,6 +6170,7 @@ components:
       - id
       - ifsc
       - is_active
+      - kind
       - label
       - opening_as_of
       - opening_balance_display
@@ -6189,6 +6194,10 @@ components:
           type: string
           readOnly: true
           description: Parser identifier, e.g. AXIS.
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/Kind673Enum'
+          readOnly: true
         account_last4:
           type: string
           readOnly: true
@@ -6239,6 +6248,7 @@ components:
       - id
       - ifsc
       - is_active
+      - kind
       - label
       - opening_as_of
       - opening_balance_display
@@ -8728,6 +8738,16 @@ components:
         * `REGISTER` - Purchase or sales register
         * `TALLY_EXPORT` - Tally export
         * `OTHER` - Other
+    Kind673Enum:
+      enum:
+      - BANK
+      - LOAN
+      - CARD
+      type: string
+      description: |-
+        * `BANK` - Bank account
+        * `LOAN` - Loan account
+        * `CARD` - Credit card
     KindBd8Enum:
       enum:
       - CHART_OPENING

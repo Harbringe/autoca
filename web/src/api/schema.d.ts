@@ -2914,6 +2914,7 @@ export interface components {
             readonly client: string;
             /** @description Parser identifier, e.g. AXIS. */
             readonly bank_code: string;
+            readonly kind: components["schemas"]["Kind673Enum"];
             readonly account_last4: string;
             readonly ifsc: string;
             ledger_name?: string;
@@ -2936,6 +2937,7 @@ export interface components {
             readonly client: string;
             /** @description Parser identifier, e.g. AXIS. */
             readonly bank_code: string;
+            readonly kind: components["schemas"]["Kind673Enum"];
             readonly account_last4: string;
             readonly ifsc: string;
             ledger_name?: string;
@@ -4024,6 +4026,13 @@ export interface components {
          * @enum {string}
          */
         Kind372Enum: "BANK_STATEMENT" | "PURCHASE_INVOICE" | "SALES_INVOICE" | "GSTR2B" | "REGISTER" | "TALLY_EXPORT" | "OTHER";
+        /**
+         * @description * `BANK` - Bank account
+         *     * `LOAN` - Loan account
+         *     * `CARD` - Credit card
+         * @enum {string}
+         */
+        Kind673Enum: "BANK" | "LOAN" | "CARD";
         /**
          * @description * `CHART_OPENING` - Chart of accounts and opening balances
          * @enum {string}

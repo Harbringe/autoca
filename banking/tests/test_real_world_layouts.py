@@ -10,7 +10,7 @@ import datetime
 
 import pytest
 
-from banking.parsers import UnsupportedBankError, detect_parser, parse_statement
+from banking.parsers import detect_parser, parse_statement
 from banking.parsers.base import StatementParseError
 from banking.parsers.columns import as_date
 from banking.tests.layouts import document, layout
@@ -89,10 +89,13 @@ def test_a_loan_statement_whose_rows_do_not_tie_out_is_still_refused():
         parse_statement(document(LOAN_TEXT, [LOAN_HEADER, *broken]))
 
 
-def test_a_credit_card_statement_is_refused_for_what_it_is():
-    """Not read yet: a card has no running balance to prove against."""
-    with pytest.raises(UnsupportedBankError, match="credit card"):
-        detect_parser(document("Credit Card Statement\nStatement date 05-Apr-2026",[OD_HEADER, *OD_ROWS]))
+def test_a_credit_card_statement_is_read_by_the_card_reader_not_as_a_bank_account():
+    """A card has no running balance: it is proved against its printed previous balance and total due instead."""
+    from banking.parsers.card import CardStatementParser
+
+    parser = detect_parser(document("Credit Card Statement\nStatement date 05-Apr-2026", [OD_HEADER, *OD_ROWS]))
+
+    assert isinstance(parser, CardStatementParser)
 
 
 def test_a_bank_statement_that_merely_mentions_a_loan_is_not_refused():

@@ -50,6 +50,7 @@ class BankAccountSerializer(MoneySerializerMixin, serializers.ModelSerializer):
             "label",
             "client",
             "bank_code",
+            "kind",
             "account_last4",
             "ifsc",
             "ledger_name",

@@ -417,7 +417,13 @@ def _fixed_asset(firm, **kw):
 def _depreciation_posting(firm, **kw):
     client = kw.get("client") or _client(firm)
     entry = JournalEntry.objects.create(
-        firm=firm, client=client, entry_no=1, financial_year=2025, entry_date=datetime.date(2026, 3, 31), voucher_type="Journal"
+        firm=firm,
+        client=client,
+        entry_no=1,
+        financial_year=2025,
+        entry_date=datetime.date(2026, 3, 31),
+        voucher_type="Journal",
+        approved_at=django_timezone.now(),
     )
     return DepreciationPosting.objects.create(firm=firm, client=client, financial_year=2025, entry=entry, total_paise=1000)
 

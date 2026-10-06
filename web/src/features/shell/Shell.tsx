@@ -301,7 +301,7 @@ function FySelect() {
       aria-label="Financial year"
       value={fy}
       onChange={(e) => setFy(Number(e.target.value))}
-      className="h-9 shrink-0 rounded-md border border-input bg-card px-2.5 text-sm font-medium text-foreground"
+      className="h-9 w-[5.75rem] shrink-0 rounded-md border border-input bg-card px-1.5 text-sm font-medium text-foreground sm:w-auto sm:px-2.5"
     >
       {[...years]
         .sort((a, b) => b - a)
@@ -370,7 +370,7 @@ function UserMenu({ onShortcuts }: { onShortcuts: () => void }) {
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="ghost" size="icon" aria-label="Account and preferences" className="rounded-full bg-secondary text-[13px] font-semibold">
+        <Button variant="ghost" size="icon" aria-label="Account and preferences" className="rounded-full bg-secondary text-[13px] font-semibold max-sm:size-11">
           {initials}
         </Button>
       </DropdownMenuTrigger>
@@ -503,7 +503,7 @@ export function Shell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <OfflineStrip />
-        <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background px-3 md:gap-3 lg:px-6">
+        <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background px-2 sm:px-3 md:gap-3 lg:px-6">
           <Button variant="ghost" size="icon" className="size-11 shrink-0 lg:hidden" aria-label="Open menu" onClick={() => setMenuOpen(true)}>
             <Menu />
           </Button>
@@ -513,7 +513,7 @@ export function Shell() {
           <ClientPicker />
           <FySelect />
           <PaletteTrigger />
-          <div className="ml-auto flex shrink-0 items-center gap-2 md:gap-3">
+          <div className="ml-auto flex shrink-0 items-center gap-0.5 sm:gap-2 md:gap-3">
             <AssistantIndicator />
             <AlertBell />
             <UserMenu onShortcuts={() => setShortcutsOpen(true)} />

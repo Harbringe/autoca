@@ -59,7 +59,7 @@ export function AlertBell() {
         <Button
           variant="ghost"
           size="icon"
-          className="relative"
+          className="relative max-sm:size-11"
           aria-haspopup="dialog"
           aria-label={count ? `Alerts: ${count} need attention` : 'Alerts: nothing needs attention'}
           title="Alerts"
@@ -87,7 +87,7 @@ export function AlertBell() {
                 aria-pressed={filter === t.id}
                 onClick={() => setFilter(t.id)}
                 className={cn(
-                  'inline-flex h-8 items-center gap-1 rounded-full border px-3 text-[13px] font-medium',
+                  'inline-flex h-8 items-center gap-1 rounded-full max-sm:h-10 border px-3 text-[13px] font-medium',
                   filter === t.id ? 'border-primary bg-primary text-primary-foreground' : 'bg-card text-foreground hover:bg-hover',
                 )}
               >
@@ -124,7 +124,7 @@ export function AlertBell() {
             </ul>
           )}
         </div>
-        <div className="border-t px-4 py-2.5 text-sm">
+        <div className="border-t px-4 py-3 text-sm">
           <Link to="/alerts" onClick={close} className="font-medium text-link underline underline-offset-2">
             View all alerts
           </Link>

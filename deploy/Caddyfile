@@ -17,7 +17,8 @@
 
 	# The paths the dev server also forwards (web/vite.config.ts): the API, sign-in and MFA, the platform
 	# owner's admin panel and its static files, and the health check.
-	@backend path /api/* /auth/* /admin/* /static/* /healthz
+	# /admin without the closing slash is listed too: it is what people type, and Django redirects it to /admin/.
+	@backend path /api/* /auth/* /admin /admin/* /static/* /healthz
 	handle @backend {
 		# Job progress is streamed (server-sent events); never hold those responses back to batch them.
 		reverse_proxy web:8000 {

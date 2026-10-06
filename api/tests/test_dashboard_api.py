@@ -85,3 +85,16 @@ def test_another_firms_client_is_not_found(api, client_record):
     stranger = create_client(create_firm("Other Firm"), "Stranger Ltd", datetime.date(2025, 4, 1))
 
     assert api.get(snapshot_url(stranger)).status_code == 404
+
+
+def test_amounts_are_left_out_for_a_caller_without_journal_view(api, client_record, monkeypatch):
+    from api.views import dashboard as view
+
+    monkeypatch.setattr(view, "has_permission", lambda membership, name: name != "journal.view")
+    (row,) = api.get(PORTFOLIO).json()["clients"]
+
+    assert (
+        "receivables_paise" not in row
+        and "payables_paise" not in row
+        and "tds_overdue_paise" not in row
+    )

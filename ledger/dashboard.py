@@ -227,7 +227,9 @@ def _tds_overdue(client, today: datetime.date) -> tuple[int, datetime.date | Non
     return unpaid, oldest
 
 
-def portfolio(membership, today: datetime.date | None = None) -> dict:
+def portfolio(
+    membership, today: datetime.date | None = None, *, include_money: bool = True
+) -> dict:
     """One row per client the person may see, what needs attention (most serious first), and what is due in the next 45 days."""
     from core.access import visible_clients
 
@@ -243,8 +245,8 @@ def portfolio(membership, today: datetime.date | None = None) -> dict:
         if detailed and client is not None:
             status = books.status(client)
             report = close.close_report(client)
-            overdue_tds, oldest = _tds_overdue(client, today)
-            owing = owed(client, today)
+            overdue_tds, oldest = _tds_overdue(client, today) if include_money else (0, None)
+            owing = owed(client, today) if include_money else None
             seal_due = _seal_due(client, today, status.signed_off_through)
             next_seal = _next_seal(client, today)
             failing_bank = [c for c in report.checks if c.name.startswith("bank_") and not c.ok]
@@ -257,11 +259,12 @@ def portfolio(membership, today: datetime.date | None = None) -> dict:
                     "open_items": len(report.items),
                     "blocking_unexplained": report.unexplained_blocking,
                     "failing_controls": len([c for c in report.checks if not c.ok]),
-                    "tds_overdue_paise": overdue_tds,
-                    "receivables_paise": owing[partyreports.RECEIVABLES]["total_paise"],
-                    "payables_paise": owing[partyreports.PAYABLES]["total_paise"],
                 }
             )
+            if owing is not None:
+                row["receivables_paise"] = owing[partyreports.RECEIVABLES]["total_paise"]
+                row["payables_paise"] = owing[partyreports.PAYABLES]["total_paise"]
+                row["tds_overdue_paise"] = overdue_tds
             name = client.name
             if overdue_tds:
                 attention.append(
@@ -349,7 +352,7 @@ def portfolio(membership, today: datetime.date | None = None) -> dict:
                     )
                 )
             # What falls due soon.
-            for month in tds.position(client):
+            for month in tds.position(client) if include_money else ():
                 if month.unpaid_paise > 0 and today <= month.due <= today + datetime.timedelta(
                     days=45
                 ):

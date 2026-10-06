@@ -13,6 +13,7 @@ from rest_framework.views import APIView
 from api.permissions import HasFirmPermission
 from api.serializers.dashboard import ClientSnapshotSerializer, PortfolioSerializer
 from core.access import get_visible_client
+from core.rbac import has_permission
 from ledger import dashboard
 
 
@@ -30,12 +31,19 @@ class PortfolioView(APIView):
         description=(
             "One row per client the caller may see, with books status, open items, unreconciled bank accounts, overdue TDS, "
             "receivables and payables; the things that need attention most serious first; and what falls due in the next "
-            "45 days. Beyond 60 clients the per-client detail is left out (`detailed: false`)."
+            "45 days. Amounts (receivables, payables, TDS) are left out for a caller without `journal.view`. Beyond 60 clients the per-client detail is left out (`detailed: false`)."
         ),
         responses={200: PortfolioSerializer},
     )
     def get(self, request):
-        return Response(PortfolioSerializer(dashboard.portfolio(request.membership)).data)
+        return Response(
+            PortfolioSerializer(
+                dashboard.portfolio(
+                    request.membership,
+                    include_money=has_permission(request.membership, "journal.view"),
+                )
+            ).data
+        )
 
 
 @extend_schema(tags=["books"])

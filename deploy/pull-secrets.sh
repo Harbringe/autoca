@@ -3,8 +3,8 @@
 #
 #   deploy/pull-secrets.sh
 #
-# Reads /autoca/prod/* (see integrations/paramstore.py for exactly which names it will take), and for each one
-# replaces the KEY=... line in .env.prod or adds it. A setting that is not in Parameter Store is left exactly as it
+# Reads /autoca/prod/* and, for each setting, replaces the KEY=... line in .env.prod or adds it. The permanent
+# keys and database credentials are only filled in when missing, never replaced (see integrations/paramstore.py). A setting that is not in Parameter Store is left exactly as it
 # is, so nothing breaks while you move settings over one at a time. The values never appear on screen, in the
 # deploy log, or on a command line: they pass through a private temporary file and an environment variable.
 #
@@ -34,9 +34,16 @@ changed=""
 while IFS= read -r line; do
     key="${line%%=*}"
     value="${line#*=}"
+    seed=""
+    case "$key" in "?"*) seed=1; key="${key#?}" ;; esac
     case "$key" in "" | *[!A-Z0-9_]*) continue ;; esac
     current="$(grep "^${key}=" .env.prod | head -n 1 | cut -d= -f2-)"
     [ "$current" = "$value" ] && continue
+    if [ -n "$seed" ] && [ -n "$current" ]; then
+        # A permanent key or a database credential: Parameter Store fills in a missing one but never replaces one.
+        echo "pull-secrets: ${key} in Parameter Store differs from this server; kept the server's value."
+        continue
+    fi
     # The value travels in the environment, never on a command line and never through sed, which would treat
     # '&', '|' and '\' in a secret as instructions.
     if grep -q "^${key}=" .env.prod; then

@@ -5,21 +5,23 @@ is stored anywhere):
 
     python -m integrations.paramstore            prints KEY=VALUE lines for the settings that may live here
 
-Only the names in :data:`MANAGED` are ever returned, whatever else sits under the path. That list is the whole
-policy and is deliberately short:
+Any setting can live here: create a parameter named ``/autoca/prod/<SETTING_NAME>`` and it is written into
+``.env.prod`` at the next deploy, replacing what was there.
 
-* **Never** the three permanent keys (``KMS_LOCAL_MASTER_KEY``, ``BLIND_INDEX_KEY``, ``DJANGO_SECRET_KEY``) or any
-  database password. Losing or changing one of those loses data or signs everyone out, so they are not something a
-  deploy should be able to overwrite from a parameter that someone may edit in a console.
-* Provider keys and service settings, which are replaced by changing the parameter and deploying.
+The exception is :data:`SEED_ONLY`: the three permanent keys and every database credential. Losing or changing one of
+those loses stored data or signs everyone out, so a parameter may *fill them in when the server has none* (a new
+server, or recovery from a lost file, which makes Parameter Store a backup of them) but never replaces a value the
+server already has. A difference is reported as a warning, by name only.
 
-The values are printed to stdout for the calling script to merge into ``.env.prod``; they are never logged, and
-a value that contains a line break is refused rather than written, since it could smuggle in a second setting.
+Output is ``KEY=VALUE`` lines, and ``?KEY=VALUE`` for a seed-only setting. Values are printed to stdout for the calling
+script to merge; they are never logged, and a value that contains a line break is refused rather than written, since it
+could smuggle in a second setting.
 """
 
 from __future__ import annotations
 
 import os
+import re
 import sys
 
 PREFIX_ENV = "PARAMETER_PREFIX"
@@ -27,17 +29,25 @@ REGION_ENV = "PARAMETER_REGION"
 DEFAULT_PREFIX = "/autoca/prod/"
 DEFAULT_REGION = "ap-south-1"
 
-#: The settings a parameter may set. Add a name here to let it be managed from Parameter Store.
-MANAGED = frozenset(
+#: Settings a parameter may fill in but never replace. See the module note.
+SEED_ONLY = frozenset(
     {
-        "LLM_API_KEY",
-        "LLM_MODEL",
-        "LLM_BASE_URL",
-        "GROQ_API_KEY",
-        "STORAGE_ACCESS_KEY_ID",
-        "STORAGE_SECRET_ACCESS_KEY",
+        "KMS_LOCAL_MASTER_KEY",
+        "BLIND_INDEX_KEY",
+        "DJANGO_SECRET_KEY",
+        "DATABASE_URL",
+        "DATABASE_OWNER_URL",
+        "POSTGRES_PASSWORD",
+        "POSTGRES_USER",
+        "APP_DB_PASSWORD",
+        "OWNER_DB_PASSWORD",
     }
 )
+
+#: Names that can never be set from a parameter, because they steer this very mechanism.
+NEVER = frozenset({PREFIX_ENV, REGION_ENV})
+
+_NAME = re.compile(r"[A-Z][A-Z0-9_]{0,99}")
 
 
 class ParameterError(RuntimeError):
@@ -45,23 +55,30 @@ class ParameterError(RuntimeError):
 
 
 def usable(name: str, value: str) -> bool:
-    """True when ``value`` may be written as the setting ``name``. Anything with a line break may not."""
-    return name in MANAGED and "\n" not in value and "\r" not in value and value != ""
+    """True when ``value`` may be written as the setting ``name``."""
+    return (
+        bool(_NAME.fullmatch(name))
+        and name not in NEVER
+        and "\n" not in value
+        and "\r" not in value
+        and value != ""
+    )
 
 
 def settings_from(parameters, prefix: str) -> tuple[dict[str, str], list[str]]:
-    """The managed settings in ``parameters`` (each with ``Name`` and ``Value``), and the names left out and why."""
+    """The usable settings in ``parameters`` (each with ``Name`` and ``Value``), and the names left out and why.
+
+    A seed-only setting comes back under a ``?`` prefix so the caller knows not to replace an existing value.
+    """
     found: dict[str, str] = {}
     skipped: list[str] = []
     for parameter in parameters:
         name = parameter["Name"].removeprefix(prefix).strip("/")
         value = parameter["Value"]
-        if name not in MANAGED:
-            skipped.append(f"{name} (not a managed setting)")
-        elif not usable(name, value):
-            skipped.append(f"{name} (empty or has a line break)")
+        if not usable(name, value):
+            skipped.append(f"{name} (not a setting name, empty, or has a line break)")
         else:
-            found[name] = value
+            found[("?" if name in SEED_ONLY else "") + name] = value
     return found, skipped
 
 

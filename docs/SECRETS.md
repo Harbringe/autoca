@@ -6,16 +6,20 @@ Rotating a key becomes: change the parameter in AWS, deploy.
 
 Nothing about GitHub changes. GitHub still holds only what CI and deploy need; it never sees these keys.
 
-## What may live there, and what never does
+## What lives there
 
-Only these names are read (`MANAGED` in `integrations/paramstore.py`):
+Any setting. Create a parameter named `/autoca/prod/<SETTING_NAME>` (capitals, digits and underscores) and its value is
+written into `.env.prod` at the next deploy, replacing what was there. Use **SecureString** for anything secret and
+**String** for plain settings such as `LLM_MODEL` or `LLM_BATCH_SIZE`.
 
-`LLM_API_KEY`, `LLM_MODEL`, `LLM_BASE_URL`, `GROQ_API_KEY`, `STORAGE_ACCESS_KEY_ID`, `STORAGE_SECRET_ACCESS_KEY`
+**Seed-only settings.** The three permanent keys (`KMS_LOCAL_MASTER_KEY`, `BLIND_INDEX_KEY`, `DJANGO_SECRET_KEY`) and
+the database credentials are different: changing one loses stored data or signs everyone out. A parameter may
+*fill one in when the server has none* (a new server, or recovery after a lost file) but never replaces a value the
+server already has. If the two differ, the deploy log says so by name and keeps the server's. Storing them here is
+therefore a safe backup of them, which the database dump deliberately is not.
 
-Anything else under the path is ignored. **Do not** put `KMS_LOCAL_MASTER_KEY`, `BLIND_INDEX_KEY`, `DJANGO_SECRET_KEY`
-or a database password there: losing or changing one loses stored data or signs everyone out, so the deploy
-will not take them from a parameter even if they are created. They stay in `.env.prod`, backed up as described in
-`docs/AWS.md`.
+`PARAMETER_PREFIX` and `PARAMETER_REGION` cannot be set from a parameter. Empty values and values with a line break are
+ignored.
 
 ## One-time setup (you, in the AWS console)
 
@@ -48,9 +52,9 @@ the path narrow and keep the three permanent keys out of it, as above.) Paramete
 - Type: **SecureString**, key: the default `alias/aws/ssm`
 - Value: the key. Paste it only into that box, never into chat or a file in the repository.
 
-Repeat for `/autoca/prod/LLM_MODEL` (value `gpt-6-luna`, type String is fine) and any other setting above.
+Repeat for `/autoca/prod/LLM_MODEL` (value `gpt-6-luna`, type String is fine) and for any other setting you want managed here.
 
-Whoever may *write* parameters is whoever may set the app's keys, so give `ssm:PutParameter` on `/autoca/prod/*` to
+Whoever may *write* parameters is whoever may set the app's settings, so give `ssm:PutParameter` on `/autoca/prod/*` to
 the administrators only.
 
 ## Using it

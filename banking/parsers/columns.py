@@ -202,6 +202,8 @@ def as_paise(cell: str) -> int | None:
     text = re.sub(r"\s+", " ", (cell or "").strip())
     if not text or text in {"-", "--", "NIL", "nil"}:
         return None
+    # Some banks print the side with a full stop: "12466467.30 Cr." or "5116229.83 Dr.".
+    text = re.sub(r"(?i)\b(cr|dr)\.$", r"\1", text)
     try:
         return to_paise(text)
     except MoneyError:

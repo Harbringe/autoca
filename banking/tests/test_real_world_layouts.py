@@ -104,3 +104,37 @@ def test_a_bank_statement_that_merely_mentions_a_loan_is_not_refused():
 @pytest.mark.parametrize("name", ["hdfc", "icici", "kotak", "sbi"])
 def test_the_existing_bank_layouts_are_not_mistaken_for_loans(name):
     assert len(parse_statement(layout(name))) > 0
+
+
+# A savings account whose balance column ends "Cr." (with a full stop), whose cheque numbers are digits, whose withdrawal and
+# deposit sit in separate columns, and which has a cleared cheque reversed the same day. The full stop used to make the balance
+# unreadable as money, so almost no row looked like a transaction and the statement was refused.
+CR_DOT_HEADER = ["Tran Date", "Withdrawal", "Deposit", "Balance", "Alpha", "CHQ. NO.", "Narration", "Additional Info"]
+CR_DOT_ROWS = [
+    ["12-04-2025", "2.65", "", "12466467.30 Cr.", "", "", "SMS CHRG FOR:01-01-2025to31-03-2025", ""],
+    ["14-05-2025", "200000.00", "", "12266467.30 Cr.", "IOC", "971320", "Cash Withdrawal At Br : TOWN", ""],
+    ["14-05-2025", "6000000.00", "", "6266467.30 Cr.", "IOC", "971319", "PAYEE ONE", ""],
+    ["29-08-2025", "", "2600000.00", "8866467.30 Cr.", "", "", "By CLEARING - TO121", ""],
+    ["29-08-2025", "2600000.00", "", "6266467.30 Cr.", "", "", "REJECT:4:REQUIRED INFORMATION NOT", ""],
+    ["31-12-2025", "", "1373224.00", "7639691.30 Cr.", "", "", "RTGS IN: SAMPLE", ""],
+]
+CR_DOT_TEXT = "Statement of Account No: 1000000000001\nIFSC Code: PUNB0000001\nStatement for Period : 01-04-2025 to 31-03-2026"
+
+
+def test_a_balance_printed_with_cr_and_a_full_stop_is_read():
+    from banking.parsers.columns import as_paise
+
+    assert as_paise("12466467.30 Cr.") == 1246646730
+    assert as_paise("1000.00 Dr.") == -100000
+    assert as_paise("1000.00 Cr") == 100000
+
+
+def test_a_statement_with_cr_dot_balances_and_a_same_day_reversal_is_read():
+    statement = parse_statement(document(CR_DOT_TEXT, [CR_DOT_HEADER, *CR_DOT_ROWS]))
+
+    assert len(statement) == 6
+    running = statement.opening_balance_paise
+    for txn in statement.transactions:
+        running += txn.signed_paise
+        assert running == txn.balance_paise
+    assert statement.closing_balance_paise == 763969130

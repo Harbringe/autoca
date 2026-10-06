@@ -17,7 +17,7 @@ cd "$(dirname "$0")/.."
 
 umask 077
 fetched="$(mktemp)"
-trap 'rm -f "$fetched" .env.prod.new' EXIT
+trap 'rm -f "$fetched" "$fetched.err" .env.prod.new' EXIT
 
 # A one-off container: the server's IAM role signs the request, and the app image already has the client library.
 if ! sudo docker compose --env-file .env.prod -f compose.prod.yaml run --rm --no-deps -T web \

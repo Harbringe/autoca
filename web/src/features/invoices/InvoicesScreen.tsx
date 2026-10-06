@@ -140,6 +140,16 @@ export function InvoicesScreen({ clientId }: { clientId: string }) {
                       ))}
                     </ul>
                     {r.suggested_party && <div className="text-xs text-muted-foreground">Looks like {r.suggested_party.name}.</div>}
+                    {r.payments?.map((p) => (
+                      <div key={`${p.date}-${p.narration}`} className="rounded-md border border-accent-edge bg-accent p-2 text-xs">
+                        <strong>Looks already paid:</strong> {formatDate(p.date)} · {p.narration || 'a bank row'}.{' '}
+                        {p.on_party_account
+                          ? 'It is already on the party’s account.'
+                          : p.posted_to
+                            ? `It was posted to ${p.posted_to}, so booking this invoice would count it twice. After booking, move that payment onto the party’s account from To fix.`
+                            : 'It is still waiting in Review. Place it on the party’s account after booking this invoice.'}
+                      </div>
+                    ))}
                   </div>
                 )
               )}

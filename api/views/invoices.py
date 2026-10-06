@@ -52,6 +52,7 @@ class InvoiceReadingViewSet(
             invoice_intake.fields_of(reading),
             invoice_intake.suggested_party(reading),
             invoice_intake.matching_bill(reading),
+            invoice_intake.payment_candidates(reading) if reading.status == "OPEN" else (),
         )
 
     def list(self, request, *args, **kwargs):

@@ -89,6 +89,14 @@ class BillHintSerializer(serializers.Serializer):
     party_name = serializers.CharField()
 
 
+class PaymentHintSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    narration = serializers.CharField(allow_blank=True)
+    posted_to = serializers.CharField(allow_null=True, help_text="The head it was posted to, or null while it waits in Review.")
+    on_party_account = serializers.BooleanField()
+    entry = serializers.UUIDField(allow_null=True)
+
+
 class InvoiceReadingSerializer(serializers.Serializer):
     id = serializers.UUIDField()
     kind = serializers.CharField()
@@ -106,9 +114,12 @@ class InvoiceReadingSerializer(serializers.Serializer):
         allow_null=True, help_text="A bill already booked from this very invoice that has no file yet."
     )
     bill = serializers.UUIDField(allow_null=True)
+    payments = PaymentHintSerializer(
+        many=True, help_text="Bank rows that look like the payment for this invoice: same party, same total. A suggestion only."
+    )
 
 
-def reading_payload(reading: InvoiceReading, fields: dict, party, matching) -> dict:
+def reading_payload(reading: InvoiceReading, fields: dict, party, matching, payments=()) -> dict:
     total = fields.get("total_paise")
     return {
         "id": reading.pk,
@@ -147,4 +158,5 @@ def reading_payload(reading: InvoiceReading, fields: dict, party, matching) -> d
             else None
         ),
         "bill": reading.bill_id,
+        "payments": list(payments),
     }

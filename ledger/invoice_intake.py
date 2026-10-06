@@ -181,6 +181,42 @@ def matching_bill(reading: InvoiceReading) -> Bill | None:
     )
 
 
+def payment_candidates(reading: InvoiceReading, limit: int = 5) -> list[dict]:
+    """Bank rows that look like the payment for this invoice: the suggested party, the invoice's total, the right direction.
+
+    So the invoice is not an island: when a payment of exactly that amount to (or from) that party is already in the books,
+    it is shown beside the invoice. If it was posted to a head such as Sales or an expense, booking the invoice would count
+    the same cost or revenue twice, and the payment can then be moved onto the party's account (see the To fix list).
+    Only a suggestion: it is never linked on its own.
+    """
+    from banking.models import StatementTransaction
+    from ledger.models import JournalEntry
+
+    party = suggested_party(reading)
+    total = fields_of(reading).get("total_paise")
+    if party is None or not total:
+        return []
+    rows = StatementTransaction.objects.filter(
+        firm_id=reading.firm_id, bank_account__client=reading.client, classification__party=party
+    ).filter(debit_paise=total) if reading.kind == BillKind.PURCHASE else StatementTransaction.objects.filter(
+        firm_id=reading.firm_id, bank_account__client=reading.client, classification__party=party, credit_paise=total
+    )
+    found = []
+    for txn in rows.select_related("classification__ledger").order_by("value_date")[:limit]:
+        ledger = txn.classification.ledger
+        entry = JournalEntry.objects.filter(firm_id=reading.firm_id, source_transaction=txn).first()
+        found.append(
+            {
+                "date": txn.value_date,
+                "narration": " ".join((txn.narration or "").split())[:80],
+                "posted_to": ledger.name if (ledger and entry) else None,
+                "on_party_account": bool(ledger and ledger.is_party_account),
+                "entry": entry.pk if entry else None,
+            }
+        )
+    return found
+
+
 def _open_reading(reading: InvoiceReading) -> None:
     if reading.status != ReadingStatus.OPEN:
         raise IntakeError("This invoice has already been dealt with.")

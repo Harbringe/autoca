@@ -3385,6 +3385,8 @@ export interface components {
             matching_bill: components["schemas"]["BillHint"] | null;
             /** Format: uuid */
             bill: string | null;
+            /** @description Bank rows that look like the payment for this invoice: same party, same total. A suggestion only. */
+            payments: components["schemas"]["PaymentHint"][];
         };
         /**
          * @description * `PURCHASE` - PURCHASE
@@ -4696,6 +4698,16 @@ export interface components {
             rcm_default?: boolean;
             tds_section?: components["schemas"]["TdsSectionEnum"] | components["schemas"]["BlankEnum"];
             is_active?: boolean;
+        };
+        PaymentHint: {
+            /** Format: date */
+            date: string;
+            narration: string;
+            /** @description The head it was posted to, or null while it waits in Review. */
+            posted_to: string | null;
+            on_party_account: boolean;
+            /** Format: uuid */
+            entry: string | null;
         };
         Period: {
             /** Format: date */

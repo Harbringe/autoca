@@ -7352,6 +7352,12 @@ components:
           type: string
           format: uuid
           nullable: true
+        payments:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentHint'
+          description: 'Bank rows that look like the payment for this invoice: same
+            party, same total. A suggestion only.'
       required:
       - bill
       - checks
@@ -7361,6 +7367,7 @@ components:
       - id
       - kind
       - matching_bill
+      - payments
       - proved
       - read
       - status
@@ -10031,6 +10038,30 @@ components:
           - $ref: '#/components/schemas/BlankEnum'
         is_active:
           type: boolean
+    PaymentHint:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        narration:
+          type: string
+        posted_to:
+          type: string
+          nullable: true
+          description: The head it was posted to, or null while it waits in Review.
+        on_party_account:
+          type: boolean
+        entry:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+      - date
+      - entry
+      - narration
+      - on_party_account
+      - posted_to
     Period:
       type: object
       properties:

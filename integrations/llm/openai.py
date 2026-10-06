@@ -31,6 +31,7 @@ DEFAULT_BASE_URL = "https://api.openai.com/v1"
 
 class OpenAILLMAdapter(GroqLLMAdapter):
     LABEL = "OpenAI"
+    supports_shared_context = True
 
     def __init__(
         self,
@@ -59,15 +60,19 @@ class OpenAILLMAdapter(GroqLLMAdapter):
         self.token_param = token_param
         self.image_detail = image_detail
 
-    def _request(self, system: str, user, max_tokens: int) -> dict:
+    def _request(self, system: str, user, max_tokens: int, shared: str | None = None) -> dict:
+        # Reference material that is the same from call to call goes in its own message, ahead of what changes.
+        # The provider caches a prompt up to a message boundary, so the second and later calls for a client pay
+        # a fraction for it.
+        messages = [{"role": "system", "content": system}]
+        if shared:
+            messages.append({"role": "user", "content": shared})
+        messages.append({"role": "user", "content": user})
         body = {
             "model": self.model,
             self.token_param: max_tokens,
             "response_format": {"type": "json_object"},
-            "messages": [
-                {"role": "system", "content": system},
-                {"role": "user", "content": user},
-            ],
+            "messages": messages,
         }
         if self.temperature is not None:
             body["temperature"] = self.temperature

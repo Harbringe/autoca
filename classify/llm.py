@@ -449,13 +449,33 @@ def _ask_splitting(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]
         return {**first, **second}
 
 
+def group_alike(batch, pseudonymiser) -> list[list]:
+    """Rows that read exactly the same to the model, in the order they first appear.
+
+    "The same" is everything the model is sent about a row except its key and its date: channel, direction, the
+    exact amount, counterparty, remark and narration, all after masking. Two rows alike on all of that get the
+    same answer, so the first is asked about and the rest take its reply.
+    """
+    groups: dict[str, list] = {}
+    for row in batch:
+        view = pseudonymiser.row(row.transaction, key="").as_prompt_dict()
+        view.pop("key", None)
+        view.pop("date", None)
+        groups.setdefault(json.dumps(view, sort_keys=True, ensure_ascii=False), []).append(row)
+    return list(groups.values())
+
+
 def _ask(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]:
     from classify.standard_ledgers import PROPOSABLE_GROUPS, STANDARD_LEDGERS
 
-    keys = {f"r{i}": row for i, row in enumerate(batch, start=1)}
+    # Rows that read the same to the model (same channel, direction, amount band, parties and narration) are
+    # asked about once and the answer given to each, so forty identical standing orders cost one row.
+    members = group_alike(batch, pseudonymiser)
+    keys = {f"r{i}": group[0] for i, group in enumerate(members, start=1)}
+    twins = {f"r{i}": group for i, group in enumerate(members, start=1)}
     usable = chart.usable
     taken = {ledger.name for ledger in chart.known}
-    prompt = {
+    shared_part = {
         # Free text the CA wrote about this client: masked like any narration
         # so a stray PAN or account number never leaves. Absent, not empty,
         # when there is none, so the model is not told to weigh nothing.
@@ -470,9 +490,11 @@ def _ask(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]:
             {"name": name, "group": group} for name, group in STANDARD_LEDGERS if name not in taken
         ],
         "proposable_groups": sorted(PROPOSABLE_GROUPS),
+        "tds_sections": [code for code, _ in TdsSection.CHOICES],
+    }
+    prompt = {
         "party_aliases": pseudonymiser.known_aliases,
         "known_parties": pseudonymiser.known_parties,
-        "tds_sections": [code for code, _ in TdsSection.CHOICES],
         "history": context.get("history", []),
         "related": context.get("related", []),
         "transactions": [
@@ -482,14 +504,26 @@ def _ask(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]:
     }
     # Reasoning models spend part of this budget thinking before they answer; a
     # budget that only fits the answer truncates it, and JSON mode then rejects it.
-    response = llm.complete_json(
-        system_prompt_for(batch),
-        json.dumps(prompt, ensure_ascii=False),
-        max_tokens=int(getattr(settings, "LLM_MAX_TOKENS", 8192)),
-    )
+    max_tokens = int(getattr(settings, "LLM_MAX_TOKENS", 8192))
+    if getattr(llm, "supports_shared_context", False):
+        # What is the same for every call for this client goes ahead as its own message, so the provider can
+        # serve it from its cache after the first call.
+        response = llm.complete_json(
+            system_prompt_for(batch),
+            json.dumps(prompt, ensure_ascii=False),
+            max_tokens=max_tokens,
+            shared="Reference material for this client, the same for every request:\n"
+            + json.dumps(shared_part, ensure_ascii=False),
+        )
+    else:
+        response = llm.complete_json(
+            system_prompt_for(batch),
+            json.dumps({**shared_part, **prompt}, ensure_ascii=False),
+            max_tokens=max_tokens,
+        )
     logger.info(
-        "model tier: %d rows, %d in / %d out tokens, model=%s",
-        len(batch), response.input_tokens, response.output_tokens, response.model,
+        "model tier: %d rows (%d asked), %d in (%d cached) / %d out tokens, model=%s",
+        len(batch), len(keys), response.input_tokens, response.cached_tokens, response.output_tokens, response.model,
     )
     try:
         parsed = json.loads(response.text)
@@ -501,7 +535,7 @@ def _ask(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]:
                 replies[key] = item
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
         raise LLMError("The model's reply did not have the agreed shape.") from exc
-    return {str(keys[key].pk): item for key, item in replies.items()}
+    return {str(row.pk): item for key, item in replies.items() for row in twins[key]}
 
 
 def _apply(batch, replies, chart, pseudonymiser) -> tuple[int, int, int]:

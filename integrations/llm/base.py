@@ -52,12 +52,17 @@ class LLMResponse:
     model: str
     input_tokens: int = 0
     output_tokens: int = 0
+    #: Input tokens the provider served from its prompt cache (billed at a fraction). 0 when it does not say.
+    cached_tokens: int = 0
 
 
 class LLMAdapter(abc.ABC):
     #: False for the stub. Callers check this once rather than catching
     #: :class:`LLMUnavailable` on every row.
     is_available: bool = True
+    #: True for a provider that takes ``shared=`` reference material as its own message ahead of the request, so
+    #: its prompt cache can reuse it across calls. Others get one merged prompt, exactly as before.
+    supports_shared_context: bool = False
 
     @abc.abstractmethod
     def complete_json(self, system: str, user: str, *, max_tokens: int = 2048) -> LLMResponse:

@@ -116,7 +116,7 @@ class GroqLLMAdapter(LLMAdapter):
     #: What the provider is called in errors.
     LABEL = "Groq"
 
-    def _request(self, system: str, user, max_tokens: int) -> dict:
+    def _request(self, system: str, user, max_tokens: int, shared: str | None = None) -> dict:
         """The chat-completions body. ``user`` is text, or a list of content parts (text and images)."""
         return {
             "model": self.model,
@@ -129,11 +129,13 @@ class GroqLLMAdapter(LLMAdapter):
             ],
         }
 
-    def complete_json(self, system: str, user: str, *, max_tokens: int = 2048) -> LLMResponse:
-        return self._complete(system, user, max_tokens)
+    def complete_json(
+        self, system: str, user: str, *, max_tokens: int = 2048, shared: str | None = None
+    ) -> LLMResponse:
+        return self._complete(system, user, max_tokens, shared)
 
-    def _complete(self, system: str, user, max_tokens: int) -> LLMResponse:
-        body = json.dumps(self._request(system, user, max_tokens)).encode()
+    def _complete(self, system: str, user, max_tokens: int, shared: str | None = None) -> LLMResponse:
+        body = json.dumps(self._request(system, user, max_tokens, shared)).encode()
 
         payload = self._post(body)
 
@@ -153,6 +155,7 @@ class GroqLLMAdapter(LLMAdapter):
             model=payload.get("model") or self.model,
             input_tokens=int(usage.get("prompt_tokens") or 0),
             output_tokens=int(usage.get("completion_tokens") or 0),
+            cached_tokens=int((usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0),
         )
 
     # -- transport -------------------------------------------------------------

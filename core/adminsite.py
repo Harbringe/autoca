@@ -23,6 +23,8 @@ looked empty. Lists now read across firms through the gated views in
 changes, at the moment it changes it.
 """
 
+import unicodedata
+
 from django.conf import settings
 from django.contrib import admin
 from django.contrib.admin.apps import AdminConfig
@@ -55,7 +57,10 @@ class PlatformAdminSite(admin.AdminSite):
         """
         from core import throttle
 
-        account = str(request.POST.get("username", ""))[:254].strip().lower() if request.method == "POST" else ""
+        # Read the account the way the form and the backend do (NFKC, then strip and lower), so spellings that sign in
+        # as one account share one counter instead of each getting its own.
+        typed = unicodedata.normalize("NFKC", str(request.POST.get("username", ""))) if request.method == "POST" else ""
+        account = typed.strip().lower()[:254]
         if account:
             try:
                 throttle.check("login", account)

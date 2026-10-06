@@ -325,3 +325,19 @@ def test_a_switched_off_login_loses_its_live_session():
     user.save()
 
     assert backend.get_user(user.pk) is None
+
+
+def test_spellings_of_one_admin_account_share_one_counter(settings):
+    settings.THROTTLE_LIMITS = {
+        **settings.THROTTLE_LIMITS,
+        "login": {"attempts": 2, "window_seconds": 600, "lockout_seconds": 600},
+    }
+    create_user("owner@example.com", PASSWORD)
+    http = HttpClient()
+
+    # A full-width "o" and surrounding spaces still reach the same account through the form's own normalisation.
+    for typed in ("owner@example.com", "  OWNER@example.com ", "ｏwner@example.com"):
+        http.post("/admin/login/", {"username": typed, "password": "wrong", "next": "/admin/"})
+
+    refused = http.post("/admin/login/", {"username": "owner@example.com", "password": "wrong", "next": "/admin/"})
+    assert refused.status_code == 429

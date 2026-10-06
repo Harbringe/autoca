@@ -29,15 +29,23 @@ def test_approving_nothing_that_was_requested_is_refused(api, client_record):
     assert response.status_code == 409
 
 
-def test_the_schedule_can_be_changed_by_someone_who_may_edit_the_client(api, client_record):
-    response = api.patch(f"/api/v1/clients/{client_record.pk}/", {"close_period": "YEARLY"}, format="json")
+@pytest.fixture
+def admin_api(firm):
+    from api.tests.conftest import member, sign_in
+    from core.models import Role
+
+    return sign_in(member(firm, Role.FIRM_ADMIN, "admin@example.test").user)
+
+
+def test_the_schedule_can_be_changed_by_a_firm_administrator(api, admin_api, client_record):
+    response = admin_api.patch(f"/api/v1/clients/{client_record.pk}/", {"close_period": "YEARLY"}, format="json")
 
     assert response.status_code == 200 and response.json()["close_period"] == "YEARLY"
     assert api.get(f"{base(client_record)}/books/").json()["close_period"] == "YEARLY"
 
 
-def test_an_unknown_schedule_is_a_400(api, client_record):
-    response = api.patch(f"/api/v1/clients/{client_record.pk}/", {"close_period": "WEEKLY"}, format="json")
+def test_an_unknown_schedule_is_a_400(admin_api, client_record):
+    response = admin_api.patch(f"/api/v1/clients/{client_record.pk}/", {"close_period": "WEEKLY"}, format="json")
 
     assert response.status_code == 400
 

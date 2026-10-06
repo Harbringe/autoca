@@ -9,6 +9,7 @@ import { EmptyState, ErrorState, PageHeader } from '@/components/ca/Page'
 import { cn } from '@/lib/utils'
 import { usePageTitle } from '@/lib/title'
 import { AlertList, MODULE_LABEL } from './AlertList'
+import { sortAlerts } from './alertView'
 
 export interface AlertsSearch {
   module?: AlertModule
@@ -33,7 +34,7 @@ export function AlertsScreen({ search }: { search: AlertsSearch }) {
   if (feed.isLoading || !feed.data) return <div className="skeleton h-64 rounded-lg" aria-busy="true" aria-label="Loading alerts" />
 
   const { counts } = feed.data
-  const alerts = feed.data.alerts.filter((a) => (!search.module || a.module === search.module) && (!search.client || a.client === search.client))
+  const alerts = sortAlerts(feed.data.alerts).filter((a) => (!search.module || a.module === search.module) && (!search.client || a.client === search.client))
   const chip = (active: boolean) =>
     cn('inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-[13px] font-medium', active ? 'border-primary bg-primary text-primary-foreground' : 'bg-card text-foreground hover:bg-hover')
 
@@ -56,7 +57,7 @@ export function AlertsScreen({ search }: { search: AlertsSearch }) {
       {alerts.length === 0 ? (
         <EmptyState title="All clear">Nothing here needs a person. New alerts appear as statements arrive and deadlines come close.</EmptyState>
       ) : (
-        <AlertList alerts={alerts} />
+        <AlertList alerts={alerts} className="max-w-4xl" />
       )}
     </div>
   )

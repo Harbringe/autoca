@@ -285,7 +285,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
         </EmptyState>
       ) : (
         <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,1fr)]">
-          <Card className="max-h-[70vh] overflow-auto overscroll-contain">
+          <Card className="relative max-h-[70vh] overflow-auto overscroll-contain">
             {canPost && tickedRows.length > 0 && (
               <div className="sticky top-0 z-20 flex items-center gap-3 border-b bg-accent px-3 py-1.5 text-[13px]" role="status">
                 <span className="font-semibold">{tickedRows.length} selected</span>

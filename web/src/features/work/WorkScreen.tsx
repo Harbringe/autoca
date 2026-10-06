@@ -294,7 +294,7 @@ function DailyActivity({ days, activeDays }: { days: MemberWork['by_day']; activ
       </div>
       <details className="mt-2 text-sm">
         <summary className="cursor-pointer text-[13px] text-link underline">Show as a table</summary>
-        <div className="mt-2 max-h-64 overflow-auto rounded-md border">
+        <div className="relative mt-2 max-h-64 overflow-auto rounded-md border">
           <table className="w-full text-left text-sm">
             <caption className="sr-only">Recorded actions by day</caption>
             <thead className="sticky top-0 bg-surface-2 text-xs text-muted-foreground">

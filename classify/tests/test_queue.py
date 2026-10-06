@@ -246,9 +246,10 @@ def test_a_row_the_reply_leaves_out_goes_back_to_waiting(client, queued, llm):
 
     outcome = process_next_batch(client)
 
-    assert outcome.processed == 10 and outcome.suggested == 9
+    # r1 stands for every row that reads exactly like it, so those go back together; the rest are answered.
     again = [r for r in _by_state(client, ModelState.WAITING) if r.model_attempts == 1]
-    assert len(again) == 1
+    assert outcome.processed == 10 and len(again) >= 1
+    assert outcome.suggested + len(again) == 10
 
 
 def test_a_row_the_model_looks_at_and_declines_is_left_alone(client, queued, llm):

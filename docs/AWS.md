@@ -140,3 +140,5 @@ systemctl list-timers 'autoca-*'   when it next runs
 ## Not set up yet
 
 - **AWS KMS.** Account numbers are encrypted under `KMS_LOCAL_MASTER_KEY`, which lives in `.env.prod`. Moving that to AWS KMS is a later step.
+
+Provider keys can be kept in AWS Parameter Store and copied into `.env.prod` at each deploy: see `docs/SECRETS.md`.

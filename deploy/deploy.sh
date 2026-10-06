@@ -26,6 +26,9 @@ if [ -n "$want" ]; then
 else
     git pull --ff-only
 fi
+# Settings kept in AWS Parameter Store are brought into .env.prod first. It never fails the deploy: if it cannot
+# reach Parameter Store it says so and the settings already on this server are used.
+sh deploy/pull-secrets.sh || true
 compose build
 compose up -d
 

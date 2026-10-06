@@ -161,3 +161,45 @@ def test_the_importer_reads_an_env_file_and_never_echoes_a_value():
     }
     assert len(notes) == 5
     assert not any("sk-secret" in n or "postgresql" in n or "/evil" in n for n in notes)
+
+
+def test_a_secret_holding_an_env_file_is_read_like_one():
+    text = "\n".join(
+        [
+            "# prod",
+            "LLM_API_KEY=sk-a=b",
+            'LLM_MODEL="gpt-6-luna"',
+            "export LLM_BATCH_SIZE=40",
+            "bad line",
+        ]
+    )
+
+    assert paramstore.secret_settings(text) == {
+        "LLM_API_KEY": "sk-a=b",
+        "LLM_MODEL": "gpt-6-luna",
+        "LLM_BATCH_SIZE": "40",
+    }
+
+
+def test_a_secret_holding_json_is_read_too():
+    text = '{"LLM_API_KEY": "sk-x", "LLM_BATCH_SIZE": 40, "NESTED": {"a": 1}}'
+
+    assert paramstore.secret_settings(text) == {"LLM_API_KEY": "sk-x", "LLM_BATCH_SIZE": "40"}
+
+
+def test_the_secret_gets_the_same_filtering_as_a_parameter():
+    collected = paramstore.secret_settings(
+        "LLM_API_KEY=sk\nPYTHONPATH=/evil\nDATABASE_OWNER_URL=x\nDJANGO_SECRET_KEY=k"
+    )
+
+    found, skipped = paramstore.settings_from(
+        [{"Name": PREFIX + n, "Value": v} for n, v in collected.items()], PREFIX
+    )
+
+    assert found == {"LLM_API_KEY": "sk", "?DJANGO_SECRET_KEY": "k"} and len(skipped) == 2
+
+
+def test_the_name_of_the_secret_cannot_be_changed_from_inside_it():
+    found, _ = paramstore.settings_from([p("PARAMETER_SECRET_ID", "other/secret")], PREFIX)
+
+    assert found == {}

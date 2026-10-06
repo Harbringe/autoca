@@ -5,7 +5,13 @@ is stored anywhere):
 
     python -m integrations.paramstore            prints KEY=VALUE lines for the settings that may live here
 
-Any setting can live here: create a parameter named ``/autoca/prod/<SETTING_NAME>`` and it is written into
+Two places are read, and a setting in the second replaces the same setting in the first:
+
+1. **One secret holding a whole ``.env`` file** (AWS Secrets Manager, default name ``autoca/prod/env``). You paste the
+   file into the console's text box, edit it there later, and every setting in it is applied at the next deploy.
+2. **Individual parameters** (Parameter Store), each ``/autoca/prod/<SETTING_NAME>``.
+
+Either, both or neither may exist. For a parameter: create a parameter named ``/autoca/prod/<SETTING_NAME>`` and it is written into
 ``.env.prod`` at the next deploy, replacing what was there.
 
 The exception is :data:`SEED_ONLY`: the three permanent keys and the web role's database URL. Losing or changing one of
@@ -26,6 +32,8 @@ import sys
 
 PREFIX_ENV = "PARAMETER_PREFIX"
 REGION_ENV = "PARAMETER_REGION"
+SECRET_ENV = "PARAMETER_SECRET_ID"  # noqa: S105 -- the name of a setting, not a secret
+DEFAULT_SECRET = "autoca/prod/env"  # noqa: S105 -- the secret's name, not its value
 DEFAULT_PREFIX = "/autoca/prod/"
 DEFAULT_REGION = "ap-south-1"
 
@@ -40,6 +48,7 @@ NEVER = frozenset(
     {
         PREFIX_ENV,
         REGION_ENV,
+        SECRET_ENV,
         "DJANGO_SETTINGS_MODULE",
         "DEBUG",
         "PATH",
@@ -111,6 +120,53 @@ def settings_from(parameters, prefix: str) -> tuple[dict[str, str], list[str]]:
     return found, skipped
 
 
+def parse_env(text: str) -> dict[str, str]:
+    """``NAME=VALUE`` lines of an .env file. Comments, blank lines, ``export`` and one layer of quotes are handled.
+
+    Lines that are not settings are dropped here and again, by name, in :func:`settings_from`.
+    """
+    found: dict[str, str] = {}
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("export "):
+            line = line[len("export ") :].lstrip()
+        if "=" not in line:
+            continue
+        name, value = line.split("=", 1)
+        name, value = name.strip(), value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+            value = value[1:-1]
+        found[name] = value
+    return found
+
+
+def secret_settings(text: str) -> dict[str, str]:
+    """The settings in a secret's text: a JSON object of names to values, or an .env file."""
+    import json
+
+    try:
+        loaded = json.loads(text)
+    except ValueError:
+        return parse_env(text)
+    if isinstance(loaded, dict):
+        return {str(k): str(v) for k, v in loaded.items() if isinstance(v, str | int | float)}
+    return parse_env(text)
+
+
+def fetch_secret(secret_id: str, region: str) -> dict[str, str] | None:
+    """The settings in the secret, or None if there is no such secret (not an error: it is optional)."""
+    import boto3
+
+    client = boto3.client("secretsmanager", region_name=region)
+    try:
+        reply = client.get_secret_value(SecretId=secret_id)
+    except client.exceptions.ResourceNotFoundException:
+        return None
+    return secret_settings(reply.get("SecretString") or "")
+
+
 def fetch(prefix: str, region: str) -> list[dict]:
     import boto3
 
@@ -133,14 +189,35 @@ def main() -> int:
     if not prefix.endswith("/"):
         prefix += "/"
     region = os.environ.get(REGION_ENV, DEFAULT_REGION)
+    secret_id = os.environ.get(SECRET_ENV, DEFAULT_SECRET)
+
+    # Each source is read on its own; one failing does not hide the other. A parameter replaces the same name in the secret.
+    collected: dict[str, str] = {}
+    failures = reads = 0
     try:
-        parameters = fetch(prefix, region)
+        from_secret = fetch_secret(secret_id, region)
+        reads += 1
+        if from_secret:
+            collected.update(from_secret)
     except Exception as exc:  # noqa: BLE001 -- boto raises many types; the type is enough to act on
+        failures += 1
         sys.stderr.write(
-            f"paramstore: could not read {prefix} ({type(exc).__name__}). The settings file is unchanged.\n"
+            f"paramstore: could not read the secret {secret_id} ({type(exc).__name__}).\n"
         )
+    try:
+        for parameter in fetch(prefix, region):
+            collected[parameter["Name"].removeprefix(prefix).strip("/")] = parameter["Value"]
+        reads += 1
+    except Exception as exc:  # noqa: BLE001
+        failures += 1
+        sys.stderr.write(f"paramstore: could not read {prefix} ({type(exc).__name__}).\n")
+    if failures and not reads:
+        sys.stderr.write("paramstore: nothing could be read. The settings file is unchanged.\n")
         return 2
-    found, skipped = settings_from(parameters, prefix)
+
+    found, skipped = settings_from(
+        [{"Name": prefix + n, "Value": v} for n, v in collected.items()], prefix
+    )
     for note in skipped:
         sys.stderr.write(f"paramstore: left out {note}\n")
     for name in sorted(found):

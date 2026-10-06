@@ -6,6 +6,33 @@ Rotating a key becomes: change the parameter in AWS, deploy.
 
 Nothing about GitHub changes. GitHub still holds only what CI and deploy need; it never sees these keys.
 
+## Easiest: one secret that holds your whole .env file (like Render)
+
+AWS Secrets Manager keeps a block of text, encrypted, that you paste and edit in the console. Put your env file in it
+and the server applies it at every deploy. Cost: about $0.40 a month for the one secret.
+
+**Create it.** Secrets Manager (Mumbai) -> Store a new secret -> type **Other type of secret** -> open the **Plaintext**
+tab -> delete the template and paste the contents of your `.env.prod` -> Next -> name it exactly `autoca/prod/env` ->
+Next -> leave rotation off -> Next -> Store.
+
+**Change it later.** Open the secret -> Retrieve secret value -> Edit -> Plaintext -> change the text -> Save. Then deploy.
+
+**Let the server read it.** Add this second statement to the `autoca-read-parameters` policy (or make it its own policy):
+
+```json
+{
+  "Effect": "Allow",
+  "Action": "secretsmanager:GetSecretValue",
+  "Resource": "arn:aws:secretsmanager:ap-south-1:000246635189:secret:autoca/prod/env-*"
+}
+```
+
+The same safety rules apply as to parameters: only settings the app knows (listed in `deploy/prod.env.example` or
+already on the server) are taken; the permanent keys and the web `DATABASE_URL` are only filled in when missing; the
+database owner and bootstrap credentials, and names that change how a process starts, are refused. A setting in a
+separate Parameter Store parameter replaces the same name in the secret. Leave the secret out of `.env.prod`'s database
+owner and bootstrap lines (`.env.owner`, `.env.db`); those files are not part of it.
+
 ## What lives there
 
 Any setting the app knows. Create a parameter named `/autoca/prod/<SETTING_NAME>` and its value is written into

@@ -32,6 +32,7 @@ NEVER = frozenset(
     {
         "PARAMETER_PREFIX",
         "PARAMETER_REGION",
+        "PARAMETER_SECRET_ID",
         "DJANGO_SETTINGS_MODULE",
         "DEBUG",
         "PATH",

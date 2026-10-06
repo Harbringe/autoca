@@ -21,7 +21,7 @@ export function AssistantStrip({ clientId, className }: { clientId: string; clas
         className,
       )}
     >
-      <Sparkles className="size-4 shrink-0" aria-hidden />
+      <Sparkles className={cn('size-4 shrink-0', !attention && 'motion-safe:animate-pulse')} aria-hidden />
       <span className="min-w-0 flex-1">{line}</span>
       {working && (
         <progress

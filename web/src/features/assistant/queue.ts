@@ -65,26 +65,40 @@ export function seeded(previous: AssistantStatus, waiting: number): AssistantSta
 
 const secondsLeft = (status: AssistantStatus, now: number) => Math.max(0, Math.ceil(((status.resumeAt ?? now) - now) / 1000))
 
+/** What the assistant is doing, in turn. The line changes every few seconds so a long run reads as live work. */
+const PHASES = [
+  'reading the narrations',
+  'recognising the people and businesses paid',
+  'matching rows to this client’s ledgers',
+  'checking amounts against the rules',
+  'placing rows for your review',
+] as const
+const PHASE_MS = 3000
+
+export const phaseAt = (now: number): string => PHASES[Math.floor(now / PHASE_MS) % PHASES.length] ?? PHASES[0]
+
+/** True while the assistant is, or is about to be, at work on rows, so the line should keep moving. */
+export const isProcessing = (status: AssistantStatus): boolean =>
+  status.waiting > 0 && status.reason !== 'assistant_off' && status.reason !== 'daily_limit' && status.reason !== 'provider_down'
+
 /** The sentence for a strip on Bank statements and Review, or null when the assistant has nothing to say. */
 export function assistantLine(status: AssistantStatus, now: number): string | null {
   if (status.reason === 'assistant_off') return 'The assistant is off, so rows are placed by rules and by you.'
   if (status.waiting <= 0) return null
   if (status.reason === 'daily_limit') return `Assistant allowance used for today, ${plural(status.waiting, 'row')} left for you`
-  if (status.state === 'paused') {
-    if (status.reason === 'rate_limit') return `Paused: rate limit, resuming in ${secondsLeft(status, now)} s`
-    if (status.reason === 'provider_down') return `The assistant is not answering. Trying again in ${secondsLeft(status, now)} s`
-    return status.message || `Paused, resuming in ${secondsLeft(status, now)} s`
-  }
+  if (status.reason === 'provider_down') return `The assistant is not answering. Trying again in ${secondsLeft(status, now)} s`
+  // Waiting between batches (a rate limit, or the next batch not yet asked for) is still processing.
   const done = Math.max(0, status.total - status.waiting)
-  return done > 0 ? `The assistant is reading ${done} of ${plural(status.total, 'row')}` : `The assistant is reading ${plural(status.waiting, 'row')}`
+  const progress = done > 0 ? ` ${done} of ${plural(status.total, 'row')} done` : ` ${plural(status.waiting, 'row')} in line`
+  return `The assistant is processing your statements in real time: ${phaseAt(now)}…${progress}`
 }
 
 /** The short form for the top bar, or null when there is nothing to show there. */
-export function assistantShort(status: AssistantStatus, now: number): string | null {
+export function assistantShort(status: AssistantStatus, _now: number): string | null {
   if (status.waiting <= 0 || status.reason === 'assistant_off') return null
   if (status.reason === 'daily_limit') return 'Assistant: allowance used'
-  if (status.state === 'paused') return `Assistant paused, ${secondsLeft(status, now)} s`
-  return `Assistant reading ${plural(status.waiting, 'row')}`
+  if (status.reason === 'provider_down') return 'Assistant not answering'
+  return `Assistant processing ${plural(status.waiting, 'row')}`
 }
 
 export interface LoopDeps {

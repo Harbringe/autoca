@@ -15,6 +15,7 @@ import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/compone
 import { parseFy } from '@/lib/fy'
 import { useHotkey } from '@/lib/hotkeys'
 import { moduleHref } from '@/lib/jump'
+import { setSelectedClient } from '@/lib/selectedClient'
 import { switchClientPath } from '@/lib/modules'
 import { usePreferences } from '@/lib/preferences'
 import { useSession } from '@/session/session'
@@ -201,6 +202,7 @@ function PaletteBody({ search, setSearch, close }: { search: string; setSearch: 
                 icon={<Users />}
                 onSelect={() => {
                   close()
+                  setSelectedClient(null)
                   void navigate({ to: switchClientPath(path, null) as never })
                 }}
               >

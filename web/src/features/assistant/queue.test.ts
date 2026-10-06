@@ -45,16 +45,24 @@ describe('statusAfter and seeded', () => {
 })
 
 describe('the words', () => {
-  it('says how far the assistant has got', () => {
-    expect(assistantLine(status(), 0)).toBe('The assistant is reading 40 of 120 rows')
-    expect(assistantLine(status({ waiting: 120 }), 0)).toBe('The assistant is reading 120 rows')
-    expect(assistantShort(status(), 0)).toBe('Assistant reading 80 rows')
+  it('says the assistant is processing, with how far it has got', () => {
+    expect(assistantLine(status(), 0)).toBe('The assistant is processing your statements in real time: reading the narrations… 40 of 120 rows done')
+    expect(assistantLine(status({ waiting: 120 }), 0)).toContain('120 rows in line')
+    expect(assistantShort(status(), 0)).toBe('Assistant processing 80 rows')
   })
-  it('counts down a rate-limit pause', () => {
-    const paused = status({ state: 'paused', reason: 'rate_limit', resumeAt: 40_000 })
-    expect(assistantLine(paused, 0)).toBe('Paused: rate limit, resuming in 40 s')
-    expect(assistantLine(paused, 39_500)).toBe('Paused: rate limit, resuming in 1 s')
-    expect(assistantShort(paused, 10_000)).toBe('Assistant paused, 30 s')
+  it('keeps the line moving through the phases as time passes', () => {
+    const first = assistantLine(status(), 0)
+    const later = assistantLine(status(), 3000)
+    expect(later).not.toBe(first)
+  })
+  it('never says paused while it waits between batches', () => {
+    const waiting = status({ state: 'paused', reason: 'rate_limit', resumeAt: 40_000 })
+    expect(assistantLine(waiting, 0)).not.toMatch(/paus/i)
+    expect(assistantShort(waiting, 10_000)).toBe('Assistant processing 80 rows')
+  })
+  it('is honest when the provider is not answering', () => {
+    const down = status({ state: 'paused', reason: 'provider_down', resumeAt: 30_000 })
+    expect(assistantLine(down, 0)).toBe('The assistant is not answering. Trying again in 30 s')
   })
   it('names the daily allowance and what is left for a person', () => {
     const spent = status({ state: 'paused', reason: 'daily_limit', waiting: 30 })

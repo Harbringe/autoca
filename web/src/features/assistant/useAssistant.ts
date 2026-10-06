@@ -11,7 +11,7 @@ import { isApiError } from '@/api/errors'
 import { clientKeys, reviewSummary, V1 } from '@/api/queries/clients'
 import type { NextBatch } from '@/api/types'
 import { useSession } from '@/session/session'
-import { assistantLine, assistantShort, IDLE_STATUS, seeded, startAssistantLoop, statusAfter, type AssistantStatus } from './queue'
+import { assistantLine, assistantShort, IDLE_STATUS, isProcessing, seeded, startAssistantLoop, statusAfter, type AssistantStatus } from './queue'
 
 const statuses = new Map<string, AssistantStatus>()
 const listeners = new Set<() => void>()
@@ -55,14 +55,14 @@ export function useNow(active: boolean): number {
 /** The sentence for a strip, kept current (the countdown ticks). */
 export function useAssistantLine(clientId: string | undefined): { line: string | null; status: AssistantStatus } {
   const status = useAssistantStatus(clientId)
-  const now = useNow(status.state === 'paused' && status.resumeAt !== null)
+  const now = useNow(isProcessing(status) || (status.state === 'paused' && status.resumeAt !== null))
   return { line: assistantLine(status, now || Date.now()), status }
 }
 
 /** The short form for the top bar. */
 export function useAssistantShort(clientId: string | undefined): string | null {
   const status = useAssistantStatus(clientId)
-  const now = useNow(status.state === 'paused' && status.resumeAt !== null)
+  const now = useNow(isProcessing(status) || (status.state === 'paused' && status.resumeAt !== null))
   return assistantShort(status, now || Date.now())
 }
 

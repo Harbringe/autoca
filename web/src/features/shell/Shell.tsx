@@ -58,6 +58,8 @@ import { fyLabel, financialYearOf } from '@/lib/format'
 import { parseFy } from '@/lib/fy'
 import { useHotkey } from '@/lib/hotkeys'
 import { JUMP_KEYS, moduleHref, type JumpKey } from '@/lib/jump'
+import { setSelectedClient, useSelectedClient } from '@/lib/selectedClient'
+import { ClientSection } from './ClientSection'
 import { clientIdOf, moduleOf, type ModuleId } from '@/lib/modules'
 import { usePreferences, type Density, type Theme } from '@/lib/preferences'
 import { usePageTitle } from '@/lib/title'
@@ -173,7 +175,13 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
   const { hideSoon } = usePreferences()
   const path = useRouterState({ select: (s) => s.location.pathname })
   const active = moduleOf(path)
-  const { clientId } = useParams({ strict: false }) as { clientId?: string }
+  const { clientId: urlClient } = useParams({ strict: false }) as { clientId?: string }
+  // The client stays selected when the person steps out to the dashboard or the client list.
+  const remembered = useSelectedClient()
+  useEffect(() => {
+    if (urlClient) setSelectedClient(urlClient)
+  }, [urlClient])
+  const clientId = urlClient ?? remembered ?? undefined
   const bankCount = useSidebarCount()
 
   const hrefFor = (entry: NavEntry): string => {
@@ -195,6 +203,7 @@ function Sidebar({ onNavigate }: { onNavigate?: () => void }) {
         <Brand />
       </div>
       <nav aria-label="Main" className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-2 pb-4">
+        {clientId && <ClientSection clientId={clientId} path={path} onNavigate={onNavigate} />}
         {GROUPS.map((group) => {
           const items = group.items.filter((item) => {
             if (item.permission && !can(item.permission)) return false

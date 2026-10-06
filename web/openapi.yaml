@@ -8495,6 +8495,12 @@ components:
           format: date
           description: The date that balance was true. Normally the first day of the
             period.
+        acknowledge_difference:
+          type: boolean
+          default: false
+          description: Set to keep a figure that differs from the opening of the statement
+            beginning on that date. Without it a difference (and above all a flipped
+            sign on an overdraft) is refused with `409 opening_differs`.
       required:
       - opening_as_of
       - opening_balance_paise

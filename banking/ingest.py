@@ -161,7 +161,39 @@ def ingest_statement(
     )
 
 
-def confirm_opening_balance(account: BankAccount, *, balance_paise: int, as_of) -> BankAccount:
+class OpeningDiffersError(RuntimeError):
+    """The opening balance typed disagrees with the statement that starts on that date, and nobody said it should."""
+
+
+def check_against_statement(account: BankAccount, *, balance_paise: int, as_of) -> None:
+    """Refuse an opening that contradicts the statement beginning on its date, unless the person says it is meant.
+
+    A client's books can legitimately open at a figure other than the statement's (it onboarded earlier, or the statement
+    is a later extract), so a difference is allowed, but never silently: a sign slip on an overdraft (typing 41,64,365.67
+    for -41,74,365.67) looks entirely plausible and misstates every balance from then on.
+    """
+    statement = (
+        Statement.objects.filter(firm_id=account.firm_id, bank_account=account, period_start=as_of).order_by("period_start").first()
+    )
+    if statement is None or statement.opening_balance_paise == int(balance_paise):
+        return
+    printed = statement.opening_balance_paise
+    entered = int(balance_paise)
+    sign_flipped = printed != 0 and entered != 0 and (printed < 0) != (entered < 0)
+    why = (
+        "It has the opposite sign: a negative figure is an overdrawn account."
+        if sign_flipped
+        else f"It differs by {format_inr(abs(entered - printed))}."
+    )
+    raise OpeningDiffersError(
+        f"The statement beginning {as_of:%d-%m-%Y} opens at {format_inr(printed)}, but you entered {format_inr(entered)}. "
+        f"{why} If the books really open at your figure, confirm it deliberately."
+    )
+
+
+def confirm_opening_balance(
+    account: BankAccount, *, balance_paise: int, as_of, check_difference: bool = False
+) -> BankAccount:
     """Record the balance a client's books actually started from.
 
     Pre-filled from the first statement's own opening line, but confirmed by a
@@ -189,6 +221,8 @@ def confirm_opening_balance(account: BankAccount, *, balance_paise: int, as_of) 
                 f"the opening balance date, so the opening balance can no longer be changed. "
                 f"Only the client's senior CA or a firm administrator can reopen the books."
             )
+    if check_difference:
+        check_against_statement(account, balance_paise=balance_paise, as_of=as_of)
     account.opening_balance_paise = int(balance_paise)
     account.opening_as_of = as_of
     account.save(update_fields=["opening_balance_paise", "opening_as_of"])

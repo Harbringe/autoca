@@ -3890,6 +3890,11 @@ export interface components {
              * @description The date that balance was true. Normally the first day of the period.
              */
             opening_as_of: string;
+            /**
+             * @description Set to keep a figure that differs from the opening of the statement beginning on that date. Without it a difference (and above all a flipped sign on an overdraft) is refused with `409 opening_differs`.
+             * @default false
+             */
+            acknowledge_difference: boolean;
         };
         OpeningBillRequest: {
             /** @description The invoice number on the supplier's (or our) invoice. */

@@ -20,7 +20,7 @@ import { DateInput } from '@/components/ui/date-input'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
-import { formatDate, parseDate, parseRupees, plural } from '@/lib/format'
+import { formatDate, formatPaise, parseDate, parseRupees, plural } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 
@@ -389,27 +389,32 @@ export function OpeningBalance({
   )
   const [asOf, setAsOf] = useState(formatDate(account.opening_as_of ?? statement?.period_start ?? ''))
   const [error, setError] = useState<string | null>(null)
+  // The server refuses a figure that contradicts the statement beginning on that date; the person may keep it on purpose.
+  const [differs, setDiffers] = useState(false)
   const [busy, setBusy] = useState(false)
 
   if (!can('ledger.manage')) {
     return <p className="text-sm text-warning">The opening balance for {account.label} is not confirmed yet. Ask a colleague who manages ledgers.</p>
   }
 
-  async function save() {
+  async function save(acknowledge = false) {
     const paise = parseRupees(amount)
     const date = parseDate(asOf)
     if (paise === null) return setError('Enter the amount in rupees, for example 1,25,000.00.')
     if (!date) return setError('Enter the date as DD-MM-YYYY.')
     setBusy(true)
     setError(null)
+    setDiffers(false)
     try {
       await raw.post(`${V1}/clients/${clientId}/bank-accounts/${account.id}/opening-balance/`, {
         opening_balance_paise: paise,
         opening_as_of: date,
+        acknowledge_difference: acknowledge,
       })
       await invalidate()
       onDone()
     } catch (e) {
+      setDiffers(isApiError(e) && e.code === 'opening_differs')
       setError(messageOf(e))
     } finally {
       setBusy(false)
@@ -433,13 +438,24 @@ export function OpeningBalance({
         </Field>
         <Field label="As at">{(p) => <DateInput {...p} value={asOf} onChange={(e) => setAsOf(e.target.value)} />}</Field>
       </div>
+      {statement?.opening_balance_paise != null && (
+        <p className="text-xs text-muted-foreground">
+          The statement opens at {formatPaise(statement.opening_balance_paise)}
+          {statement.opening_balance_paise < 0 ? ' (negative: an overdrawn account)' : ''}. A negative figure here means overdrawn too.
+        </p>
+      )}
       {error && (
         <p role="alert" className="text-sm text-destructive">
           {error}
         </p>
       )}
-      <div className="flex justify-end">
-        <Button size="sm" onClick={save} disabled={busy}>
+      <div className="flex justify-end gap-2">
+        {differs && (
+          <Button size="sm" variant="outline" onClick={() => void save(true)} disabled={busy}>
+            Keep my figure anyway
+          </Button>
+        )}
+        <Button size="sm" onClick={() => void save()} disabled={busy}>
           {busy ? 'Saving…' : 'Confirm opening balance'}
         </Button>
       </div>

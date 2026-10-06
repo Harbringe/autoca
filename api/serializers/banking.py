@@ -85,6 +85,13 @@ class OpeningBalanceSerializer(serializers.Serializer):
     opening_as_of = serializers.DateField(
         help_text="The date that balance was true. Normally the first day of the period."
     )
+    acknowledge_difference = serializers.BooleanField(
+        default=False,
+        help_text=(
+            "Set to keep a figure that differs from the opening of the statement beginning on that date. "
+            "Without it a difference (and above all a flipped sign on an overdraft) is refused with `409 opening_differs`."
+        ),
+    )
 
 
 class StatementSerializer(MoneySerializerMixin, serializers.ModelSerializer):

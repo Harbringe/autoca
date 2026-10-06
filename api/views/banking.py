@@ -243,6 +243,7 @@ class BankAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
             account,
             balance_paise=payload.validated_data["opening_balance_paise"],
             as_of=payload.validated_data["opening_as_of"],
+            check_difference=not payload.validated_data["acknowledge_difference"],
         )
         return Response(BankAccountDetailSerializer(account).data)
 

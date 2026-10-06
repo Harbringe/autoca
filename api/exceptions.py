@@ -70,6 +70,7 @@ DOMAIN_ERRORS = {
     "WrongEntryKindError": (status.HTTP_409_CONFLICT, "wrong_entry_kind"),
     "MachineEditRefusedError": (status.HTTP_409_CONFLICT, "machine_edit_refused"),
     "StatementRemovalError": (status.HTTP_409_CONFLICT, "statement_in_use"),
+    "OpeningDiffersError": (status.HTTP_409_CONFLICT, "opening_differs"),
     # GST reconciliation: an unreadable upload, and a rule that refused the step.
     "GstParseError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "gst_file_unreadable"),
     "GstError": (status.HTTP_409_CONFLICT, "gst_rule"),

@@ -7,7 +7,7 @@
 
 import { queryOptions, useMutation } from '@tanstack/react-query'
 import { raw } from '@/api/client'
-import type { Bill, BillCreateRequest, BillDetail, OpenItems, OpeningStanding, Outstanding, PartyStatement, SettlementContext } from '@/api/types'
+import type { Bill, InvoiceReading, BillCreateRequest, BillDetail, OpenItems, OpeningStanding, Outstanding, PartyStatement, SettlementContext } from '@/api/types'
 import { allPages } from './books'
 import { clientKeys, useInvalidateClient, V1 } from './clients'
 
@@ -116,6 +116,35 @@ export function useBreakDownOpening(clientId: string, partyId: string) {
   return useMutation({
     mutationFn: (bills: { reference: string; bill_date: string; amount_paise: number }[]) =>
       raw.post<OpeningStanding>(`${V1}/clients/${clientId}/parties/${partyId}/opening-bills/`, { bills }),
+    onSuccess: invalidate,
+  })
+}
+
+/** Invoices uploaded as files, newest first, with what was read from each. */
+export const invoiceReadings = (clientId: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'invoices'),
+    queryFn: () => allPages<InvoiceReading>(`${V1}/clients/${clientId}/invoices/`),
+  })
+
+export function useUploadInvoice(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: ({ file, kind }: { file: File; kind: 'PURCHASE' | 'SALES' }) => {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('kind', kind)
+      return raw.post<InvoiceReading>(`${V1}/clients/${clientId}/invoices/upload/`, form)
+    },
+    onSuccess: invalidate,
+  })
+}
+
+export function useDecideInvoice(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: ({ id, action, bill }: { id: string; action: 'attach' | 'discard'; bill?: string }) =>
+      raw.post<InvoiceReading>(`${V1}/clients/${clientId}/invoices/${id}/${action}/`, bill ? { bill } : {}),
     onSuccess: invalidate,
   })
 }

@@ -120,6 +120,13 @@ function Actions({
       </Button>
     )
   }
+  if (link.type === 'invoice') {
+    return (
+      <Button size="sm" asChild>
+        <Link to="/clients/$clientId/invoices" params={{ clientId }}>Open invoices</Link>
+      </Button>
+    )
+  }
   if (link.type === 'party' && item.kind === 'party_opening_unbilled') {
     return mayFix ? <Button size="sm" onClick={() => onOpening(link.id)}>Break into bills</Button> : null
   }

@@ -6,6 +6,9 @@ from rest_framework import serializers
 
 from api.fields import PaiseField
 from core.money import format_inr
+from integrations.pdf.base import PdfExtractionError
+from integrations.registry import get_pdf
+from ledger.invoice_intake import MAX_INVOICE_BYTES, MAX_INVOICE_PAGES
 from ledger.models import BillKind, InvoiceReading
 
 
@@ -15,6 +18,36 @@ class InvoiceUploadSerializer(serializers.Serializer):
         choices=[BillKind.PURCHASE, BillKind.SALES],
         help_text="`PURCHASE`: a supplier's invoice to the client. `SALES`: the client's invoice to a customer.",
     )
+
+    def validate_file(self, upload):
+        """Size, signature and page count are checked before a byte is read into memory or extracted.
+
+        The page count is read first, cheaply, because extraction cost grows with it; the same reasoning as a statement.
+        An unreadable file is left for the intake to report in its own words.
+        """
+        if upload.size == 0:
+            raise serializers.ValidationError("The file is empty.")
+        if upload.size > MAX_INVOICE_BYTES:
+            raise serializers.ValidationError(
+                f"This file is {upload.size / (1024 * 1024):.1f} MB; the limit is {MAX_INVOICE_BYTES // (1024 * 1024)} MB."
+            )
+        head = upload.read(5)
+        upload.seek(0)
+        if head != b"%PDF-":
+            raise serializers.ValidationError(
+                "Only PDF invoices can be read for now. For a photo or a scan, key the invoice in Purchases & Sales."
+            )
+        try:
+            pages = get_pdf().page_count(upload.read())
+        except PdfExtractionError:
+            pages = 0
+        finally:
+            upload.seek(0)
+        if pages > MAX_INVOICE_PAGES:
+            raise serializers.ValidationError(
+                f"This PDF has {pages} pages; an invoice has a few. Check it is the right file."
+            )
+        return upload
 
 
 class AttachSerializer(serializers.Serializer):

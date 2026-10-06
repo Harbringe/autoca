@@ -106,7 +106,7 @@ def test_only_pdfs_are_taken(api, client_record):
 
     response = api.post(f"{base(client_record)}/invoices/upload/", {"file": file, "kind": "PURCHASE"}, format="multipart")
 
-    assert response.status_code == 422 and response.json()["code"] == "invoice_intake"
+    assert response.status_code == 400 and "file" in response.json()["fields"]
 
 
 def test_the_same_file_again_returns_the_same_reading(api, client_record):

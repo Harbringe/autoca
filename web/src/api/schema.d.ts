@@ -6862,6 +6862,7 @@ export interface operations {
         };
         requestBody: {
             content: {
+                "application/json": components["schemas"]["AttachRequest"];
                 "multipart/form-data": components["schemas"]["AttachRequest"];
                 "application/x-www-form-urlencoded": components["schemas"]["AttachRequest"];
             };
@@ -6910,6 +6911,7 @@ export interface operations {
         };
         requestBody: {
             content: {
+                "application/json": components["schemas"]["InvoiceUploadRequest"];
                 "multipart/form-data": components["schemas"]["InvoiceUploadRequest"];
                 "application/x-www-form-urlencoded": components["schemas"]["InvoiceUploadRequest"];
             };

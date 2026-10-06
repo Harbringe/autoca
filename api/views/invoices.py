@@ -6,7 +6,7 @@ from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.parsers import FormParser, MultiPartParser
+from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from api.pagination import DefaultPagination
@@ -36,7 +36,7 @@ class InvoiceReadingViewSet(
 
     permission_classes = [HasFirmPermission]
     pagination_class = DefaultPagination
-    parser_classes = [MultiPartParser, FormParser]
+    parser_classes = [JSONParser, MultiPartParser, FormParser]
     required_permission = {"GET": "journal.view", "POST": "document.upload"}
     queryset = InvoiceReading.objects.all()
     serializer_class = InvoiceReadingSerializer

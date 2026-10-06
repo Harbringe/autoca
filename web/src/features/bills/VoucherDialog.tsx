@@ -43,6 +43,26 @@ interface Head {
 }
 
 const NEW_PARTY = '__new__'
+
+/** What an uploaded invoice was read as, to start the form from. The person still confirms every field. */
+export interface VoucherPrefill {
+  kind: VoucherKind
+  partyId?: string
+  newParty?: { name: string; gstin: string }
+  reference: string
+  /** ISO date. */
+  billDate?: string | null
+  taxablePaise?: number | null
+  cgstPaise: number
+  sgstPaise: number
+  igstPaise: number
+  cessPaise: number
+  roundOffPaise: number
+  /** The stored invoice file this voucher is being booked from, so it is attached and its reading closed. */
+  document: string
+}
+
+const asRupees = (paise: number | null | undefined) => (paise ? (paise / 100).toFixed(2) : '')
 let nextKey = 1
 const blankHead = (): Head => ({ key: nextKey++, ledger: null, amount: '' })
 
@@ -58,32 +78,39 @@ export function VoucherDialog({
   open,
   onOpenChange,
   initialKind = 'PURCHASE',
+  prefill,
 }: {
   clientId: string
   open: boolean
   onOpenChange: (open: boolean) => void
   initialKind?: VoucherKind
+  prefill?: VoucherPrefill
 }) {
   const parties = useQuery(partiesQuery(clientId))
   const ledgers = useQuery(ledgersQuery(clientId))
   const post = usePostBill(clientId)
   const invalidate = useInvalidateClient(clientId)
 
-  const [kind, setKind] = useState<VoucherKind>(initialKind)
-  const [partyId, setPartyId] = useState('')
-  const [reference, setReference] = useState('')
-  const [billDate, setBillDate] = useState(() => formatDate(new Date().toISOString().slice(0, 10)))
+  const [kind, setKind] = useState<VoucherKind>(prefill?.kind ?? initialKind)
+  const [partyId, setPartyId] = useState(prefill?.partyId ?? '')
+  const [reference, setReference] = useState(prefill?.reference ?? '')
+  const [billDate, setBillDate] = useState(() => formatDate(prefill?.billDate ?? new Date().toISOString().slice(0, 10)))
   const [dueDate, setDueDate] = useState('')
-  const [heads, setHeads] = useState<Head[]>(() => [blankHead()])
-  const [tax, setTax] = useState({ cgst: '', sgst: '', igst: '', cess: '' })
-  const [roundOff, setRoundOff] = useState('')
+  const [heads, setHeads] = useState<Head[]>(() => [{ ...blankHead(), amount: asRupees(prefill?.taxablePaise) }])
+  const [tax, setTax] = useState({
+    cgst: asRupees(prefill?.cgstPaise),
+    sgst: asRupees(prefill?.sgstPaise),
+    igst: asRupees(prefill?.igstPaise),
+    cess: asRupees(prefill?.cessPaise),
+  })
+  const [roundOff, setRoundOff] = useState(prefill?.roundOffPaise ? (prefill.roundOffPaise / 100).toFixed(2) : '')
   const [tds, setTds] = useState('')
   const [tdsSection, setTdsSection] = useState('')
   const [rcm, setRcm] = useState(false)
   const [narration, setNarration] = useState('')
   const [ownGstin, setOwnGstin] = useState('')
   const [errors, setErrors] = useState<Record<string, string>>({})
-  const [newParty, setNewParty] = useState<{ name: string; gstin: string } | null>(null)
+  const [newParty, setNewParty] = useState<{ name: string; gstin: string } | null>(prefill?.newParty ?? null)
   const [saving, setSaving] = useState(false)
 
   const purchaseSide = isPurchaseSide(kind)
@@ -204,6 +231,7 @@ export function VoucherDialog({
       rcm: canRcm && rcm,
       narration: narration.trim(),
       own_gstin: ownGstin.trim().toUpperCase(),
+      document: prefill?.document ?? null,
     }
     setSaving(true)
     try {

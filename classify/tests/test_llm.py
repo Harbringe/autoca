@@ -476,3 +476,33 @@ def test_a_rate_limit_keeps_what_was_answered_and_never_waits(client, classified
     finally:
         ScriptedLLM.complete_json = original
     assert 0 < outcome.suggested < outcome.considered
+
+
+def test_a_party_named_ledger_never_reaches_the_model_by_name(client, classified, scripted):
+    """History and related rows say where a payee was booked before; a party's account is named after the party."""
+    from classify.llm import PARTY_ACCOUNT_LABEL
+
+    scripted.script = {"Meter": {"ledger": "Electricity", "confidence": 0.9}}
+    with firm_context(client.firm_id):
+        asked = unresolved_for(client).filter(transaction__narration__contains="Meter").first()
+        assert asked is not None
+        creditor = LedgerAccount.objects.create(
+            firm_id=client.firm_id, client=client, name="Ramesh Kumar Sharma", group=LedgerGroup.CREDITOR
+        )
+        earlier = (
+            TransactionClassification.objects.filter(transaction__bank_account__client=client, ledger__isnull=False)
+            .exclude(pk=asked.pk)
+            .first()
+        )
+        assert earlier is not None
+        earlier.counterparty = asked.counterparty
+        earlier.method = ClassificationMethod.REVIEWED
+        earlier.ledger = creditor
+        earlier.save()
+
+        suggest_unresolved(client)
+
+    sent = json.dumps(scripted.prompts)
+    assert "Ramesh" not in sent
+    assert PARTY_ACCOUNT_LABEL in sent
+    assert all(entry["name"] != "Ramesh Kumar Sharma" for prompt in scripted.prompts for entry in prompt["ledgers"])

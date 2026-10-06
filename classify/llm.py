@@ -166,6 +166,9 @@ class _Chart:
             # A party's own account is named after the party, and it is never the model's to choose: its name would
             # put a real party name in the prompt, and a payment on it settles bills, which a person decides.
             and not ledger.is_party_account
+            # An imported Sundry Debtors or Creditors ledger is named after a person or business too, and has no Party row
+            # until a bill is posted for it, so is_party_account cannot see it.
+            and ledger.group not in PARTY_NAMED_GROUPS
         ]
 
     def by_name(self, name):
@@ -298,6 +301,18 @@ def _suggest(client, classifications, *, batch_size, replace: bool) -> SuggestRe
 # ---------------------------------------------------------------------------
 
 
+# Ledger groups whose accounts are named after the people and businesses the client deals with.
+PARTY_NAMED_GROUPS = ("DEBTOR", "CREDITOR")
+
+# What stands in for the name of such a ledger anywhere a ledger name would go into a prompt.
+PARTY_ACCOUNT_LABEL = "a party's own account"
+
+
+def _shown_ledger_name(name, group, has_party) -> str:
+    """A ledger's name as the model may see it: a party's account is named after the party, so it is not shown."""
+    return PARTY_ACCOUNT_LABEL if has_party or group in PARTY_NAMED_GROUPS else name
+
+
 def _context_for(client, batch, pseudonymiser) -> dict:
     """History and siblings for the payees in ``batch``.
 
@@ -324,9 +339,11 @@ def _context_for(client, batch, pseudonymiser) -> dict:
             ledger__isnull=False,
         )
         .exclude(pk__in=batch_pks)
-        .values_list("counterparty", "ledger__name")
+        .values_list("counterparty", "ledger__name", "ledger__group", "ledger__party_record__isnull")
     )
-    tally: Counter = Counter(decided)
+    tally: Counter = Counter(
+        (party, _shown_ledger_name(name, group, not no_party)) for party, name, group, no_party in decided
+    )
     per_party: dict[str, list] = {}
     for (party, ledger_name), times in tally.most_common():
         bucket = per_party.setdefault(party, [])
@@ -344,7 +361,7 @@ def _context_for(client, batch, pseudonymiser) -> dict:
             counterparty__in=parties,
         )
         .exclude(pk__in=batch_pks)
-        .select_related("transaction", "ledger")
+        .select_related("transaction", "ledger", "ledger__party_record")
         .order_by("transaction__value_date")[:RELATED_ROWS_MAX]
     )
     related = []
@@ -355,7 +372,11 @@ def _context_for(client, batch, pseudonymiser) -> dict:
             "counterparty": pseudonymiser.party_token(sibling.counterparty),
             "direction": "debit" if txn.is_debit else "credit",
             "amount": _rupees(txn.amount_paise),
-            "booked_to": sibling.ledger.name if sibling.ledger else None,
+            "booked_to": (
+                _shown_ledger_name(sibling.ledger.name, sibling.ledger.group, sibling.ledger.is_party_account)
+                if sibling.ledger
+                else None
+            ),
         })
     return {"history": history, "related": related}
 

@@ -188,3 +188,20 @@ def test_reopening_a_seal_withdraws_the_approval(client, staff, senior, posted):
         books.reopen(client, senior, note="A late invoice")
 
         assert books.status(client).approved_through is None
+
+
+def test_a_starting_figure_changed_after_approval_is_reported_though_it_is_not_an_entry(client, staff, senior, posted):
+    from banking.ingest import confirm_opening_balance
+    from banking.models import BankAccount
+
+    with firm_context(client.firm_id):
+        account = BankAccount.objects.filter(client=client).first()
+        confirm_opening_balance(account, balance_paise=1_000_00, as_of=datetime.date(2025, 4, 1))
+        request_and_approve(client, staff, senior)
+        assert books.status(client).changed_since_approval == 0
+
+        confirm_opening_balance(account, balance_paise=2_000_00, as_of=datetime.date(2025, 4, 1))
+
+        assert books.status(client).changed_since_approval == 1
+        with pytest.raises(books.NotApprovedError):
+            books.sign_off(client, senior, strict=True)

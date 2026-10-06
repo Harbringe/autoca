@@ -152,6 +152,28 @@ def status(client) -> BooksStatus:
     )
 
 
+def opening_fingerprint(client) -> str:
+    """What the books start from, as one value: every bank account's opening balance and every imported ledger opening.
+
+    These move the trial balance and the balance sheet without being journal entries, so an entry-based check alone would
+    let one change after an approval unnoticed.
+    """
+    import hashlib
+
+    from banking.models import BankAccount
+    from ledger.models import LedgerOpening
+
+    parts = [
+        f"bank|{a.pk}|{a.opening_balance_paise}|{a.opening_as_of}"
+        for a in BankAccount.objects.filter(firm_id=client.firm_id, client=client).order_by("pk")
+    ]
+    parts += [
+        f"open|{o.ledger_id}|{o.financial_year}|{o.signed_paise}"
+        for o in LedgerOpening.objects.filter(firm_id=client.firm_id, client=client).order_by("ledger_id", "financial_year")
+    ]
+    return hashlib.sha256("\n".join(parts).encode()).hexdigest()
+
+
 def _changed_since(client, approval) -> int:
     """How many entries inside the approved period were added, changed or removed after the senior approved.
 
@@ -169,7 +191,9 @@ def _changed_since(client, approval) -> int:
             firm_id=client.firm_id, client=client, entry_date__lte=through, created_at__gt=approval.created_at
         ).values_list("entry_id", flat=True)
     )
-    return len(touched)
+    # A starting figure changed since the approval counts as one change (the opening, not an entry).
+    drifted = bool(approval.fingerprint) and approval.fingerprint != opening_fingerprint(client)
+    return len(touched) + (1 if drifted else 0)
 
 
 # ---------------------------------------------------------------------------
@@ -206,10 +230,10 @@ def _waiting(client, *, through: datetime.date | None = None) -> int:
     return rows.count()
 
 
-def _event(client, action, *, actor, through=None, note="") -> BooksEvent:
+def _event(client, action, *, actor, through=None, note="", fingerprint="") -> BooksEvent:
     return BooksEvent.objects.create(
         firm_id=client.firm_id, client=client, action=action,
-        through_date=through, note=note[:1000], actor=actor,
+        through_date=through, note=note[:1000], actor=actor, fingerprint=fingerprint,
     )
 
 
@@ -298,7 +322,10 @@ def approve(client, membership, *, through: datetime.date | None = None, note: s
     if previous is not None and through <= previous:
         raise BooksError(f"The books are already sealed through {previous:%d-%m-%Y}.")
     _require_ready(client, through, previous)
-    return _event(client, BooksAction.APPROVED, actor=membership.user, through=through, note=note)
+    return _event(
+        client, BooksAction.APPROVED, actor=membership.user, through=through, note=note,
+        fingerprint=opening_fingerprint(client),
+    )
 
 
 @transaction.atomic

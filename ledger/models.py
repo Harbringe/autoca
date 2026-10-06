@@ -296,6 +296,9 @@ class BooksEvent(UUIDModel, FirmScopedModel):
     #: and REOPENED; the date a request covers is the latest entry, so blank there.
     through_date = models.DateField(null=True, blank=True)
     note = models.TextField(blank=True, default="")
+    #: On APPROVED: a fingerprint of what the books start from (opening balances), so a change to a starting figure after
+    #: the approval is noticed even though it is not an entry. Blank on every other action.
+    fingerprint = models.CharField(max_length=64, blank=True, default="", db_default="")
     actor = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True, related_name="+")
 
     class Meta:

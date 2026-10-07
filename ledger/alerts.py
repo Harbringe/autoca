@@ -53,6 +53,13 @@ class Alert:
     amount_paise: int | None = None
     #: How many things this alert stands for (rows, entries, items).
     count: int = 1
+    #: The date this was due or falls due, where there is one (a sealing date, a TDS deposit date).
+    due: datetime.date | None = None
+
+
+def is_overdue(alert: Alert) -> bool:
+    """A sealing date has passed unsealed, or TDS is past its deposit date (the one critical alert)."""
+    return alert.severity == "critical" or alert.kind == "seal"
 
 
 def _path(client, screen: str = "") -> str:
@@ -92,7 +99,9 @@ def client_alerts(
     """
     name, out = client.name, []
 
-    def add(kind, severity, module, title, detail, screen, search=None, *, amount=None, count=1):
+    def add(
+        kind, severity, module, title, detail, screen, search=None, *, amount=None, count=1, due=None
+    ):
         out.append(
             Alert(
                 kind,
@@ -106,6 +115,7 @@ def client_alerts(
                 search or {},
                 amount,
                 count,
+                due,
             )
         )
 
@@ -218,12 +228,7 @@ def client_alerts(
         ]
         if due:
             latest = due[-1]
-            ready = (
-                status.approved_through
-                and status.approved_through >= latest
-                and not status.changed_since_approval
-            )
-            if ready:
+            if books.ready_to_seal(status, latest):
                 add(
                     "seal",
                     "high",
@@ -231,6 +236,7 @@ def client_alerts(
                     "Approved and ready to seal",
                     f"Approved and ready to seal through {latest:%d-%m-%Y}.",
                     "books",
+                    due=latest,
                 )
             else:
                 add(
@@ -240,6 +246,7 @@ def client_alerts(
                     "Books are due to be sealed",
                     f"The books were due to be sealed through {latest:%d-%m-%Y}.",
                     "books",
+                    due=latest,
                 )
     if status.changed_since_approval:
         n = status.changed_since_approval
@@ -264,6 +271,7 @@ def client_alerts(
                 f"TDS of {format_inr(overdue)} was due by {oldest:%d-%m-%Y} and is not deposited.",
                 "tds",
                 amount=overdue,
+                due=oldest,
             )
         if due_soon:
             amount, day = due_soon
@@ -276,6 +284,7 @@ def client_alerts(
                 f"TDS of {format_inr(amount)} is due by {day:%d-%m-%Y}.",
                 "tds",
                 amount=amount,
+                due=day,
             )
     return out
 

@@ -51,6 +51,7 @@ from api.views.partyreports import OpenItemsView, OutstandingView
 from api.views.payroll import EmployeeViewSet, PayrollRunViewSet
 from api.views.tally import TallyImportViewSet
 from api.views.tds import TdsChallanViewSet
+from api.views.workload import MyWorkView, PeopleWorkView, WorkFlowView
 from teams.views import FirmOwnerView, FirmSettingsView
 
 app_name = "api"
@@ -263,6 +264,9 @@ urlpatterns = [
         "clients/<uuid:client_id>/dashboard/", ClientSnapshotView.as_view(), name="client-dashboard"
     ),
     path("firm/metrics/", FirmMetricsView.as_view(), name="firm-metrics"),
+    path("firm/work-flow/", WorkFlowView.as_view(), name="firm-work-flow"),
+    path("firm/people/", PeopleWorkView.as_view(), name="firm-people"),
+    path("me/work/", MyWorkView.as_view(), name="me-work"),
     path("firm/owner/", FirmOwnerView.as_view(), name="firm-owner"),
     path("audit/", AuditLogView.as_view(), name="audit-log"),
     path("", include(root.urls)),

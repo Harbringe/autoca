@@ -2142,6 +2142,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/firm/people/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What each person has on: counts of work, alphabetical, never a rank
+         * @description One row per active member the caller may see: a firm administrator sees everyone, a Senior CA themselves and their team; Staff and Read-only get 403. Each count says what it counts in its own description. These are counts of work, not a rating of people. `open_items`, `overdue` and `waiting_on_others` are as things stand now; `finished_in_period` follows `from` and `to` (default: this month so far). At most 366 days.
+         */
+        get: operations["firm_people_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/firm/portfolio/": {
         parameters: {
             query?: never;
@@ -2154,6 +2174,26 @@ export interface paths {
          * @description One row per client the caller may see, with books status, open items, unreconciled bank accounts, overdue TDS, receivables and payables; the things that need attention most serious first; and what falls due in the next 45 days. Amounts (receivables, payables, TDS) are left out for a caller without `journal.view`. Beyond 60 clients the per-client detail is left out (`detailed: false`).
          */
         get: operations["firm_portfolio_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/firm/work-flow/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Work received against work finished, week by week
+         * @description Per week (Monday dates): bank statement rows received (by when their statement was uploaded) and journal entries finished (posted or approved, corrections not counted), plus the totals for the period and for the period of equal length immediately before it. Covers the clients the caller may see, enforced by the server: a firm administrator, or anyone who sees every client, gets the firm (`scope: firm`); everyone else gets their own clients (`scope: team`) whatever `scope` they ask for. Default period: the last 12 weeks. At most 366 days.
+         */
+        get: operations["firm_work_flow_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2442,6 +2482,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/me/work/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The signed-in member's own work
+         * @description Own data only. The clients the member is assigned to or leads, what is open and overdue on them right now, what the member finished each day of the period (default: this month so far; at most 366 days), and up to 8 next tasks, overdue first, built from the same alerts the bell shows.
+         */
+        get: operations["me_work_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/team/clients/": {
         parameters: {
             query?: never;
@@ -2680,6 +2740,17 @@ export interface components {
          * @enum {string}
          */
         AccountSideEnum: "DR" | "CR";
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
+        AgingBucket: {
+            bucket: components["schemas"]["BucketEnum"];
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            amount_paise: number;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly amount_display: string | null;
+        };
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         Alert: {
             kind: string;
@@ -3430,6 +3501,14 @@ export interface components {
             can_sign_off: boolean;
             history: components["schemas"]["BooksEvent"][];
         };
+        /**
+         * @description * `0-30` - 0-30
+         *     * `31-60` - 31-60
+         *     * `61-90` - 61-90
+         *     * `Over 90` - Over 90
+         * @enum {string}
+         */
+        BucketEnum: "0-30" | "31-60" | "61-90" | "Over 90";
         /** @description Counts of work in the period, one per metric in `metrics`. Keys are the metric keys. */
         ByClient: {
             statements_uploaded: number;
@@ -3666,6 +3745,16 @@ export interface components {
              * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
              */
             profit_paise: number;
+            /**
+             * Format: int64
+             * @description Income of the previous financial year. Null when nothing was posted to income or expense in it.
+             */
+            prior_income_paise: number | null;
+            /**
+             * Format: int64
+             * @description Expense of the previous financial year. Null when nothing was posted to income or expense in it.
+             */
+            prior_expense_paise: number | null;
             trend: components["schemas"]["TrendMonth"][];
             top_expenses: components["schemas"]["TopExpense"][];
             accounts: components["schemas"]["AccountBalance"][];
@@ -3682,12 +3771,17 @@ export interface components {
             tds_payable_paise: number;
             books: components["schemas"]["SnapshotBooks"];
             attention: components["schemas"]["SnapshotAttention"];
+            reports_ready: components["schemas"]["ReportReady"][];
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly income_display: string | null;
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly expense_display: string | null;
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly profit_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly prior_income_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly prior_expense_display: string | null;
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly gst_net_payable_display: string | null;
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
@@ -3762,6 +3856,11 @@ export interface components {
         CreatedParties: {
             /** @description Parties made or found, one per name ticked. */
             created: number;
+        };
+        DailyFinished: {
+            /** Format: date */
+            date: string;
+            finished: number;
         };
         Deadline: {
             /** Format: date */
@@ -4017,6 +4116,13 @@ export interface components {
              */
             amount_paise: number;
         };
+        /**
+         * @description * `on_track` - on_track
+         *     * `at_risk` - at_risk
+         *     * `overdue` - overdue
+         * @enum {string}
+         */
+        HealthEnum: "on_track" | "at_risk" | "overdue";
         InviteCreated: {
             /** Format: uuid */
             id: string;
@@ -4215,6 +4321,17 @@ export interface components {
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly amount_display: string | null;
         };
+        /**
+         * @description * `pnl` - pnl
+         *     * `balance_sheet` - balance_sheet
+         *     * `trial_balance` - trial_balance
+         *     * `receivables` - receivables
+         *     * `payables` - payables
+         *     * `tds` - tds
+         *     * `gst` - gst
+         * @enum {string}
+         */
+        KeyEnum: "pnl" | "balance_sheet" | "trial_balance" | "receivables" | "payables" | "tds" | "gst";
         /**
          * @description * `PURCHASE` - Purchase invoice
          *     * `SALES` - Sales invoice
@@ -4658,6 +4775,31 @@ export interface components {
          * @enum {string}
          */
         ModuleEnum: "bank" | "bookkeeping" | "reports" | "gst" | "documents";
+        MyClient: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            open_items: number;
+        };
+        MyWork: {
+            period: components["schemas"]["MetricsPeriod"];
+            /** @description Clients the member is assigned to or leads. */
+            assigned_clients: number;
+            /** @description Rows to place + rows to post + assistant entries unchecked, on their clients. Right now. */
+            open_items: number;
+            /** @description Overdue alerts on their clients (TDS past due, a sealing date passed). Right now. */
+            overdue: number;
+            /** @description Statement months missing plus books awaiting a senior's decision, on their clients. Right now. */
+            waiting: number;
+            /** @description Entries this member approved or posted in the period. */
+            finished_in_period: number;
+            /** @description One row for every day of the period. */
+            daily: components["schemas"]["DailyFinished"][];
+            /** @description Up to 8, overdue first, then most serious, then earliest due. */
+            next_tasks: components["schemas"]["NextTask"][];
+            /** @description Their clients, alphabetical. */
+            clients: components["schemas"]["MyClient"][];
+        };
         /** @description What one call to the assistant did, and what to do next. */
         NextBatch: {
             /** @description Rows this call asked the model about. */
@@ -4698,6 +4840,25 @@ export interface components {
         NextBatchRequestRequest: {
             /** @description How many waiting rows to read. Defaults to 10, at most 15. */
             max_rows?: number;
+        };
+        NextTask: {
+            /** Format: uuid */
+            client: string;
+            client_name: string;
+            /** @description A few words: what is to be done. */
+            title: string;
+            /**
+             * Format: date
+             * @description The date it was or falls due, where there is one.
+             */
+            due: string | null;
+            /** @description The screen where this is done, as an app path. */
+            to: string;
+            /** @description The query that screen needs. */
+            search: {
+                [key: string]: string;
+            };
+            severity: components["schemas"]["SeverityEnum"];
         };
         NoteRequest: {
             /** @default  */
@@ -5550,6 +5711,12 @@ export interface components {
             month: number;
             lines: components["schemas"]["SalaryLineRequest"][];
         };
+        PeopleWork: {
+            period: components["schemas"]["MetricsPeriod"];
+            /** @description False when more than 60 clients have someone on them: the per-client detail behind `overdue` is not worked out then, so it shows 0. */
+            detailed: boolean;
+            people: components["schemas"]["PersonWork"][];
+        };
         Period: {
             /** Format: date */
             to: string;
@@ -5570,6 +5737,22 @@ export interface components {
             role_display: string;
             is_owner: boolean;
             is_active: boolean;
+        };
+        PersonWork: {
+            /** Format: uuid */
+            member_id: string;
+            name: string;
+            role: components["schemas"]["Role170Enum"];
+            /** @description Clients the person is assigned to or leads, among those the caller may see. */
+            assigned_clients: number;
+            /** @description Rows still to place + rows to post + assistant entries nobody has checked, on their clients. Right now. */
+            open_items: number;
+            /** @description Entries the person approved or posted in the period, corrections not counted. Assistant entries are no one's. */
+            finished_in_period: number;
+            /** @description Overdue alerts on their clients: TDS past its deposit date, or a sealing date passed unsealed. Right now. */
+            overdue: number;
+            /** @description On their clients: statement months missing (waiting on the client) plus books sent to a senior and not yet decided. Right now. */
+            waiting_on_others: number;
         };
         /**
          * @description * `UNKNOWN` - Not yet routed
@@ -5594,6 +5777,7 @@ export interface components {
             /** @description How many rows became certain enough to be posted automatically. */
             readonly auto_posted: number;
         };
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         Portfolio: {
             totals: components["schemas"]["OverviewTotals"];
             by_stage: components["schemas"]["OverviewByStage"];
@@ -5601,6 +5785,28 @@ export interface components {
             attention: components["schemas"]["AttentionItem"][];
             deadlines: components["schemas"]["Deadline"][];
             detailed: boolean;
+            /**
+             * Format: int64
+             * @description Receivables summed over the clients. Left out without `journal.view` or beyond 60 clients.
+             */
+            receivables_total_paise?: number;
+            /**
+             * Format: int64
+             * @description Payables summed over the clients. Left out without `journal.view` or beyond 60 clients.
+             */
+            payables_total_paise?: number;
+            /** @description Bills still owing, summed over the clients by age from the bill date. Bills only: money held on account is in the totals, not in the buckets. Left out like the totals. */
+            aging?: components["schemas"]["PortfolioAging"];
+            /** @description Up to five clients owed the most, largest first. Left out like the totals. */
+            top_receivables?: components["schemas"]["TopReceivable"][];
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly receivables_total_display: string | null;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly payables_total_display: string | null;
+        };
+        PortfolioAging: {
+            receivables: components["schemas"]["AgingBucket"][];
+            payables: components["schemas"]["AgingBucket"][];
         };
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         PortfolioClient: {
@@ -5656,6 +5862,18 @@ export interface components {
              * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
              */
             payables_paise?: number;
+            /**
+             * @description `overdue`: TDS is past its deposit date (needs `journal.view`, otherwise never reported). `at_risk`: a statement month is missing, a control is failing, or a sealing date has passed unsealed. Otherwise `on_track`. Beyond 60 clients only the missing months are known.
+             *
+             *     * `on_track` - on_track
+             *     * `at_risk` - at_risk
+             *     * `overdue` - overdue
+             */
+            health: components["schemas"]["HealthEnum"];
+            /** @description Approved through the latest sealing date that has passed, with nothing changed since the approval. */
+            ready_to_seal?: boolean;
+            /** @description Days since the open request for the senior's decision was made. Null when none is open. */
+            oldest_pending_approval_days?: number | null;
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly tds_overdue_display: string | null;
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
@@ -5912,6 +6130,14 @@ export interface components {
             cgst_paise: number;
             sgst_paise: number;
             cess_paise: number;
+        };
+        ReportReady: {
+            key: components["schemas"]["KeyEnum"];
+            label: string;
+            /** @description The client has posted entries, no month of statements is missing, and no control this report needs is failing. */
+            ready: boolean;
+            /** @description In plain words, why it is not ready. Null when it is. */
+            reason: string | null;
         };
         ReportRegistration: {
             /** Format: uuid */
@@ -6179,6 +6405,12 @@ export interface components {
              */
             accumulated_paise: number;
         };
+        /**
+         * @description * `firm` - firm
+         *     * `team` - team
+         * @enum {string}
+         */
+        ScopeEnum: "firm" | "team";
         /**
          * @description * `B2B` - B2B
          *     * `CDN` - CDN
@@ -6898,6 +7130,19 @@ export interface components {
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly amount_display: string | null;
         };
+        /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
+        TopReceivable: {
+            /** Format: uuid */
+            client: string;
+            client_name: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            amount_paise: number;
+            /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
+            readonly amount_display: string | null;
+        };
         /**
          * @description One complete accounting decision: where it goes, who it was with, and its tax.
          *
@@ -7025,6 +7270,39 @@ export interface components {
         };
         WithdrawRequest: {
             item_key: string;
+        };
+        WorkFlow: {
+            /**
+             * @description What the figures cover: `firm` for a caller who sees every client, otherwise `team` (the clients they may see).
+             *
+             *     * `firm` - firm
+             *     * `team` - team
+             */
+            scope: components["schemas"]["ScopeEnum"];
+            period: components["schemas"]["MetricsPeriod"];
+            weekly: components["schemas"]["WorkFlowWeek"][];
+            totals: components["schemas"]["WorkFlowTotals"];
+        };
+        WorkFlowTotals: {
+            /** @description Rows received in the period. */
+            received: number;
+            /** @description Entries finished in the period. */
+            finished: number;
+            /** @description Rows received in the period of equal length immediately before. */
+            prev_received: number;
+            /** @description Entries finished in the period of equal length immediately before. */
+            prev_finished: number;
+        };
+        WorkFlowWeek: {
+            /**
+             * Format: date
+             * @description The Monday of the week.
+             */
+            week_start: string;
+            /** @description Bank statement rows in statements uploaded in this week (inside the period). */
+            received: number;
+            /** @description Journal entries posted or approved in this week (inside the period), corrections not counted. */
+            finished: number;
         };
         /** @description Counts of work in the period, one per metric in `metrics`. Keys are the metric keys. */
         WorkTotals: {
@@ -10683,6 +10961,30 @@ export interface operations {
             };
         };
     };
+    firm_people_retrieve: {
+        parameters: {
+            query?: {
+                /** @description First day, YYYY-MM-DD. */
+                from?: string;
+                /** @description Last day, YYYY-MM-DD. */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PeopleWork"];
+                };
+            };
+        };
+    };
     firm_portfolio_retrieve: {
         parameters: {
             query?: never;
@@ -10698,6 +11000,32 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Portfolio"];
+                };
+            };
+        };
+    };
+    firm_work_flow_retrieve: {
+        parameters: {
+            query?: {
+                /** @description First day, YYYY-MM-DD. */
+                from?: string;
+                /** @description Accepted for clarity; the server decides the scope from the caller. */
+                scope?: "firm" | "team";
+                /** @description Last day, YYYY-MM-DD. */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WorkFlow"];
                 };
             };
         };
@@ -11028,6 +11356,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Me"];
+                };
+            };
+        };
+    };
+    me_work_retrieve: {
+        parameters: {
+            query?: {
+                /** @description First day, YYYY-MM-DD. */
+                from?: string;
+                /** @description Last day, YYYY-MM-DD. */
+                to?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MyWork"];
                 };
             };
         };

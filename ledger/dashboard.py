@@ -16,13 +16,14 @@ import datetime
 from collections import defaultdict
 
 from django.db.models import Sum
+from django.utils import timezone
 
 from banking.models import BankAccount
 from core.fy import fy_bounds
 from ledger import alerts as alerts_mod
 from ledger import books, close, partyreports, tds
 from ledger.models import JournalEntry, JournalLine
-from ledger.overview import firm_overview
+from ledger.overview import client_missing_months, firm_overview
 from ledger.reconciliation import ledger_balance
 from ledger.reports import INCOME_GROUPS, PROFIT_AND_LOSS_GROUPS
 
@@ -143,6 +144,7 @@ def owed(client, as_of: datetime.date) -> dict:
         result[side] = {
             "total_paise": report.total_paise,
             "over_90_paise": report.bucket_paise("Over 90"),
+            "aging": {label: report.bucket_paise(label) for label in partyreports.BUCKET_LABELS},
             "top": [
                 {"name": p.party.canonical_name, "amount_paise": p.total_paise}
                 for p in top
@@ -152,11 +154,80 @@ def owed(client, as_of: datetime.date) -> dict:
     return result
 
 
+#: ``(key, label, controls it needs, open-item kinds it needs)``. A control is ready-to-read when it passes; a name ending in
+#: ``_`` stands for every control that starts with it (one per bank account).
+_REPORTS = (
+    ("pnl", "Profit and Loss", ("rows_posted", "suspense_clear"), ()),
+    ("balance_sheet", "Balance Sheet", ("rows_posted", "suspense_clear", "bank_"), ()),
+    ("trial_balance", "Trial Balance", ("rows_posted", "suspense_clear"), ()),
+    ("receivables", "Receivables", ("rows_posted",), ("party_out_of_balance",)),
+    ("payables", "Payables", ("rows_posted",), ("party_out_of_balance",)),
+    ("tds", "TDS", ("rows_posted",), ()),
+    ("gst", "GST", ("rows_posted",), ()),
+)
+
+
+def _plural(n: int, one: str, many: str) -> str:
+    return f"{n} {one if n == 1 else many}"
+
+
+def reports_ready(client, report, missing_months: list[str]) -> list[dict]:
+    """Whether each report can be opened and trusted now, and in plain words why not.
+
+    A report is ready when the client has posted entries, no month of statements is missing, and no control the report needs
+    is failing on the close page (``report``, already computed by the caller). One query of its own, for "has entries".
+    """
+    has_entries = JournalEntry.objects.filter(firm_id=client.firm_id, client=client).exists()
+    failing = {c.name: c for c in report.checks if not c.ok}
+    kinds = {i.item.kind for i in report.items if not i.explained}
+    out = []
+    for key, label, needs, item_kinds in _REPORTS:
+        reason = None
+        if not has_entries:
+            reason = "Nothing has been posted yet."
+        elif missing_months:
+            n = len(missing_months)
+            reason = f"{_plural(n, 'month', 'months')} of statements {'is' if n == 1 else 'are'} missing."
+        else:
+            for need in needs:
+                hit = next(
+                    (
+                        c
+                        for name, c in failing.items()
+                        if name == need or (need.endswith("_") and name.startswith(need))
+                    ),
+                    None,
+                )
+                if hit is None:
+                    continue
+                if need == "rows_posted":
+                    reason = hit.detail or hit.title
+                elif need == "suspense_clear":
+                    reason = "Some entries are parked in Suspense and have no ledger yet."
+                else:
+                    reason = "A bank account does not agree with its statement."
+                break
+            if reason is None and kinds.intersection(item_kinds):
+                reason = "A party's ledger does not agree with its bills."
+        out.append({"key": key, "label": label, "ready": reason is None, "reason": reason})
+    return out
+
+
+def _prior_year(client, year: int) -> tuple[int | None, int | None]:
+    """Income and expense of the year before ``year``, or ``(None, None)`` when nothing was posted to either."""
+    trend = monthly_trend(client, year - 1)
+    if not any(m["income_paise"] or m["expense_paise"] for m in trend):
+        return None, None
+    return sum(m["income_paise"] for m in trend), sum(m["expense_paise"] for m in trend)
+
+
 def client_snapshot(client, year: int, today: datetime.date | None = None) -> dict:
+    """One client's position. Per client, a fixed handful of queries; nothing is shared across clients."""
     today = today or datetime.date.today()
     start, end = fy_bounds(year)
     as_of = min(today, end)
     trend = monthly_trend(client, year)
+    prior_income, prior_expense = _prior_year(client, year)
     status = books.status(client)
     report = close.close_report(client)
     failing = [c.title for c in report.checks if not c.ok]
@@ -170,6 +241,8 @@ def client_snapshot(client, year: int, today: datetime.date | None = None) -> di
         "income_paise": sum(m["income_paise"] for m in trend),
         "expense_paise": sum(m["expense_paise"] for m in trend),
         "profit_paise": sum(m["profit_paise"] for m in trend),
+        "prior_income_paise": prior_income,
+        "prior_expense_paise": prior_expense,
         "trend": trend,
         "top_expenses": top_expenses(client, year),
         "accounts": accounts(client, as_of),
@@ -188,6 +261,7 @@ def client_snapshot(client, year: int, today: datetime.date | None = None) -> di
             "blocking_unexplained": report.unexplained_blocking,
             "failing_controls": failing,
         },
+        "reports_ready": reports_ready(client, report, client_missing_months(client)),
     }
 
 
@@ -228,10 +302,34 @@ def _tds_overdue(client, today: datetime.date) -> tuple[int, datetime.date | Non
     return unpaid, oldest
 
 
+def client_health(
+    *, months_missing: int, failing_controls: int, seal_due, tds_overdue_paise: int
+) -> str:
+    """The one rule for how a client is doing: ``overdue`` (TDS past its deposit date), else ``at_risk`` (a statement
+    month missing, a control failing, or a sealing date passed unsealed), else ``on_track``."""
+    if tds_overdue_paise > 0:
+        return "overdue"
+    if months_missing or failing_controls or seal_due is not None:
+        return "at_risk"
+    return "on_track"
+
+
+def _oldest_request_days(status, today: datetime.date) -> int | None:
+    if not status.review_pending or status.requested_at is None:
+        return None
+    return max((today - timezone.localtime(status.requested_at).date()).days, 0)
+
+
 def portfolio(
     membership, today: datetime.date | None = None, *, include_money: bool = True
 ) -> dict:
-    """One row per client the person may see, what needs attention (most serious first), and what is due in the next 45 days."""
+    """One row per client the person may see, what needs attention (most serious first), and what is due in the next 45 days.
+
+    Bulk: the stage, queue and missing-month figures (``firm_overview``, a fixed number of aggregate queries). Per client
+    (only up to ``DETAIL_LIMIT`` clients): books status, close report, TDS position, receivables and payables, alerts.
+    The money roll-up (totals, ageing, top receivables) is summed from those per-client figures, so it adds no queries and
+    is left out without ``include_money`` or beyond ``DETAIL_LIMIT``.
+    """
     from core.access import visible_clients
 
     today = today or datetime.date.today()
@@ -239,6 +337,12 @@ def portfolio(
     detailed = len(overview["clients"]) <= DETAIL_LIMIT
     people = {c.pk: c for c in visible_clients(membership)}
     rows, attention, deadlines = [], [], defaultdict(list)
+    receivables_total = payables_total = 0
+    aging = {
+        side: dict.fromkeys(partyreports.BUCKET_LABELS, 0)
+        for side in (partyreports.RECEIVABLES, partyreports.PAYABLES)
+    }
+    top_receivables = []
 
     for base in overview["clients"]:
         client = people.get(base["id"])
@@ -259,12 +363,21 @@ def portfolio(
                     "open_items": len(report.items),
                     "blocking_unexplained": report.unexplained_blocking,
                     "failing_controls": len([c for c in report.checks if not c.ok]),
+                    "ready_to_seal": books.ready_to_seal(status, seal_due[-1] if seal_due else None),
+                    "oldest_pending_approval_days": _oldest_request_days(status, today),
                 }
             )
             if owing is not None:
                 row["receivables_paise"] = owing[partyreports.RECEIVABLES]["total_paise"]
                 row["payables_paise"] = owing[partyreports.PAYABLES]["total_paise"]
                 row["tds_overdue_paise"] = overdue_tds
+                receivables_total += row["receivables_paise"]
+                payables_total += row["payables_paise"]
+                for side in aging:
+                    for label, amount in owing[side]["aging"].items():
+                        aging[side][label] += amount
+                if row["receivables_paise"] > 0:
+                    top_receivables.append((row["receivables_paise"], client.name, client.pk))
             name = client.name
             alerts = alerts_mod.client_alerts(
                 client,
@@ -288,10 +401,16 @@ def portfolio(
                 client, base=base, today=today, include_money=include_money, detailed=False
             )
             attention.extend(_attention(alert) for alert in alerts)
+        row["health"] = client_health(
+            months_missing=len(base["months_missing"]),
+            failing_controls=row.get("failing_controls", 0),
+            seal_due=row.get("seal_due"),
+            tds_overdue_paise=row.get("tds_overdue_paise", 0),
+        )
         rows.append(row)
 
     attention.sort(key=lambda a: (SEVERITY[a["severity"]], a["client_name"]))
-    return {
+    result = {
         "totals": overview["totals"],
         "by_stage": overview["by_stage"],
         "clients": rows,
@@ -302,6 +421,23 @@ def portfolio(
         ],
         "detailed": detailed,
     }
+    if include_money and detailed:
+        top_receivables.sort(key=lambda t: (-t[0], t[1].lower()))
+        result.update(
+            {
+                "receivables_total_paise": receivables_total,
+                "payables_total_paise": payables_total,
+                "aging": {
+                    side: [{"bucket": label, "amount_paise": amount} for label, amount in buckets.items()]
+                    for side, buckets in aging.items()
+                },
+                "top_receivables": [
+                    {"client": pk, "client_name": name, "amount_paise": amount}
+                    for amount, name, pk in top_receivables[:5]
+                ],
+            }
+        )
+    return result
 
 
 def _attention(alert) -> dict:

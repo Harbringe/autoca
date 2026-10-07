@@ -20,6 +20,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { VoucherDialog, type VoucherPrefill } from '@/features/bills/VoucherDialog'
+import { ACCEPT } from '@/lib/fileTypes'
 import { formatDate, plural } from '@/lib/format'
 import { useSession } from '@/session/session'
 
@@ -149,9 +150,9 @@ export function InvoicesScreen({ clientId }: { clientId: string }) {
               ref={input}
               type="file"
               multiple
-              accept="application/pdf,.pdf"
+              accept={ACCEPT}
               className="sr-only"
-              aria-label="Choose invoice PDFs"
+              aria-label="Choose invoice files"
               onChange={(e) => void pick(e.target.files)}
             />
             <Button onClick={() => input.current?.click()} disabled={upload.isPending}>
@@ -162,7 +163,7 @@ export function InvoicesScreen({ clientId }: { clientId: string }) {
       </div>
 
       {readings.length === 0 ? (
-        <EmptyState title="No invoices uploaded yet">Upload purchase and sales invoices as PDFs; each is read, checked and booked when certain.</EmptyState>
+        <EmptyState title="No invoices uploaded yet">Upload purchase and sales invoices as PDF, Excel, Word or photos; each is read, checked and booked when certain.</EmptyState>
       ) : (
         <ul className="grid gap-2">
           {readings.map((r) => {

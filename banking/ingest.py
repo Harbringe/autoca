@@ -32,7 +32,8 @@ from banking.parsers.base import StatementParseError
 from core.models import Client
 from core.money import format_inr
 from documents.models import Document, DocumentKind, DocumentStatus, PipelineTier
-from integrations.registry import get_llm, get_pdf, get_storage
+from integrations import files
+from integrations.registry import get_llm, get_storage
 
 
 class StatementContinuityError(RuntimeError):
@@ -103,13 +104,14 @@ def ingest_statement(
             is_new=False,
         )
 
-    document = get_pdf().extract(data)
+    loaded = files.load(data, filename)
+    document = loaded.document
     tier = PipelineTier.TEXT_LAYER
     scanned = scan.needs_vision(document)
     if scanned and scan.enabled():
         # A page with no text cannot be read as text. The page images are read by the model instead, and what comes
         # back must prove out against the statement's own balances like any other read.
-        parsed = scan.read_statement(data, document, get_llm(), client=client)
+        parsed = scan.read_statement(data, document, get_llm(), client=client, page_images=loaded.images)
         parser = _ScanReader
         tier = PipelineTier.VISION
     else:
@@ -121,7 +123,7 @@ def ingest_statement(
 
     storage_key = ""
     if store_original:
-        storage_key = _store_original(client, digest, data)
+        storage_key = _store_original(client, digest, data, loaded.extension, loaded.content_type)
 
     with transaction.atomic():
         # ``existing`` here means the file was registered by an earlier attempt
@@ -318,8 +320,8 @@ def _account_for(client: Client, parsed: ParsedStatement) -> BankAccount:
     return account
 
 
-def _store_original(client: Client, digest: str, data: bytes) -> str:
-    """Keep the source file. The parse is derived; the PDF is the evidence.
+def _store_original(client: Client, digest: str, data: bytes, extension: str = "pdf", content_type: str = "application/pdf") -> str:
+    """Keep the source file. The parse is derived; the file as sent is the evidence.
 
     Keyed by content hash under the firm's storage prefix, so the same file
     uploaded twice occupies one object and no key can be built that points at
@@ -327,9 +329,9 @@ def _store_original(client: Client, digest: str, data: bytes) -> str:
     """
     storage = get_storage()
     key = storage.tenant_key(
-        client.firm_id, "clients", str(client.id), "statements", f"{digest}.pdf"
+        client.firm_id, "clients", str(client.id), "statements", f"{digest}.{extension}"
     )
-    storage.put(key, data, content_type="application/pdf")
+    storage.put(key, data, content_type=content_type)
     return key
 
 

@@ -9107,7 +9107,8 @@ components:
         file:
           type: string
           format: binary
-          description: The invoice as a PDF with a text layer.
+          description: 'The invoice: a PDF, an Excel sheet (.xlsx), a CSV, a Word
+            file (.docx) or a photo or scan (JPG, PNG, WEBP, TIFF).'
         kind:
           default: ''
           description: |-
@@ -13991,7 +13992,9 @@ components:
         file:
           type: string
           format: binary
-          description: The statement PDF, as uploaded by the client.
+          description: 'The statement as uploaded by the client: a PDF, an Excel sheet
+            (.xlsx), a CSV, a Word file (.docx) or a photo or scan (JPG, PNG, WEBP,
+            TIFF). The kind is read from the file, not its name.'
         layout:
           type: string
           default: ''

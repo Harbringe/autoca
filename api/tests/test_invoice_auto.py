@@ -181,3 +181,54 @@ def test_a_sale_to_a_customer_not_on_record_waits_for_a_person(api, client_recor
 
     assert reading["kind"] == "SALES" and reading["status"] == "OPEN" and reading["bill"] is None
     assert "customer is not on record" in reading["attention"]
+
+
+def _file(name, data):
+    file = io.BytesIO(data)
+    file.name = name
+    return file
+
+
+def test_a_word_invoice_is_read_and_booked_like_a_pdf(api, client_record):
+    from integrations.tests.test_files import docx
+
+    register_own_gstin(client_record)
+    file = _file("invoice.docx", docx(PURCHASE.splitlines()))
+
+    response = api.post(f"{base(client_record)}/invoices/upload/", {"file": file}, format="multipart")
+
+    assert response.status_code == 201, response.content
+    reading = response.json()
+    assert reading["kind"] == "PURCHASE" and reading["status"] == "BOOKED" and reading["auto_booked"] is True
+
+
+def test_an_excel_invoice_is_read_and_booked_like_a_pdf(api, client_record):
+    from integrations.tests.test_files import workbook
+
+    register_own_gstin(client_record)
+    rows = [[line] for line in PURCHASE.splitlines()]
+    file = _file("invoice.xlsx", workbook(rows))
+
+    reading = api.post(f"{base(client_record)}/invoices/upload/", {"file": file}, format="multipart").json()
+
+    assert reading["status"] == "BOOKED" and reading["auto_booked"] is True
+
+
+def test_a_photo_of_an_invoice_is_kept_and_says_why_it_was_not_read_while_scans_are_off(api, client_record):
+    from integrations.tests.test_files import png
+
+    file = _file("photo.png", png())
+
+    response = api.post(f"{base(client_record)}/invoices/upload/", {"file": file}, format="multipart")
+
+    assert response.status_code == 201, response.content
+    reading = response.json()
+    assert reading["status"] == "OPEN" and reading["read"] is None and "not switched on" in reading["unreadable_reason"]
+
+
+def test_a_file_of_a_kind_that_cannot_be_read_is_refused_in_words(api, client_record):
+    file = _file("macro.exe", b"MZ\x90\x00 not an invoice")
+
+    response = api.post(f"{base(client_record)}/invoices/upload/", {"file": file}, format="multipart")
+
+    assert response.status_code == 400 and "cannot be read" in response.json()["fields"]["file"][0]

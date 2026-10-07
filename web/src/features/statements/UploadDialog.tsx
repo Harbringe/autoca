@@ -24,6 +24,7 @@ import { LayoutPicker } from './LayoutPicker'
 import { formatDate, formatPaise, parseDate, parseRupees, plural } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
+import { ACCEPT, ACCEPTED_NAME } from '@/lib/fileTypes'
 
 const MAX_BYTES = 25 * 1024 * 1024
 
@@ -141,8 +142,8 @@ function Chooser({
 
   function take(file: File | undefined) {
     if (!file) return
-    if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf')
-      return setPhase({ kind: 'choose', file: null, problem: 'That is not a PDF. Upload the statement as a PDF file.' })
+    if (!ACCEPTED_NAME.test(file.name))
+      return setPhase({ kind: 'choose', file: null, problem: 'That kind of file cannot be read. Upload a PDF, an Excel sheet (.xlsx), a CSV, a Word file (.docx) or a photo of the statement (JPG, PNG).' })
     if (file.size > MAX_BYTES)
       return setPhase({ kind: 'choose', file: null, problem: 'That file is over 25 MB. Download one month or quarter at a time.' })
     if (file.size === 0) return setPhase({ kind: 'choose', file: null, problem: 'That file is empty.' })
@@ -179,18 +180,18 @@ function Chooser({
           </>
         ) : (
           <>
-            <span className="font-medium">Drop the statement PDF here, or click to choose</span>
+            <span className="font-medium">Drop the statement here, or click to choose</span>
             <span className="text-xs text-muted-foreground">One file at a time</span>
           </>
         )}
       </button>
-      <input ref={input} type="file" accept="application/pdf,.pdf" className="hidden" onChange={(e) => take(e.target.files?.[0])} />
+      <input ref={input} type="file" accept={ACCEPT} className="hidden" onChange={(e) => take(e.target.files?.[0])} />
 
       <div className="rounded-md bg-muted/60 p-3 text-[13px] text-muted-foreground">
         <div className="mb-1 font-medium text-foreground">What to upload</div>
         <ul className="list-disc space-y-0.5 pl-5">
-          <li>The client’s <strong>bank account statement</strong>, downloaded as a PDF from net banking. Any bank.</li>
-          <li>A text PDF, not a scan or a photo. If you can select the text in it, it will work.</li>
+          <li>The client’s <strong>bank account statement</strong>, as downloaded from net banking: a PDF, an Excel sheet (.xlsx), a CSV or a Word file. Any bank.</li>
+          <li>A photo or scan (JPG, PNG, TIFF) is read by the assistant when that is switched on. A downloaded file is always more reliable than a photo.</li>
           <li>Up to 25 MB. Upload months in order; a gap between statements is flagged.</li>
           <li>The account is recognised from the statement, so a new account is set up for you.</li>
         </ul>

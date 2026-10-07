@@ -90,9 +90,9 @@ def _not_a_bank_account(document: PdfDocument) -> str | None:
 def detect_parser(document: PdfDocument, layout: dict | None = None) -> StatementParser:
     if not document.has_text_layer:
         raise NoTextLayerError(
-            "This PDF has no text layer, so it is a scan. Reading scans by their page images is switched off "
+            "This file has no text layer, so it is a scan or a photo. Reading those by their page images is switched off "
             "(VISION_READING), so it cannot be read. Switch it on in the server settings, or upload the "
-            "statement as downloaded from net banking."
+            "statement as downloaded from net banking (PDF or Excel)."
         )
 
     kind = _not_a_bank_account(document)

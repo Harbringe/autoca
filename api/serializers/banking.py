@@ -15,6 +15,7 @@ from rest_framework import serializers
 from api.fields import MoneySerializerMixin, PaiseField
 from banking.models import BankAccount, Statement, StatementTransaction
 from documents.models import Document
+from integrations import files
 from integrations.pdf.base import PdfExtractionError
 from integrations.registry import get_pdf
 
@@ -161,7 +162,7 @@ class StatementUploadSerializer(serializers.Serializer):
     and the statement itself is the authority on which account it belongs to.
     """
 
-    file = serializers.FileField(help_text="The statement PDF, as uploaded by the client.")
+    file = serializers.FileField(help_text="The statement as uploaded by the client: a PDF, an Excel sheet (.xlsx), a CSV, a Word file (.docx) or a photo or scan (JPG, PNG, WEBP, TIFF). The kind is read from the file, not its name.")
 
     def validate_file(self, upload):
         """A PDF, of a plausible size, before a byte of it is parsed.
@@ -180,12 +181,13 @@ class StatementUploadSerializer(serializers.Serializer):
             )
         if upload.size == 0:
             raise serializers.ValidationError("The file is empty.")
-        head = upload.read(5)
+        kind = files.sniff(upload.read(32), upload.name)
         upload.seek(0)
-        if head != b"%PDF-":
-            raise serializers.ValidationError(
-                "This is not a PDF. Only born-digital PDF statements can be read at present."
-            )
+        if kind is None:
+            upload.seek(0)
+            raise serializers.ValidationError(files.describe_refusal(upload.read(16), upload.name))
+        if kind != files.PDF:
+            return upload
         # Extraction is the expensive step and its cost grows with the page count, so
         # the count is read first, cheaply. An unreadable file is left for ingest to
         # report in its own words.

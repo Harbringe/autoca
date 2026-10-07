@@ -28,8 +28,9 @@ from core.crypto import blind_index, decrypt_text_for_firm, encrypt_for_firm
 from core.identity import invoice_key, normalise_gstin
 from core.rbac import require_permission
 from documents.models import Document, DocumentKind, DocumentStatus, PipelineTier
+from integrations import files
 from integrations.pdf.base import PdfExtractionError
-from integrations.registry import get_llm, get_pdf, get_storage
+from integrations.registry import get_llm, get_storage
 from ledger import invoice_vision
 from ledger.invoice_reader import read_invoice
 from ledger.models import Bill, BillKind, InvoiceReading, ReadingStatus
@@ -142,9 +143,6 @@ def read_upload(*, client, data: bytes, filename: str, kind: str = "", uploaded_
         raise IntakeError("Say whether this is a purchase invoice or a sales invoice, or leave it for the system to tell.")
     if len(data) > MAX_INVOICE_BYTES:
         raise IntakeError("This file is larger than 15 MB. An invoice is a few hundred kilobytes; check it is the right file.")
-    if not data.startswith(b"%PDF"):
-        raise IntakeError("Only PDF invoices can be read for now. For a photo, save or print it as a PDF first.")
-
     digest = Document.digest(data)
     existing = Document.objects.filter(firm_id=client.firm_id, client=client, sha256=digest).first()
     if existing is not None:
@@ -154,11 +152,12 @@ def read_upload(*, client, data: bytes, filename: str, kind: str = "", uploaded_
         return reading, False
 
     try:
-        pdf = get_pdf().extract(data)
+        loaded = files.load(data, filename)
     except PdfExtractionError as exc:
-        raise IntakeError(f"This PDF could not be opened: {exc}") from exc
+        raise IntakeError(str(exc) if isinstance(exc, files.UnsupportedFileError) else f"This file could not be opened: {exc}") from exc
+    pdf = loaded.document
     if pdf.page_count > MAX_INVOICE_PAGES:
-        raise IntakeError(f"This PDF has {pdf.page_count} pages; an invoice has a few. Check it is the right file.")
+        raise IntakeError(f"This file has {pdf.page_count} pages; an invoice has a few. Check it is the right file.")
 
     parsed = None
     unreadable = ""
@@ -167,7 +166,9 @@ def read_upload(*, client, data: bytes, filename: str, kind: str = "", uploaded_
         parsed = read_invoice(pdf.text)
     elif invoice_vision.enabled():
         try:
-            parsed = invoice_vision.read_scanned_invoice(data, pdf.page_count, get_llm(), client=client)
+            parsed = invoice_vision.read_scanned_invoice(
+                data, pdf.page_count, get_llm(), client=client, page_images=loaded.images
+            )
             tier = PipelineTier.VISION
         except invoice_vision.InvoiceVisionError as exc:
             unreadable = str(exc)
@@ -185,8 +186,8 @@ def read_upload(*, client, data: bytes, filename: str, kind: str = "", uploaded_
         parsed.supplier_gstin, parsed.buyer_gstin = _roles(client, parsed.gstins, parsed.supplier_gstin, parsed.buyer_gstin, chosen)
 
     storage = get_storage()
-    key = storage.tenant_key(client.firm_id, "clients", str(client.id), "invoices", f"{digest}.pdf")
-    storage.put(key, data, content_type="application/pdf")
+    key = storage.tenant_key(client.firm_id, "clients", str(client.id), "invoices", f"{digest}.{loaded.extension}")
+    storage.put(key, data, content_type=loaded.content_type)
 
     with transaction.atomic():
         document = Document.objects.create(

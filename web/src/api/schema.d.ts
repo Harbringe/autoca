@@ -4245,7 +4245,7 @@ export interface components {
         InvoiceUploadRequest: {
             /**
              * Format: binary
-             * @description The invoice as a PDF with a text layer.
+             * @description The invoice: a PDF, an Excel sheet (.xlsx), a CSV, a Word file (.docx) or a photo or scan (JPG, PNG, WEBP, TIFF).
              */
             file: string;
             /**
@@ -6665,7 +6665,7 @@ export interface components {
         StatementUploadRequest: {
             /**
              * Format: binary
-             * @description The statement PDF, as uploaded by the client.
+             * @description The statement as uploaded by the client: a PDF, an Excel sheet (.xlsx), a CSV, a Word file (.docx) or a photo or scan (JPG, PNG, WEBP, TIFF). The kind is read from the file, not its name.
              */
             file: string;
             /**

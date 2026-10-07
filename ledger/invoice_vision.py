@@ -44,11 +44,11 @@ def enabled() -> bool:
     return bool(getattr(settings, "VISION_READING", False))
 
 
-def read_scanned_invoice(data: bytes, page_count: int, llm, *, client=None) -> Reading:
+def read_scanned_invoice(data: bytes, page_count: int, llm, *, client=None, page_images: list[bytes] | None = None) -> Reading:
     limit = int(settings.VISION_MAX_PAGES)
     if page_count > limit:
         raise InvoiceVisionError(f"This scan has {page_count} pages; scans are read up to {limit} pages at a time.")
-    pages = render_pages(data)
+    pages = page_images if page_images is not None else render_pages(data)
     started = time.monotonic()
     try:
         reply = llm.complete_json_with_images(SYSTEM, INSTRUCTION, pages, max_tokens=2048)

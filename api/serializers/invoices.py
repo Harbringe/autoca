@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from api.fields import PaiseField
 from core.money import format_inr
+from integrations import files
 from integrations.pdf.base import PdfExtractionError
 from integrations.registry import get_pdf
 from ledger.invoice_intake import MAX_INVOICE_BYTES, MAX_INVOICE_PAGES
@@ -13,7 +14,7 @@ from ledger.models import BillKind, InvoiceReading
 
 
 class InvoiceUploadSerializer(serializers.Serializer):
-    file = serializers.FileField(help_text="The invoice as a PDF with a text layer.")
+    file = serializers.FileField(help_text="The invoice: a PDF, an Excel sheet (.xlsx), a CSV, a Word file (.docx) or a photo or scan (JPG, PNG, WEBP, TIFF).")
     kind = serializers.ChoiceField(
         choices=[BillKind.PURCHASE, BillKind.SALES],
         required=False,
@@ -37,12 +38,12 @@ class InvoiceUploadSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 f"This file is {upload.size / (1024 * 1024):.1f} MB; the limit is {MAX_INVOICE_BYTES // (1024 * 1024)} MB."
             )
-        head = upload.read(5)
+        kind = files.sniff(upload.read(32), upload.name)
         upload.seek(0)
-        if head != b"%PDF-":
-            raise serializers.ValidationError(
-                "Only PDF invoices can be read for now. For a photo or a scan, key the invoice in Purchases & Sales."
-            )
+        if kind is None:
+            raise serializers.ValidationError(files.describe_refusal(upload.read(16), upload.name))
+        if kind != files.PDF:
+            return upload
         try:
             pages = get_pdf().page_count(upload.read())
         except PdfExtractionError:

@@ -87,8 +87,12 @@ def render_pages(
         pdf.close()
 
 
-def read_statement(data: bytes, document: PdfDocument, llm, *, client=None) -> ParsedStatement:
+def read_statement(
+    data: bytes, document: PdfDocument, llm, *, client=None, page_images: list[bytes] | None = None
+) -> ParsedStatement:
     """Read ``data`` from its page images and return it only if it proves out.
+
+    ``page_images`` are the pages when the file is itself a photo or a scan saved as an image; a PDF is drawn here instead.
 
     A scan costs a model call for every few pages and holds images in memory, so a document longer than
     ``VISION_MAX_PAGES`` is refused before anything is drawn or sent, and the pages are drawn one group at a time.
@@ -102,7 +106,7 @@ def read_statement(data: bytes, document: PdfDocument, llm, *, client=None) -> P
     per_call = max(1, int(settings.VISION_PAGES_PER_CALL))
     replies = []
     for start in range(0, document.page_count, per_call):
-        group = render_pages(data, first=start, count=per_call)
+        group = page_images[start : start + per_call] if page_images is not None else render_pages(data, first=start, count=per_call)
         if len(group) != min(per_call, document.page_count - start):
             raise StatementParseError("The pages could not all be drawn, so the scan was not read.")
         replies.append(_ask(llm, group, continued=start > 0, client=client))

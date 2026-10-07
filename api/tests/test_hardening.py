@@ -27,12 +27,12 @@ def _upload(api, client_record, name, data, **extra):
     )
 
 
-def test_a_file_that_is_not_a_pdf_is_refused_before_parsing(api, client_record):
+def test_a_file_of_an_unreadable_kind_is_refused_before_parsing(api, client_record):
     response = _upload(api, client_record, "statement.pdf", b"<html>not a pdf</html>")
 
     assert response.status_code == 400
     assert response.json()["code"] == "invalid"
-    assert "not a PDF" in response.json()["fields"]["file"][0]
+    assert "cannot be read" in response.json()["fields"]["file"][0]
     assert not Job.objects.exists()  # never got as far as a job
 
 

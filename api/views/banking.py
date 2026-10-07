@@ -36,7 +36,7 @@ from classify.seeds import rename_account_ledger, seed_client
 from core.access import get_visible_client, visible_client_ids
 from core.jobs import run_job
 from core.models import Job, JobStatus
-from integrations.registry import get_pdf
+from integrations import files
 
 
 @extend_schema(tags=["statements"])
@@ -116,7 +116,7 @@ class StatementUploadView(viewsets.GenericViewSet):
         payload = self.get_serializer(data=request.data)
         payload.is_valid(raise_exception=True)
         upload = payload.validated_data["file"]
-        document = get_pdf().extract(upload.read())
+        document = files.load(upload.read(), upload.name).document
         return Response(LayoutPreviewSerializer(layout_preview(document).__dict__).data)
 
 

@@ -57,6 +57,15 @@
   --radius: 0.5rem;
   --row-h: 2.5rem;
   --shadow-float: 0 8px 24px rgb(22 22 25 / 0.12);
+  /* Chart colours are aliases, never new hues, so both themes follow the palette. Two series colours at most. */
+  --chart-1: var(--primary);
+  --chart-2: var(--accent-foreground);
+  --chart-muted: color-mix(in oklab, var(--muted-foreground) 45%, var(--card));
+  --chart-grid: var(--border);
+  --chart-seq-1: var(--primary);
+  --chart-seq-2: color-mix(in oklab, var(--primary) 68%, var(--card));
+  --chart-seq-3: color-mix(in oklab, var(--primary) 42%, var(--card));
+  --chart-seq-4: color-mix(in oklab, var(--primary) 24%, var(--card));
 }
 
 .dark {

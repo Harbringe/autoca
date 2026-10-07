@@ -8,6 +8,9 @@ export type StageTone = 'neutral' | 'attention' | 'info' | 'done'
 /** Workflow order, left to right on the pipeline board. (The server lists them by precedence.) */
 export const STAGES: Stage[] = ['no_statements', 'needs_ledger', 'ready_to_post', 'ready_for_review', 'in_review', 'signed_off']
 
+/** A stage taken from an untrusted value (a query string), or undefined. */
+export const parseStage = (value: unknown): Stage | undefined => STAGES.find((s) => s === value)
+
 export const STAGE_LABEL: Record<Stage, string> = {
   no_statements: 'No statements yet',
   needs_ledger: 'Needs a ledger',

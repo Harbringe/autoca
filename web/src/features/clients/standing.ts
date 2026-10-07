@@ -115,3 +115,35 @@ export function coverageText(months: MonthCover[]): string {
   if (none) parts.push(`Missing: ${none}.`)
   return parts.join(' ')
 }
+
+export interface BooksProgress {
+  /** Months of the year that have fully passed, so a statement could cover them. April to March, in order. */
+  due: number
+  /** Of those, the months a statement covers completely. */
+  done: number
+  /** Names of the due months no statement touches. */
+  missing: string[]
+  /** Names of the due months a statement covers only in part. */
+  partial: string[]
+}
+
+/** The first day of the month after `start` (an ISO first-of-month date). */
+const nextMonth = (start: string): string => {
+  const y = Number(start.slice(0, 4))
+  const m = Number(start.slice(5, 7))
+  return m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, '0')}-01`
+}
+
+/**
+ * How far the statements have got, in whole months. A month is due once it has fully passed (`today`
+ * is an ISO date), so the month in progress never counts against anyone. Integers only.
+ */
+export function booksProgress(months: MonthCover[], today: string): BooksProgress {
+  const due = months.filter((m) => nextMonth(m.start) <= today)
+  return {
+    due: due.length,
+    done: due.filter((m) => m.coverage === 'full').length,
+    missing: due.filter((m) => m.coverage === 'none').map((m) => m.label),
+    partial: due.filter((m) => m.coverage === 'partial').map((m) => m.label),
+  }
+}

@@ -5,8 +5,8 @@
 // one firm overview request, joined by id, so a page costs two requests however many clients it has.
 
 import { useQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
-import { Plus, Search } from 'lucide-react'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
+import { Plus, Search, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { EmptyState, ErrorState, PageHeader } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
@@ -21,7 +21,7 @@ import { useHotkey } from '@/lib/hotkeys'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { NewClientDialog } from './NewClientDialog'
-import { nextTarget, STAGE_LABEL } from '@/lib/overview'
+import { nextTarget, parseStage, STAGE_LABEL } from '@/lib/overview'
 
 const PAGE_SIZE = 50
 
@@ -51,6 +51,8 @@ export function ClientsScreen() {
   const [page, setPage] = useState(1)
   const [filter, setFilter] = useState<Filter>('all')
   const [creating, setCreating] = useState(false)
+  const stage = parseStage((useSearch({ strict: false }) as { stage?: unknown }).stage)
+  const navigate = useNavigate()
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -83,6 +85,7 @@ export function ClientsScreen() {
     [list, byId, overview.isLoading],
   )
   const shown = rows?.filter((r) => {
+    if (stage && r.standing?.stage !== stage) return false
     if (filter === 'mine') return !!me?.membership_id && r.client.lead?.id === me.membership_id
     if (filter === 'unassigned') return !r.client.lead
     if (filter === 'unresolved') return r.unresolved > 0
@@ -177,6 +180,18 @@ export function ClientsScreen() {
           ))}
         </div>
       </div>
+
+      {stage && (
+        <p className="mb-4 flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          Showing clients whose books are
+          <span className="inline-flex items-center gap-1 rounded-md border bg-card py-0.5 pl-2.5 pr-1 font-medium text-heading">
+            {STAGE_LABEL[stage]}
+            <button type="button" aria-label="Show all clients" className="grid size-6 place-items-center rounded hover:bg-hover max-sm:size-11" onClick={() => void navigate({ to: '/clients', search: {} as never })}>
+              <X className="size-3.5" />
+            </button>
+          </span>
+        </p>
+      )}
 
       {clients.error ? (
         <ErrorState error={clients.error} retry={() => void clients.refetch()} />

@@ -244,3 +244,12 @@ export type AttentionReason = Schemas['AttentionReason']
 export type AlertFeed = Schemas['AlertFeed']
 export type Alert = Schemas['Alert']
 export type AlertModule = Alert['module']
+
+// --- dashboards, phase 2 (generated) ---------------------------------------------
+
+export type WorkFlow = Schemas['WorkFlow']
+export type PeopleWork = Schemas['PeopleWork']
+export type PersonWork = Schemas['PersonWork']
+export type MyWork = Schemas['MyWork']
+export type NextTask = Schemas['NextTask']
+export type Health = Schemas['HealthEnum']

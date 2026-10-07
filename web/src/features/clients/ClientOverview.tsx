@@ -1,26 +1,31 @@
-// Where this client's books stand, as the list of steps a CA works through.
+// The client page: where this client's books stand and how the business is doing, in cards that each
+// answer one plain question (see docs/dashboards-plan.md, section 6).
 //
-// Six steps, from statement to signature. Each says whether it is done, what is left, and has
-// one button that goes to exactly where the next thing is done. The first step not yet done
-// is the one highlighted: a new joiner can open a client and know what to do without asking.
+// "What is left to do?" is the six steps from statement to signature. Each says whether it is done,
+// what is left, and has one button that goes to exactly where the next thing is done. The first step
+// not yet done is highlighted and is also the button on the progress card at the top, so a new joiner
+// can open a client and know what to do without asking.
 
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Check, Minus } from 'lucide-react'
+import { Check } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { bankAccounts, booksStatus, clientDetail, reviewSummary, statements } from '@/api/queries/clients'
+import { clientSnapshot } from '@/api/queries/dashboard'
+import { DashCard } from '@/components/ca/DashCard'
 import { Card } from '@/components/ui/card'
-import { StatCard, StatGrid } from '@/components/ui/stat-card'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
-import { FinancialSnapshot } from './FinancialSnapshot'
+import { BooksProgressCard } from './BooksProgress'
+import { AccountsCard, CostsCard, MoneyKpis, MonthlyCard, OwedCard, ReportTiles, SnapshotFootnote } from './FinancialSnapshot'
 import { useUpload } from '@/features/statements/UploadDialog'
 import { unsignedThrough } from '@/features/books/state'
 import { useFy } from '@/features/shell/useFy'
-import { formatDate, fyLabel, plural } from '@/lib/format'
+import { formatDate, plural } from '@/lib/format'
+import { isoOf } from '@/lib/period'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
-import { coverageText, latestEnd, monthCoverage, type MonthCover } from './standing'
+import { booksProgress, latestEnd, monthCoverage } from './standing'
 
 interface Step {
   title: string
@@ -39,6 +44,8 @@ export function ClientOverview({ clientId }: { clientId: string }) {
   const summary = useQuery({ ...reviewSummary(clientId), enabled: can('transaction.view') })
   const books = useQuery({ ...booksStatus(clientId), enabled: can('report.view') })
   const { fy } = useFy()
+  const snapshotOn = can('journal.view') && (stmts.data?.count ?? 0) > 0
+  const snapshot = useQuery({ ...clientSnapshot(clientId, fy), enabled: snapshotOn })
 
   if (stmts.isLoading || accounts.isLoading || summary.isLoading || books.isLoading) return <Spinner label="Working out where the books stand…" />
 
@@ -76,44 +83,44 @@ export function ClientOverview({ clientId }: { clientId: string }) {
         : undefined,
     },
     {
-      title: 'Confirm opening balances',
+      title: 'Confirm each bank account’s starting balance',
       done: hasStatements && needOpening.length === 0,
       status: !hasStatements
-        ? 'Each bank account needs the balance it started with. Asked for after the first upload.'
+        ? 'Each bank account needs the balance it started with. This is asked for after the first upload.'
         : needOpening.length
           ? `Not confirmed for ${needOpening.map((a) => a.label).join(', ')}. Bank reconciliation is meaningless until it is.`
           : 'Confirmed for every bank account.',
       action: needOpening.length > 0 && link('/clients/$clientId/statements', 'Confirm'),
     },
     {
-      title: 'Place every transaction in a ledger',
+      title: 'Sort every entry into an account',
       done: hasStatements && unresolved === 0,
       status: !hasStatements
-        ? 'After upload, rules and the assistant place what they can; you decide the rest.'
+        ? 'After upload, the rules and the assistant sort what they can; you decide the rest.'
         : unresolved
-          ? `${plural(unresolved, 'transaction')} still ${unresolved === 1 ? 'needs' : 'need'} a ledger.`
-          : 'Every transaction has a ledger.',
-      action: unresolved > 0 && link('/clients/$clientId/review', 'Review', { stage: 'unresolved' }),
+          ? `${plural(unresolved, 'entry', 'entries')} still ${unresolved === 1 ? 'needs' : 'need'} an account.`
+          : 'Every entry is in an account.',
+      action: unresolved > 0 && link('/clients/$clientId/review', 'Sort them', { stage: 'unresolved' }),
     },
     {
-      title: 'Post to the Day Book',
+      title: 'Record the sorted entries in the books',
       done: hasStatements && unresolved === 0 && pending === 0 && unchecked === 0,
       status: !hasStatements
-        ? 'Placed transactions become journal entries once posted.'
+        ? 'Sorted entries become part of the books once they are recorded.'
         : pending
-          ? `${plural(pending, 'transaction')} placed and ready to post${summary.data?.bulk_approvable ? `, ${summary.data.bulk_approvable} of them high-confidence` : ''}.`
+          ? `${plural(pending, 'entry', 'entries')} sorted and ready to record${summary.data?.bulk_approvable ? `, ${summary.data.bulk_approvable} of them high-confidence` : ''}.`
           : unresolved
-            ? 'Nothing ready to post yet.'
+            ? 'Nothing is ready to record yet.'
             : unchecked
-              ? `${plural(unchecked, 'entry', 'entries')} posted by the assistant, not yet checked. Look at them in the Day Book and mark them as checked; the books cannot be signed off until then.`
-              : 'Everything is posted and checked.',
+              ? `${plural(unchecked, 'entry', 'entries')} recorded by the assistant, not yet checked. Look at them in the Day Book and mark them as checked; the books cannot be signed off until then.`
+              : 'Everything is recorded and checked.',
       action:
         pending > 0
-          ? link('/clients/$clientId/review', 'Post', { stage: 'pending_approval' })
+          ? link('/clients/$clientId/review', 'Record them', { stage: 'pending_approval' })
           : unchecked > 0 && link('/clients/$clientId/daybook', 'Check them'),
     },
     {
-      title: 'Send for review',
+      title: 'Send the books to the senior for review',
       done: hasStatements && !!b && (b.review_pending || !unsigned),
       status: !b
         ? '—'
@@ -129,7 +136,7 @@ export function ClientOverview({ clientId }: { clientId: string }) {
       action: b && !b.review_pending && b.can_request && link('/clients/$clientId/books', 'Send for review'),
     },
     {
-      title: client.data?.lead ? 'Senior CA signs off' : 'A firm administrator signs off (no senior CA assigned)',
+      title: client.data?.lead ? 'Senior CA signs off' : 'A firm administrator signs off (no Senior CA assigned)',
       done: hasStatements && !!b?.signed_off_through && !b.review_pending && !unsigned,
       status: b?.signed_off_through
         ? `Sealed through ${formatDate(b.signed_off_through)}. Entries up to that date are locked.${unsigned ? ` Statements run to ${formatDate(unsigned)}.` : ''}`
@@ -139,144 +146,122 @@ export function ClientOverview({ clientId }: { clientId: string }) {
   ]
   const current = steps.findIndex((s) => !s.done)
   const months = monthCoverage(fy, stmts.data?.results ?? [])
+  const progress = booksProgress(months, isoOf(new Date()))
+  const doneSteps = steps.filter((s) => s.done).length
+  const currentStep = current >= 0 ? steps[current]! : null
 
   return (
-    <div className="grid gap-4 [&>*]:min-w-0">
-      {can('report.view') && hasStatements && <FinancialSnapshot clientId={clientId} fy={fy} />}
-      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
-        <div className="grid gap-4 [&>*]:min-w-0">
-          <Card className="p-2">
-            <h2 className="sr-only">What is next for these books</h2>
-            <ol className="grid gap-1">
-              {steps.map((step, i) => (
-                <li
-                  key={step.title}
-                  aria-current={i === current ? 'step' : undefined}
-                  className={cn('flex flex-wrap items-start gap-x-4 gap-y-2 rounded-lg border border-transparent p-4', i === current && 'border-accent-edge bg-accent')}
-                >
-                  <span
-                    className={cn(
-                      'grid size-7 shrink-0 place-items-center rounded-full border border-input text-[13px] font-semibold text-muted-foreground',
-                      step.done && 'border-success bg-success text-primary-foreground',
-                      i === current && 'border-primary bg-primary text-primary-foreground',
-                    )}
-                    aria-hidden
-                  >
-                    {step.done ? <Check className="size-4" /> : i + 1}
-                  </span>
-                  <div className="min-w-0 flex-1 basis-56">
-                    <h3 className="flex flex-wrap items-center gap-2 text-sm font-semibold text-heading">
-                      {step.title}
-                      {i === current && <span className="rounded-sm bg-card px-1.5 text-xs font-medium text-accent-foreground">Next step</span>}
-                      {step.done && <span className="sr-only">(done)</span>}
-                    </h3>
-                    <p className="mt-0.5 max-w-prose text-[13px] leading-5 text-muted-foreground">{step.status}</p>
-                  </div>
-                  {step.action && <div className="shrink-0 max-sm:w-full [&>*]:max-sm:w-full">{step.action(i === current)}</div>}
-                </li>
-              ))}
-            </ol>
-          </Card>
-
-          <Card className="p-5">
-            <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 className="text-[15px] font-semibold text-heading">Statements by month</h2>
-              <span className="num text-xs text-muted-foreground">FY {fyLabel(fy)}</span>
-            </div>
-            <MonthStrip months={months} />
-            <p className="mt-3 text-xs text-muted-foreground">{coverageText(months)}</p>
-          </Card>
-        </div>
-
-        <div className="grid content-start gap-4">
-          <Card className="p-5 text-sm">
-            <h2 className="mb-2 text-[15px] font-semibold text-heading">Client details</h2>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
-              <dt className="text-muted-foreground">Senior CA in charge</dt>
-              <dd className="text-right">{client.data?.lead ? client.data.lead.name : <span className="text-accent-foreground">Not assigned</span>}</dd>
-              <dt className="text-muted-foreground">Financial year starts</dt>
-              <dd className="num text-right">{formatDate(client.data?.fy_start)}</dd>
-              <dt className="text-muted-foreground">Bank accounts</dt>
-              <dd className="num text-right">{accounts.data?.count ?? 0}</dd>
-            </dl>
-            {client.data?.business_profile && <p className="mt-3 text-[13px] text-muted-foreground">{client.data.business_profile}</p>}
-          </Card>
-          {b && unchecked > 0 && (
-            <div className="rounded-lg border border-accent-edge bg-accent p-4 text-sm text-accent-foreground">
-              <h2 className="font-semibold">Assistant entries to check</h2>
-              <p className="mt-1">
-                {plural(unchecked, 'entry', 'entries')} {unchecked === 1 ? 'was' : 'were'} posted or changed by the assistant without a person looking. Sign-off is refused until they are checked.
-              </p>
-              <div className="mt-3">{link('/clients/$clientId/daybook', 'Open Day Book')(false)}</div>
-            </div>
-          )}
-        </div>
+    <div className="grid grid-cols-12 gap-4 [&>*]:min-w-0">
+      <div className="order-1 col-span-12">
+        <BooksProgressCard
+          fy={fy}
+          months={months}
+          progress={progress}
+          hasStatements={hasStatements}
+          nextTitle={currentStep ? currentStep.title : null}
+          nextAction={currentStep?.action ? currentStep.action(true) : null}
+          signedOffThrough={b?.signed_off_through}
+          upload={can('document.upload') ? <Button onClick={upload.open}>Upload a statement</Button> : null}
+        />
       </div>
 
-      <section aria-labelledby="glance">
-        <h2 id="glance" className="mb-2 text-[15px] font-semibold text-heading">
-          Books at a glance
-        </h2>
-        <StatGrid>
-          <StatCard
-            label="Rows to place"
-            value={unresolved}
-            note="No ledger yet"
-            to={unresolved ? '/clients/$clientId/review' : undefined}
-            params={{ clientId }}
-            search={{ stage: 'unresolved' }}
-            tone={unresolved ? 'attention' : 'plain'}
-          />
-          <StatCard
-            label="Ready to post"
-            value={pending}
-            note="Placed, waiting for you"
-            to={pending ? '/clients/$clientId/review' : undefined}
-            params={{ clientId }}
-            search={{ stage: 'pending_approval' }}
-          />
-          <StatCard
-            label="Assistant entries unchecked"
-            value={unchecked}
-            note="Posted or changed by the assistant"
-            to={unchecked ? '/clients/$clientId/daybook' : undefined}
-            params={{ clientId }}
-            tone={unchecked ? 'attention' : 'plain'}
-          />
-          <StatCard
-            label="Sealed to"
-            value={<span className="text-xl">{b?.signed_off_through ? formatDate(b.signed_off_through) : 'Not yet'}</span>}
-            note={b?.review_pending ? 'A sign-off is waiting' : undefined}
-            to="/clients/$clientId/books"
-            params={{ clientId }}
-          />
-        </StatGrid>
-      </section>
+      {snapshotOn && (
+        <div className="order-2 col-span-12 grid grid-cols-2 gap-3 lg:grid-cols-4">
+          <MoneyKpis query={snapshot} clientId={clientId} />
+        </div>
+      )}
+
+      {snapshotOn && (
+        <div className="order-4 col-span-12 lg:order-3 lg:col-span-7 xl:col-span-8">
+          <MonthlyCard query={snapshot} clientId={clientId} />
+        </div>
+      )}
+
+      <div className={cn('order-3 col-span-12 lg:order-4', snapshotOn ? 'lg:col-span-5 xl:col-span-4' : 'lg:col-span-12')}>
+        <DashCard title="What is left to do?" hint={`${doneSteps} of ${steps.length} steps done`} className="h-full">
+          <ol className="-mx-2 grid gap-1">
+            {steps.map((step, i) => (
+              <li
+                key={step.title}
+                aria-current={i === current ? 'step' : undefined}
+                className={cn('flex flex-wrap items-start gap-x-3 gap-y-2 rounded-lg border border-transparent p-3', i === current && 'border-accent-edge bg-accent')}
+              >
+                <span
+                  className={cn(
+                    'grid size-6 shrink-0 place-items-center rounded-full border border-input text-xs font-semibold text-muted-foreground',
+                    step.done && 'border-success bg-success text-primary-foreground',
+                    i === current && 'border-primary bg-primary text-primary-foreground',
+                  )}
+                  aria-hidden
+                >
+                  {step.done ? <Check className="size-3.5" /> : i + 1}
+                </span>
+                <div className="min-w-0 flex-1 basis-44">
+                  <h3 className="flex flex-wrap items-center gap-2 text-sm font-semibold text-heading">
+                    {step.title}
+                    {i === current && <span className="rounded-sm bg-card px-1.5 text-xs font-medium text-accent-foreground">Next step</span>}
+                    {step.done && <span className="sr-only">(done)</span>}
+                  </h3>
+                  <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">{step.status}</p>
+                </div>
+                {step.action && <div className="shrink-0 max-sm:w-full [&>*]:max-sm:w-full">{step.action(false)}</div>}
+              </li>
+            ))}
+          </ol>
+        </DashCard>
+      </div>
+
+      {snapshotOn && (
+        <>
+          <div className="order-5 col-span-12 lg:col-span-6 xl:col-span-4">
+            <OwedCard query={snapshot} clientId={clientId} />
+          </div>
+          <div className="order-6 col-span-12 lg:col-span-6 xl:col-span-4">
+            <AccountsCard query={snapshot} clientId={clientId} />
+          </div>
+          <div className="order-7 col-span-12 xl:col-span-4">
+            <CostsCard query={snapshot} clientId={clientId} />
+          </div>
+        </>
+      )}
+
+      {can('report.view') && hasStatements && (
+        <div className="order-8 col-span-12">
+          <ReportTiles clientId={clientId} gst={can('gst.view')} query={snapshot} />
+        </div>
+      )}
+
+      <div className="order-9 col-span-12 grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
+        <Card className="p-5 text-sm">
+          <h2 className="mb-2 text-[15px] font-semibold text-heading">Client details</h2>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+            <dt className="text-muted-foreground">Senior CA in charge</dt>
+            <dd className="text-right">{client.data?.lead ? client.data.lead.name : <span className="text-accent-foreground">Not assigned</span>}</dd>
+            <dt className="text-muted-foreground">Financial year starts</dt>
+            <dd className="num text-right">{formatDate(client.data?.fy_start)}</dd>
+            <dt className="text-muted-foreground">Bank accounts</dt>
+            <dd className="num text-right">{accounts.data?.count ?? 0}</dd>
+            <dt className="text-muted-foreground">Signed off to</dt>
+            <dd className="num text-right">{b?.signed_off_through ? formatDate(b.signed_off_through) : 'Not yet'}</dd>
+          </dl>
+          {client.data?.business_profile && <p className="mt-3 text-[13px] text-muted-foreground">{client.data.business_profile}</p>}
+        </Card>
+        {b && unchecked > 0 && (
+          <div className="rounded-lg border border-accent-edge bg-accent p-4 text-sm text-accent-foreground">
+            <h2 className="font-semibold">Assistant entries to check</h2>
+            <p className="mt-1">
+              {plural(unchecked, 'entry', 'entries')} {unchecked === 1 ? 'was' : 'were'} posted or changed by the assistant without a person looking. Sign-off is refused until they are checked.
+            </p>
+            <div className="mt-3">{link('/clients/$clientId/daybook', 'Open Day Book')(false)}</div>
+          </div>
+        )}
+      </div>
+
+      {snapshotOn && (
+        <div className="order-10 col-span-12">
+          <SnapshotFootnote query={snapshot} />
+        </div>
+      )}
     </div>
-  )
-}
-
-const COVER_LABEL = { full: 'a statement covers this month', partial: 'a statement covers part of this month', none: 'no statement' } as const
-
-/** Twelve months, April to March. Shape as well as fill: a tick, a half, a dash. The sentence below it is the text alternative. */
-function MonthStrip({ months }: { months: MonthCover[] }) {
-  return (
-    <ol className="mt-3 grid grid-cols-6 gap-2 sm:grid-cols-12" aria-hidden>
-      {months.map((m) => (
-        <li key={m.start} className="grid justify-items-center gap-1" title={`${m.label}: ${COVER_LABEL[m.coverage]}`}>
-          <span
-            className={cn(
-              'grid h-8 w-full place-items-center rounded-md border',
-              m.coverage === 'full' && 'border-primary bg-primary text-primary-foreground',
-              m.coverage === 'partial' && 'border-primary bg-[linear-gradient(90deg,var(--primary)_50%,transparent_50%)]',
-              m.coverage === 'none' && 'border-input text-faint',
-            )}
-          >
-            {m.coverage === 'full' ? <Check className="size-4" /> : m.coverage === 'none' ? <Minus className="size-4" /> : null}
-          </span>
-          <span className="text-xs text-muted-foreground">{m.label}</span>
-        </li>
-      ))}
-    </ol>
   )
 }

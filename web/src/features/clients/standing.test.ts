@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { coverageText, latestEnd, monthCoverage, nextStep } from './standing'
+import { booksProgress, coverageText, latestEnd, monthCoverage, nextStep } from './standing'
 
 const summary = (unresolved: number, pending_approval: number) => ({ unresolved, pending_approval })
 const books = (review_pending: boolean, signed_off_through: string | null) => ({ review_pending, signed_off_through })
@@ -57,5 +57,18 @@ describe('monthCoverage', () => {
     const partial = monthCoverage(2025, [{ period_start: '2025-04-01', period_end: '2025-07-10' }])
     expect(coverageText(partial)).toBe('Months with a statement: Apr to Jun. Partly covered: Jul. Missing: Aug to Mar.')
     expect(coverageText(monthCoverage(2025, []))).toBe('Months with a statement: none. Missing: Apr to Mar.')
+  })
+})
+
+describe('booksProgress', () => {
+  const statements = [{ period_start: '2026-04-01', period_end: '2026-07-31' }, { period_start: '2026-09-01', period_end: '2026-09-15' }]
+  it('counts only months that have fully passed', () => {
+    const months = monthCoverage(2026, statements)
+    expect(booksProgress(months, '2026-10-07')).toEqual({ due: 6, done: 4, missing: ['Aug'], partial: ['Sep'] })
+  })
+  it('has nothing due before the first month ends, and twelve at the end of the year', () => {
+    const months = monthCoverage(2026, [])
+    expect(booksProgress(months, '2026-04-20').due).toBe(0)
+    expect(booksProgress(months, '2027-04-01').due).toBe(12)
   })
 })

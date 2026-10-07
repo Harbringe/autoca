@@ -8,7 +8,6 @@ import { Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { firmOverview } from '@/api/queries/overview'
 import type { OverviewClient } from '@/api/types'
-import { ModuleAlerts } from '@/features/alerts/AlertList'
 import { EmptyState, ErrorState, PageHeader } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
@@ -187,7 +186,6 @@ export function ModuleClientTable({ module }: { module: LandingModule }) {
   return (
     <div className="grid gap-4">
       <PageHeader title={copy.title} description={copy.description} className="mb-0" />
-      <ModuleAlerts module={module} />
       <div className="relative w-full max-w-sm">
         <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
         <Input aria-label="Search clients" placeholder="Search clients" className="pl-9" value={term} onChange={(e) => setTerm(e.target.value)} />

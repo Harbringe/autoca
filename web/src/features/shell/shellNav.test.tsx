@@ -55,19 +55,18 @@ beforeEach(() => {
 })
 
 describe('the client panel', () => {
-  it('lists the screens flat, lights the one the address is on, and counts review rows', async () => {
+  it('lists the places, lights the one the address is in, and counts review rows on Bank statements', async () => {
     await inRouter('/clients/a/daybook', <ClientNavList clientId="a" />)
     const nav = await screen.findByRole('navigation', { name: 'Client screens' })
     await screen.findByText('12')
     const links = within(nav).getAllByRole('link')
     expect(links.map((l) => l.textContent?.replace(/ rows waiting$/, ''))).toEqual([
-      'Overview', 'Statements', 'Review12', 'Documents', 'Summary', 'Day Book', 'Ledgers', 'Parties & rules', 'Purchases & Sales', 'Invoices', 'To fix',
-      'TDS', 'Payroll', 'Assets', 'GST', 'Reports', 'Sign-off', 'Client settings',
+      'Overview', 'Pipeline', 'Bank statements12', 'Documents', 'Bookkeeping', 'GST', 'Reports', 'Client settings',
     ])
     const current = links.filter((l) => l.getAttribute('aria-current') === 'page')
     expect(current).toHaveLength(1)
-    expect(current[0]).toHaveTextContent('Day Book')
-    expect(screen.getByRole('link', { name: 'Day Book' })).toHaveAttribute('href', '/clients/a/daybook')
+    expect(current[0]).toHaveTextContent('Bookkeeping')
+    expect(screen.getByRole('link', { name: 'Bookkeeping' })).toHaveAttribute('href', '/clients/a/bookkeeping')
   })
 
   it('hides what the person may not open', async () => {
@@ -75,7 +74,7 @@ describe('the client panel', () => {
     await inRouter('/clients/a', <ClientNavList clientId="a" />)
     const nav = await screen.findByRole('navigation', { name: 'Client screens' })
     await screen.findByText('12')
-    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/ rows waiting$/, ''))).toEqual(['Overview', 'Statements', 'Review12'])
+    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/ rows waiting$/, ''))).toEqual(['Overview', 'Pipeline', 'Bank statements12'])
   })
 })
 
@@ -85,9 +84,9 @@ describe('the phone strip', () => {
     const strip = await screen.findByRole('navigation', { name: 'Client screens' })
     await screen.findByText('12')
     const links = within(strip).getAllByRole('link')
-    expect(links.map((l) => l.textContent?.replace(/ rows waiting$/, ''))).toEqual(['Overview', 'Statements', 'Review12', 'Books', 'Reports'])
+    expect(links.map((l) => l.textContent?.replace(/ rows waiting$/, ''))).toEqual(['Overview', 'Bank12', 'Documents', 'Books', 'GST', 'Reports'])
     expect(links.every((l) => l.className.includes('h-11'))).toBe(true)
-    expect(links.filter((l) => l.getAttribute('aria-current') === 'page').map((l) => l.textContent)).toEqual([expect.stringContaining('Review')])
+    expect(links.filter((l) => l.getAttribute('aria-current') === 'page').map((l) => l.textContent)).toEqual([expect.stringContaining('Bank')])
   })
 })
 
@@ -99,7 +98,7 @@ describe('the rail', () => {
     recordRecentClient('a')
     await inRouter('/clients/a/daybook', <Rail onShortcuts={() => {}} />)
     const main = await screen.findByRole('navigation', { name: 'Main' })
-    expect(within(main).getAllByRole('link').map((l) => l.textContent)).toEqual(['Home', 'Clients', 'Pipeline', 'Alerts', 'Staff', 'Settings'])
+    expect(within(main).getAllByRole('link').map((l) => l.textContent)).toEqual(['Home', 'Clients', 'Alerts', 'Staff', 'Settings'])
     // Inside a client the rail carries no firm count: the bell speaks for the client.
     expect(within(main).getByRole('link', { name: 'Alerts' })).toBeInTheDocument()
     const recent = await screen.findByRole('region', { name: 'Recent clients' })
@@ -110,9 +109,10 @@ describe('the rail', () => {
     expect(discs[1]).not.toHaveAttribute('aria-current')
   })
 
-  it('counts alerts for the firm on a firm page, and lights the place', async () => {
-    await inRouter('/pipeline', <Rail onShortcuts={() => {}} />)
-    expect(await screen.findByRole('link', { name: /^Alerts\s*9/ })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Pipeline' })).toHaveAttribute('aria-current', 'page')
+  it('carries no alert count on a firm page, and lights the place', async () => {
+    await inRouter('/clients', <Rail onShortcuts={() => {}} />)
+    expect(await screen.findByRole('link', { name: 'Alerts' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: /^Alerts\s*\d/ })).toBeNull()
+    expect(screen.getByRole('link', { name: 'Clients' })).toHaveAttribute('aria-current', 'page')
   })
 })

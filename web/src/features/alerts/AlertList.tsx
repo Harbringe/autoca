@@ -80,20 +80,22 @@ export function AlertList({ alerts, showClient = true, className }: { alerts: Al
 
 /**
  * What needs attention inside one module: for one client when `clientId` is given, for the whole
- * firm otherwise. One "View alerts" button, right-aligned, with the count; it opens a panel listing
+ * firm otherwise (no `module` means everything of that client). One "View alerts" button, shown in the
+ * page header beside Upload, with the count; it opens a panel listing
  * every alert here, most serious first, each row a link to where it is fixed. Says nothing at all
  * when there is nothing, so a clean module stays quiet.
  */
-export function ModuleAlerts({ module, clientId }: { module: AlertModule; clientId?: string }) {
+export function ModuleAlerts({ module, clientId }: { module?: AlertModule; clientId?: string }) {
   const one = useQuery({ ...clientAlerts(clientId ?? '', module), enabled: !!clientId })
   const all = useQuery({ ...firmAlerts(module), enabled: !clientId })
   const feed = clientId ? one.data : all.data
   const alerts = sortAlerts(feed?.alerts ?? [])
   const [open, setOpen] = useState(false)
   if (alerts.length === 0) return null
+  const scopeLabel = module ? MODULE_LABEL[module] : 'this client'
   const urgent = alerts.filter((a) => a.severity === 'critical').length
   return (
-    <section aria-label={`Alerts for ${MODULE_LABEL[module]}`} className="no-print flex justify-end">
+    <>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
           <Button variant="outline" size="sm" aria-haspopup="dialog" className="max-sm:h-10">
@@ -101,7 +103,7 @@ export function ModuleAlerts({ module, clientId }: { module: AlertModule; client
             View alerts <span className="num">({alerts.length})</span>
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="end" aria-label={`Alerts for ${MODULE_LABEL[module]}`} className="w-[420px] max-w-[calc(100vw-1rem)]">
+        <PopoverContent align="end" aria-label={`Alerts for ${scopeLabel}`} className="w-[420px] max-w-[calc(100vw-1rem)]">
           <div className="flex items-center justify-between gap-3 px-4 py-2.5">
             <h2 className="text-sm font-semibold text-heading">
               Alerts <span className="num font-normal text-muted-foreground">({alerts.length})</span>
@@ -121,7 +123,7 @@ export function ModuleAlerts({ module, clientId }: { module: AlertModule; client
           <div className="border-t px-4 py-3 text-sm">
             <Link
               to="/alerts"
-              search={(clientId ? { client: clientId, module } : { module }) as never}
+              search={(clientId ? { client: clientId, ...(module && { module }) } : { module }) as never}
               onClick={() => setOpen(false)}
               className="font-medium text-link underline underline-offset-2"
             >
@@ -130,6 +132,6 @@ export function ModuleAlerts({ module, clientId }: { module: AlertModule; client
           </div>
         </PopoverContent>
       </Popover>
-    </section>
+    </>
   )
 }

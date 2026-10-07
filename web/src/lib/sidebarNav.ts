@@ -4,7 +4,7 @@
 import type { ModuleId } from './modules'
 
 export interface RailItem {
-  id: Extract<ModuleId, 'dashboard' | 'clients' | 'pipeline' | 'alerts' | 'staff' | 'settings'>
+  id: Extract<ModuleId, 'dashboard' | 'clients' | 'alerts' | 'staff' | 'settings'>
   /** Under the icon on the rail. */
   label: string
   /** In the phone drawer, where there is room. */
@@ -16,7 +16,6 @@ export interface RailItem {
 export const RAIL_ITEMS: RailItem[] = [
   { id: 'dashboard', label: 'Home', long: 'Dashboard', permission: 'client.view' },
   { id: 'clients', label: 'Clients', long: 'Clients', permission: 'client.view' },
-  { id: 'pipeline', label: 'Pipeline', long: 'Work pipeline', permission: 'client.view' },
   { id: 'alerts', label: 'Alerts', long: 'Alerts', permission: 'client.view' },
   { id: 'staff', label: 'Staff', long: 'Staff performance', permission: 'client.view' },
   { id: 'settings', label: 'Settings', long: 'Settings' },

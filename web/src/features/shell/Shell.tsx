@@ -13,7 +13,7 @@ import { Kbd } from '@/components/ui/kbd'
 import { useAssistantShort } from '@/features/assistant/useAssistant'
 import { Brand } from '@/features/auth/AuthLayout'
 import { AlertBell, useAlertCount } from '@/features/alerts/AlertBell'
-import { activeClientItem, clientScreenTitle } from '@/lib/clientNav'
+import { clientScreenName } from '@/lib/clientNav'
 import { fyLabel, financialYearOf } from '@/lib/format'
 import { parseFy } from '@/lib/fy'
 import { useHotkey } from '@/lib/hotkeys'
@@ -52,8 +52,7 @@ const FIRM_TITLE: Partial<Record<ModuleId, string>> = {
 function useClientPageTitle() {
   const path = useRouterState({ select: (s) => s.location.pathname })
   const parts = path.split('/').filter(Boolean)
-  const item = activeClientItem(path)
-  const title = parts[0] !== 'clients' ? undefined : parts.length === 1 ? 'Clients' : item && item.screen !== 'gst' ? clientScreenTitle(item) : undefined
+  const title = parts[0] !== 'clients' ? undefined : parts.length === 1 ? 'Clients' : clientScreenName(path)
   usePageTitle(title)
 }
 
@@ -189,7 +188,7 @@ function DrawerBody({ clientId, onClose, onShortcuts }: { clientId?: string; onC
   const palette = usePalette()
   const path = useRouterState({ select: (s) => s.location.pathname })
   const active = railActive(path)
-  const alertCount = useAlertCount(!clientId)
+  const alertCount = useAlertCount(false)
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
       <div className="flex items-center justify-between py-1.5 pl-4 pr-1.5 text-white">
@@ -344,7 +343,7 @@ export function Shell() {
               <PaletteTrigger />
               <div className="ml-auto flex shrink-0 items-center gap-3">
                 <AssistantIndicator />
-                <AlertBell key={`bell-${clientId ?? "firm"}`} clientId={clientId} />
+                {clientId && <AlertBell key={`bell-${clientId}`} clientId={clientId} />}
                 <UserMenu onShortcuts={() => setShortcutsOpen(true)} />
               </div>
             </>
@@ -358,7 +357,7 @@ export function Shell() {
               ) : (
                 <div className="min-w-0 flex-1 truncate px-1 text-base font-semibold text-heading">{(module && FIRM_TITLE[module]) || 'AutoCA'}</div>
               )}
-              <AlertBell key={`bell-${clientId ?? "firm"}`} clientId={clientId} />
+              {clientId && <AlertBell key={`bell-${clientId}`} clientId={clientId} />}
             </>
           )}
         </header>

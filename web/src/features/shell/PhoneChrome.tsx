@@ -30,7 +30,7 @@ export function PhoneClientButton({ clientId }: { clientId: string }) {
   )
 }
 
-/** Overview, Statements, Review, Books, Reports: 44px targets in a row that scrolls sideways inside itself. */
+/** Overview, Bank, Documents, Books, GST, Reports: 44px targets in a row that scrolls sideways inside itself. */
 export function ClientStrip({ clientId }: { clientId: string }) {
   const { can } = useSession()
   const path = useRouterState({ select: (s) => s.location.pathname })
@@ -52,7 +52,7 @@ export function ClientStrip({ clientId }: { clientId: string }) {
                 )}
               >
                 {item.label}
-                {item.screen === 'review' && reviewCount ? (
+                {item.screen === 'statements' && reviewCount ? (
                   <span className="num rounded-sm bg-sidebar-chip px-1.5 text-xs font-medium text-sidebar-chip-foreground">
                     {reviewCount}
                     <span className="sr-only"> rows waiting</span>

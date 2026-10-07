@@ -47,6 +47,7 @@ import { Route as AppClientsClientIdLedgersRouteImport } from './routes/_app/cli
 import { Route as AppClientsClientIdMastersRouteImport } from './routes/_app/clients/$clientId/masters'
 import { Route as AppClientsClientIdOpenItemsRouteImport } from './routes/_app/clients/$clientId/open-items'
 import { Route as AppClientsClientIdPayrollRouteImport } from './routes/_app/clients/$clientId/payroll'
+import { Route as AppClientsClientIdPipelineRouteImport } from './routes/_app/clients/$clientId/pipeline'
 import { Route as AppClientsClientIdReportsRouteImport } from './routes/_app/clients/$clientId/reports'
 import { Route as AppClientsClientIdReviewRouteImport } from './routes/_app/clients/$clientId/review'
 import { Route as AppClientsClientIdStatementsRouteImport } from './routes/_app/clients/$clientId/statements'
@@ -251,6 +252,12 @@ const AppClientsClientIdPayrollRoute =
     path: '/payroll',
     getParentRoute: () => AppClientsClientIdRouteRoute,
   } as any)
+const AppClientsClientIdPipelineRoute =
+  AppClientsClientIdPipelineRouteImport.update({
+    id: '/pipeline',
+    path: '/pipeline',
+    getParentRoute: () => AppClientsClientIdRouteRoute,
+  } as any)
 const AppClientsClientIdReportsRoute =
   AppClientsClientIdReportsRouteImport.update({
     id: '/reports',
@@ -317,6 +324,7 @@ export interface FileRoutesByFullPath {
   '/clients/$clientId/masters': typeof AppClientsClientIdMastersRoute
   '/clients/$clientId/open-items': typeof AppClientsClientIdOpenItemsRoute
   '/clients/$clientId/payroll': typeof AppClientsClientIdPayrollRoute
+  '/clients/$clientId/pipeline': typeof AppClientsClientIdPipelineRoute
   '/clients/$clientId/reports': typeof AppClientsClientIdReportsRoute
   '/clients/$clientId/review': typeof AppClientsClientIdReviewRoute
   '/clients/$clientId/statements': typeof AppClientsClientIdStatementsRoute
@@ -359,6 +367,7 @@ export interface FileRoutesByTo {
   '/clients/$clientId/masters': typeof AppClientsClientIdMastersRoute
   '/clients/$clientId/open-items': typeof AppClientsClientIdOpenItemsRoute
   '/clients/$clientId/payroll': typeof AppClientsClientIdPayrollRoute
+  '/clients/$clientId/pipeline': typeof AppClientsClientIdPipelineRoute
   '/clients/$clientId/reports': typeof AppClientsClientIdReportsRoute
   '/clients/$clientId/review': typeof AppClientsClientIdReviewRoute
   '/clients/$clientId/statements': typeof AppClientsClientIdStatementsRoute
@@ -405,6 +414,7 @@ export interface FileRoutesById {
   '/_app/clients/$clientId/masters': typeof AppClientsClientIdMastersRoute
   '/_app/clients/$clientId/open-items': typeof AppClientsClientIdOpenItemsRoute
   '/_app/clients/$clientId/payroll': typeof AppClientsClientIdPayrollRoute
+  '/_app/clients/$clientId/pipeline': typeof AppClientsClientIdPipelineRoute
   '/_app/clients/$clientId/reports': typeof AppClientsClientIdReportsRoute
   '/_app/clients/$clientId/review': typeof AppClientsClientIdReviewRoute
   '/_app/clients/$clientId/statements': typeof AppClientsClientIdStatementsRoute
@@ -451,6 +461,7 @@ export interface FileRouteTypes {
     | '/clients/$clientId/masters'
     | '/clients/$clientId/open-items'
     | '/clients/$clientId/payroll'
+    | '/clients/$clientId/pipeline'
     | '/clients/$clientId/reports'
     | '/clients/$clientId/review'
     | '/clients/$clientId/statements'
@@ -493,6 +504,7 @@ export interface FileRouteTypes {
     | '/clients/$clientId/masters'
     | '/clients/$clientId/open-items'
     | '/clients/$clientId/payroll'
+    | '/clients/$clientId/pipeline'
     | '/clients/$clientId/reports'
     | '/clients/$clientId/review'
     | '/clients/$clientId/statements'
@@ -538,6 +550,7 @@ export interface FileRouteTypes {
     | '/_app/clients/$clientId/masters'
     | '/_app/clients/$clientId/open-items'
     | '/_app/clients/$clientId/payroll'
+    | '/_app/clients/$clientId/pipeline'
     | '/_app/clients/$clientId/reports'
     | '/_app/clients/$clientId/review'
     | '/_app/clients/$clientId/statements'
@@ -820,6 +833,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppClientsClientIdPayrollRouteImport
       parentRoute: typeof AppClientsClientIdRouteRoute
     }
+    '/_app/clients/$clientId/pipeline': {
+      id: '/_app/clients/$clientId/pipeline'
+      path: '/pipeline'
+      fullPath: '/clients/$clientId/pipeline'
+      preLoaderRoute: typeof AppClientsClientIdPipelineRouteImport
+      parentRoute: typeof AppClientsClientIdRouteRoute
+    }
     '/_app/clients/$clientId/reports': {
       id: '/_app/clients/$clientId/reports'
       path: '/reports'
@@ -891,6 +911,7 @@ interface AppClientsClientIdRouteRouteChildren {
   AppClientsClientIdMastersRoute: typeof AppClientsClientIdMastersRoute
   AppClientsClientIdOpenItemsRoute: typeof AppClientsClientIdOpenItemsRoute
   AppClientsClientIdPayrollRoute: typeof AppClientsClientIdPayrollRoute
+  AppClientsClientIdPipelineRoute: typeof AppClientsClientIdPipelineRoute
   AppClientsClientIdReportsRoute: typeof AppClientsClientIdReportsRoute
   AppClientsClientIdReviewRoute: typeof AppClientsClientIdReviewRoute
   AppClientsClientIdStatementsRoute: typeof AppClientsClientIdStatementsRoute
@@ -913,6 +934,7 @@ const AppClientsClientIdRouteRouteChildren: AppClientsClientIdRouteRouteChildren
     AppClientsClientIdMastersRoute: AppClientsClientIdMastersRoute,
     AppClientsClientIdOpenItemsRoute: AppClientsClientIdOpenItemsRoute,
     AppClientsClientIdPayrollRoute: AppClientsClientIdPayrollRoute,
+    AppClientsClientIdPipelineRoute: AppClientsClientIdPipelineRoute,
     AppClientsClientIdReportsRoute: AppClientsClientIdReportsRoute,
     AppClientsClientIdReviewRoute: AppClientsClientIdReviewRoute,
     AppClientsClientIdStatementsRoute: AppClientsClientIdStatementsRoute,

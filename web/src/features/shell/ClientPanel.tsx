@@ -1,6 +1,6 @@
 // The client panel: the second column, only while a client is open. The client's full name and where
-// its books stand, a star to pin it, and every screen of that client in one flat list in the order the
-// work goes. No folding: where you are is always visible, and the panel scrolls on its own if it must.
+// its books stand, a star to pin it, and the places of that client (Bank statements, Bookkeeping, ...); the closely related
+// screens of a place are tabs on its page. Where you are is always visible.
 
 import { useQuery } from '@tanstack/react-query'
 import { Link, useRouterState } from '@tanstack/react-router'
@@ -47,7 +47,7 @@ export function ClientNavList({ clientId, touch = false, part = 'all', onNavigat
         >
           <item.icon className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
           <span className="truncate">{item.label}</span>
-          {item.screen === 'review' && reviewCount ? (
+          {item.screen === 'statements' && reviewCount ? (
             <span className={chip}>
               {reviewCount}
               <span className="sr-only"> rows waiting</span>
@@ -58,26 +58,10 @@ export function ClientNavList({ clientId, touch = false, part = 'all', onNavigat
     )
   }
 
-  // Blocks: the items up to the next divider label.
-  const blocks: { label?: string; items: typeof items }[] = []
-  for (const item of items) {
-    if (item.section || blocks.length === 0) blocks.push({ label: item.section, items: [item] })
-    else blocks[blocks.length - 1]!.items.push(item)
-  }
-
   if (part === 'bottom') return bottom.length > 0 ? <ul aria-label="Client settings" className="grid gap-0.5 px-2">{bottom.map(link)}</ul> : null
   return (
     <nav aria-label="Client screens" className="grid gap-0 px-2">
-      {blocks.map((block, i) => (
-        <div key={block.label ?? i} role={block.label ? 'group' : undefined} aria-label={block.label}>
-          {block.label && (
-            <div aria-hidden className={cn('px-3 pb-0.5 text-xs font-medium text-sidebar-muted', i === 0 ? 'pt-0' : 'pt-2')}>
-              {block.label}
-            </div>
-          )}
-          <ul className="grid">{block.items.map(link)}</ul>
-        </div>
-      ))}
+      <ul className="grid gap-0.5">{items.map(link)}</ul>
       {part === 'all' && bottom.length > 0 && <ul className="mt-3 grid gap-0.5 border-t border-white/10 pt-2">{bottom.map(link)}</ul>}
     </nav>
   )

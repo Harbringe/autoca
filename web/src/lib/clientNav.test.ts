@@ -1,6 +1,6 @@
 import { createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { routeTree } from '@/routeTree.gen'
-import { CLIENT_NAV, activeClientItem, clientNavFor, clientScreenOf, clientScreenPath, clientScreenTitle, stripFor, stripIsActive } from './clientNav'
+import { CLIENT_NAV, activeClientItem, clientNavFor, clientScreenOf, clientScreenPath, clientScreenName, clientTabsFor, stripFor, stripIsActive } from './clientNav'
 
 const all = () => true
 const only = (...held: string[]) => (p: string) => held.includes(p)
@@ -21,35 +21,42 @@ describe('the client panel list', () => {
     const screens = CLIENT_NAV.map((s) => s.screen)
     expect(new Set(screens).size).toBe(screens.length)
   })
-  it('runs in the order the work goes, with the dividers of the design', () => {
+  it('lists the places, not every screen', () => {
     const { items, bottom } = clientNavFor(all)
-    expect(items.map((i) => i.label)).toEqual([
-      'Overview', 'Statements', 'Review', 'Documents', 'Summary', 'Day Book', 'Ledgers', 'Parties & rules', 'Purchases & Sales', 'Invoices', 'To fix',
-      'TDS', 'Payroll', 'Assets', 'GST', 'Reports', 'Sign-off',
-    ])
-    expect(items.filter((i) => i.section).map((i) => i.section)).toEqual(['Capture', 'Books', 'Compliance', 'Output'])
+    expect(items.map((i) => i.label)).toEqual(['Overview', 'Pipeline', 'Bank statements', 'Documents', 'Bookkeeping', 'GST', 'Reports'])
     expect(bottom.map((i) => i.label)).toEqual(['Client settings'])
   })
   it('shows only what the person may open', () => {
     expect(clientNavFor(() => false)).toEqual({ items: [], bottom: [] })
     const reviewer = clientNavFor(only('client.view', 'transaction.view', 'document.view'))
-    expect(reviewer.items.map((i) => i.label)).toEqual(['Overview', 'Statements', 'Review', 'Documents'])
+    expect(reviewer.items.map((i) => i.label)).toEqual(['Overview', 'Pipeline', 'Bank statements', 'Documents'])
     expect(reviewer.bottom).toEqual([])
     const books = clientNavFor(only('report.view', 'journal.view'))
-    expect(books.items.map((i) => i.label)).toContain('Day Book')
+    expect(books.items.map((i) => i.label)).toContain('Bookkeeping')
     expect(books.items.map((i) => i.label)).not.toContain('GST')
+  })
+  it('puts the closely related screens of a place in its tab row', () => {
+    expect(clientTabsFor('/clients/c1/review', all).map((t) => t.label)).toEqual(['Statements', 'Review'])
+    expect(clientTabsFor('/clients/c1/daybook', all).map((t) => t.label)).toEqual([
+      'Books summary', 'Purchases & Sales', 'Invoices', 'TDS', 'Payroll', 'Assets', 'Day Book', 'To fix', 'Ledgers', 'Parties & rules', 'Sign-off',
+    ])
+    expect(clientTabsFor('/clients/c1/daybook', only('report.view')).map((t) => t.label)).not.toContain('Day Book')
+    expect(clientTabsFor('/clients/c1', all)).toEqual([])
+    expect(clientTabsFor('/clients/c1/documents', all)).toEqual([])
   })
   it('gives Client settings to anyone who may see the team or edit the client', () => {
     expect(clientNavFor(only('team.view')).bottom).toHaveLength(1)
     expect(clientNavFor(only('client.update')).bottom).toHaveLength(1)
     expect(clientNavFor(only('client.view')).bottom).toHaveLength(0)
   })
-  it('names a screen on its page as it is named in the panel, with two fuller names', () => {
-    const title = (screen: string) => clientScreenTitle(CLIENT_NAV.find((i) => i.screen === screen)!)
-    expect(title('daybook')).toBe('Day Book')
-    expect(title('books')).toBe('Sign-off')
-    expect(title('bookkeeping')).toBe('Books summary')
-    expect(title('gst')).toBe('GST reconciliation')
+  it('names a screen on its page by its tab, with a fuller name for GST', () => {
+    expect(clientScreenName('/clients/c1/daybook')).toBe('Day Book')
+    expect(clientScreenName('/clients/c1/books')).toBe('Sign-off')
+    expect(clientScreenName('/clients/c1/bookkeeping')).toBe('Books summary')
+    expect(clientScreenName('/clients/c1/review')).toBe('Review')
+    expect(clientScreenName('/clients/c1/documents')).toBe('Documents')
+    expect(clientScreenName('/clients/c1/gst')).toBe('GST reconciliation')
+    expect(clientScreenName('/dashboard')).toBeUndefined()
   })
 })
 
@@ -65,9 +72,8 @@ describe('every client route has exactly one active item', () => {
   it('lights one panel item for each, and every panel item belongs to a route', () => {
     const lit = clientRoutes.map((p) => activeClientItem(p))
     expect(lit.every((i) => i !== undefined)).toBe(true)
-    // One route per item, one item per route.
-    expect(new Set(lit).size).toBe(lit.length)
-    expect(new Set(lit)).toEqual(new Set(CLIENT_NAV))
+    // Several routes may share an item (its tabs), but every item is some route's.
+        expect(new Set(lit)).toEqual(new Set(CLIENT_NAV))
   })
   it('keeps the same item lit when the address carries a search or a deeper path', () => {
     expect(activeClientItem('/clients/c1/reports?report=tb')).toBe(CLIENT_NAV.find((i) => i.screen === 'reports'))
@@ -78,14 +84,15 @@ describe('every client route has exactly one active item', () => {
 })
 
 describe('the phone strip', () => {
-  it('holds the five screens used most, for those who may open them', () => {
-    expect(stripFor(all).map((i) => i.label)).toEqual(['Overview', 'Statements', 'Review', 'Books', 'Reports'])
-    expect(stripFor(only('client.view', 'report.view')).map((i) => i.label)).toEqual(['Overview', 'Reports'])
+  it('holds the places used most, for those who may open them', () => {
+    expect(stripFor(all).map((i) => i.label)).toEqual(['Overview', 'Bank', 'Documents', 'Books', 'GST', 'Reports'])
+    expect(stripFor(only('client.view', 'report.view')).map((i) => i.label)).toEqual(['Overview', 'Books', 'Reports'])
   })
-  it('counts the books screens as Books', () => {
+  it('counts the books screens as Books and the review screen as Bank', () => {
     const books = stripFor(all).find((i) => i.label === 'Books')!
-    for (const path of ['/clients/c1/daybook', '/clients/c1/ledgers', '/clients/c1/bookkeeping', '/clients/c1/open-items']) expect(stripIsActive(books, path)).toBe(true)
+    for (const path of ['/clients/c1/daybook', '/clients/c1/ledgers', '/clients/c1/bookkeeping', '/clients/c1/open-items', '/clients/c1/tds']) expect(stripIsActive(books, path)).toBe(true)
     expect(stripIsActive(books, '/clients/c1/review')).toBe(false)
     expect(stripIsActive(books, '/dashboard')).toBe(false)
+    expect(stripIsActive(stripFor(all).find((i) => i.label === 'Bank')!, '/clients/c1/review')).toBe(true)
   })
 })

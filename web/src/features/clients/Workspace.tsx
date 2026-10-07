@@ -1,7 +1,7 @@
 // One client's screen: a header that says which screen it is and where the books stand.
 //
-// The client panel moves between screens, so there is no breadcrumb, no previous/next and no tab row
-// here, except where a screen has views of its own (the Reports types). "Upload bank statement" is on
+// The client panel names the places; a place's closely related screens are the tab row under the heading,
+// and its alerts and "Upload bank statement" sit together at the right of the heading. "Upload bank statement" is on
 // every client page because it is where everything starts, and `u` does it too.
 
 import { useQuery } from '@tanstack/react-query'
@@ -19,8 +19,9 @@ import { useAssistantLoop } from '@/features/assistant/useAssistant'
 import { UploadProvider, useUpload } from '@/features/statements/UploadDialog'
 import { fyLabel } from '@/lib/format'
 import { useHotkey } from '@/lib/hotkeys'
-import { activeClientItem, clientScreenTitle } from '@/lib/clientNav'
+import { clientScreenName, clientScreenOf, clientTabsFor } from '@/lib/clientNav'
 import { moduleOf } from '@/lib/modules'
+import { reviewSummary } from '@/api/queries/clients'
 import { REPORT_TABS } from '@/features/reports/tabs'
 import { useFy } from '@/features/shell/useFy'
 import { ModuleAlerts } from '@/features/alerts/AlertList'
@@ -41,6 +42,7 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
   const upload = useUpload()
   const client = useQuery(clientDetail(clientId))
   const books = useQuery({ ...booksStatus(clientId), enabled: can('report.view') })
+  const summary = useQuery({ ...reviewSummary(clientId), enabled: can('transaction.view') })
   const { fy, setFy, explicit, ready, dataYears } = useFy()
   const latestYear = dataYears[dataYears.length - 1]
   // While this client is open, the assistant reads the rows waiting for it, a few at a time.
@@ -64,17 +66,28 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
 
   const module = moduleOf(path)
   const p = { clientId }
-  // The panel carries every destination; a tab row stays only where a screen has views of its own.
-  const tabs: TabItem[] = module === 'reports' ? REPORT_TABS.map((t) => ({ to: '/clients/$clientId/reports', params: p, label: t.label, search: { report: t.tab } })) : []
-  const item = activeClientItem(path)
-  const title = item ? clientScreenTitle(item) : client.data.name
+  // The panel names the places; the closely related screens of a place are the tab row under the heading.
+  const screen = clientScreenOf(path)
+  const tabs: TabItem[] =
+    module === 'reports'
+      ? REPORT_TABS.map((t) => ({ to: '/clients/$clientId/reports', params: p, label: t.label, search: { report: t.tab } }))
+      : clientTabsFor(path, can).map((t) => ({
+          to: t.screen ? `/clients/$clientId/${t.screen}` : '/clients/$clientId',
+          params: p,
+          label: t.label,
+          exact: true,
+          count: t.screen === 'review' ? summary.data?.total : undefined,
+        }))
+  // Alerts follow where you are: a place shows its own and those of its tabs; the client's home and pipeline show all of its.
+  const alertModule = module && module !== 'clients' ? (module as AlertModule) : undefined
+  const title = clientScreenName(path) ?? client.data.name
   // Uploading is the point of the Statements screen; elsewhere it is a quiet second action.
-  const upload_primary = item?.screen === 'statements'
+  const upload_primary = screen === 'statements'
 
   return (
     <div className="grid gap-4 [&>*]:min-w-0">
-      <header className="no-print flex items-start justify-between gap-3">
-        <div className="min-w-0">
+      <header className="no-print flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 max-sm:w-full">
           <div className="truncate text-[13px] text-muted-foreground">{client.data.name}</div>
           <h1 className="text-[26px] leading-8 xl:text-[28px] xl:leading-[34px]">{title}</h1>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm text-muted-foreground">
@@ -91,20 +104,19 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
             <span className="num">FY {fyLabel(fy)}</span>
           </div>
         </div>
-        {can('document.upload') && module !== 'gst' && (
-          <Button variant={upload_primary ? 'primary' : 'secondary'} onClick={upload.open} className="shrink-0 max-sm:px-3" aria-label="Upload bank statement">
-            <Upload />
-            <span className="max-sm:hidden">Upload bank statement</span>
-            <span className="sm:hidden">Upload</span>
-          </Button>
-        )}
+        <div className="flex shrink-0 items-center gap-2">
+          {can('client.view') && module !== 'alerts' && screen !== 'team' && <ModuleAlerts module={alertModule} clientId={clientId} />}
+          {can('document.upload') && module !== 'gst' && (
+            <Button variant={upload_primary ? 'primary' : 'secondary'} onClick={upload.open} className="max-sm:px-3" aria-label="Upload bank statement">
+              <Upload />
+              <span className="max-sm:hidden">Upload bank statement</span>
+              <span className="sm:hidden">Upload</span>
+            </Button>
+          )}
+        </div>
       </header>
 
       {tabs.length > 0 && <TabNav label={`${title} sections`} items={tabs} />}
-
-      {module && module !== 'clients' && module !== 'alerts' && can('client.view') && (
-        <ModuleAlerts module={module as AlertModule} clientId={clientId} />
-      )}
 
       {explicit && latestYear !== undefined && !dataYears.includes(fy) && (
         <p className="no-print -mt-2 text-[13px] text-muted-foreground">

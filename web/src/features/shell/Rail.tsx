@@ -3,7 +3,7 @@
 // page you are on; only the highlighted place changes.
 
 import { Link, useRouterState } from '@tanstack/react-router'
-import { Activity, Bell, Columns3, LayoutDashboard, Settings, Users } from 'lucide-react'
+import { Activity, Bell, LayoutDashboard, Settings, Users } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useAlertCount } from '@/features/alerts/AlertBell'
 import { clientIdOf } from '@/lib/modules'
@@ -18,7 +18,6 @@ import { UserMenu } from './UserMenu'
 export const RAIL_ICONS: Record<RailItem['id'], ReactNode> = {
   dashboard: <LayoutDashboard strokeWidth={1.75} aria-hidden />,
   clients: <Users strokeWidth={1.75} aria-hidden />,
-  pipeline: <Columns3 strokeWidth={1.75} aria-hidden />,
   alerts: <Bell strokeWidth={1.75} aria-hidden />,
   staff: <Activity strokeWidth={1.75} aria-hidden />,
   settings: <Settings strokeWidth={1.75} aria-hidden />,
@@ -32,8 +31,8 @@ export function Rail({ onShortcuts }: { onShortcuts: () => void }) {
   const clientId = clientIdOf(path)
   const items = railItems(can)
   const active = railActive(path)
-  // The firm's count belongs to the firm's pages; inside a client the bell speaks for that client.
-  const alertCount = useAlertCount(!clientId)
+  // Alerts are shown inside a client (its bell and page banners), so the firm's pages carry no count.
+  const alertCount = useAlertCount(false)
 
   return (
     <div className="flex h-full w-20 flex-col items-center overflow-y-auto overscroll-contain border-r border-white/10 bg-sidebar py-3 text-sidebar-foreground [scrollbar-width:none]">

@@ -146,15 +146,11 @@ def read_upload(*, client, data: bytes, filename: str, kind: str = "", uploaded_
         raise IntakeError("Only PDF invoices can be read for now. For a photo, save or print it as a PDF first.")
 
     digest = Document.digest(data)
-    existing = Document.objects.filter(firm_id=client.firm_id, sha256=digest).first()
+    existing = Document.objects.filter(firm_id=client.firm_id, client=client, sha256=digest).first()
     if existing is not None:
         reading = InvoiceReading.objects.filter(firm_id=client.firm_id, document=existing).first()
         if reading is None:
             raise IntakeError("This exact file is already on file as something other than an invoice.")
-        if reading.client_id != client.pk:
-            raise IntakeError(
-                "This exact file is already on file for another client of the firm. Check you have the right client open."
-            )
         return reading, False
 
     try:

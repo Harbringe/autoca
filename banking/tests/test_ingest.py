@@ -117,16 +117,17 @@ def test_the_same_file_twice_is_the_same_statement(client):
         assert StatementTransaction.objects.count() == 54
 
 
-def test_the_same_file_for_a_different_client_is_refused_not_passed_off_as_imported(client, firm):
-    """Once returned "already imported" with the other client's statement: a hidden mistake, and a leak."""
-    from banking.ingest import StatementElsewhereError
-
+def test_the_same_file_for_a_different_client_is_its_own_statement(client, firm):
+    """A joint account, or one statement two clients keep books from: each client has its own copy and its own rows."""
     other = create_client(firm, "Someone Else", datetime.date(2025, 4, 1))
     with firm_context(client.firm_id):
-        ingest_statement(client=client, data=b"%PDF-1.4 axis", filename="axis.pdf")
-        with pytest.raises(StatementElsewhereError, match="another client"):
-            ingest_statement(client=other, data=b"%PDF-1.4 axis", filename="axis.pdf")
-        assert not Statement.objects.filter(bank_account__client=other).exists()
+        first = ingest_statement(client=client, data=b"%PDF-1.4 axis", filename="axis.pdf")
+        second = ingest_statement(client=other, data=b"%PDF-1.4 axis", filename="axis.pdf")
+
+        assert second.is_new and second.statement.pk != first.statement.pk
+        assert second.document.pk != first.document.pk
+        assert second.statement.bank_account.client_id == other.pk
+        assert Statement.objects.filter(bank_account__client=other).count() == 1
 
 
 def test_an_overlapping_period_does_not_double_up_the_rows(client):

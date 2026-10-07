@@ -4,9 +4,9 @@ One table for bank statements, purchase invoices, GSTR-2B extracts and
 registers, rather than one per feature. That is not tidiness -- three things
 only work if there is a single registry:
 
-* **Duplicate detection is free and global.** ``UNIQUE(firm, sha256)`` catches
-  the same file re-uploaded, regardless of who uploaded it, under which client,
-  or as which kind. A per-feature table would catch it only within that feature.
+* **Duplicate detection is free.** ``UNIQUE(firm, client, sha256)`` catches
+  the same file re-uploaded for a client, regardless of who uploaded it or as
+  which kind. The same file for two different clients is two documents. A per-feature table would catch it only within that feature.
 * **Provenance is uniform.** Every derived row -- a statement transaction now, a
   GSTR-2B line later -- points back to a document and a line number within it.
   "Where did this entry come from?" is then one join, not a different join per
@@ -93,11 +93,12 @@ class Document(UUIDModel, FirmScopedModel):
         db_table = "documents_document"
         ordering = ["-created_at"]
         constraints = [
-            # The same file, uploaded twice, is one document. Scoped to the firm
-            # rather than globally: two firms holding the same file is a
-            # coincidence, and a shared row would be a cross-tenant link.
+            # The same file, uploaded twice for one client, is one document. Scoped to
+            # the client as well as the firm: the same file can honestly belong to two
+            # clients (a joint account, a statement both partners keep books from),
+            # and each keeps its own copy of the evidence under its own prefix.
             models.UniqueConstraint(
-                fields=["firm", "sha256"], name="uniq_document_per_firm_sha256"
+                fields=["firm", "client", "sha256"], name="uniq_document_per_client_sha256"
             ),
         ]
         indexes = [

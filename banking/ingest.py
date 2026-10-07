@@ -69,7 +69,7 @@ class IngestResult:
 
 
 class StatementElsewhereError(RuntimeError):
-    """The file was uploaded before, for a different client."""
+    """Kept so queued jobs that name it still load. Nothing raises it: the same file for two clients is two documents."""
 
 
 class _ScanReader:
@@ -91,17 +91,9 @@ def ingest_statement(
     """Parse ``data`` as a bank statement for ``client`` and persist its rows."""
     digest = Document.digest(data)
 
-    existing = Document.objects.filter(firm_id=client.firm_id, sha256=digest).first()
+    existing = Document.objects.filter(firm_id=client.firm_id, client=client, sha256=digest).first()
     if existing is not None and hasattr(existing, "statement"):
         statement = existing.statement
-        if statement.bank_account.client_id != client.pk:
-            # The same file under a second client is a mistake, not a repeat. Saying "already
-            # imported" would hide it -- and hand back a statement from books the uploader may
-            # not be allowed to see -- so it is refused, without naming the other client.
-            raise StatementElsewhereError(
-                "This exact file is already on file for another client of the firm. Check you have "
-                "the right client open, or the right file."
-            )
         return IngestResult(
             statement=statement,
             document=existing,

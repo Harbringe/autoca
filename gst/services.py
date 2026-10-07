@@ -100,7 +100,7 @@ def _require_open(run: ReconRun) -> None:
 def _register_document(run: ReconRun, data: bytes, filename: str, kind, user) -> Document:
     """Keep the uploaded file as evidence, once per distinct content."""
     digest = Document.digest(data)
-    doc = Document.objects.filter(firm_id=run.firm_id, sha256=digest).first()
+    doc = Document.objects.filter(firm_id=run.firm_id, client_id=run.client_id, sha256=digest).first()
     if doc is not None:
         return doc
     storage = get_storage()

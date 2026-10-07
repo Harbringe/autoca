@@ -3,10 +3,12 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { AlertTriangle, ChevronDown, ChevronRight, CircleX } from 'lucide-react'
+import { AlertTriangle, ChevronRight, CircleX, X } from 'lucide-react'
 import { useState } from 'react'
 import { clientAlerts, firmAlerts } from '@/api/queries/alerts'
 import type { Alert, AlertModule } from '@/api/types'
+import { Button } from '@/components/ui/button'
+import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { sortAlerts } from './alertView'
 
@@ -78,47 +80,56 @@ export function AlertList({ alerts, showClient = true, className }: { alerts: Al
 
 /**
  * What needs attention inside one module: for one client when `clientId` is given, for the whole
- * firm otherwise. One slim line that opens to the list; open from the start only when there are one
- * or two. Says nothing at all when there is nothing, so a clean module stays quiet.
+ * firm otherwise. One "View alerts" button, right-aligned, with the count; it opens a panel listing
+ * every alert here, most serious first, each row a link to where it is fixed. Says nothing at all
+ * when there is nothing, so a clean module stays quiet.
  */
 export function ModuleAlerts({ module, clientId }: { module: AlertModule; clientId?: string }) {
   const one = useQuery({ ...clientAlerts(clientId ?? '', module), enabled: !!clientId })
   const all = useQuery({ ...firmAlerts(module), enabled: !clientId })
   const feed = clientId ? one.data : all.data
   const alerts = sortAlerts(feed?.alerts ?? [])
-  const [chosen, setChosen] = useState<boolean | undefined>(undefined)
+  const [open, setOpen] = useState(false)
   if (alerts.length === 0) return null
-  const open = chosen ?? alerts.length <= 2
-  const shown = alerts.slice(0, 8)
   const urgent = alerts.filter((a) => a.severity === 'critical').length
   return (
-    <section aria-label={`Alerts for ${MODULE_LABEL[module]}`} className="no-print overflow-hidden rounded-lg border bg-card">
-      <div className="flex items-center gap-2 px-3">
-        <button
-          type="button"
-          aria-expanded={open}
-          onClick={() => setChosen(!open)}
-          className="flex h-10 min-w-0 flex-1 items-center gap-2 text-left text-sm font-medium text-heading"
-        >
-          {open ? <ChevronDown className="size-4 shrink-0" aria-hidden /> : <ChevronRight className="size-4 shrink-0" aria-hidden />}
-          <AlertTriangle className="size-4 shrink-0 text-accent-foreground" aria-hidden />
-          <span className="truncate">
-            <span className="num">{alerts.length}</span> {alerts.length === 1 ? 'thing needs' : 'things need'} attention
-            {urgent > 0 && <span className="num font-normal text-destructive"> ({urgent} urgent)</span>}
-          </span>
-        </button>
-        <Link to="/alerts" search={(clientId ? { client: clientId, module } : { module }) as never} className="shrink-0 text-[13px] text-link underline underline-offset-2">
-          All alerts
-        </Link>
-      </div>
-      {open && (
-        <ul className="divide-y border-t">
-          {shown.map((alert, i) => (
-            <AlertRow key={`${alert.client}-${alert.kind}-${alert.to}-${i}`} alert={alert} showClient={!clientId} className="py-2" />
-          ))}
-          {alerts.length > shown.length && <li className="px-4 py-2 text-xs text-muted-foreground">And {alerts.length - shown.length} more in All alerts.</li>}
-        </ul>
-      )}
+    <section aria-label={`Alerts for ${MODULE_LABEL[module]}`} className="no-print flex justify-end">
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>
+          <Button variant="outline" size="sm" aria-haspopup="dialog" className="max-sm:h-10">
+            <AlertTriangle className={cn('size-4', urgent > 0 ? 'text-destructive' : 'text-accent-foreground')} aria-hidden />
+            View alerts <span className="num">({alerts.length})</span>
+          </Button>
+        </PopoverTrigger>
+        <PopoverContent align="end" aria-label={`Alerts for ${MODULE_LABEL[module]}`} className="w-[420px] max-w-[calc(100vw-1rem)]">
+          <div className="flex items-center justify-between gap-3 px-4 py-2.5">
+            <h2 className="text-sm font-semibold text-heading">
+              Alerts <span className="num font-normal text-muted-foreground">({alerts.length})</span>
+              {urgent > 0 && <span className="num font-normal text-destructive"> · {urgent} urgent</span>}
+            </h2>
+            <PopoverClose asChild>
+              <Button variant="ghost" size="icon" className="-mr-2 max-sm:size-11" aria-label="Close alerts">
+                <X className="size-4" aria-hidden />
+              </Button>
+            </PopoverClose>
+          </div>
+          <ul className="max-h-[min(60vh,26rem)] divide-y overflow-y-auto overscroll-contain border-t">
+            {alerts.map((alert, i) => (
+              <AlertRow key={`${alert.client}-${alert.kind}-${alert.to}-${i}`} alert={alert} showClient={!clientId} onNavigate={() => setOpen(false)} />
+            ))}
+          </ul>
+          <div className="border-t px-4 py-3 text-sm">
+            <Link
+              to="/alerts"
+              search={(clientId ? { client: clientId, module } : { module }) as never}
+              onClick={() => setOpen(false)}
+              className="font-medium text-link underline underline-offset-2"
+            >
+              All alerts
+            </Link>
+          </div>
+        </PopoverContent>
+      </Popover>
     </section>
   )
 }

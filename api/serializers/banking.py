@@ -181,7 +181,7 @@ class StatementUploadSerializer(serializers.Serializer):
             )
         if upload.size == 0:
             raise serializers.ValidationError("The file is empty.")
-        kind = files.sniff(upload.read(32), upload.name)
+        kind = files.sniff(upload.read(), upload.name)
         upload.seek(0)
         if kind is None:
             upload.seek(0)

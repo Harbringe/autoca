@@ -73,7 +73,7 @@ def sniff(data: bytes, filename: str = "") -> str | None:
     The name is used only to tell a CSV from other text, because a CSV has no signature of its own.
     """
     head = data[:16]
-    if head.startswith(b"%PDF-"):
+    if head.startswith(b"%PDF"):
         return PDF
     if head.startswith(b"PK\x03\x04"):
         try:

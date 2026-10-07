@@ -38,7 +38,7 @@ class InvoiceUploadSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 f"This file is {upload.size / (1024 * 1024):.1f} MB; the limit is {MAX_INVOICE_BYTES // (1024 * 1024)} MB."
             )
-        kind = files.sniff(upload.read(32), upload.name)
+        kind = files.sniff(upload.read(), upload.name)
         upload.seek(0)
         if kind is None:
             raise serializers.ValidationError(files.describe_refusal(upload.read(16), upload.name))

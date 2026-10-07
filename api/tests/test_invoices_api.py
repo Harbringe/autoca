@@ -100,8 +100,8 @@ def test_a_scan_is_kept_and_says_why_it_was_not_read(api, client_record):
     assert "could not be read" in open_items(api, client_record, "invoice_unbooked")["items"][0]["summary"]
 
 
-def test_only_pdfs_are_taken(api, client_record):
-    file = io.BytesIO(b"GIF89a not a pdf")
+def test_only_readable_kinds_are_taken(api, client_record):
+    file = io.BytesIO(b"MZ an executable, not a document")
     file.name = "photo.pdf"
 
     response = api.post(f"{base(client_record)}/invoices/upload/", {"file": file, "kind": "PURCHASE"}, format="multipart")

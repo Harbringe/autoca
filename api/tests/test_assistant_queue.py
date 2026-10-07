@@ -259,9 +259,12 @@ def test_the_marker_is_explicit_not_a_path_pattern():
 # ---------------------------------------------------------------------------
 
 
-def test_the_worker_reads_waiting_rows_without_any_request(client_record, model):
+def test_the_worker_reads_waiting_rows_without_any_request(client_record, model, monkeypatch):
+    from classify.management.commands import run_assistant
     from classify.management.commands.run_assistant import tick
 
+    # The platform view that lists firms exists only where the superadmin SQL has been applied.
+    monkeypatch.setattr(run_assistant, "firm_ids", lambda: [client_record.firm_id])
     _queued_books(client_record)
 
     read = tick()
@@ -271,8 +274,11 @@ def test_the_worker_reads_waiting_rows_without_any_request(client_record, model)
         assert TransactionClassification.objects.filter(model_attempts__gt=0).exists()
 
 
-def test_the_worker_has_nothing_to_do_when_nothing_waits(client_record, model):
+def test_the_worker_has_nothing_to_do_when_nothing_waits(client_record, model, monkeypatch):
+    from classify.management.commands import run_assistant
     from classify.management.commands.run_assistant import tick
+
+    monkeypatch.setattr(run_assistant, "firm_ids", lambda: [client_record.firm_id])
 
     assert tick() == 0 and model.calls == 0
 

@@ -4729,6 +4729,40 @@ paths:
               schema:
                 $ref: '#/components/schemas/OwnerTransferred'
           description: ''
+  /api/v1/firm/people/:
+    get:
+      operationId: firm_people_retrieve
+      description: 'One row per active member the caller may see: a firm administrator
+        sees everyone, a Senior CA themselves and their team; Staff and Read-only
+        get 403. Each count says what it counts in its own description. These are
+        counts of work, not a rating of people. `open_items`, `overdue` and `waiting_on_others`
+        are as things stand now; `finished_in_period` follows `from` and `to` (default:
+        this month so far). At most 366 days.'
+      summary: 'What each person has on: counts of work, alphabetical, never a rank'
+      parameters:
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date
+        description: First day, YYYY-MM-DD.
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date
+        description: Last day, YYYY-MM-DD.
+      tags:
+      - clients
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PeopleWork'
+          description: ''
   /api/v1/firm/portfolio/:
     get:
       operationId: firm_portfolio_retrieve
@@ -4750,6 +4784,50 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Portfolio'
+          description: ''
+  /api/v1/firm/work-flow/:
+    get:
+      operationId: firm_work_flow_retrieve
+      description: 'Per week (Monday dates): bank statement rows received (by when
+        their statement was uploaded) and journal entries finished (posted or approved,
+        corrections not counted), plus the totals for the period and for the period
+        of equal length immediately before it. Covers the clients the caller may see,
+        enforced by the server: a firm administrator, or anyone who sees every client,
+        gets the firm (`scope: firm`); everyone else gets their own clients (`scope:
+        team`) whatever `scope` they ask for. Default period: the last 12 weeks. At
+        most 366 days.'
+      summary: Work received against work finished, week by week
+      parameters:
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date
+        description: First day, YYYY-MM-DD.
+      - in: query
+        name: scope
+        schema:
+          type: string
+          enum:
+          - firm
+          - team
+        description: Accepted for clarity; the server decides the scope from the caller.
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date
+        description: Last day, YYYY-MM-DD.
+      tags:
+      - clients
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WorkFlow'
           description: ''
   /api/v1/jobs/:
     get:
@@ -5181,6 +5259,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Me'
+          description: ''
+  /api/v1/me/work/:
+    get:
+      operationId: me_work_retrieve
+      description: 'Own data only. The clients the member is assigned to or leads,
+        what is open and overdue on them right now, what the member finished each
+        day of the period (default: this month so far; at most 366 days), and up to
+        8 next tasks, overdue first, built from the same alerts the bell shows.'
+      summary: The signed-in member's own work
+      parameters:
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date
+        description: First day, YYYY-MM-DD.
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date
+        description: Last day, YYYY-MM-DD.
+      tags:
+      - clients
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MyWork'
           description: ''
   /api/v1/team/clients/:
     get:
@@ -5633,6 +5743,29 @@ components:
       description: |-
         * `DR` - DR
         * `CR` - CR
+    AgingBucket:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        bucket:
+          $ref: '#/components/schemas/BucketEnum'
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        amount_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - amount_display
+      - amount_paise
+      - bucket
     Alert:
       type: object
       description: Adds a ``*_display`` string beside every ``*_paise`` field named
@@ -7275,6 +7408,18 @@ components:
       - sealable_dates
       - signed_off_through
       - waiting
+    BucketEnum:
+      enum:
+      - 0-30
+      - 31-60
+      - 61-90
+      - Over 90
+      type: string
+      description: |-
+        * `0-30` - 0-30
+        * `31-60` - 31-60
+        * `61-90` - 61-90
+        * `Over 90` - Over 90
     ByClient:
       type: object
       description: Counts of work in the period, one per metric in `metrics`. Keys
@@ -7819,6 +7964,22 @@ components:
           format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
+        prior_income_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Income of the previous financial year. Null when nothing was
+            posted to income or expense in it.
+        prior_expense_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Expense of the previous financial year. Null when nothing was
+            posted to income or expense in it.
         trend:
           type: array
           items:
@@ -7850,6 +8011,10 @@ components:
           $ref: '#/components/schemas/SnapshotBooks'
         attention:
           $ref: '#/components/schemas/SnapshotAttention'
+        reports_ready:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReportReady'
         income_display:
           type: string
           nullable: true
@@ -7861,6 +8026,16 @@ components:
           readOnly: true
           description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
         profit_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        prior_income_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        prior_expense_display:
           type: string
           nullable: true
           readOnly: true
@@ -7888,8 +8063,13 @@ components:
       - income_display
       - income_paise
       - owed
+      - prior_expense_display
+      - prior_expense_paise
+      - prior_income_display
+      - prior_income_paise
       - profit_display
       - profit_paise
+      - reports_ready
       - tds_payable_display
       - tds_payable_paise
       - top_expenses
@@ -8040,6 +8220,17 @@ components:
           description: Parties made or found, one per name ticked.
       required:
       - created
+    DailyFinished:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        finished:
+          type: integer
+      required:
+      - date
+      - finished
     Deadline:
       type: object
       properties:
@@ -8616,6 +8807,16 @@ components:
       required:
       - amount_paise
       - ledger
+    HealthEnum:
+      enum:
+      - on_track
+      - at_risk
+      - overdue
+      type: string
+      description: |-
+        * `on_track` - on_track
+        * `at_risk` - at_risk
+        * `overdue` - overdue
     InviteCreated:
       type: object
       properties:
@@ -9097,6 +9298,24 @@ components:
       - party_name
       - rcm
       - tds_section
+    KeyEnum:
+      enum:
+      - pnl
+      - balance_sheet
+      - trial_balance
+      - receivables
+      - payables
+      - tds
+      - gst
+      type: string
+      description: |-
+        * `pnl` - pnl
+        * `balance_sheet` - balance_sheet
+        * `trial_balance` - trial_balance
+        * `receivables` - receivables
+        * `payables` - payables
+        * `tds` - tds
+        * `gst` - gst
     Kind1acEnum:
       enum:
       - PURCHASE
@@ -10063,6 +10282,68 @@ components:
         * `reports` - reports
         * `gst` - gst
         * `documents` - documents
+    MyClient:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        open_items:
+          type: integer
+      required:
+      - id
+      - name
+      - open_items
+    MyWork:
+      type: object
+      properties:
+        period:
+          $ref: '#/components/schemas/MetricsPeriod'
+        assigned_clients:
+          type: integer
+          description: Clients the member is assigned to or leads.
+        open_items:
+          type: integer
+          description: Rows to place + rows to post + assistant entries unchecked,
+            on their clients. Right now.
+        overdue:
+          type: integer
+          description: Overdue alerts on their clients (TDS past due, a sealing date
+            passed). Right now.
+        waiting:
+          type: integer
+          description: Statement months missing plus books awaiting a senior's decision,
+            on their clients. Right now.
+        finished_in_period:
+          type: integer
+          description: Entries this member approved or posted in the period.
+        daily:
+          type: array
+          items:
+            $ref: '#/components/schemas/DailyFinished'
+          description: One row for every day of the period.
+        next_tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/NextTask'
+          description: Up to 8, overdue first, then most serious, then earliest due.
+        clients:
+          type: array
+          items:
+            $ref: '#/components/schemas/MyClient'
+          description: Their clients, alphabetical.
+      required:
+      - assigned_clients
+      - clients
+      - daily
+      - finished_in_period
+      - next_tasks
+      - open_items
+      - overdue
+      - period
+      - waiting
     NextBatch:
       type: object
       description: What one call to the assistant did, and what to do next.
@@ -10130,6 +10411,40 @@ components:
           maximum: 15
           minimum: 1
           description: How many waiting rows to read. Defaults to 10, at most 15.
+    NextTask:
+      type: object
+      properties:
+        client:
+          type: string
+          format: uuid
+        client_name:
+          type: string
+        title:
+          type: string
+          description: 'A few words: what is to be done.'
+        due:
+          type: string
+          format: date
+          nullable: true
+          description: The date it was or falls due, where there is one.
+        to:
+          type: string
+          description: The screen where this is done, as an app path.
+        search:
+          type: object
+          additionalProperties:
+            type: string
+          description: The query that screen needs.
+        severity:
+          $ref: '#/components/schemas/SeverityEnum'
+      required:
+      - client
+      - client_name
+      - due
+      - search
+      - severity
+      - title
+      - to
     NoteRequest:
       type: object
       properties:
@@ -11781,6 +12096,24 @@ components:
       - lines
       - month
       - year
+    PeopleWork:
+      type: object
+      properties:
+        period:
+          $ref: '#/components/schemas/MetricsPeriod'
+        detailed:
+          type: boolean
+          description: 'False when more than 60 clients have someone on them: the
+            per-client detail behind `overdue` is not worked out then, so it shows
+            0.'
+        people:
+          type: array
+          items:
+            $ref: '#/components/schemas/PersonWork'
+      required:
+      - detailed
+      - people
+      - period
     Period:
       type: object
       properties:
@@ -11821,6 +12154,45 @@ components:
       - name
       - role
       - role_display
+    PersonWork:
+      type: object
+      properties:
+        member_id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        role:
+          $ref: '#/components/schemas/Role170Enum'
+        assigned_clients:
+          type: integer
+          description: Clients the person is assigned to or leads, among those the
+            caller may see.
+        open_items:
+          type: integer
+          description: Rows still to place + rows to post + assistant entries nobody
+            has checked, on their clients. Right now.
+        finished_in_period:
+          type: integer
+          description: Entries the person approved or posted in the period, corrections
+            not counted. Assistant entries are no one's.
+        overdue:
+          type: integer
+          description: 'Overdue alerts on their clients: TDS past its deposit date,
+            or a sealing date passed unsealed. Right now.'
+        waiting_on_others:
+          type: integer
+          description: 'On their clients: statement months missing (waiting on the
+            client) plus books sent to a senior and not yet decided. Right now.'
+      required:
+      - assigned_clients
+      - finished_in_period
+      - member_id
+      - name
+      - open_items
+      - overdue
+      - role
+      - waiting_on_others
     PipelineTierEnum:
       enum:
       - UNKNOWN
@@ -11876,6 +12248,8 @@ components:
       - rule_learned
     Portfolio:
       type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
       properties:
         totals:
           $ref: '#/components/schemas/OverviewTotals'
@@ -11895,13 +12269,65 @@ components:
             $ref: '#/components/schemas/Deadline'
         detailed:
           type: boolean
+        receivables_total_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Receivables summed over the clients. Left out without `journal.view`
+            or beyond 60 clients.
+        payables_total_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Payables summed over the clients. Left out without `journal.view`
+            or beyond 60 clients.
+        aging:
+          allOf:
+          - $ref: '#/components/schemas/PortfolioAging'
+          description: 'Bills still owing, summed over the clients by age from the
+            bill date. Bills only: money held on account is in the totals, not in
+            the buckets. Left out like the totals.'
+        top_receivables:
+          type: array
+          items:
+            $ref: '#/components/schemas/TopReceivable'
+          description: Up to five clients owed the most, largest first. Left out like
+            the totals.
+        receivables_total_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+        payables_total_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
       required:
       - attention
       - by_stage
       - clients
       - deadlines
       - detailed
+      - payables_total_display
+      - receivables_total_display
       - totals
+    PortfolioAging:
+      type: object
+      properties:
+        receivables:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgingBucket'
+        payables:
+          type: array
+          items:
+            $ref: '#/components/schemas/AgingBucket'
+      required:
+      - payables
+      - receivables
     PortfolioClient:
       type: object
       description: Adds a ``*_display`` string beside every ``*_paise`` field named
@@ -11996,6 +12422,24 @@ components:
           format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
+        health:
+          allOf:
+          - $ref: '#/components/schemas/HealthEnum'
+          description: |-
+            `overdue`: TDS is past its deposit date (needs `journal.view`, otherwise never reported). `at_risk`: a statement month is missing, a control is failing, or a sealing date has passed unsealed. Otherwise `on_track`. Beyond 60 clients only the missing months are known.
+
+            * `on_track` - on_track
+            * `at_risk` - at_risk
+            * `overdue` - overdue
+        ready_to_seal:
+          type: boolean
+          description: Approved through the latest sealing date that has passed, with
+            nothing changed since the approval.
+        oldest_pending_approval_days:
+          type: integer
+          nullable: true
+          description: Days since the open request for the senior's decision was made.
+            Null when none is open.
         tds_overdue_display:
           type: string
           nullable: true
@@ -12015,6 +12459,7 @@ components:
       - ai_unchecked
       - assistant_waiting
       - detail
+      - health
       - id
       - last_statement_end
       - lead
@@ -12510,6 +12955,26 @@ components:
       - sgst_paise
       - supplier_name
       - taxable_paise
+    ReportReady:
+      type: object
+      properties:
+        key:
+          $ref: '#/components/schemas/KeyEnum'
+        label:
+          type: string
+        ready:
+          type: boolean
+          description: The client has posted entries, no month of statements is missing,
+            and no control this report needs is failing.
+        reason:
+          type: string
+          nullable: true
+          description: In plain words, why it is not ready. Null when it is.
+      required:
+      - key
+      - label
+      - ready
+      - reason
     ReportRegistration:
       type: object
       properties:
@@ -12992,6 +13457,14 @@ components:
       - depreciation_paise
       - opening_display
       - opening_paise
+    ScopeEnum:
+      enum:
+      - firm
+      - team
+      type: string
+      description: |-
+        * `firm` - firm
+        * `team` - team
     SectionEnum:
       enum:
       - B2B
@@ -14364,6 +14837,33 @@ components:
       - amount_display
       - amount_paise
       - name
+    TopReceivable:
+      type: object
+      description: Adds a ``*_display`` string beside every ``*_paise`` field named
+        in ``money``.
+      properties:
+        client:
+          type: string
+          format: uuid
+        client_name:
+          type: string
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        amount_display:
+          type: string
+          nullable: true
+          readOnly: true
+          description: The amount with Indian digit grouping, e.g. ₹6,03,490.57.
+      required:
+      - amount_display
+      - amount_paise
+      - client
+      - client_name
     TreatmentRequest:
       type: object
       description: |-
@@ -14584,6 +15084,70 @@ components:
           maxLength: 200
       required:
       - item_key
+    WorkFlow:
+      type: object
+      properties:
+        scope:
+          allOf:
+          - $ref: '#/components/schemas/ScopeEnum'
+          description: |-
+            What the figures cover: `firm` for a caller who sees every client, otherwise `team` (the clients they may see).
+
+            * `firm` - firm
+            * `team` - team
+        period:
+          $ref: '#/components/schemas/MetricsPeriod'
+        weekly:
+          type: array
+          items:
+            $ref: '#/components/schemas/WorkFlowWeek'
+        totals:
+          $ref: '#/components/schemas/WorkFlowTotals'
+      required:
+      - period
+      - scope
+      - totals
+      - weekly
+    WorkFlowTotals:
+      type: object
+      properties:
+        received:
+          type: integer
+          description: Rows received in the period.
+        finished:
+          type: integer
+          description: Entries finished in the period.
+        prev_received:
+          type: integer
+          description: Rows received in the period of equal length immediately before.
+        prev_finished:
+          type: integer
+          description: Entries finished in the period of equal length immediately
+            before.
+      required:
+      - finished
+      - prev_finished
+      - prev_received
+      - received
+    WorkFlowWeek:
+      type: object
+      properties:
+        week_start:
+          type: string
+          format: date
+          description: The Monday of the week.
+        received:
+          type: integer
+          description: Bank statement rows in statements uploaded in this week (inside
+            the period).
+        finished:
+          type: integer
+          description: Journal entries posted or approved in this week (inside the
+            period), corrections not counted.
+      required:
+      - finished
+      - received
+      - week_start
     WorkTotals:
       type: object
       description: Counts of work in the period, one per metric in `metrics`. Keys

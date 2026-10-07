@@ -227,12 +227,12 @@ function DrawerBody({ clientId, onClose, onShortcuts }: { clientId?: string; onC
                     activeOptions={{ exact: true, includeSearch: false }}
                     aria-current={isActive ? 'page' : undefined}
                     className={cn(
-                      'relative flex h-11 items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground hover:bg-white/5 hover:text-white [&_svg]:size-[18px] [&_svg]:shrink-0',
+                      'relative flex h-11 items-center gap-2.5 rounded-md px-3 text-sm font-medium text-sidebar-foreground hover:bg-white/5 hover:text-white [&_svg]:size-4 [&_svg]:shrink-0',
                       isActive && 'bg-sidebar-active text-white before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-full before:bg-sidebar-bar',
                     )}
                   >
                     {RAIL_ICONS[item.id]}
-                    {item.long}
+                    <span className="truncate">{item.long}</span>
                     {count > 0 && (
                       <span className="num ml-auto rounded-sm bg-sidebar-chip px-1.5 text-xs font-medium text-sidebar-chip-foreground">
                         {count}
@@ -246,7 +246,7 @@ function DrawerBody({ clientId, onClose, onShortcuts }: { clientId?: string; onC
           </ul>
         </nav>
         {clientId && (
-          <section aria-label="This client" className="mt-3 border-t border-white/10 bg-sidebar-panel pb-2 pt-1">
+          <section aria-label="This client" className="mt-3 border-t border-white/10 pb-2 pt-1">
             <PanelHeader clientId={clientId} />
             <ClientNavList clientId={clientId} touch onNavigate={onClose} />
           </section>
@@ -303,11 +303,11 @@ export function Shell() {
 
       {desktop && (
         <>
-          <aside aria-label="Firm" className="no-print sticky top-0 h-svh w-[72px] shrink-0">
+          <aside aria-label="Firm" className="no-print sticky top-0 h-svh w-20 shrink-0">
             <Rail onShortcuts={() => setShortcutsOpen(true)} />
           </aside>
           {clientId && (
-            <aside aria-label="Client" className="no-print sticky top-0 h-svh w-[216px] shrink-0">
+            <aside aria-label="Client" className="no-print sticky top-0 h-svh w-[232px] shrink-0">
               <ClientPanel key={clientId} clientId={clientId} />
             </aside>
           )}

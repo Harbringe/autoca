@@ -4,7 +4,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { Link, useRouterState } from '@tanstack/react-router'
-import { ChevronsUpDown, Star } from 'lucide-react'
+import { Building2, ChevronsUpDown, Star } from 'lucide-react'
 import { reviewSummary } from '@/api/queries/clients'
 import { activeClientItem, clientNavFor, clientScreenPath } from '@/lib/clientNav'
 import { toggleClientPin, useClientMemory } from '@/lib/recentClients'
@@ -13,7 +13,7 @@ import { useSession } from '@/session/session'
 import { useClientHeader } from './clientHeader'
 import { ClientSwitcher } from './ClientSwitcher'
 
-const chip = 'num ml-auto rounded-sm bg-sidebar-chip px-1.5 text-xs font-medium text-sidebar-chip-foreground'
+const chip = 'num ml-auto shrink-0 rounded-sm bg-sidebar-chip px-1.5 text-xs font-medium text-sidebar-chip-foreground'
 
 /** This client's count of rows waiting, for the Review item. Zero when the person may not see transactions. */
 export function useReviewCount(clientId: string): number | undefined {
@@ -40,11 +40,12 @@ export function ClientNavList({ clientId, touch = false, part = 'all', onNavigat
           activeOptions={{ exact: true, includeSearch: false }}
           aria-current={isActive ? 'page' : undefined}
           className={cn(
-            'relative flex items-center rounded-md px-3 text-sm font-medium text-sidebar-foreground hover:bg-white/5 hover:text-white',
+            'relative flex items-center gap-2.5 rounded-md px-3 text-sm font-medium text-sidebar-foreground hover:bg-white/5 hover:text-white',
             touch ? 'h-11' : 'h-8',
             isActive && 'bg-sidebar-active text-white before:absolute before:inset-y-1.5 before:left-0 before:w-[3px] before:rounded-full before:bg-sidebar-bar',
           )}
         >
+          <item.icon className="size-4 shrink-0" strokeWidth={1.75} aria-hidden />
           <span className="truncate">{item.label}</span>
           {item.screen === 'review' && reviewCount ? (
             <span className={chip}>
@@ -70,7 +71,7 @@ export function ClientNavList({ clientId, touch = false, part = 'all', onNavigat
       {blocks.map((block, i) => (
         <div key={block.label ?? i} role={block.label ? 'group' : undefined} aria-label={block.label}>
           {block.label && (
-            <div aria-hidden className={cn('px-3 pb-0.5 text-[11px] font-medium uppercase tracking-[0.06em] text-sidebar-muted', i === 0 ? 'pt-0.5' : 'pt-2')}>
+            <div aria-hidden className={cn('px-3 pb-0.5 text-xs font-medium text-sidebar-muted', i === 0 ? 'pt-0' : 'pt-2')}>
               {block.label}
             </div>
           )}
@@ -88,18 +89,23 @@ export function PanelHeader({ clientId }: { clientId: string }) {
   const { pinned } = useClientMemory()
   const isPinned = pinned.includes(clientId)
   return (
-    <div className="relative px-2 pb-1.5 pt-2.5">
+    <div className="relative px-2 pb-2 pt-3">
       <ClientSwitcher currentId={clientId}>
         <button
           type="button"
           aria-label={`${name ?? 'Client'}${line ? `, ${line}` : ''}. Switch client`}
-          className="block w-full rounded-md px-2 py-1 text-left hover:bg-white/5"
+          className="relative flex w-full items-start gap-2.5 rounded-md bg-white/5 py-2.5 pl-2.5 pr-10 text-left hover:bg-white/10"
         >
-          <span className="block break-words pr-7 text-[15px] font-semibold leading-5 text-white">{name ?? '…'}</span>
-          <span className="mt-1 flex items-center gap-1 text-xs text-sidebar-muted">
-            <span className="min-w-0 flex-1">{line}</span>
-            <ChevronsUpDown className="size-3.5 shrink-0" aria-hidden />
+          <span className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-md bg-white/10 text-sidebar-foreground" aria-hidden>
+            <Building2 className="size-4" strokeWidth={1.75} />
           </span>
+          <span className="min-w-0 flex-1">
+            <span className="line-clamp-3 break-words text-sm font-semibold leading-5 text-white">{name ?? '…'}</span>
+            <span className="mt-0.5 flex items-center gap-1 text-xs text-sidebar-muted">
+              <span className="min-w-0 flex-1">{line}</span>
+            </span>
+          </span>
+          <ChevronsUpDown className="pointer-events-none absolute bottom-3.5 right-5 size-3.5 text-sidebar-muted" strokeWidth={1.75} aria-hidden />
         </button>
       </ClientSwitcher>
       <button
@@ -108,9 +114,9 @@ export function PanelHeader({ clientId }: { clientId: string }) {
         aria-label={isPinned ? 'Unpin this client' : 'Pin this client'}
         title={isPinned ? 'Unpin this client' : 'Pin this client to the switcher'}
         onClick={() => toggleClientPin(clientId)}
-        className="absolute right-2.5 top-3 grid size-7 place-items-center rounded-md text-sidebar-muted hover:bg-white/10 hover:text-white"
+        className="absolute right-3.5 top-[1.125rem] grid size-7 place-items-center rounded-md text-sidebar-muted hover:bg-white/10 hover:text-white"
       >
-        <Star className={cn('size-4', isPinned && 'fill-current text-sidebar-chip-foreground')} aria-hidden />
+        <Star className={cn('size-4', isPinned && 'fill-current text-sidebar-chip-foreground')} strokeWidth={1.75} aria-hidden />
       </button>
     </div>
   )
@@ -118,13 +124,13 @@ export function PanelHeader({ clientId }: { clientId: string }) {
 
 export function ClientPanel({ clientId }: { clientId: string }) {
   return (
-    <div className="flex h-full w-[216px] flex-col border-r border-white/5 bg-sidebar-panel text-sidebar-foreground">
+    <div className="flex h-full w-[232px] flex-col border-r border-white/10 bg-sidebar text-sidebar-foreground">
       <div className="h-[3px] shrink-0 bg-sidebar-bar" aria-hidden />
       <PanelHeader clientId={clientId} />
-      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain pb-3 pt-1">
         <ClientNavList clientId={clientId} part="main" />
       </div>
-      <div className="shrink-0 border-t border-white/10 py-1.5">
+      <div className="shrink-0 border-t border-white/10 py-2">
         <ClientNavList clientId={clientId} part="bottom" />
       </div>
     </div>

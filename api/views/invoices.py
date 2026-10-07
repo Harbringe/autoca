@@ -15,6 +15,7 @@ from api.serializers.invoices import (
     AttachSerializer,
     InvoiceReadingSerializer,
     InvoiceUploadSerializer,
+    SayKindSerializer,
     reading_payload,
 )
 from api.throttles import enforce
@@ -52,7 +53,7 @@ class InvoiceReadingViewSet(
             invoice_intake.fields_of(reading),
             invoice_intake.suggested_party(reading),
             invoice_intake.matching_bill(reading),
-            invoice_intake.payment_candidates(reading) if reading.status == "OPEN" else (),
+            invoice_intake.payment_candidates(reading) if reading.status == "OPEN" or reading.auto_booked else (),
         )
 
     def list(self, request, *args, **kwargs):
@@ -63,12 +64,14 @@ class InvoiceReadingViewSet(
         return Response(InvoiceReadingSerializer(self._payload(self.get_object())).data)
 
     @extend_schema(
-        summary="Upload an invoice and read it",
+        summary="Upload an invoice, read it, and book it when certain",
         description=(
-            "Stores the PDF with the client's other documents and reads its text layer into a draft, with the arithmetic "
-            "that proves or faults it. Nothing is booked. A scan or photo has no text layer and is stored with a reason "
-            "instead of a reading (`unreadable_reason`). The same file again returns its reading (`200`). Needs "
-            "`document.upload`."
+            "Stores the PDF with the client's other documents and reads it (its text layer, or for a scan the vision "
+            "model when switched on) with the arithmetic that proves or faults it. Whether it is a purchase or a sale is "
+            "told from the client's own GSTIN unless `kind` is given. When the kind, the proof and the party are all "
+            "certain the bill is booked at once (`auto_booked`) and matched to its bank payment if exactly one fits; "
+            "otherwise nothing is booked and `attention` says why. The same file again returns its reading (`200`). "
+            "Needs `document.upload`."
         ),
         request=InvoiceUploadSerializer,
         responses={201: InvoiceReadingSerializer, 200: InvoiceReadingSerializer},
@@ -86,6 +89,10 @@ class InvoiceReadingViewSet(
             kind=payload.validated_data["kind"],
             uploaded_by=request.user,
         )
+        if is_new and not payload.validated_data["kind"]:
+            # Left to the system: certain, then it is booked now; if not, it waits with the reason, and an alert.
+            # (A person who names the kind is doing the booking themselves and gets the draft, as before.)
+            reading = invoice_intake.try_auto_book(reading, membership=request.membership)
         reading = self.get_queryset().get(pk=reading.pk)
         return Response(
             InvoiceReadingSerializer(self._payload(reading)).data,
@@ -104,6 +111,23 @@ class InvoiceReadingViewSet(
         payload.is_valid(raise_exception=True)
         bill = get_object_or_404(Bill, pk=payload.validated_data["bill"], firm_id=request.firm.pk, client=self.client)
         invoice_intake.attach_to_bill(reading, bill, membership=request.membership)
+        return Response(InvoiceReadingSerializer(self._payload(self.get_queryset().get(pk=reading.pk))).data)
+
+    @extend_schema(
+        summary="Say whether this invoice is a purchase or a sale",
+        description=(
+            "For a file the system could not tell (the client's own GSTIN is not on it, or not on record). Records the "
+            "answer and tries to book it as usual; if it still cannot, `attention` says why. Needs `journal.approve`."
+        ),
+        request=SayKindSerializer,
+        responses={200: InvoiceReadingSerializer},
+    )
+    @action(detail=True, methods=["post"], url_path="kind", permission_classes=[CanApprove])
+    def kind(self, request, client_id=None, pk=None):
+        reading = self.get_object()
+        payload = SayKindSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        invoice_intake.say_kind(reading, payload.validated_data["kind"], membership=request.membership)
         return Response(InvoiceReadingSerializer(self._payload(self.get_queryset().get(pk=reading.pk))).data)
 
     @extend_schema(summary="Set this invoice aside", request=None, responses={200: InvoiceReadingSerializer})

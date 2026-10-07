@@ -39,7 +39,12 @@ class Check:
 @dataclass
 class Reading:
     supplier_name: str = ""
+    #: Who is billed; read from a scan, where the page says which is which. Blank from a text read.
+    buyer_name: str = ""
     gstins: list[str] = field(default_factory=list)
+    #: Who issued it and who is billed, when the page says which GSTIN is which; blank when only one is printed.
+    supplier_gstin: str = ""
+    buyer_gstin: str = ""
     invoice_no: str = ""
     invoice_date: datetime.date | None = None
     taxable_paise: int | None = None
@@ -92,11 +97,51 @@ def read_invoice(text: str, *, today: datetime.date | None = None) -> Reading:
     reading = Reading()
     reading.supplier_name = _supplier_name(lines)
     reading.gstins = _gstins(text)
+    if len(reading.gstins) >= 2:
+        # Suppliers print their own GSTIN first and the buyer's after it.
+        reading.supplier_gstin, reading.buyer_gstin = reading.gstins[0], reading.gstins[1]
     reading.invoice_no = _invoice_no(text)
     reading.invoice_date = _invoice_date(lines)
 
     candidates = {name: _amounts_on(lines, pattern, name) for name, pattern in _LABELS.items()}
     _choose_amounts(reading, candidates)
+    reading.checks = _checks(reading, today)
+    return reading
+
+
+def reading_from_fields(fields: dict, *, today: datetime.date | None = None) -> Reading:
+    """A draft from fields a vision model copied off a scan, put through the very same proof as a text read.
+
+    Nothing the model says is trusted: every amount goes through ``to_paise`` as printed, every GSTIN through its check
+    character, and the arithmetic must tie. Whatever is missing or malformed is left empty, and the checks name it.
+    """
+    today = today or datetime.date.today()
+
+    def money(key: str) -> int | None:
+        raw = re.sub(r"(?i)₹|\brs\.?|\binr\b", "", str(fields.get(key) or "")).strip()
+        return _paise(raw) if raw else None
+
+    reading = Reading(
+        supplier_name=" ".join(str(fields.get("supplier_name") or "").split())[:120],
+        buyer_name=" ".join(str(fields.get("buyer_name") or "").split())[:120],
+    )
+
+    def valid(key: str) -> str:
+        candidate = re.sub(r"\s+", "", str(fields.get(key) or "")).upper()
+        return candidate if is_valid_gstin(candidate) else ""
+
+    supplier, buyer = valid("supplier_gstin"), valid("buyer_gstin")
+    reading.gstins = [g for g in dict.fromkeys((supplier, buyer)) if g]
+    reading.supplier_gstin, reading.buyer_gstin = supplier, buyer
+    reading.invoice_no = str(fields.get("invoice_no") or "").strip().strip(".-/_")[:64]
+    reading.invoice_date = _parse_date(str(fields.get("invoice_date") or ""))
+    reading.taxable_paise = money("taxable")
+    reading.total_paise = money("total")
+    reading.cgst_paise = money("cgst") or 0
+    reading.sgst_paise = money("sgst") or 0
+    reading.igst_paise = money("igst") or 0
+    reading.cess_paise = money("cess") or 0
+    reading.round_off_paise = money("round_off") or 0
     reading.checks = _checks(reading, today)
     return reading
 

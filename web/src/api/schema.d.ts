@@ -541,6 +541,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/bills/{id}/revise/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Change a booked bill
+         * @description Replaces the bill with the corrected one, in one step: the old bill and its voucher are removed (the change log keeps what it was) and the new one is booked with the same invoice file. Any payment that settled the old bill is put against the new one when it still fits, otherwise left on the party's account. Same rules as booking: refused inside signed-off books, and nothing changes if the new one is refused.
+         */
+        post: operations["clients_bills_revise_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/books/": {
         parameters: {
             query?: never;
@@ -1126,6 +1146,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/invoices/{id}/kind/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Say whether this invoice is a purchase or a sale
+         * @description For a file the system could not tell (the client's own GSTIN is not on it, or not on record). Records the answer and tries to book it as usual; if it still cannot, `attention` says why. Needs `journal.approve`.
+         */
+        post: operations["clients_invoices_kind_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/invoices/upload/": {
         parameters: {
             query?: never;
@@ -1136,8 +1176,8 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Upload an invoice and read it
-         * @description Stores the PDF with the client's other documents and reads its text layer into a draft, with the arithmetic that proves or faults it. Nothing is booked. A scan or photo has no text layer and is stored with a reason instead of a reading (`unreadable_reason`). The same file again returns its reading (`200`). Needs `document.upload`.
+         * Upload an invoice, read it, and book it when certain
+         * @description Stores the PDF with the client's other documents and reads it (its text layer, or for a scan the vision model when switched on) with the arithmetic that proves or faults it. Whether it is a purchase or a sale is told from the client's own GSTIN unless `kind` is given. When the kind, the proof and the party are all certain the bill is booked at once (`auto_booked`) and matched to its bank payment if exactly one fits; otherwise nothing is booked and `attention` says why. The same file again returns its reading (`200`). Needs `document.upload`.
          */
         post: operations["clients_invoices_upload_create"];
         delete?: never;
@@ -4195,15 +4235,13 @@ export interface components {
             matching_bill: components["schemas"]["BillHint"] | null;
             /** Format: uuid */
             bill: string | null;
+            /** @description The system booked the bill from this file. A person can change it like any other bill. */
+            auto_booked: boolean;
+            /** @description Why the system did not book this file itself, in words. Blank when it did or nothing is wrong. */
+            attention: string;
             /** @description Bank rows that look like the payment for this invoice: same party, same total. A suggestion only. */
             payments: components["schemas"]["PaymentHint"][];
         };
-        /**
-         * @description * `PURCHASE` - PURCHASE
-         *     * `SALES` - SALES
-         * @enum {string}
-         */
-        InvoiceUploadKindEnum: "PURCHASE" | "SALES";
         InvoiceUploadRequest: {
             /**
              * Format: binary
@@ -4211,12 +4249,13 @@ export interface components {
              */
             file: string;
             /**
-             * @description `PURCHASE`: a supplier's invoice to the client. `SALES`: the client's invoice to a customer.
+             * @description Leave blank to have it told from the client's own GSTIN. `PURCHASE`: a supplier's invoice to the client. `SALES`: the client's invoice to a customer.
              *
              *     * `PURCHASE` - PURCHASE
              *     * `SALES` - SALES
+             * @default
              */
-            kind: components["schemas"]["InvoiceUploadKindEnum"];
+            kind: components["schemas"]["KindA27Enum"] | components["schemas"]["BlankEnum"];
         };
         /**
          * @description * `eligible` - eligible
@@ -4359,6 +4398,12 @@ export interface components {
          * @enum {string}
          */
         Kind673Enum: "BANK" | "LOAN" | "CARD";
+        /**
+         * @description * `PURCHASE` - PURCHASE
+         *     * `SALES` - SALES
+         * @enum {string}
+         */
+        KindA27Enum: "PURCHASE" | "SALES";
         /**
          * @description * `CHART_OPENING` - Chart of accounts and opening balances
          * @enum {string}
@@ -6361,6 +6406,9 @@ export interface components {
              */
             other_deduction_paise: number;
         };
+        SayKindRequest: {
+            kind: components["schemas"]["KindA27Enum"];
+        };
         Schedule: {
             /** @description The starting year: 2025 is FY 2025-26. */
             financial_year: number;
@@ -8100,6 +8148,34 @@ export interface operations {
             };
         };
     };
+    clients_bills_revise_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BillCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["BillCreateRequest"];
+                "multipart/form-data": components["schemas"]["BillCreateRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BillDetail"];
+                };
+            };
+        };
+    };
     clients_books_retrieve: {
         parameters: {
             query?: never;
@@ -9175,6 +9251,34 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceReading"];
+                };
+            };
+        };
+    };
+    clients_invoices_kind_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SayKindRequest"];
+                "multipart/form-data": components["schemas"]["SayKindRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["SayKindRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {

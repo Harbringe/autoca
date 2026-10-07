@@ -176,8 +176,11 @@ def invoices_waiting(client):
     ).select_related("document"):
         name = reading.document.original_filename or "An invoice"
         if reading.unreadable_reason:
-            summary = f"{name} is a scan or photo and cannot be read yet. Key it in by hand; the file stays attached."
+            summary = f"{name} could not be read: {reading.unreadable_reason}"
             amount = None
+        elif reading.attention:
+            summary = f"{name}: {reading.attention}"
+            amount = invoice_intake.fields_of(reading).get("total_paise")
         else:
             fields = invoice_intake.fields_of(reading)
             amount = fields.get("total_paise")

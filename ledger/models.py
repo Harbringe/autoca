@@ -606,8 +606,15 @@ class InvoiceReading(UUIDModel, FirmScopedModel):
     client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="invoice_readings")
     document = models.OneToOneField(Document, on_delete=models.PROTECT, related_name="reading")
     #: ``PURCHASE`` (a supplier's invoice to the client) or ``SALES`` (the client's invoice to a customer).
-    kind = models.CharField(max_length=12, choices=[(BillKind.PURCHASE, "Purchase"), (BillKind.SALES, "Sales")])
+    #: Blank while it is not known which (the client's own GSTIN is not on the file, or not on record): a person says.
+    kind = models.CharField(
+        max_length=12, blank=True, default="", choices=[(BillKind.PURCHASE, "Purchase"), (BillKind.SALES, "Sales")]
+    )
     status = models.CharField(max_length=10, choices=ReadingStatus.choices, default=ReadingStatus.OPEN)
+    #: The bill was booked by the system from this file, not by a person. Cleared once a person changes or confirms it.
+    auto_booked = models.BooleanField(default=False)
+    #: Why the system did not book this file itself, in words for the alert and the screen. Blank when it did.
+    attention = models.CharField(max_length=255, blank=True, default="")
     #: Every check passed. A reading that is not proved is still shown, with what failed, for a person to fix.
     proved = models.BooleanField(default=False)
     checks = models.JSONField(default=list)

@@ -26,7 +26,7 @@ from classify.models import LedgerAccount, Party
 from documents.models import Document
 from ledger import billing, invoice_intake
 from ledger.billing import BillInput
-from ledger.models import Bill, BillKind
+from ledger.models import Bill, BillKind, InvoiceReading
 
 POSTERS = {
     BillKind.PURCHASE: billing.post_purchase,
@@ -115,7 +115,10 @@ class BillViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.RetrieveModel
     def create(self, request, *args, **kwargs):
         payload = BillCreateSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
-        data = payload.validated_data
+        bill = self._book(request, payload.validated_data)
+        return Response(BillDetailSerializer(self.get_queryset().get(pk=bill.pk)).data, status=status.HTTP_201_CREATED)
+
+    def _book(self, request, data) -> Bill:
         client = self.client
 
         party = get_object_or_404(Party, pk=data["party"], firm_id=request.firm.pk, client=client)
@@ -159,7 +162,43 @@ class BillViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.RetrieveModel
             # An uploaded invoice that was waiting for this is no longer waiting: the bill carries it.
             if document is not None:
                 invoice_intake.note_booked(document, bill, user=request.user)
-        return Response(BillDetailSerializer(self.get_queryset().get(pk=bill.pk)).data, status=status.HTTP_201_CREATED)
+        return bill
+
+    @extend_schema(
+        summary="Change a booked bill",
+        description=(
+            "Replaces the bill with the corrected one, in one step: the old bill and its voucher are removed (the change log "
+            "keeps what it was) and the new one is booked with the same invoice file. Any payment that settled the old "
+            "bill is put against the new one when it still fits, otherwise left on the party's account. Same rules as "
+            "booking: refused inside signed-off books, and nothing changes if the new one is refused."
+        ),
+        request=BillCreateSerializer,
+        responses={200: BillDetailSerializer},
+    )
+    @action(detail=True, methods=["post"])
+    def revise(self, request, client_id=None, pk=None):
+        bill = self.get_object()
+        payload = BillCreateSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        data = dict(payload.validated_data)
+        if data.get("document") is None and bill.document_id:
+            data["document"] = bill.document_id
+        if data.get("document") is None:
+            reading = InvoiceReading.objects.filter(bill=bill).first()
+            data["document"] = reading.document_id if reading else None
+        with transaction.atomic():
+            settled = [(a.line, a.amount_paise) for a in bill.allocations.select_related("line")]
+            for allocation in bill.allocations.all():
+                allocation.delete()
+            billing.remove_bill(bill, membership=request.membership, note="Changed by a person.")
+            fresh = self._book(request, data)
+            for line, amount in settled:
+                try:
+                    with transaction.atomic():
+                        billing.allocate(line, amount_paise=amount, bill=fresh)
+                except billing.BillingError:
+                    billing.allocate(line, amount_paise=amount)
+        return Response(BillDetailSerializer(self.get_queryset().get(pk=fresh.pk)).data)
 
     @extend_schema(
         summary="Remove a bill and its voucher",

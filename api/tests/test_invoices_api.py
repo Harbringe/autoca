@@ -97,7 +97,7 @@ def test_a_scan_is_kept_and_says_why_it_was_not_read(api, client_record):
     reading = upload(api, client_record, "").json()
 
     assert reading["read"] is None and "scan or a photo" in reading["unreadable_reason"]
-    assert "cannot be read yet" in open_items(api, client_record, "invoice_unbooked")["items"][0]["summary"]
+    assert "could not be read" in open_items(api, client_record, "invoice_unbooked")["items"][0]["summary"]
 
 
 def test_only_pdfs_are_taken(api, client_record):

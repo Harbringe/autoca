@@ -16,7 +16,13 @@ class InvoiceUploadSerializer(serializers.Serializer):
     file = serializers.FileField(help_text="The invoice as a PDF with a text layer.")
     kind = serializers.ChoiceField(
         choices=[BillKind.PURCHASE, BillKind.SALES],
-        help_text="`PURCHASE`: a supplier's invoice to the client. `SALES`: the client's invoice to a customer.",
+        required=False,
+        allow_blank=True,
+        default="",
+        help_text=(
+            "Leave blank to have it told from the client's own GSTIN. `PURCHASE`: a supplier's invoice to the client. "
+            "`SALES`: the client's invoice to a customer."
+        ),
     )
 
     def validate_file(self, upload):
@@ -52,6 +58,10 @@ class InvoiceUploadSerializer(serializers.Serializer):
 
 class AttachSerializer(serializers.Serializer):
     bill = serializers.UUIDField(help_text="The bill, booked by hand earlier, that this file is the invoice for.")
+
+
+class SayKindSerializer(serializers.Serializer):
+    kind = serializers.ChoiceField(choices=[BillKind.PURCHASE, BillKind.SALES])
 
 
 class CheckSerializer(serializers.Serializer):
@@ -114,6 +124,12 @@ class InvoiceReadingSerializer(serializers.Serializer):
         allow_null=True, help_text="A bill already booked from this very invoice that has no file yet."
     )
     bill = serializers.UUIDField(allow_null=True)
+    auto_booked = serializers.BooleanField(
+        help_text="The system booked the bill from this file. A person can change it like any other bill."
+    )
+    attention = serializers.CharField(
+        allow_blank=True, help_text="Why the system did not book this file itself, in words. Blank when it did or nothing is wrong."
+    )
     payments = PaymentHintSerializer(
         many=True, help_text="Bank rows that look like the payment for this invoice: same party, same total. A suggestion only."
     )
@@ -158,5 +174,7 @@ def reading_payload(reading: InvoiceReading, fields: dict, party, matching, paym
             else None
         ),
         "bill": reading.bill_id,
+        "auto_booked": reading.auto_booked,
+        "attention": reading.attention,
         "payments": list(payments),
     }

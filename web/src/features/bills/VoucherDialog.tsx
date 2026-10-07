@@ -12,7 +12,7 @@ import { toast } from 'sonner'
 import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
 import { ledgers as ledgersQuery, parties as partiesQuery } from '@/api/queries/books'
-import { usePostBill } from '@/api/queries/bills'
+import { usePostBill, useReviseBill } from '@/api/queries/bills'
 import { useInvalidateClient, V1 } from '@/api/queries/clients'
 import type { BillCreateRequest, Party } from '@/api/types'
 import { Money } from '@/components/ca/Money'
@@ -60,6 +60,10 @@ export interface VoucherPrefill {
   roundOffPaise: number
   /** The stored invoice file this voucher is being booked from, so it is attached and its reading closed. */
   document: string
+  /** Set to change a bill already booked: the form starts from it and saving replaces it. */
+  reviseBill?: string
+  /** The ledger the taxable value went to, when changing a booked bill. */
+  headLedger?: string
 }
 
 const asRupees = (paise: number | null | undefined) => (paise ? (paise / 100).toFixed(2) : '')
@@ -89,6 +93,7 @@ export function VoucherDialog({
   const parties = useQuery(partiesQuery(clientId))
   const ledgers = useQuery(ledgersQuery(clientId))
   const post = usePostBill(clientId)
+  const revise = useReviseBill(clientId)
   const invalidate = useInvalidateClient(clientId)
 
   const [kind, setKind] = useState<VoucherKind>(prefill?.kind ?? initialKind)
@@ -96,7 +101,7 @@ export function VoucherDialog({
   const [reference, setReference] = useState(prefill?.reference ?? '')
   const [billDate, setBillDate] = useState(() => formatDate(prefill?.billDate ?? new Date().toISOString().slice(0, 10)))
   const [dueDate, setDueDate] = useState('')
-  const [heads, setHeads] = useState<Head[]>(() => [{ ...blankHead(), amount: asRupees(prefill?.taxablePaise) }])
+  const [heads, setHeads] = useState<Head[]>(() => [{ ...blankHead(), ledger: prefill?.headLedger ?? null, amount: asRupees(prefill?.taxablePaise) }])
   const [tax, setTax] = useState({
     cgst: asRupees(prefill?.cgstPaise),
     sgst: asRupees(prefill?.sgstPaise),
@@ -235,8 +240,10 @@ export function VoucherDialog({
     }
     setSaving(true)
     try {
-      const made = await post.mutateAsync(body)
-      toast.success(`${made.voucher_type} No. ${made.entry_no} booked · ${made.reference}`)
+      const made = prefill?.reviseBill
+        ? await revise.mutateAsync({ id: prefill.reviseBill, body })
+        : await post.mutateAsync(body)
+      toast.success(`${made.voucher_type} No. ${made.entry_no} ${prefill?.reviseBill ? 'changed' : 'booked'} · ${made.reference}`)
       reset()
       onOpenChange(false)
     } catch (e) {
@@ -257,7 +264,7 @@ export function VoucherDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent aria-describedby={undefined} className="max-h-[92svh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Book a voucher</DialogTitle>
+          <DialogTitle>{prefill?.reviseBill ? 'Change this bill' : 'Book a voucher'}</DialogTitle>
           <DialogDescription>
             The invoice goes on its own date to the {partyLabel.toLowerCase()}’s account, so what is owed is always visible. Payments settle it later.
           </DialogDescription>
@@ -454,7 +461,7 @@ export function VoucherDialog({
 
           <DialogFooter>
             <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={saving}>{saving ? 'Booking…' : 'Book voucher'}</Button>
+            <Button type="submit" disabled={saving}>{saving ? (prefill?.reviseBill ? 'Saving…' : 'Booking…') : prefill?.reviseBill ? 'Save changes' : 'Book voucher'}</Button>
           </DialogFooter>
         </form>
       </DialogContent>

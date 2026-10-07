@@ -60,6 +60,16 @@ export function usePostBill(clientId: string) {
   })
 }
 
+/** Replace a booked bill with its corrected version in one step (the old one is kept in the change log). */
+export function useReviseBill(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: ({ id, body }: { id: string; body: BillCreateRequest }) =>
+      raw.post<BillDetail>(`${V1}/clients/${clientId}/bills/${id}/revise/`, body),
+    onSuccess: invalidate,
+  })
+}
+
 export function useRemoveBill(clientId: string) {
   const invalidate = useInvalidateClient(clientId)
   return useMutation({
@@ -130,12 +140,23 @@ export const invoiceReadings = (clientId: string) =>
 export function useUploadInvoice(clientId: string) {
   const invalidate = useInvalidateClient(clientId)
   return useMutation({
-    mutationFn: ({ file, kind }: { file: File; kind: 'PURCHASE' | 'SALES' }) => {
+    // No kind: the server tells a purchase from a sale by the client's own GSTIN and books it when certain.
+    mutationFn: ({ file, kind }: { file: File; kind?: 'PURCHASE' | 'SALES' }) => {
       const form = new FormData()
       form.append('file', file)
-      form.append('kind', kind)
+      if (kind) form.append('kind', kind)
       return raw.post<InvoiceReading>(`${V1}/clients/${clientId}/invoices/upload/`, form)
     },
+    onSuccess: invalidate,
+  })
+}
+
+/** A person says what the system could not tell; it then tries to book the invoice as usual. */
+export function useSayInvoiceKind(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: ({ id, kind }: { id: string; kind: 'PURCHASE' | 'SALES' }) =>
+      raw.post<InvoiceReading>(`${V1}/clients/${clientId}/invoices/${id}/kind/`, { kind }),
     onSuccess: invalidate,
   })
 }

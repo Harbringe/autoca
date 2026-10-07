@@ -475,6 +475,15 @@ def post_credit_note(client, party, heads, data: BillInput, *, membership) -> Bi
     return _post(client, party, BillKind.CREDIT_NOTE, plan, data, membership=membership)
 
 
+def _reopen_reading(bill: Bill) -> None:
+    """The uploaded invoice this bill was booked from or attached to waits again for a person once the bill is gone."""
+    from ledger.models import InvoiceReading, ReadingStatus
+
+    InvoiceReading.objects.filter(bill=bill).update(
+        bill=None, status=ReadingStatus.OPEN, auto_booked=False, decided_by=None, decided_at=None
+    )
+
+
 @transaction.atomic
 def remove_bill(bill: Bill, *, membership, note: str = "") -> None:
     """Take an unsigned, unsettled bill out of the books, with its voucher. The change log keeps what it was."""
@@ -487,6 +496,7 @@ def remove_bill(bill: Bill, *, membership, note: str = "") -> None:
             f"{bill.reference!r} has payments or adjustments allocated to it. Remove those first, "
             f"or record a debit or credit note instead."
         )
+    _reopen_reading(bill)
     entry = bill.entry
     if entry is None:
         through = editing.locked_through(bill.client_id)

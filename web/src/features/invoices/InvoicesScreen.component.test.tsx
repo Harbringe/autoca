@@ -39,6 +39,9 @@ const base = {
   matching_bill: null,
   bill: null,
   unreadable_reason: '',
+  auto_booked: false,
+  attention: '',
+  payments: [],
 }
 
 const READINGS = [
@@ -70,6 +73,30 @@ const READINGS = [
     read: null,
     unreadable_reason: 'This looks like a scan or a photo, which cannot be read yet.',
   },
+  {
+    ...base,
+    id: 'r4',
+    document: 'd4',
+    filename: 'auto.pdf',
+    status: 'BOOKED',
+    status_display: 'Booked as a bill',
+    bill: 'b1',
+    auto_booked: true,
+    proved: true,
+    checks: [{ name: 'arithmetic', ok: true, detail: '' }],
+    read: { ...READ, invoice_no: 'RT/900' },
+  },
+  {
+    ...base,
+    id: 'r5',
+    document: 'd5',
+    filename: 'unknown.pdf',
+    kind: '',
+    attention: 'This client’s own GSTIN is not on record, so the file could not be told as a purchase or a sale.',
+    proved: true,
+    checks: [{ name: 'arithmetic', ok: true, detail: '' }],
+    read: { ...READ, invoice_no: 'RT/901' },
+  },
 ] as unknown as InvoiceReading[]
 
 function renderScreen() {
@@ -86,7 +113,7 @@ function renderScreen() {
 describe('Invoices', () => {
   it('says how many are waiting and lists each file with its status', async () => {
     renderScreen()
-    expect(await screen.findByText(/3 invoices waiting for you/)).toBeInTheDocument()
+    expect(await screen.findByText(/4 invoices waiting for you/)).toBeInTheDocument()
     expect(screen.getByText('ravi-042.pdf')).toBeInTheDocument()
     expect(screen.getByText('wrong-total.pdf')).toBeInTheDocument()
   })
@@ -113,5 +140,22 @@ describe('Invoices', () => {
     await userEvent.click(within(proved).getByRole('button', { name: 'Book it' }))
     expect(await screen.findByDisplayValue('RT/042')).toBeInTheDocument()
     expect(screen.getByDisplayValue('12-08-2025')).toBeInTheDocument()
+  })
+
+  it('shows an invoice the system booked, and lets a person change it', async () => {
+    renderScreen()
+    const auto = (await screen.findByText('auto.pdf')).closest('li')!
+    expect(within(auto).getByText('Booked automatically')).toBeInTheDocument()
+    expect(within(auto).getByRole('button', { name: 'Change' })).toBeInTheDocument()
+    expect(within(auto).queryByRole('button', { name: 'Book it' })).not.toBeInTheDocument()
+  })
+
+  it('says why it could not tell, and lets a person say purchase or sale instead of booking blind', async () => {
+    renderScreen()
+    const unknown = (await screen.findByText('unknown.pdf')).closest('li')!
+    expect(within(unknown).getByText(/own GSTIN is not on record/)).toBeInTheDocument()
+    expect(within(unknown).getByRole('button', { name: 'It’s a purchase' })).toBeInTheDocument()
+    expect(within(unknown).getByRole('button', { name: 'It’s a sale' })).toBeInTheDocument()
+    expect(within(unknown).queryByRole('button', { name: 'Book it' })).not.toBeInTheDocument()
   })
 })

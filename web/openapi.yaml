@@ -1093,6 +1093,52 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/clients/{client_id}/bills/{id}/revise/:
+    post:
+      operationId: clients_bills_revise_create
+      description: 'Replaces the bill with the corrected one, in one step: the old
+        bill and its voucher are removed (the change log keeps what it was) and the
+        new one is booked with the same invoice file. Any payment that settled the
+        old bill is put against the new one when it still fits, otherwise left on
+        the party''s account. Same rules as booking: refused inside signed-off books,
+        and nothing changes if the new one is refused.'
+      summary: Change a booked bill
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - bills
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BillCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BillCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BillCreateRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BillDetail'
+          description: ''
   /api/v1/clients/{client_id}/books/:
     get:
       operationId: clients_books_retrieve
@@ -2402,15 +2448,60 @@ paths:
               schema:
                 $ref: '#/components/schemas/InvoiceReading'
           description: ''
+  /api/v1/clients/{client_id}/invoices/{id}/kind/:
+    post:
+      operationId: clients_invoices_kind_create
+      description: For a file the system could not tell (the client's own GSTIN is
+        not on it, or not on record). Records the answer and tries to book it as usual;
+        if it still cannot, `attention` says why. Needs `journal.approve`.
+      summary: Say whether this invoice is a purchase or a sale
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - invoices
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SayKindRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/SayKindRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/SayKindRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InvoiceReading'
+          description: ''
   /api/v1/clients/{client_id}/invoices/upload/:
     post:
       operationId: clients_invoices_upload_create
-      description: Stores the PDF with the client's other documents and reads its
-        text layer into a draft, with the arithmetic that proves or faults it. Nothing
-        is booked. A scan or photo has no text layer and is stored with a reason instead
-        of a reading (`unreadable_reason`). The same file again returns its reading
-        (`200`). Needs `document.upload`.
-      summary: Upload an invoice and read it
+      description: Stores the PDF with the client's other documents and reads it (its
+        text layer, or for a scan the vision model when switched on) with the arithmetic
+        that proves or faults it. Whether it is a purchase or a sale is told from
+        the client's own GSTIN unless `kind` is given. When the kind, the proof and
+        the party are all certain the bill is booked at once (`auto_booked`) and matched
+        to its bank payment if exactly one fits; otherwise nothing is booked and `attention`
+        says why. The same file again returns its reading (`200`). Needs `document.upload`.
+      summary: Upload an invoice, read it, and book it when certain
       parameters:
       - in: path
         name: client_id
@@ -8978,6 +9069,14 @@ components:
           type: string
           format: uuid
           nullable: true
+        auto_booked:
+          type: boolean
+          description: The system booked the bill from this file. A person can change
+            it like any other bill.
+        attention:
+          type: string
+          description: Why the system did not book this file itself, in words. Blank
+            when it did or nothing is wrong.
         payments:
           type: array
           items:
@@ -8985,6 +9084,8 @@ components:
           description: 'Bank rows that look like the payment for this invoice: same
             party, same total. A suggestion only.'
       required:
+      - attention
+      - auto_booked
       - bill
       - checks
       - created_at
@@ -9000,14 +9101,6 @@ components:
       - status_display
       - suggested_party
       - unreadable_reason
-    InvoiceUploadKindEnum:
-      enum:
-      - PURCHASE
-      - SALES
-      type: string
-      description: |-
-        * `PURCHASE` - PURCHASE
-        * `SALES` - SALES
     InvoiceUploadRequest:
       type: object
       properties:
@@ -9016,16 +9109,17 @@ components:
           format: binary
           description: The invoice as a PDF with a text layer.
         kind:
-          allOf:
-          - $ref: '#/components/schemas/InvoiceUploadKindEnum'
+          default: ''
           description: |-
-            `PURCHASE`: a supplier's invoice to the client. `SALES`: the client's invoice to a customer.
+            Leave blank to have it told from the client's own GSTIN. `PURCHASE`: a supplier's invoice to the client. `SALES`: the client's invoice to a customer.
 
             * `PURCHASE` - PURCHASE
             * `SALES` - SALES
+          oneOf:
+          - $ref: '#/components/schemas/KindA27Enum'
+          - $ref: '#/components/schemas/BlankEnum'
       required:
       - file
-      - kind
     ItcStatusEnum:
       enum:
       - eligible
@@ -9358,6 +9452,14 @@ components:
         * `BANK` - Bank account
         * `LOAN` - Loan account
         * `CARD` - Credit card
+    KindA27Enum:
+      enum:
+      - PURCHASE
+      - SALES
+      type: string
+      description: |-
+        * `PURCHASE` - PURCHASE
+        * `SALES` - SALES
     KindBd8Enum:
       enum:
       - CHART_OPENING
@@ -13372,6 +13474,13 @@ components:
       required:
       - employee
       - gross_paise
+    SayKindRequest:
+      type: object
+      properties:
+        kind:
+          $ref: '#/components/schemas/KindA27Enum'
+      required:
+      - kind
     Schedule:
       type: object
       properties:

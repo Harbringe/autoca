@@ -75,6 +75,16 @@ def _missing_months(spans: dict) -> list[str]:
     return [f"{y:04d}-{m:02d}" for y, m in sorted(missing)]
 
 
+def client_missing_months(client) -> list[str]:
+    """``_missing_months`` for one client: one query."""
+    spans: dict = defaultdict(list)
+    for account_id, start, end in Statement.objects.filter(
+        firm_id=client.firm_id, bank_account__client=client
+    ).values_list("bank_account_id", "period_start", "period_end"):
+        spans[account_id].append((start, end))
+    return _missing_months(spans) if spans else []
+
+
 def firm_overview(membership) -> dict:
     """One row per client ``membership`` may see, plus firm totals. Four queries."""
     visible = visible_clients(membership)

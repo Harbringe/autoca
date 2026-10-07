@@ -222,6 +222,16 @@ def seal_dates(client, *, upto: datetime.date, after: datetime.date | None = Non
 
 
 
+def ready_to_seal(current: BooksStatus, latest_due: datetime.date | None) -> bool:
+    """Approved through the latest sealing date that has passed, with nothing changed since the approval."""
+    return bool(
+        latest_due
+        and current.approved_through
+        and current.approved_through >= latest_due
+        and not current.changed_since_approval
+    )
+
+
 def _waiting(client, *, through: datetime.date | None = None) -> int:
     """Rows not yet posted, optionally only those dated on or before ``through``."""
     rows = review_queue(client)

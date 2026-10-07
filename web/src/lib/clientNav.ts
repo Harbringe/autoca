@@ -2,10 +2,34 @@
 // goes (capture, books, compliance, output), with small dividers. Pure data so it can be tested; the
 // permission on each is the same one its screen already needs.
 
+import {
+  ArrowLeftRight,
+  BarChart3,
+  BookMarked,
+  BookOpen,
+  BookUser,
+  Boxes,
+  FileSpreadsheet,
+  FolderOpen,
+  LayoutGrid,
+  Landmark,
+  ListChecks,
+  NotebookText,
+  Percent,
+  Receipt,
+  Settings2,
+  ShieldCheck,
+  Wallet,
+  Wrench,
+  type LucideIcon,
+} from 'lucide-react'
+
 export interface ClientNavItem {
   /** The path segment after /clients/<id>; empty for the client overview. */
   screen: string
   label: string
+  /** The line icon beside the label, in the panel and in the phone drawer. */
+  icon: LucideIcon
   /** Shown to people holding any one of these. */
   permission: string | string[]
   /** Set on the first item of a block: the small divider label above it. */
@@ -15,24 +39,24 @@ export interface ClientNavItem {
 }
 
 export const CLIENT_NAV: ClientNavItem[] = [
-  { screen: '', label: 'Overview', permission: 'client.view' },
-  { screen: 'statements', label: 'Statements', permission: 'transaction.view', section: 'Capture' },
-  { screen: 'review', label: 'Review', permission: 'transaction.view' },
-  { screen: 'documents', label: 'Documents', permission: 'document.view' },
-  { screen: 'bookkeeping', label: 'Summary', permission: 'report.view', section: 'Books' },
-  { screen: 'daybook', label: 'Day Book', permission: 'journal.view' },
-  { screen: 'ledgers', label: 'Ledgers', permission: 'report.view' },
-  { screen: 'masters', label: 'Parties & rules', permission: 'report.view' },
-  { screen: 'bills', label: 'Purchases & Sales', permission: 'report.view' },
-  { screen: 'invoices', label: 'Invoices', permission: 'report.view' },
-  { screen: 'open-items', label: 'To fix', permission: 'report.view' },
-  { screen: 'tds', label: 'TDS', permission: 'report.view', section: 'Compliance' },
-  { screen: 'payroll', label: 'Payroll', permission: 'report.view' },
-  { screen: 'assets', label: 'Assets', permission: 'report.view' },
-  { screen: 'gst', label: 'GST', permission: 'gst.view' },
-  { screen: 'reports', label: 'Reports', permission: 'report.view', section: 'Output' },
-  { screen: 'books', label: 'Sign-off', permission: 'report.view' },
-  { screen: 'team', label: 'Client settings', permission: ['team.view', 'client.update'], bottom: true },
+  { screen: '', label: 'Overview', icon: LayoutGrid, permission: 'client.view' },
+  { screen: 'statements', label: 'Statements', icon: Landmark, permission: 'transaction.view', section: 'Capture' },
+  { screen: 'review', label: 'Review', icon: ListChecks, permission: 'transaction.view' },
+  { screen: 'documents', label: 'Documents', icon: FolderOpen, permission: 'document.view' },
+  { screen: 'bookkeeping', label: 'Summary', icon: BookOpen, permission: 'report.view', section: 'Books' },
+  { screen: 'daybook', label: 'Day Book', icon: NotebookText, permission: 'journal.view' },
+  { screen: 'ledgers', label: 'Ledgers', icon: BookMarked, permission: 'report.view' },
+  { screen: 'masters', label: 'Parties & rules', icon: BookUser, permission: 'report.view' },
+  { screen: 'bills', label: 'Purchases & Sales', icon: ArrowLeftRight, permission: 'report.view' },
+  { screen: 'invoices', label: 'Invoices', icon: Receipt, permission: 'report.view' },
+  { screen: 'open-items', label: 'To fix', icon: Wrench, permission: 'report.view' },
+  { screen: 'tds', label: 'TDS', icon: Percent, permission: 'report.view', section: 'Compliance' },
+  { screen: 'payroll', label: 'Payroll', icon: Wallet, permission: 'report.view' },
+  { screen: 'assets', label: 'Assets', icon: Boxes, permission: 'report.view' },
+  { screen: 'gst', label: 'GST', icon: FileSpreadsheet, permission: 'gst.view' },
+  { screen: 'reports', label: 'Reports', icon: BarChart3, permission: 'report.view', section: 'Output' },
+  { screen: 'books', label: 'Sign-off', icon: ShieldCheck, permission: 'report.view' },
+  { screen: 'team', label: 'Client settings', icon: Settings2, permission: ['team.view', 'client.update'], bottom: true },
 ]
 
 const allowed = (item: ClientNavItem, can: (permission: string) => boolean) =>

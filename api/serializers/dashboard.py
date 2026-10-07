@@ -74,11 +74,34 @@ class SnapshotAttentionSerializer(serializers.Serializer):
     failing_controls = serializers.ListField(child=serializers.CharField())
 
 
+class ReportReadySerializer(serializers.Serializer):
+    key = serializers.ChoiceField(
+        choices=[
+            "pnl",
+            "balance_sheet",
+            "trial_balance",
+            "receivables",
+            "payables",
+            "tds",
+            "gst",
+        ]
+    )
+    label = serializers.CharField()
+    ready = serializers.BooleanField(
+        help_text="The client has posted entries, no month of statements is missing, and no control this report needs is failing."
+    )
+    reason = serializers.CharField(
+        allow_null=True, help_text="In plain words, why it is not ready. Null when it is."
+    )
+
+
 class ClientSnapshotSerializer(MoneySerializerMixin, serializers.Serializer):
     money = (
         "income_paise",
         "expense_paise",
         "profit_paise",
+        "prior_income_paise",
+        "prior_expense_paise",
         "gst_net_payable_paise",
         "tds_payable_paise",
     )
@@ -88,6 +111,14 @@ class ClientSnapshotSerializer(MoneySerializerMixin, serializers.Serializer):
     income_paise = PaiseField()
     expense_paise = PaiseField()
     profit_paise = PaiseField()
+    prior_income_paise = PaiseField(
+        allow_null=True,
+        help_text="Income of the previous financial year. Null when nothing was posted to income or expense in it.",
+    )
+    prior_expense_paise = PaiseField(
+        allow_null=True,
+        help_text="Expense of the previous financial year. Null when nothing was posted to income or expense in it.",
+    )
     trend = TrendMonthSerializer(many=True)
     top_expenses = TopExpenseSerializer(many=True)
     accounts = AccountBalanceSerializer(many=True)
@@ -98,6 +129,7 @@ class ClientSnapshotSerializer(MoneySerializerMixin, serializers.Serializer):
     tds_payable_paise = PaiseField(help_text="TDS deducted and not yet deposited, in the books.")
     books = SnapshotBooksSerializer()
     attention = SnapshotAttentionSerializer()
+    reports_ready = ReportReadySerializer(many=True)
 
 
 class PortfolioClientSerializer(MoneySerializerMixin, OverviewClientSerializer):
@@ -120,6 +152,43 @@ class PortfolioClientSerializer(MoneySerializerMixin, OverviewClientSerializer):
     tds_overdue_paise = PaiseField(required=False)
     receivables_paise = PaiseField(required=False)
     payables_paise = PaiseField(required=False)
+    health = serializers.ChoiceField(
+        choices=["on_track", "at_risk", "overdue"],
+        help_text=(
+            "`overdue`: TDS is past its deposit date (needs `journal.view`, otherwise never reported). `at_risk`: a statement "
+            "month is missing, a control is failing, or a sealing date has passed unsealed. Otherwise `on_track`. Beyond 60 "
+            "clients only the missing months are known."
+        ),
+    )
+    ready_to_seal = serializers.BooleanField(
+        required=False,
+        help_text="Approved through the latest sealing date that has passed, with nothing changed since the approval.",
+    )
+    oldest_pending_approval_days = serializers.IntegerField(
+        allow_null=True,
+        required=False,
+        help_text="Days since the open request for the senior's decision was made. Null when none is open.",
+    )
+
+
+class AgingBucketSerializer(MoneySerializerMixin, serializers.Serializer):
+    money = ("amount_paise",)
+
+    bucket = serializers.ChoiceField(choices=["0-30", "31-60", "61-90", "Over 90"])
+    amount_paise = PaiseField()
+
+
+class PortfolioAgingSerializer(serializers.Serializer):
+    receivables = AgingBucketSerializer(many=True)
+    payables = AgingBucketSerializer(many=True)
+
+
+class TopReceivableSerializer(MoneySerializerMixin, serializers.Serializer):
+    money = ("amount_paise",)
+
+    client = serializers.UUIDField()
+    client_name = serializers.CharField()
+    amount_paise = PaiseField()
 
 
 class AttentionItemSerializer(MoneySerializerMixin, serializers.Serializer):
@@ -143,13 +212,35 @@ class DeadlineSerializer(serializers.Serializer):
     clients = serializers.ListField(child=serializers.CharField())
 
 
-class PortfolioSerializer(serializers.Serializer):
+class PortfolioSerializer(MoneySerializerMixin, serializers.Serializer):
+    money = ("receivables_total_paise", "payables_total_paise")
+
     totals = OverviewTotalsSerializer()
     by_stage = OverviewByStageSerializer()
     clients = PortfolioClientSerializer(many=True)
     attention = AttentionItemSerializer(many=True)
     deadlines = DeadlineSerializer(many=True)
     detailed = serializers.BooleanField()
+    receivables_total_paise = PaiseField(
+        required=False,
+        help_text="Receivables summed over the clients. Left out without `journal.view` or beyond 60 clients.",
+    )
+    payables_total_paise = PaiseField(
+        required=False,
+        help_text="Payables summed over the clients. Left out without `journal.view` or beyond 60 clients.",
+    )
+    aging = PortfolioAgingSerializer(
+        required=False,
+        help_text=(
+            "Bills still owing, summed over the clients by age from the bill date. Bills only: money held on account is "
+            "in the totals, not in the buckets. Left out like the totals."
+        ),
+    )
+    top_receivables = TopReceivableSerializer(
+        many=True,
+        required=False,
+        help_text="Up to five clients owed the most, largest first. Left out like the totals.",
+    )
 
 
 class AlertSerializer(MoneySerializerMixin, serializers.Serializer):

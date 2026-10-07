@@ -13253,9 +13253,23 @@ components:
         assistant_waiting:
           type: integer
           description: Rows queued for the assistant that it has not finished with.
-            Above zero, the app should ask for the next batch.
+            A background worker reads them; nobody needs a page open.
+        assistant_reason:
+          description: "Why the assistant is not reading right now. Blank when it\
+            \ is working or has nothing to do.\n\n* `` - \n* `rate_limit` - rate_limit\n\
+            * `daily_limit` - daily_limit\n* `provider_down` - provider_down\n* `assistant_off`\
+            \ - assistant_off"
+          oneOf:
+          - $ref: '#/components/schemas/AssistantReasonEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        assistant_retry_seconds:
+          type: integer
+          nullable: true
+          description: When it reads again, for a pause. Null otherwise.
       required:
       - advised
+      - assistant_reason
+      - assistant_retry_seconds
       - assistant_waiting
       - bulk_approvable
       - high

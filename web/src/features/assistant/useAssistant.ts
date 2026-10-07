@@ -1,17 +1,18 @@
-// Runs the assistant's queue for the client that is open, and shares what it says.
+// Watches the assistant's queue for the client that is open, and shares what it says. The work itself is done by a
+// background worker on the server.
 //
-// The loop lives once per open client, in the workspace (useAssistantLoop). The status it produces
+// The watcher lives once per open client, in the workspace (useAssistantLoop). The status it produces
 // goes into a small store keyed by client, so the strip on Bank statements, the one on Review and the
 // indicator in the top bar all read the same answer without each asking the server.
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useSyncExternalStore } from 'react'
-import { raw } from '@/api/client'
-import { isApiError } from '@/api/errors'
-import { clientKeys, reviewSummary, V1 } from '@/api/queries/clients'
-import type { NextBatch } from '@/api/types'
+import { useEffect, useRef, useSyncExternalStore } from 'react'
+import { clientKeys, reviewSummary } from '@/api/queries/clients'
 import { useSession } from '@/session/session'
-import { assistantLine, assistantShort, IDLE_STATUS, isProcessing, seeded, startAssistantLoop, statusAfter, type AssistantStatus } from './queue'
+import { assistantLine, assistantShort, IDLE_STATUS, isProcessing, statusFromSummary, type AssistantStatus } from './queue'
+
+/** How often the summary is looked at while rows are waiting. */
+const WATCH_MS = 4000
 
 const statuses = new Map<string, AssistantStatus>()
 const listeners = new Set<() => void>()
@@ -67,53 +68,31 @@ export function useAssistantShort(clientId: string | undefined): string | null {
 }
 
 /**
- * While this client is open and rows are waiting for the assistant, ask it for the next batch, and
- * again after the pause the server names. Stops when the tab is hidden, when the client is left, and
- * when the server says it is idle. Only people who may classify rows drive it.
+ * Watches the assistant for this client. Reading the waiting rows is done by a background worker on the server, whether
+ * or not anyone has a page open; this only keeps the screens current. While rows are waiting (and the tab is visible) the
+ * review summary is looked at every few seconds, and when the count falls the rows the worker has placed are fetched.
  */
 export function useAssistantLoop(clientId: string) {
   const { can } = useSession()
   const queryClient = useQueryClient()
-  const summary = useQuery({ ...reviewSummary(clientId), enabled: can('transaction.view') })
-  const waiting = summary.data?.assistant_waiting
-  const visible = usePageVisible()
-  const wants = can('transaction.classify') && (waiting ?? 0) > 0
+  const summary = useQuery({
+    ...reviewSummary(clientId),
+    enabled: can('transaction.view'),
+    refetchInterval: (query) => ((query.state.data?.assistant_waiting ?? 0) > 0 ? WATCH_MS : false),
+  })
+  const data = summary.data
+  const waiting = data?.assistant_waiting
+  const lastWaiting = useRef<number | undefined>(undefined)
 
-  // What the summary says is waiting, until the assistant has answered.
   useEffect(() => {
-    if (waiting !== undefined) write(clientId, seeded(read(clientId), waiting))
-  }, [clientId, waiting])
-
-  useEffect(() => {
-    if (!wants || !visible) return
-    // A server with no model configured said so once; asking again cannot change that.
-    if (read(clientId).reason === 'assistant_off') return
-    write(clientId, { ...read(clientId), running: true })
-    const stop = startAssistantLoop({
-      post: () => raw.post<NextBatch>(`${V1}/clients/${clientId}/assistant/next-batch/`),
-      onOutcome: (outcome) => {
-        write(clientId, statusAfter(read(clientId), outcome, Date.now()))
-        if (outcome.processed > 0) {
-          // What the batch placed appears in the review list and the counts as it goes.
-          void queryClient.invalidateQueries({ queryKey: clientKeys.part(clientId, 'queue') })
-          void queryClient.invalidateQueries({ queryKey: clientKeys.part(clientId, 'summary') })
-          if (outcome.auto_posted > 0 || outcome.proposed > 0) void queryClient.invalidateQueries({ queryKey: clientKeys.one(clientId) })
-        }
-      },
-      onError: (error) => {
-        // Not allowed, or no such client: nothing to retry. Anything else (network, a server error) is tried again.
-        const final = isApiError(error) && (error.status === 401 || error.status === 403 || error.status === 404)
-        if (!final) write(clientId, { ...read(clientId), state: 'paused', reason: 'provider_down', resumeAt: Date.now() + 30_000 })
-        return !final
-      },
-      onDone: () => {
-        write(clientId, { ...read(clientId), running: false })
-        void queryClient.invalidateQueries({ queryKey: clientKeys.part(clientId, 'summary') })
-      },
-    })
-    return () => {
-      stop()
-      write(clientId, { ...read(clientId), running: false })
+    if (!data) return
+    write(clientId, statusFromSummary(read(clientId), data, Date.now()))
+    const before = lastWaiting.current
+    lastWaiting.current = data.assistant_waiting
+    if (before !== undefined && data.assistant_waiting < before) {
+      // The worker placed some rows: they appear in the review list and the counts as it goes.
+      void queryClient.invalidateQueries({ queryKey: clientKeys.part(clientId, 'queue') })
+      void queryClient.invalidateQueries({ queryKey: clientKeys.one(clientId) })
     }
-  }, [clientId, wants, visible, queryClient])
+  }, [clientId, data, queryClient, waiting])
 }

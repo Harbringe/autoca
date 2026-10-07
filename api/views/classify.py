@@ -75,7 +75,7 @@ from classify.models import (
 from classify.proposals import accept as accept_proposal
 from classify.proposals import merge as merge_proposal
 from classify.proposals import reject as reject_proposal
-from classify.queue import mark_waiting, waiting_count
+from classify.queue import assistant_state, mark_waiting, waiting_count
 from classify.treatment import ReviewBand, Treatment
 from core.access import can_sign_off, get_visible_client, visible_client_ids
 from core.fy import financial_year, fy_bounds
@@ -548,6 +548,7 @@ class ReviewQueueViewSet(
     @action(detail=False, methods=["get"])
     def summary(self, request, client_id=None):
         summary = review_summary(self.client)
+        reason, retry = assistant_state(self.client.firm_id)
         return Response(
             ReviewSummarySerializer(
                 {
@@ -560,6 +561,8 @@ class ReviewQueueViewSet(
                     "unresolved": unresolved_for(self.client).count(),
                     "pending_approval": pending_approval(self.client).count(),
                     "assistant_waiting": waiting_count(self.client),
+                    "assistant_reason": reason,
+                    "assistant_retry_seconds": retry,
                 }
             ).data
         )

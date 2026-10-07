@@ -1,66 +1,46 @@
 // The assistant's queue, seen from the browser.
 //
-// Rows the rules cannot place wait for the assistant, which reads a few at a time when asked
-// (POST /clients/{id}/assistant/next-batch/). The browser is the driver: while a client is open and
-// rows are waiting it asks, then asks again after the pause the server names, and stops when the
-// server says it is idle. This file is the logic of that, free of React so it can be tested:
-// what to do after an answer, the words to show, and the loop itself. The hook that runs it and the
-// shared status store are in useAssistant.ts.
+// Rows the rules cannot place wait for the assistant, which a background worker on the server reads in small
+// batches whether or not anyone has a page open. The browser only watches: while rows are waiting it looks at the
+// review summary every few seconds, and this file turns what the summary says into the words to show. Free of
+// React so it can be tested. The hook that polls it and the shared status store are in useAssistant.ts.
 
-import type { NextBatch } from '@/api/types'
+import type { ReviewSummary } from '@/api/types'
 import { plural } from '@/lib/format'
 
-/** The pause between calls when the server names none, and the longest we wait before looking again. */
-export const DEFAULT_DELAY_S = 3
-export const MAX_DELAY_S = 60
-/** After a failed call (network, server error) we look again this much later. */
-export const ERROR_DELAY_S = 30
-
-export type AssistantReason = NextBatch['reason']
+export type AssistantReason = ReviewSummary['assistant_reason']
 
 export interface AssistantStatus {
-  /** The server's last word. `working` also covers "not asked yet, rows are waiting". */
+  /** `working` while rows are waiting and the assistant can read them; `paused` for a limit or an outage; `idle` otherwise. */
   state: 'working' | 'paused' | 'idle'
   reason: AssistantReason
-  /** The server's own sentence for the last answer. */
-  message: string
   /** Rows still waiting for the assistant. */
   waiting: number
   /** The most rows that were waiting in this run, so "40 of 120" has a 120. */
   total: number
-  /** When the next call is due (epoch ms), while paused. */
+  /** When it reads again (epoch ms), while paused. */
   resumeAt: number | null
-  /** A loop is running for this client in this window. */
-  running: boolean
 }
 
-export const IDLE_STATUS: AssistantStatus = { state: 'idle', reason: '', message: '', waiting: 0, total: 0, resumeAt: null, running: false }
+export const IDLE_STATUS: AssistantStatus = { state: 'idle', reason: '', waiting: 0, total: 0, resumeAt: null }
 
-/** What to do after an answer: stop, or call again after `delayMs`. */
-export function planNext(outcome: Pick<NextBatch, 'state' | 'waiting' | 'retry_after_seconds'>): { stop: true } | { stop: false; delayMs: number } {
-  if (outcome.state === 'idle' || outcome.waiting <= 0) return { stop: true }
-  const seconds = Math.min(MAX_DELAY_S, Math.max(1, outcome.retry_after_seconds ?? DEFAULT_DELAY_S))
-  return { stop: false, delayMs: seconds * 1000 }
-}
-
-/** Fold a server answer into the status the screens show. */
-export function statusAfter(previous: AssistantStatus, outcome: NextBatch, now: number): AssistantStatus {
-  const next = planNext(outcome)
+/** Fold what the review summary says into the status the screens show. */
+export function statusFromSummary(
+  previous: AssistantStatus,
+  summary: Pick<ReviewSummary, 'assistant_waiting' | 'assistant_reason' | 'assistant_retry_seconds'>,
+  now: number,
+): AssistantStatus {
+  const waiting = summary.assistant_waiting
+  const reason = summary.assistant_reason
+  if (waiting <= 0 && reason !== 'assistant_off') return IDLE_STATUS
+  const paused = reason === 'rate_limit' || reason === 'daily_limit' || reason === 'provider_down'
   return {
-    state: outcome.state,
-    reason: outcome.reason,
-    message: outcome.message,
-    waiting: outcome.waiting,
-    total: outcome.waiting === 0 ? 0 : Math.max(previous.total, outcome.waiting),
-    resumeAt: !next.stop && outcome.state === 'paused' ? now + next.delayMs : null,
-    running: previous.running,
+    state: reason === 'assistant_off' ? 'idle' : paused ? 'paused' : 'working',
+    reason,
+    waiting,
+    total: waiting === 0 ? 0 : Math.max(previous.total, waiting),
+    resumeAt: paused && summary.assistant_retry_seconds ? now + summary.assistant_retry_seconds * 1000 : null,
   }
-}
-
-/** A status for rows the summary says are waiting, before the assistant has been asked. */
-export function seeded(previous: AssistantStatus, waiting: number): AssistantStatus {
-  if (waiting <= 0) return { ...IDLE_STATUS, running: previous.running }
-  return { ...previous, waiting, total: Math.max(previous.total, waiting) }
 }
 
 const secondsLeft = (status: AssistantStatus, now: number) => Math.max(0, Math.ceil(((status.resumeAt ?? now) - now) / 1000))
@@ -90,7 +70,7 @@ export function assistantLine(status: AssistantStatus, now: number): string | nu
   // Waiting between batches (a rate limit, or the next batch not yet asked for) is still processing.
   const done = Math.max(0, status.total - status.waiting)
   const progress = done > 0 ? ` ${done} of ${plural(status.total, 'row')} done` : ` ${plural(status.waiting, 'row')} in line`
-  return `The assistant is processing your statements in real time: ${phaseAt(now)}…${progress}`
+  return `The assistant is working on your statements in the background, so you can leave this page: ${phaseAt(now)}…${progress}`
 }
 
 /** The short form for the top bar, or null when there is nothing to show there. */
@@ -99,48 +79,4 @@ export function assistantShort(status: AssistantStatus, _now: number): string | 
   if (status.reason === 'daily_limit') return 'Assistant: allowance used'
   if (status.reason === 'provider_down') return 'Assistant not answering'
   return `Assistant processing ${plural(status.waiting, 'row')}`
-}
-
-export interface LoopDeps {
-  /** Ask for the next batch. */
-  post: () => Promise<NextBatch>
-  onOutcome: (outcome: NextBatch) => void
-  /** A call failed. Return true to keep trying after ERROR_DELAY_S, false to stop for good. */
-  onError: (error: unknown) => boolean
-  /** Called once when the loop ends by itself (idle, nothing waiting, or a fatal error). */
-  onDone?: () => void
-}
-
-/**
- * Ask, then ask again as the server says, until it is idle. Returns a function that stops it: a
- * hidden tab and leaving the client both stop it, and an answer that arrives after that is ignored.
- */
-export function startAssistantLoop(deps: LoopDeps): () => void {
-  let stopped = false
-  let timer: ReturnType<typeof setTimeout> | undefined
-
-  const later = (ms: number) => {
-    timer = setTimeout(() => void step(), ms)
-  }
-  const step = async () => {
-    let outcome: NextBatch
-    try {
-      outcome = await deps.post()
-    } catch (error) {
-      if (stopped) return
-      if (deps.onError(error)) later(ERROR_DELAY_S * 1000)
-      else deps.onDone?.()
-      return
-    }
-    if (stopped) return
-    deps.onOutcome(outcome)
-    const next = planNext(outcome)
-    if (next.stop) deps.onDone?.()
-    else later(next.delayMs)
-  }
-  void step()
-  return () => {
-    stopped = true
-    if (timer !== undefined) clearTimeout(timer)
-  }
 }

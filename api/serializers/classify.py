@@ -534,7 +534,14 @@ class ReviewSummarySerializer(serializers.Serializer):
         help_text="Of the total, how many have a ledger and await a senior CA."
     )
     assistant_waiting = serializers.IntegerField(
-        help_text="Rows queued for the assistant that it has not finished with. Above zero, the app should ask for the next batch."
+        help_text="Rows queued for the assistant that it has not finished with. A background worker reads them; nobody needs a page open."
+    )
+    assistant_reason = serializers.ChoiceField(
+        choices=["", "rate_limit", "daily_limit", "provider_down", "assistant_off"],
+        help_text="Why the assistant is not reading right now. Blank when it is working or has nothing to do.",
+    )
+    assistant_retry_seconds = serializers.IntegerField(
+        allow_null=True, help_text="When it reads again, for a pause. Null otherwise."
     )
 
 

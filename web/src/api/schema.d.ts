@@ -6278,8 +6278,20 @@ export interface components {
             unresolved: number;
             /** @description Of the total, how many have a ledger and await a senior CA. */
             pending_approval: number;
-            /** @description Rows queued for the assistant that it has not finished with. Above zero, the app should ask for the next batch. */
+            /** @description Rows queued for the assistant that it has not finished with. A background worker reads them; nobody needs a page open. */
             assistant_waiting: number;
+            /**
+             * @description Why the assistant is not reading right now. Blank when it is working or has nothing to do.
+             *
+             *     * `` -
+             *     * `rate_limit` - rate_limit
+             *     * `daily_limit` - daily_limit
+             *     * `provider_down` - provider_down
+             *     * `assistant_off` - assistant_off
+             */
+            assistant_reason: components["schemas"]["AssistantReasonEnum"] | components["schemas"]["BlankEnum"];
+            /** @description When it reads again, for a pause. Null otherwise. */
+            assistant_retry_seconds: number | null;
         };
         /**
          * @description * `FIRM_ADMIN` - Firm administrator

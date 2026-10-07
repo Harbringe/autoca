@@ -252,3 +252,36 @@ def test_the_marker_is_explicit_not_a_path_pattern():
 
     assert NextBatchView.opens_own_firm_context is True
     assert not getattr(ReviewQueueViewSet, "opens_own_firm_context", False)
+
+
+# ---------------------------------------------------------------------------
+# The worker: the same call, with nobody's page open
+# ---------------------------------------------------------------------------
+
+
+def test_the_worker_reads_waiting_rows_without_any_request(client_record, model):
+    from classify.management.commands.run_assistant import tick
+
+    _queued_books(client_record)
+
+    read = tick()
+
+    assert read > 0 and model.calls > 0
+    with firm_context(client_record.firm_id):
+        assert TransactionClassification.objects.filter(model_attempts__gt=0).exists()
+
+
+def test_the_worker_has_nothing_to_do_when_nothing_waits(client_record, model):
+    from classify.management.commands.run_assistant import tick
+
+    assert tick() == 0 and model.calls == 0
+
+
+def test_the_summary_says_why_the_assistant_is_not_reading(api, client_record, model):
+    from classify.queue import _pause
+
+    _pause(client_record.firm_id, seconds=120, reason="rate_limit")
+
+    summary = api.get(f"{V1}/clients/{client_record.pk}/review-queue/summary/").json()
+
+    assert summary["assistant_reason"] == "rate_limit" and 100 <= summary["assistant_retry_seconds"] <= 120

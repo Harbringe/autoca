@@ -149,6 +149,20 @@ def _paused_outcome(entry: dict, waiting: int, *, processed=0, declined=0) -> Ba
     return BatchOutcome(processed, 0, declined, waiting, "paused", seconds, reason, message)
 
 
+def assistant_state(firm_id) -> tuple[str, int | None]:
+    """What the screens may say about the assistant right now: ``(reason, seconds)``.
+
+    Blank reason is working (or idle, when nothing waits). ``assistant_off`` when no model is set up; otherwise the
+    firm-wide pause, with the seconds left. Read from the same cache the worker writes, so polling costs nothing.
+    """
+    if not get_llm().is_available:
+        return "assistant_off", None
+    paused = _current_pause(firm_id)
+    if paused:
+        return paused["reason"], max(1, math.ceil(paused["until"] - time.time()))
+    return "", None
+
+
 # ---------------------------------------------------------------------------
 # one batch
 # ---------------------------------------------------------------------------

@@ -49,7 +49,6 @@
   --sidebar-foreground: #c9c9cd;
   --sidebar-muted: #9a9aa2;
   --sidebar-active: #22332f;
-  --sidebar-panel: #1e1e22;
   --sidebar-bar: #7fbab0;
   --sidebar-chip: #2a2413;
   --sidebar-chip-foreground: #dcc488;
@@ -105,7 +104,6 @@
   --sidebar-foreground: #c9c9cd;
   --sidebar-muted: #9a9aa2;
   --sidebar-active: #1a2724;
-  --sidebar-panel: #131316;
   --shadow-float: 0 0 0 1px rgb(255 255 255 / 0.04);
 }
 
@@ -150,7 +148,6 @@
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar-muted: var(--sidebar-muted);
   --color-sidebar-active: var(--sidebar-active);
-  --color-sidebar-panel: var(--sidebar-panel);
   --color-sidebar-bar: var(--sidebar-bar);
   --color-sidebar-chip: var(--sidebar-chip);
   --color-sidebar-chip-foreground: var(--sidebar-chip-foreground);

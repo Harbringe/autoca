@@ -10,7 +10,7 @@ from django.test.utils import CaptureQueriesContext
 
 from api.tests.conftest import member, sign_in
 from api.tests.work_support import assign, lead, post_entry, scoped
-from core.db.session import firm_context
+from core.db.session import firm_context, no_firm_context
 from core.models import Role
 from core.provisioning import create_client, create_firm
 from ledger.models import BooksAction, BooksEvent
@@ -149,11 +149,13 @@ def test_staff_and_read_only_members_are_refused(team, firm):
 
 
 def test_another_firms_people_and_work_never_appear(team):
-    other = create_firm("Other Firm")
-    stranger_client = create_client(other, "Stranger Ltd", datetime.date(2025, 4, 1))
-    stranger = member(other, Role.STAFF, "z-stranger@example.test")
-    assign(stranger_client, stranger)
-    post_entry(stranger_client, by=stranger)
+    # The fixture leaves its own firm's context active; a second firm can only be built with none.
+    with no_firm_context():
+        other = create_firm("Other Firm")
+        stranger_client = create_client(other, "Stranger Ltd", datetime.date(2025, 4, 1))
+        stranger = member(other, Role.STAFF, "z-stranger@example.test")
+        assign(stranger_client, stranger)
+        post_entry(stranger_client, by=stranger)
 
     rows = _rows(sign_in(team["owner"].user))
 

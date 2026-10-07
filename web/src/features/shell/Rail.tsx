@@ -1,4 +1,4 @@
-// The slim rail: always there on a desktop, 72px wide, the firm's few places with their names under
+// The slim rail: always there on a desktop, 80px wide, the firm's few places with their names under
 // the icons, then the clients opened lately as small discs, then the person. It looks the same whichever
 // page you are on; only the highlighted place changes.
 
@@ -16,12 +16,12 @@ import { useClientNames } from './clientHeader'
 import { UserMenu } from './UserMenu'
 
 export const RAIL_ICONS: Record<RailItem['id'], ReactNode> = {
-  dashboard: <LayoutDashboard />,
-  clients: <Users />,
-  pipeline: <Columns3 />,
-  alerts: <Bell />,
-  staff: <Activity />,
-  settings: <Settings />,
+  dashboard: <LayoutDashboard strokeWidth={1.75} aria-hidden />,
+  clients: <Users strokeWidth={1.75} aria-hidden />,
+  pipeline: <Columns3 strokeWidth={1.75} aria-hidden />,
+  alerts: <Bell strokeWidth={1.75} aria-hidden />,
+  staff: <Activity strokeWidth={1.75} aria-hidden />,
+  settings: <Settings strokeWidth={1.75} aria-hidden />,
 }
 
 const RECENT_SHOWN = 4
@@ -36,15 +36,15 @@ export function Rail({ onShortcuts }: { onShortcuts: () => void }) {
   const alertCount = useAlertCount(!clientId)
 
   return (
-    <div className="flex h-full w-[72px] flex-col items-center overflow-y-auto overscroll-contain bg-sidebar py-3 text-sidebar-foreground [scrollbar-width:none]">
+    <div className="flex h-full w-20 flex-col items-center overflow-y-auto overscroll-contain border-r border-white/10 bg-sidebar py-3 text-sidebar-foreground [scrollbar-width:none]">
       <Link
         to={(items[0] ? railHref(items[0], can) : '/clients') as never}
         aria-label="AutoCA home"
-        className="mb-2 grid size-9 shrink-0 place-items-center rounded-lg bg-brand text-[13px] font-bold tracking-tight text-white"
+        className="mb-3 grid size-9 shrink-0 place-items-center rounded-md bg-brand text-[13px] font-bold tracking-tight text-white"
       >
         CA
       </Link>
-      <nav aria-label="Main" className="flex w-full flex-col items-center gap-0.5 px-1.5">
+      <nav aria-label="Main" className="flex w-full flex-col items-center gap-1 px-2">
         {items.map((item) => {
           const isActive = active === item.id
           const count = item.id === 'alerts' && alertCount ? alertCount : 0
@@ -55,14 +55,14 @@ export function Rail({ onShortcuts }: { onShortcuts: () => void }) {
               activeOptions={{ exact: true, includeSearch: false }}
               aria-current={isActive ? 'page' : undefined}
               className={cn(
-                'relative flex w-full flex-col items-center gap-1 rounded-lg pb-1.5 pt-2 text-[11px] font-medium leading-3 text-sidebar-foreground hover:bg-white/5 hover:text-white [&_svg]:size-5',
-                isActive && 'bg-sidebar-active text-white before:absolute before:inset-y-2 before:-left-1.5 before:w-[3px] before:rounded-full before:bg-sidebar-bar',
+                'relative flex min-h-14 w-full flex-col items-center justify-center gap-1 rounded-md px-0.5 py-1.5 text-xs font-medium leading-4 text-sidebar-foreground hover:bg-white/5 hover:text-white [&_svg]:size-5 [&_svg]:shrink-0',
+                isActive && 'bg-sidebar-active text-white before:absolute before:inset-y-2 before:-left-2 before:w-[3px] before:rounded-full before:bg-sidebar-bar',
               )}
             >
               {RAIL_ICONS[item.id]}
-              {item.label}
+              <span>{item.label}</span>
               {count > 0 && (
-                <span className="num absolute right-1 top-1 grid min-w-4 place-items-center rounded-full bg-sidebar-chip px-1 text-[10px] font-semibold leading-4 text-sidebar-chip-foreground">
+                <span className="num absolute right-1.5 top-1 grid min-w-4 place-items-center rounded-full bg-sidebar-chip px-1 text-[10px] font-semibold leading-4 text-sidebar-chip-foreground">
                   {count > 99 ? '99+' : count}
                   <span className="sr-only"> need attention</span>
                 </span>
@@ -83,8 +83,8 @@ function RecentClients({ currentId }: { currentId?: string }) {
   const named = useClientNames(recent.slice(0, RECENT_SHOWN + 1)).slice(0, RECENT_SHOWN)
   if (named.length === 0) return null
   return (
-    <section aria-label="Recent clients" className="mt-3 flex w-full flex-col items-center gap-2 border-t border-white/10 px-1.5 pt-3">
-      <h2 className="text-[11px] font-medium uppercase tracking-[0.06em] text-sidebar-muted">Recent</h2>
+    <section aria-label="Recent clients" className="mt-3 flex w-full flex-col items-center gap-2 border-t border-white/10 px-2 pt-3">
+      <h2 className="text-xs font-medium text-sidebar-muted">Recent</h2>
       {named.map((c) => {
         const current = c.id === currentId
         return (
@@ -97,7 +97,7 @@ function RecentClients({ currentId }: { currentId?: string }) {
             aria-current={current ? 'page' : undefined}
             title={c.name}
             className={cn(
-              'grid size-9 place-items-center rounded-lg text-xs font-semibold text-sidebar-foreground hover:bg-white/15 hover:text-white',
+              'grid size-9 place-items-center rounded-md text-xs font-semibold text-sidebar-foreground hover:bg-white/15 hover:text-white',
               current ? 'bg-sidebar-active text-white ring-2 ring-sidebar-bar' : 'bg-white/10',
             )}
           >

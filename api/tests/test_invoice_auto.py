@@ -172,3 +172,12 @@ def test_a_party_of_the_same_name_is_never_taken_over_by_what_a_file_says(api, c
     assert "already a party" in reading["attention"]
     parties = api.get(f"{base(client_record)}/parties/").json()["results"]
     assert [p["canonical_name"] for p in parties] == ["Ravi Traders"]
+
+
+def test_a_sale_to_a_customer_not_on_record_waits_for_a_person(api, client_record):
+    register_own_gstin(client_record)
+
+    reading = upload(api, client_record, SALE).json()
+
+    assert reading["kind"] == "SALES" and reading["status"] == "OPEN" and reading["bill"] is None
+    assert "customer is not on record" in reading["attention"]

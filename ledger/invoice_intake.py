@@ -368,6 +368,10 @@ def _find_or_make_party(client, kind: str, gstin: str, name: str) -> Party:
     party = Party.objects.filter(firm_id=client.firm_id, client=client, gstin_hash=digest).first()
     if party is not None:
         return party
+    if kind == BillKind.SALES:
+        raise IntakeError(
+            "This customer is not on record yet. A new customer is added by a person, so choose or add the customer and book it."
+        )
     name = " ".join((name or "").split())[:255]
     if len(name) < 3:
         raise IntakeError("The party's name could not be read. Choose the party and book it.")
@@ -430,6 +434,15 @@ def _book(reading: InvoiceReading, membership) -> str:
     try:
         with transaction.atomic():
             party = _find_or_make_party(client, reading.kind, gstin, name)
+            if purchase and party.tds_section:
+                raise IntakeError(
+                    f"TDS (section {party.tds_section}) normally applies to {party.canonical_name}. "
+                    "Enter the amount deducted and book it."
+                )
+            if purchase and party.rcm_default:
+                raise IntakeError(
+                    f"Reverse charge applies to {party.canonical_name}. Confirm the tax treatment and book it."
+                )
             head = billing.standard_ledger(client, "Purchases" if purchase else "Sales")
             data = billing.BillInput(
                 reference=fields["invoice_no"],
@@ -457,11 +470,14 @@ def _book(reading: InvoiceReading, membership) -> str:
 def settle_payment(bill: Bill) -> bool:
     """Match the bill to its payment when exactly one bank payment on the party's account is for exactly its total.
 
-    Only an unambiguous match is linked. Two payments of the same amount, or a payment posted to some other head, are left
-    for a person (the screen shows the payment beside the invoice).
+    Two cases, both only when unambiguous: a payment on the party's account with nothing allocated yet, and money a person
+    held on account or as an advance because the invoice had not arrived (it is applied now that it has). Two payments of
+    the same amount, a payment posted to some other head, or one inside signed-off books are left for a person; the screen
+    shows the payment beside the invoice. A payment that comes *after* the invoice is settled by the person who approves
+    it, with this bill proposed (``ledger.settlement``): that decision is deliberately never automatic.
     """
-    from ledger import billing
-    from ledger.models import JournalLine
+    from ledger import billing, editing
+    from ledger.models import AllocationKind, BillAllocation, JournalLine
 
     lines = (
         JournalLine.objects.filter(
@@ -471,12 +487,28 @@ def settle_payment(bill: Bill) -> bool:
         .exclude(direction=bill.direction)
         .select_related("entry")
     )
-    exact = [line for line in lines if billing.line_unallocated(line) == bill.total_paise]
-    if len(exact) != 1:
+    free = [line for line in lines if billing.line_unallocated(line) == bill.total_paise]
+    held = list(
+        BillAllocation.objects.filter(
+            firm_id=bill.firm_id, client_id=bill.client_id, bill__isnull=True,
+            kind__in=(AllocationKind.ON_ACCOUNT, AllocationKind.ADVANCE),
+            line__party_id=bill.party_id, line__entry__source_transaction__isnull=False,
+            amount_paise=bill.total_paise,
+        )
+        .exclude(line__direction=bill.direction)
+        .select_related("line__entry")
+    )
+    if len(free) + len(held) != 1:
         return False
     try:
-        billing.allocate(exact[0], amount_paise=bill.total_paise, bill=bill)
-    except billing.BillingError:
+        with transaction.atomic():
+            if free:
+                editing.require_editable(free[0].entry)
+                billing.allocate(free[0], amount_paise=bill.total_paise, bill=bill)
+            else:
+                editing.require_editable(held[0].line.entry)
+                billing.apply_unapplied(held[0], bill, amount_paise=bill.total_paise)
+    except (billing.BillingError, editing.EntryLockedError, ValueError):
         return False
     return True
 

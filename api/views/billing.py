@@ -116,6 +116,8 @@ class BillViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.RetrieveModel
         payload = BillCreateSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         bill = self._book(request, payload.validated_data)
+        # A payment already on the party's account for exactly this amount is its payment: not left as an island.
+        invoice_intake.settle_payment(bill)
         return Response(BillDetailSerializer(self.get_queryset().get(pk=bill.pk)).data, status=status.HTTP_201_CREATED)
 
     def _book(self, request, data) -> Bill:

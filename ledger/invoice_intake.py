@@ -355,10 +355,12 @@ def note_booked(document: Document, bill: Bill, *, user) -> None:
 # ---------------------------------------------------------------------------
 
 
-def _find_or_make_party(client, kind: str, gstin: str, name: str) -> Party | None:
-    """The client's party for this GSTIN; else a party of the same name that has no GSTIN yet; else a new one.
+def _find_or_make_party(client, kind: str, gstin: str, name: str) -> Party:
+    """The client's party for this GSTIN, or a new one when there is no party of that name at all.
 
-    ``None`` when there is none and the name could not be read, because a party is never invented without one.
+    What a file says is not trusted to change what the books already know: a party of the same name that has a different
+    GSTIN, or none, is never taken over or duplicated here (a person decides which party it is). A party is never invented
+    without a name.
     """
     from classify.models import PartyRole
 
@@ -368,14 +370,12 @@ def _find_or_make_party(client, kind: str, gstin: str, name: str) -> Party | Non
         return party
     name = " ".join((name or "").split())[:255]
     if len(name) < 3:
-        return None
-    same = Party.objects.filter(firm_id=client.firm_id, client=client, canonical_name__iexact=name).first()
-    if same is not None:
-        if not same.gstin:  # typically imported from Tally with no GSTIN: it is this party
-            same.set_gstin(gstin)
-            same.save(update_fields=["gstin_enc", "gstin_hash"])
-            return same
-        name = f"{name[:240]} ({gstin[-4:]})"
+        raise IntakeError("The party's name could not be read. Choose the party and book it.")
+    if Party.objects.filter(firm_id=client.firm_id, client=client, canonical_name__iexact=name).exists():
+        raise IntakeError(
+            f"{name} is already a party here with a different (or no) GSTIN than the one on this invoice. "
+            "Choose which party it is and book it."
+        )
     role = PartyRole.VENDOR if kind == BillKind.PURCHASE else PartyRole.CUSTOMER
     party = Party(firm_id=client.firm_id, client=client, canonical_name=name, role=role)
     party.set_gstin(gstin)
@@ -430,8 +430,6 @@ def _book(reading: InvoiceReading, membership) -> str:
     try:
         with transaction.atomic():
             party = _find_or_make_party(client, reading.kind, gstin, name)
-            if party is None:
-                return f"The {'supplier' if purchase else 'customer'}'s name could not be read. Choose the party and book it."
             head = billing.standard_ledger(client, "Purchases" if purchase else "Sales")
             data = billing.BillInput(
                 reference=fields["invoice_no"],
@@ -449,7 +447,7 @@ def _book(reading: InvoiceReading, membership) -> str:
             bill = post(client, party, [(head, fields["taxable_paise"])], data, membership=membership)
             note_booked(document, bill, user=membership.user)
             InvoiceReading.objects.filter(pk=reading.pk).update(auto_booked=True, attention="")
-    except (billing.BillingError, PermissionDenied) as exc:
+    except (billing.BillingError, IntakeError, PermissionDenied) as exc:
         return str(exc)
     reading.refresh_from_db()
     settle_payment(bill)

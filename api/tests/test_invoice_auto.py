@@ -13,7 +13,7 @@ from core.identifiers import gstin_check_character
 from gst.models import GstRegistration
 from integrations.registry import reset_adapter_cache
 
-pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("fixture_adapters")]
+pytestmark = pytest.mark.django_db
 
 V1 = "/api/v1"
 OWN = "27AAACA1234B1Z" + gstin_check_character("27AAACA1234B1Z")
@@ -160,3 +160,15 @@ def test_naming_the_kind_at_upload_keeps_the_manual_flow(api, client_record):
     reading = api.post(f"{base(client_record)}/invoices/upload/", {"file": file, "kind": "PURCHASE"}, format="multipart").json()
 
     assert reading["status"] == "OPEN" and reading["auto_booked"] is False
+
+
+def test_a_party_of_the_same_name_is_never_taken_over_by_what_a_file_says(api, client_record):
+    register_own_gstin(client_record)
+    api.post(f"{base(client_record)}/parties/", {"canonical_name": "Ravi Traders", "role": "VENDOR", "gstin": ""}, format="json")
+
+    reading = upload(api, client_record, PURCHASE).json()
+
+    assert reading["status"] == "OPEN" and reading["bill"] is None
+    assert "already a party" in reading["attention"]
+    parties = api.get(f"{base(client_record)}/parties/").json()["results"]
+    assert [p["canonical_name"] for p in parties] == ["Ravi Traders"]

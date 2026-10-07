@@ -24,7 +24,7 @@ from api.serializers.billing import (
 from api.views.base import ClientScopedMixin
 from classify.models import LedgerAccount, Party
 from documents.models import Document
-from ledger import billing, invoice_intake
+from ledger import billing, editing, invoice_intake
 from ledger.billing import BillInput
 from ledger.models import Bill, BillKind, InvoiceReading
 
@@ -187,7 +187,10 @@ class BillViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.RetrieveModel
             reading = InvoiceReading.objects.filter(bill=bill).first()
             data["document"] = reading.document_id if reading else None
         with transaction.atomic():
-            settled = [(a.line, a.amount_paise) for a in bill.allocations.select_related("line")]
+            settled = [(a.line, a.amount_paise) for a in bill.allocations.select_related("line__entry")]
+            # A payment inside signed-off books is not re-linked from here, whatever it settled.
+            for line, _ in settled:
+                editing.require_editable(line.entry)
             for allocation in bill.allocations.all():
                 allocation.delete()
             billing.remove_bill(bill, membership=request.membership, note="Changed by a person.")

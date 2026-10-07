@@ -612,9 +612,9 @@ class InvoiceReading(UUIDModel, FirmScopedModel):
     )
     status = models.CharField(max_length=10, choices=ReadingStatus.choices, default=ReadingStatus.OPEN)
     #: The bill was booked by the system from this file, not by a person. Cleared once a person changes or confirms it.
-    auto_booked = models.BooleanField(default=False)
+    auto_booked = models.BooleanField(default=False, db_default=False)
     #: Why the system did not book this file itself, in words for the alert and the screen. Blank when it did.
-    attention = models.CharField(max_length=255, blank=True, default="")
+    attention = models.CharField(max_length=255, blank=True, default="", db_default="")
     #: Every check passed. A reading that is not proved is still shown, with what failed, for a person to fix.
     proved = models.BooleanField(default=False)
     checks = models.JSONField(default=list)

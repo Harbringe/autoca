@@ -6,7 +6,9 @@ import datetime
 import uuid
 
 from django.core.exceptions import PermissionDenied
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
@@ -25,7 +27,7 @@ from api.serializers.ledger import (
     RemoveEntrySerializer,
     TrialBalanceSerializer,
 )
-from api.serializers.nce import StatementsSerializer
+from api.serializers.nce import StatementSettingsSerializer, StatementsSerializer
 from api.serializers.openitems import BillStatusSerializer
 from api.serializers.settlement import (
     SettledSerializer,
@@ -40,7 +42,7 @@ from classify.treatment import Treatment
 from core.access import can_post, get_visible_client, posting_refusal, visible_client_ids
 from core.fy import financial_year
 from core.money import format_inr
-from ledger import billing, nce
+from ledger import billing, nce, nce_export
 from ledger import settlement as settling
 from ledger.approval import approve_many, correct
 from ledger.editing import remove_entry, require_bank_entry
@@ -429,6 +431,62 @@ class ReportView(viewsets.GenericViewSet):
     def financial_statements(self, request, client_id=None):
         client, year = self._client_and_year(request, client_id)
         return Response(StatementsSerializer(nce.build(client, year)).data)
+
+    @extend_schema(
+        summary="Download the financial statements as an Excel workbook",
+        description=(
+            "The Balance Sheet, Statement of Profit and Loss and the notes of the ICAI non-corporate format as an .xlsx, "
+            "in the unit the client's statements are rounded to."
+        ),
+        parameters=[FY_PARAM],
+        responses={(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"): OpenApiTypes.BINARY},
+    )
+    def financial_statements_export(self, request, client_id=None):
+        client, year = self._client_and_year(request, client_id)
+        response = HttpResponse(
+            nce_export.workbook(client, year, nce.build(client, year)),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="financial-statements-FY{year}-{(year + 1) % 100:02d}.xlsx"'
+        return response
+
+
+@extend_schema(tags=["reports"])
+class StatementSettingsView(viewsets.GenericViewSet):
+    """What the financial statements need that no ledger holds."""
+
+    permission_classes = [HasFirmPermission]
+    required_permission = {"GET": "report.view", "PUT": "ledger.manage"}
+    serializer_class = StatementSettingsSerializer
+
+    @extend_schema(summary="Statement settings", responses=StatementSettingsSerializer)
+    def retrieve(self, request, client_id=None):
+        client = get_visible_client(request, client_id)
+        return Response(StatementSettingsSerializer(nce.read_settings(client)).data)
+
+    @extend_schema(
+        summary="Change the statement settings",
+        description=(
+            "Notes 1 and 2, the units the statements are rounded to, and for each financial year the closing stock and the "
+            "partners with their shares and movements (Note 3). Years not sent are kept as they are; a year that is sent "
+            "replaces that year's stock and partners. Requires `ledger.manage`."
+        ),
+        request=StatementSettingsSerializer,
+        responses=StatementSettingsSerializer,
+    )
+    def update(self, request, client_id=None):
+        client = get_visible_client(request, client_id)
+        body = StatementSettingsSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        current = nce.read_settings(client)
+        for key in ("about", "policies", "rounding"):
+            if key in body.validated_data:
+                current[key] = body.validated_data[key]
+        for fy, year in body.validated_data.get("years", {}).items():
+            current["years"][fy] = {"closing_stock_paise": year.get("closing_stock_paise"), "partners": year.get("partners", [])}
+        client.nce_settings = nce.normalise_settings(current)
+        client.save(update_fields=["nce_settings"])
+        return Response(StatementSettingsSerializer(nce.read_settings(client)).data)
 
 
 @extend_schema(tags=["reports"])

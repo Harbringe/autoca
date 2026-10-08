@@ -1608,6 +1608,50 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/reports/financial-statements/export/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download the financial statements as an Excel workbook
+         * @description The Balance Sheet, Statement of Profit and Loss and the notes of the ICAI non-corporate format as an .xlsx, in the unit the client's statements are rounded to.
+         */
+        get: operations["clients_reports_financial_statements_export_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/reports/financial-statements/settings/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Statement settings
+         * @description What the financial statements need that no ledger holds.
+         */
+        get: operations["clients_reports_financial_statements_settings_retrieve"];
+        /**
+         * Change the statement settings
+         * @description Notes 1 and 2, the units the statements are rounded to, and for each financial year the closing stock and the partners with their shares and movements (Note 3). Years not sent are kept as they are; a year that is sent replaces that year's stock and partners. Requires `ledger.manage`.
+         */
+        put: operations["clients_reports_financial_statements_settings_update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/reports/profit-and-loss/": {
         parameters: {
             query?: never;
@@ -3637,6 +3681,21 @@ export interface components {
             date: string;
             count: number;
         };
+        CapitalTable: {
+            rows: components["schemas"]["PartnerRow"][];
+            /** @description The year before, partner by partner. */
+            previous: components["schemas"]["PartnerRow"][];
+            /**
+             * Format: int64
+             * @description Capital and reserves on the balance sheet.
+             */
+            owners_funds_paise: number;
+            /**
+             * Format: int64
+             * @description Owners' funds on the balance sheet less the partners' closing balances; nil when they agree.
+             */
+            difference_paise: number;
+        };
         Challan: {
             /** Format: uuid */
             readonly id: string;
@@ -5023,6 +5082,8 @@ export interface components {
              * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
              */
             previous_paise: number;
+            /** @description The sub-head of the note this row is listed under; blank where the note has none. */
+            section: string;
         };
         /** @enum {unknown} */
         NullEnum: null;
@@ -5646,6 +5707,106 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["TallyImportSummary"][];
+        };
+        PartnerInput: {
+            name: string;
+            /** @description Share of profit in basis points. */
+            share_bp: number;
+            /**
+             * Format: int64
+             * @description Leave empty to carry the previous year's closing balance.
+             */
+            opening_paise?: number | null;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            introduced_paise: number;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            remuneration_paise: number;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            interest_paise: number;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            withdrawals_paise: number;
+        };
+        PartnerInputRequest: {
+            name: string;
+            /** @description Share of profit in basis points. */
+            share_bp: number;
+            /**
+             * Format: int64
+             * @description Leave empty to carry the previous year's closing balance.
+             */
+            opening_paise?: number | null;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            introduced_paise: number;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            remuneration_paise: number;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            interest_paise: number;
+            /**
+             * Format: int64
+             * @default 0
+             */
+            withdrawals_paise: number;
+        };
+        PartnerRow: {
+            name: string;
+            /** @description Share of profit in basis points: 5000 is 50%. */
+            share_bp: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            opening_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            introduced_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            remuneration_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            interest_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            withdrawals_paise: number;
+            /**
+             * Format: int64
+             * @description The partner's share of the year's profit or loss.
+             */
+            profit_share_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            closing_paise: number;
         };
         Party: {
             /** Format: uuid */
@@ -6465,6 +6626,15 @@ export interface components {
          * @enum {string}
          */
         Role2a3Enum: "VENDOR" | "CUSTOMER" | "BOTH" | "OTHER";
+        /**
+         * @description * `rupees` - rupees
+         *     * `hundreds` - hundreds
+         *     * `thousands` - thousands
+         *     * `lakhs` - lakhs
+         *     * `crores` - crores
+         * @enum {string}
+         */
+        RoundingEnum: "rupees" | "hundreds" | "thousands" | "lakhs" | "crores";
         /** @description A person's decision about what one payment or receipt on a party's account is for. */
         RowSettlementRequest: {
             allocations?: components["schemas"]["SettlementAllocationRequest"][];
@@ -6804,6 +6974,30 @@ export interface components {
          * @enum {string}
          */
         StatementRowKindEnum: "heading" | "line" | "subtotal" | "total";
+        /** @description What the statements need that no ledger holds. Years not sent are left as they are. */
+        StatementSettings: {
+            /** @description Note 1: a brief about the entity. */
+            about?: string;
+            /** @description Note 2: significant accounting policies. */
+            policies?: string;
+            rounding?: components["schemas"]["RoundingEnum"];
+            /** @description By starting year of the financial year, e.g. '2025'. */
+            years?: {
+                [key: string]: components["schemas"]["YearSettings"];
+            };
+        };
+        /** @description What the statements need that no ledger holds. Years not sent are left as they are. */
+        StatementSettingsRequest: {
+            /** @description Note 1: a brief about the entity. */
+            about?: string;
+            /** @description Note 2: significant accounting policies. */
+            policies?: string;
+            rounding?: components["schemas"]["RoundingEnum"];
+            /** @description By starting year of the financial year, e.g. '2025'. */
+            years?: {
+                [key: string]: components["schemas"]["YearSettingsRequest"];
+            };
+        };
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         StatementTransaction: {
             /** Format: uuid */
@@ -6877,6 +7071,18 @@ export interface components {
              * @description What sits in Suspense, shown on Other current assets or liabilities and warned about.
              */
             suspense_paise: number;
+            /** @description Paise in one unit of the figures: 100 for rupees, 10000000 for lakhs. Figures are already rounded to it. */
+            unit_paise: number;
+            /** @description How the statements state the unit, e.g. 'Rs. in lakhs'. */
+            unit_label: string;
+            /** @description Note 1. */
+            about: string;
+            /** @description Note 2. */
+            policies: string;
+            /** @description Note 3's partner-wise table; null until partners are entered. */
+            capital: components["schemas"]["CapitalTable"] | null;
+            /** @description What to settle before the statements go out. */
+            warnings: string[];
         };
         /**
          * @description * `PREVIEW` - Previewed, not applied
@@ -7578,6 +7784,16 @@ export interface components {
             rules_written: number;
             proposals_decided: number;
             model_runs: number;
+        };
+        YearSettings: {
+            /** Format: int64 */
+            closing_stock_paise?: number | null;
+            partners?: components["schemas"]["PartnerInput"][];
+        };
+        YearSettingsRequest: {
+            /** Format: int64 */
+            closing_stock_paise?: number | null;
+            partners?: components["schemas"]["PartnerInputRequest"][];
         };
     };
     responses: never;
@@ -10263,6 +10479,78 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Statements"];
+                };
+            };
+        };
+    };
+    clients_reports_financial_statements_export_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Financial year by its starting year: 2025 means FY2025-26. */
+                fy?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
+                };
+            };
+        };
+    };
+    clients_reports_financial_statements_settings_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementSettings"];
+                };
+            };
+        };
+    };
+    clients_reports_financial_statements_settings_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["StatementSettingsRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["StatementSettingsRequest"];
+                "multipart/form-data": components["schemas"]["StatementSettingsRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementSettings"];
                 };
             };
         };

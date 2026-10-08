@@ -256,3 +256,5 @@ export type Health = Schemas['HealthEnum']
 
 export type Statements = Schemas['Statements']
 export type StatementRow = Schemas['StatementRow']
+export type StatementSettings = Schemas['StatementSettings']
+export type PartnerRow = Schemas['PartnerRow']

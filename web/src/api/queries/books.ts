@@ -7,7 +7,7 @@
 
 import { queryOptions } from '@tanstack/react-query'
 import { raw } from '@/api/client'
-import type { Statements,
+import type {
   BalanceCheck,
   BalanceSheet,
   Classification,
@@ -19,6 +19,8 @@ import type { Statements,
   Party,
   ProfitAndLoss,
   Rule,
+  Statements,
+  StatementSettings,
   StatementTransaction,
   TrialBalance,
 } from '@/api/types'
@@ -118,4 +120,11 @@ export const financialStatements = (clientId: string, fy: number) =>
   queryOptions({
     queryKey: clientKeys.part(clientId, 'financial-statements', fy),
     queryFn: () => raw.get<Statements>(`${V1}/clients/${clientId}/reports/financial-statements/`, { fy }),
+  })
+
+/** What the statements need that no ledger holds: Notes 1 and 2, rounding, and each year's closing stock and partners. */
+export const statementSettings = (clientId: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'financial-statements', 'settings'),
+    queryFn: () => raw.get<StatementSettings>(`${V1}/clients/${clientId}/reports/financial-statements/settings/`),
   })

@@ -111,6 +111,11 @@ class Client(UUIDModel, FirmScopedModel):
     #: numbers in it.
     business_profile = models.TextField(blank=True, default="", max_length=2000)
 
+    #: What the financial statements need that no ledger holds: the entity's description and accounting policies (Notes 1
+    #: and 2), the partners with their shares and movements (Note 3), the closing stock for each year, and the units the
+    #: statements are rounded to. Read and written only through ``ledger.nce`` (``read_settings``); shape described there.
+    nce_settings = models.JSONField(default=dict, db_default={}, blank=True)
+
     #: How often this client's books are sealed (permanently locked). A senior's approval says "this is good" and locks
     #: nothing; the seal is what locks, and only on the dates this schedule names.
     close_period = models.CharField(

@@ -3571,6 +3571,96 @@ paths:
               schema:
                 $ref: '#/components/schemas/Statements'
           description: ''
+  /api/v1/clients/{client_id}/reports/financial-statements/export/:
+    get:
+      operationId: clients_reports_financial_statements_export_retrieve
+      description: The Balance Sheet, Statement of Profit and Loss and the notes of
+        the ICAI non-corporate format as an .xlsx, in the unit the client's statements
+        are rounded to.
+      summary: Download the financial statements as an Excel workbook
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: 'Financial year by its starting year: 2025 means FY2025-26.'
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+          description: ''
+  /api/v1/clients/{client_id}/reports/financial-statements/settings/:
+    get:
+      operationId: clients_reports_financial_statements_settings_retrieve
+      description: What the financial statements need that no ledger holds.
+      summary: Statement settings
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatementSettings'
+          description: ''
+    put:
+      operationId: clients_reports_financial_statements_settings_update
+      description: Notes 1 and 2, the units the statements are rounded to, and for
+        each financial year the closing stock and the partners with their shares and
+        movements (Note 3). Years not sent are kept as they are; a year that is sent
+        replaces that year's stock and partners. Requires `ledger.manage`.
+      summary: Change the statement settings
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - reports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StatementSettingsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StatementSettingsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StatementSettingsRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatementSettings'
+          description: ''
   /api/v1/clients/{client_id}/reports/profit-and-loss/:
     get:
       operationId: clients_reports_profit_and_loss_retrieve
@@ -7691,6 +7781,36 @@ components:
       required:
       - count
       - date
+    CapitalTable:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/PartnerRow'
+        previous:
+          type: array
+          items:
+            $ref: '#/components/schemas/PartnerRow'
+          description: The year before, partner by partner.
+        owners_funds_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Capital and reserves on the balance sheet.
+        difference_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Owners' funds on the balance sheet less the partners' closing
+            balances; nil when they agree.
+      required:
+      - difference_paise
+      - owners_funds_paise
+      - previous
+      - rows
     Challan:
       type: object
       properties:
@@ -10766,11 +10886,16 @@ components:
           format: int64
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
+        section:
+          type: string
+          description: The sub-head of the note this row is listed under; blank where
+            the note has none.
       required:
       - current_paise
       - label
       - ledger
       - previous_paise
+      - section
     NullEnum:
       enum:
       - null
@@ -11902,6 +12027,163 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TallyImportSummary'
+    PartnerInput:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 120
+        share_bp:
+          type: integer
+          maximum: 10000
+          minimum: 0
+          description: Share of profit in basis points.
+        opening_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          nullable: true
+          description: Leave empty to carry the previous year's closing balance.
+        introduced_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+        remuneration_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+        interest_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+        withdrawals_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+      required:
+      - name
+      - share_bp
+    PartnerInputRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 120
+        share_bp:
+          type: integer
+          maximum: 10000
+          minimum: 0
+          description: Share of profit in basis points.
+        opening_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          nullable: true
+          description: Leave empty to carry the previous year's closing balance.
+        introduced_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+        remuneration_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+        interest_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+        withdrawals_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+      required:
+      - name
+      - share_bp
+    PartnerRow:
+      type: object
+      properties:
+        name:
+          type: string
+        share_bp:
+          type: integer
+          description: 'Share of profit in basis points: 5000 is 50%.'
+        opening_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        introduced_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        remuneration_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        interest_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        withdrawals_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        profit_share_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: The partner's share of the year's profit or loss.
+        closing_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - closing_paise
+      - interest_paise
+      - introduced_paise
+      - name
+      - opening_paise
+      - profit_share_paise
+      - remuneration_paise
+      - share_bp
+      - withdrawals_paise
     Party:
       type: object
       properties:
@@ -13598,6 +13880,20 @@ components:
         * `CUSTOMER` - Customer
         * `BOTH` - Both supplier and customer
         * `OTHER` - Other (lender, employee, related party)
+    RoundingEnum:
+      enum:
+      - rupees
+      - hundreds
+      - thousands
+      - lakhs
+      - crores
+      type: string
+      description: |-
+        * `rupees` - rupees
+        * `hundreds` - hundreds
+        * `thousands` - thousands
+        * `lakhs` - lakhs
+        * `crores` - crores
     RowSettlementRequest:
       type: object
       description: A person's decision about what one payment or receipt on a party's
@@ -14234,6 +14530,46 @@ components:
         * `line` - line
         * `subtotal` - subtotal
         * `total` - total
+    StatementSettings:
+      type: object
+      description: What the statements need that no ledger holds. Years not sent are
+        left as they are.
+      properties:
+        about:
+          type: string
+          description: 'Note 1: a brief about the entity.'
+          maxLength: 8000
+        policies:
+          type: string
+          description: 'Note 2: significant accounting policies.'
+          maxLength: 8000
+        rounding:
+          $ref: '#/components/schemas/RoundingEnum'
+        years:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/YearSettings'
+          description: By starting year of the financial year, e.g. '2025'.
+    StatementSettingsRequest:
+      type: object
+      description: What the statements need that no ledger holds. Years not sent are
+        left as they are.
+      properties:
+        about:
+          type: string
+          description: 'Note 1: a brief about the entity.'
+          maxLength: 8000
+        policies:
+          type: string
+          description: 'Note 2: significant accounting policies.'
+          maxLength: 8000
+        rounding:
+          $ref: '#/components/schemas/RoundingEnum'
+        years:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/YearSettingsRequest'
+          description: By starting year of the financial year, e.g. '2025'.
     StatementTransaction:
       type: object
       description: Adds a ``*_display`` string beside every ``*_paise`` field named
@@ -14392,15 +14728,44 @@ components:
           format: int64
           description: What sits in Suspense, shown on Other current assets or liabilities
             and warned about.
+        unit_paise:
+          type: integer
+          description: 'Paise in one unit of the figures: 100 for rupees, 10000000
+            for lakhs. Figures are already rounded to it.'
+        unit_label:
+          type: string
+          description: How the statements state the unit, e.g. 'Rs. in lakhs'.
+        about:
+          type: string
+          description: Note 1.
+        policies:
+          type: string
+          description: Note 2.
+        capital:
+          allOf:
+          - $ref: '#/components/schemas/CapitalTable'
+          nullable: true
+          description: Note 3's partner-wise table; null until partners are entered.
+        warnings:
+          type: array
+          items:
+            type: string
+          description: What to settle before the statements go out.
       required:
+      - about
       - balance_sheet
       - balances
+      - capital
       - footer
       - has_previous
       - notes
+      - policies
       - profit_and_loss
       - regroupings
       - suspense_paise
+      - unit_label
+      - unit_paise
+      - warnings
     Status105Enum:
       enum:
       - PREVIEW
@@ -15705,6 +16070,32 @@ components:
       - rows_placed
       - rules_written
       - statements_uploaded
+    YearSettings:
+      type: object
+      properties:
+        closing_stock_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          nullable: true
+        partners:
+          type: array
+          items:
+            $ref: '#/components/schemas/PartnerInput'
+    YearSettingsRequest:
+      type: object
+      properties:
+        closing_stock_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          nullable: true
+        partners:
+          type: array
+          items:
+            $ref: '#/components/schemas/PartnerInputRequest'
   securitySchemes:
     cookieAuth:
       type: apiKey

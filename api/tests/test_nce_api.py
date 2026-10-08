@@ -77,3 +77,106 @@ def test_a_ledger_can_be_placed_on_a_line_by_hand_and_a_wrong_line_is_refused(ap
     pl = by_key(statements(api, client_record)["profit_and_loss"])
     assert pl["PL.EXP"]["current_paise"] == 10_000_00 and pl["PL.COGS"]["current_paise"] == 0
     assert party["id"]
+
+
+def put_settings(api, client_record, body):
+    response = api.put(f"{base(client_record)}/reports/financial-statements/settings/", body, format="json")
+    assert response.status_code == 200, response.content
+    return response.json()
+
+
+def test_the_settings_start_empty_and_keep_what_is_saved(api, client_record):
+    empty = api.get(f"{base(client_record)}/reports/financial-statements/settings/").json()
+    assert empty["rounding"] == "rupees" and empty["years"] == {} and empty["about"] == ""
+
+    put_settings(api, client_record, {"about": "A trading firm.", "policies": "Accrual basis.", "rounding": "thousands", "years": {"2025": {"closing_stock_paise": 5_00}}})
+    saved = api.get(f"{base(client_record)}/reports/financial-statements/settings/").json()
+    assert saved["about"] == "A trading firm." and saved["rounding"] == "thousands"
+    assert saved["years"]["2025"]["closing_stock_paise"] == 5_00
+
+    refused = api.put(f"{base(client_record)}/reports/financial-statements/settings/", {"years": {"next year": {}}}, format="json")
+    assert refused.status_code == 400
+    over = api.put(
+        f"{base(client_record)}/reports/financial-statements/settings/",
+        {"years": {"2025": {"partners": [{"name": "A", "share_bp": 6000}, {"name": "B", "share_bp": 6000}]}}},
+        format="json",
+    )
+    assert over.status_code == 400
+
+
+def test_closing_stock_lowers_the_cost_of_goods_and_the_sheet_still_balances(api, client_record):
+    book_purchase(api, client_record)
+    put_settings(api, client_record, {"years": {"2025": {"closing_stock_paise": 4_000_00}}})
+
+    report = statements(api, client_record)
+
+    bs, pl = by_key(report["balance_sheet"]), by_key(report["profit_and_loss"])
+    assert bs["CA.STOCK"]["current_paise"] == 4_000_00
+    assert pl["PL.COGS"]["current_paise"] == 6_000_00
+    assert pl["t.XVII"]["current_paise"] == -6_000_00
+    assert report["balances"] is True
+    cogs_note = {n["number"]: n for n in report["notes"]}[21]
+    assert [r["section"] for r in cogs_note["rows"]] == ["Purchases of stock-in-trade", "Changes in inventories"]
+
+
+def test_next_year_the_stock_carried_forward_is_charged_unless_the_new_closing_is_entered(api, client_record):
+    book_purchase(api, client_record)
+    put_settings(api, client_record, {"years": {"2025": {"closing_stock_paise": 4_000_00}}})
+
+    report = statements(api, client_record, fy=2026)
+
+    bs, pl = by_key(report["balance_sheet"]), by_key(report["profit_and_loss"])
+    assert bs["CA.STOCK"]["previous_paise"] == 4_000_00 and bs["CA.STOCK"]["current_paise"] == 0
+    assert pl["PL.COGS"]["current_paise"] == 4_000_00  # the opening stock, consumed
+    assert report["balances"] is True
+
+
+def test_partners_are_tabled_with_their_share_of_the_profit(api, client_record):
+    book_purchase(api, client_record)
+    put_settings(
+        api,
+        client_record,
+        {
+            "years": {
+                "2025": {
+                    "partners": [
+                        {"name": "Asha", "share_bp": 6000, "opening_paise": 0, "introduced_paise": 3_000_00},
+                        {"name": "Bala", "share_bp": 4000, "opening_paise": 0, "introduced_paise": 2_000_00, "withdrawals_paise": 500_00},
+                    ]
+                }
+            }
+        },
+    )
+
+    capital = statements(api, client_record)["capital"]
+
+    asha, bala = capital["rows"]
+    assert asha["profit_share_paise"] == -6_000_00 and bala["profit_share_paise"] == -4_000_00  # a loss of 10,000
+    assert asha["closing_paise"] == 3_000_00 - 6_000_00
+    assert bala["closing_paise"] == 2_000_00 - 500_00 - 4_000_00
+
+
+def test_figures_are_rounded_to_the_chosen_unit_and_say_so(api, client_record):
+    book_purchase(api, client_record, amount=12_345_67)
+    put_settings(api, client_record, {"rounding": "thousands"})
+
+    report = statements(api, client_record)
+
+    assert report["unit_paise"] == 100_000 and report["unit_label"] == "Rs. in thousands"
+    assert by_key(report["balance_sheet"])["CL.PAY"]["current_paise"] == 12_000_00
+    assert any("rounded" in w for w in report["warnings"])
+
+
+def test_the_statements_download_as_a_workbook(api, client_record):
+    import io
+
+    from openpyxl import load_workbook
+
+    book_purchase(api, client_record)
+    response = api.get(f"{base(client_record)}/reports/financial-statements/export/", {"fy": 2025})
+    assert response.status_code == 200
+    assert "spreadsheetml" in response["Content-Type"]
+    wb = load_workbook(io.BytesIO(response.content))
+    assert wb.sheetnames == ["Balance Sheet", "Statement of P&L", "Notes 1 to 3", "Notes 4 to 25"]
+    cells = [c.value for row in wb["Balance Sheet"].iter_rows() for c in row if c.value is not None]
+    assert "Trade payables" in " ".join(str(c) for c in cells)

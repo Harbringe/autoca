@@ -50,6 +50,7 @@ from api.views.ledger import (
     JournalEntryViewSet,
     ReconciliationView,
     ReportView,
+    StatementSettingsView,
 )
 from api.views.overview import FirmMetricsView, FirmOverviewView
 from api.views.partyreports import OpenItemsView, OutstandingView
@@ -184,6 +185,16 @@ urlpatterns = [
         "clients/<uuid:client_id>/reports/trial-balance/",
         ReportView.as_view({"get": "trial_balance"}),
         name="report-trial-balance",
+    ),
+    path(
+        "clients/<uuid:client_id>/reports/financial-statements/export/",
+        ReportView.as_view({"get": "financial_statements_export"}),
+        name="report-financial-statements-export",
+    ),
+    path(
+        "clients/<uuid:client_id>/reports/financial-statements/settings/",
+        StatementSettingsView.as_view({"get": "retrieve", "put": "update"}),
+        name="report-financial-statements-settings",
     ),
     path(
         "clients/<uuid:client_id>/reports/financial-statements/",

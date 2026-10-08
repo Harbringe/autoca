@@ -146,3 +146,38 @@ def test_a_ledger_pinned_to_a_sub_head_goes_there_and_a_catch_all_is_a_guess():
     assert _section(25, "PL.EXP", row("Office Rent", LedgerGroup.INDIRECT_EXPENSE, 1)) == ("Rent", False)
     loan = row("Friend", LedgerGroup.LOAN, -1)
     assert _section(5, "NCL.BORR", loan, pinned="Loans and advances from related parties") == ("Long-term · Loans and advances from related parties", False)
+
+
+from ledger import depreciation  # noqa: E402
+from ledger.nce_assets import AssetFacts, block_for  # noqa: E402
+
+
+def facts(kind, cost, put_to_use, disposed_on=None, life=10):
+    terms = depreciation.AssetTerms(cost_paise=cost, put_to_use=put_to_use, method="SLM", life_years=life, disposed_on=disposed_on)
+    return AssetFacts(kind, cost, put_to_use, disposed_on, tuple(depreciation.schedule(terms, through_year=2030)))
+
+
+def test_the_block_rolls_forward_from_one_year_to_the_next():
+    day = datetime.date
+    machine = facts("Plant and machinery", 10_00_000_00, day(2024, 4, 1))
+    bought = facts("Plant and machinery", 5_00_000_00, day(2025, 10, 1))
+    sold = facts("Vehicles", 4_00_000_00, day(2023, 4, 1), disposed_on=day(2025, 6, 30), life=4)
+
+    now = block_for([machine, bought, sold], 2025)
+
+    plant = now["Plant and machinery"]
+    assert (plant.gross_open, plant.additions, plant.deductions, plant.gross_close) == (10_00_000_00, 5_00_000_00, 0, 15_00_000_00)
+    assert plant.dep_open == 1_00_000_00  # one full year of the first machine
+    assert plant.dep_close == plant.dep_open + plant.dep_year
+    assert plant.net_close == plant.gross_close - plant.dep_close
+    car = now["Vehicles"]
+    assert (car.gross_open, car.deductions, car.gross_close) == (4_00_000_00, 4_00_000_00, 0)
+    assert car.dep_close == 0 and car.net_close == 0  # what was charged on it leaves with it
+    assert car.dep_deductions == car.dep_open + car.dep_year
+
+
+def test_the_net_block_at_the_start_of_a_year_is_the_end_of_the_one_before():
+    asset = facts("Plant and machinery", 10_00_000_00, datetime.date(2024, 4, 1))
+    assert block_for([asset], 2025)["Plant and machinery"].net_close < block_for([asset], 2024)["Plant and machinery"].net_close
+    assert block_for([asset], 2025)["Plant and machinery"].gross_open == block_for([asset], 2024)["Plant and machinery"].gross_close
+    assert block_for([asset], 2025)["Plant and machinery"].dep_open == block_for([asset], 2024)["Plant and machinery"].dep_close

@@ -19,6 +19,8 @@ import re
 from dataclasses import dataclass, replace
 
 from classify.models import LedgerAccount, LedgerGroup, Party
+from core.money import format_inr
+from ledger import nce_assets
 from ledger.nce_ageing import outstanding_bills, split_by_age
 from ledger.reports import OPENING_DIFFERENCE, PROFIT_BROUGHT_FORWARD, LedgerBalance, _balances
 
@@ -962,6 +964,62 @@ def build(client, financial_year: int) -> Statements:
             )
         )
         warnings.append("Trade receivables are shown as unsecured; whether a debt is secured is not recorded. The allowance for doubtful debts, if booked, is in the provisions.")
+
+    # --- Note 11's block from the asset register, and whether the register agrees with the ledgers
+    facts = nce_assets.facts_of(client, financial_year, lambda asset: _pick(11, f"{asset.name} {asset.ledger.name}"))
+    ledger_fixed = cur.get("NCA.PPE", 0) + cur.get("NCA.INTANG", 0)
+    if facts:
+        now, before = nce_assets.block_for(facts, financial_year), nce_assets.block_for(facts, financial_year - 1)
+        kinds = [label for label, _ in _SECTIONS[11] if label in now or label in before]
+
+        def figures(blocks, field):
+            return [_unit(getattr(blocks.get(k, nce_assets.Block()), field), unit) for k in kinds]
+
+        def R(label, vals, kind="line"):
+            return ScheduleRow(label, (*vals, sum(vals)), kind)
+
+        def closings(blocks):
+            gross = [a + b - c for a, b, c in zip(figures(blocks, "gross_open"), figures(blocks, "additions"), figures(blocks, "deductions"), strict=True)]
+            dep = [a + b - c for a, b, c in zip(figures(blocks, "dep_open"), figures(blocks, "dep_year"), figures(blocks, "dep_deductions"), strict=True)]
+            return gross, dep, [g - d for g, d in zip(gross, dep, strict=True)]
+
+        gross_c, dep_c, net_c = closings(now)
+        _, _, net_p = closings(before)
+        head = ScheduleRow
+        schedules.append(
+            Schedule(
+                11,
+                "Property, Plant and Equipment and Intangible assets: gross block, depreciation and net block, from the asset register",
+                (*kinds, "Total"),
+                (
+                    head("Gross block", (None,) * (len(kinds) + 1), "heading"),
+                    R(f"At 1 April {financial_year}", figures(now, "gross_open")),
+                    R("Additions", figures(now, "additions")),
+                    R("Deductions/Adjustments", figures(now, "deductions")),
+                    R(f"At 31 March {financial_year + 1}", gross_c, "total"),
+                    head("Depreciation and amortization", (None,) * (len(kinds) + 1), "heading"),
+                    R(f"At 1 April {financial_year}", figures(now, "dep_open")),
+                    R("For the year", figures(now, "dep_year")),
+                    R("Deductions/Adjustments", figures(now, "dep_deductions")),
+                    R(f"At 31 March {financial_year + 1}", dep_c, "total"),
+                    head("Net block", (None,) * (len(kinds) + 1), "heading"),
+                    R(f"At 31 March {financial_year}", net_p),
+                    R(f"At 31 March {financial_year + 1}", net_c, "total"),
+                ),
+            )
+        )
+        register_net, register_dep = sum(net_c), sum(figures(now, "dep_year"))
+        if abs(register_net - ledger_fixed) > max(100, unit):
+            warnings.append(
+                f"The asset register's net block ({format_inr(register_net)}) does not agree with the fixed assets in the ledgers ({format_inr(ledger_fixed)}). "
+                "Book the year's depreciation from the Assets screen, or register the assets still missing."
+            )
+        if abs(register_dep - cur.get("PL.DEP", 0)) > max(100, unit):
+            warnings.append(
+                f"Depreciation by the register ({format_inr(register_dep)}) differs from depreciation in the books ({format_inr(cur.get('PL.DEP', 0))}). Book it from the Assets screen."
+            )
+    elif ledger_fixed:
+        warnings.append(f"Fixed assets of {format_inr(ledger_fixed)} are in the ledgers but not in the asset register, so Note 11 cannot show the block. Register them on the Assets screen.")
 
     # --- the size of the entity under the accounting standards, and what follows from it
     turnover = prev.get("PL.REV", 0) if has_previous else cur.get("PL.REV", 0)

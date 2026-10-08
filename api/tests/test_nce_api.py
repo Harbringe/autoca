@@ -253,3 +253,24 @@ def test_rounding_each_ledger_first_keeps_the_sheet_adding_up_and_shows_the_gap(
     assert report["balances"] is True
     pay = bs["CL.PAY"]["current_paise"]
     assert pay % 100_000 == 0
+
+
+from api.tests.test_assets_api import machine_purchase, register  # noqa: E402,F401
+
+
+def test_the_asset_block_comes_from_the_register_and_says_when_it_disagrees_with_the_ledgers(api, client_record, machine_purchase):
+    machinery, bill = machine_purchase
+    assert register(api, client_record, machinery, bill).status_code == 201
+
+    report = statements(api, client_record)
+
+    block = next(s for s in report["schedules"] if s["note"] == 11)
+    assert block["columns"] == ["Plant and machinery", "Total"]
+    by_label = {(i, r["label"]): r["values"] for i, r in enumerate(block["rows"])}
+    assert block["rows"][2]["values"] == [10_00_000_00, 10_00_000_00]  # additions
+    assert block["rows"][4]["values"][0] == 10_00_000_00  # gross block at 31 March
+    assert block["rows"][7]["values"][0] == 1_00_000_00  # depreciation for the year
+    assert block["rows"][12]["values"][0] == 9_00_000_00  # net block
+    assert by_label
+    # The ledger still carries the cost: the depreciation has not been booked, and the statements say so.
+    assert any("net block" in w and "does not agree" in w for w in report["warnings"])

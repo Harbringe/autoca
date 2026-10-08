@@ -208,7 +208,7 @@ def test_receivables_are_aged_from_the_due_date_to_the_year_end(api, client_reco
 
     ageing = next(s for s in report["schedules"] if s["note"] == 16)
     values = {r["label"] + str(i): r["values"][0] for i, r in enumerate(ageing["rows"])}
-    assert ageing["rows"][1]["values"][0] == 2_000_00  # under six months: unsecured good
+    assert ageing["rows"][2]["values"][0] == 2_000_00  # under six months: unsecured good
     assert ageing["rows"][6]["values"][0] == 3_000_00  # over six months: unsecured good
     assert ageing["rows"][-1]["values"][0] == by_key(report["balance_sheet"])["CA.REC"]["current_paise"] == 5_000_00
     assert values  # every row present

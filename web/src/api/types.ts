@@ -253,3 +253,6 @@ export type PersonWork = Schemas['PersonWork']
 export type MyWork = Schemas['MyWork']
 export type NextTask = Schemas['NextTask']
 export type Health = Schemas['HealthEnum']
+
+export type Statements = Schemas['Statements']
+export type StatementRow = Schemas['StatementRow']

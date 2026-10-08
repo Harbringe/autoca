@@ -25,6 +25,7 @@ from api.serializers.ledger import (
     RemoveEntrySerializer,
     TrialBalanceSerializer,
 )
+from api.serializers.nce import StatementsSerializer
 from api.serializers.openitems import BillStatusSerializer
 from api.serializers.settlement import (
     SettledSerializer,
@@ -39,7 +40,7 @@ from classify.treatment import Treatment
 from core.access import can_post, get_visible_client, posting_refusal, visible_client_ids
 from core.fy import financial_year
 from core.money import format_inr
-from ledger import billing
+from ledger import billing, nce
 from ledger import settlement as settling
 from ledger.approval import approve_many, correct
 from ledger.editing import remove_entry, require_bank_entry
@@ -410,6 +411,24 @@ class ReportView(viewsets.GenericViewSet):
     def balance_sheet(self, request, client_id=None):
         client, year = self._client_and_year(request, client_id)
         return Response(BalanceSheetSerializer(balance_sheet(client, year)).data)
+
+
+    @extend_schema(
+        summary="Financial statements in the ICAI non-corporate format",
+        description=(
+            "The vertical Balance Sheet and the Statement of Profit and Loss of ICAI's Guidance Note on Financial Statements "
+            "of Non-Corporate Entities, the previous year beside the current one, the notes behind every line, and any "
+            "ledger whose balance changed sign between the years and so moved from one line to another (a regrouping, with "
+            "its disclosure drafted). Where a ledger sits is worked out each year from its group, its name and its balance, "
+            "unless the ledger's `nce_line` says."
+        ),
+        parameters=[FY_PARAM],
+        responses=StatementsSerializer,
+    )
+    @action(detail=False, methods=["get"], url_path="financial-statements")
+    def financial_statements(self, request, client_id=None):
+        client, year = self._client_and_year(request, client_id)
+        return Response(StatementsSerializer(nce.build(client, year)).data)
 
 
 @extend_schema(tags=["reports"])

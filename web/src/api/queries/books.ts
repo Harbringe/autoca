@@ -7,7 +7,7 @@
 
 import { queryOptions } from '@tanstack/react-query'
 import { raw } from '@/api/client'
-import type {
+import type { Statements,
   BalanceCheck,
   BalanceSheet,
   Classification,
@@ -111,4 +111,11 @@ export const reconciliation = (clientId: string, accountId: string, asOf: string
     queryKey: clientKeys.part(clientId, 'reconciliation', accountId, asOf),
     queryFn: () => raw.get<BalanceCheck>(`${V1}/bank-accounts/${accountId}/reconciliation/`, { as_of: asOf }),
     retry: false,
+  })
+
+/** The Balance Sheet and Statement of Profit and Loss in the ICAI non-corporate format, with the previous year and the notes. */
+export const financialStatements = (clientId: string, fy: number) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'financial-statements', fy),
+    queryFn: () => raw.get<Statements>(`${V1}/clients/${clientId}/reports/financial-statements/`, { fy }),
   })

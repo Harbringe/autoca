@@ -1588,6 +1588,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/reports/financial-statements/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Financial statements in the ICAI non-corporate format
+         * @description The vertical Balance Sheet and the Statement of Profit and Loss of ICAI's Guidance Note on Financial Statements of Non-Corporate Entities, the previous year beside the current one, the notes behind every line, and any ledger whose balance changed sign between the years and so moved from one line to another (a regrouping, with its disclosure drafted). Where a ledger sits is worked out each year from its group, its name and its balance, unless the ledger's `nce_line` says.
+         */
+        get: operations["clients_reports_financial_statements_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/reports/profit-and-loss/": {
         parameters: {
             query?: never;
@@ -4506,12 +4526,14 @@ export interface components {
             readonly row_count: number;
             /** Format: date-time */
             readonly created_at: string;
+            nce_line?: string;
         };
         LedgerAccountRequest: {
             /** @description The ledger's name in this client's books. Unique per client, ignoring case and spacing: "Advance Tax" and "Advance tax" would split a year across two ledgers, so the second is refused. */
             name: string;
             group?: components["schemas"]["LedgerGroupEnum"];
             is_active?: boolean;
+            nce_line?: string;
         };
         /**
          * @description * `ACTIVE` - In use
@@ -4965,9 +4987,42 @@ export interface components {
             };
             severity: components["schemas"]["SeverityEnum"];
         };
+        Note: {
+            number: number;
+            title: string;
+            rows: components["schemas"]["NoteRow"][];
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            total_current_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            total_previous_paise: number;
+        };
         NoteRequest: {
             /** @default  */
             note: string;
+        };
+        NoteRow: {
+            label: string;
+            /**
+             * Format: uuid
+             * @description The ledger, to open it.
+             */
+            ledger: string | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            current_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            previous_paise: number;
         };
         /** @enum {unknown} */
         NullEnum: null;
@@ -5752,6 +5807,7 @@ export interface components {
             name?: string;
             group?: components["schemas"]["LedgerGroupEnum"];
             is_active?: boolean;
+            nce_line?: string;
         };
         PatchedMemberUpdateRequest: {
             role?: components["schemas"]["Role170Enum"];
@@ -6132,6 +6188,25 @@ export interface components {
          * @enum {string}
          */
         RegistrationTypeEnum: "regular" | "composition" | "other";
+        Regrouping: {
+            /** Format: uuid */
+            ledger: string;
+            name: string;
+            previous_line: string;
+            current_line: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            previous_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            current_paise: number;
+            /** @description The disclosure, drafted: where it was shown, where it is shown now, and why. */
+            text: string;
+        };
         /**
          * @description * `ON_ACCOUNT` - Held on account
          *     * `ADVANCE` - An advance
@@ -6702,6 +6777,33 @@ export interface components {
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly total_credit_display: string | null;
         };
+        StatementRow: {
+            key: string;
+            label: string;
+            kind: components["schemas"]["StatementRowKindEnum"];
+            /** @description Indentation, from 0. */
+            level: number;
+            /** @description The note this line is explained in. */
+            note: number | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            current_paise: number | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            previous_paise: number | null;
+        };
+        /**
+         * @description * `heading` - heading
+         *     * `line` - line
+         *     * `subtotal` - subtotal
+         *     * `total` - total
+         * @enum {string}
+         */
+        StatementRowKindEnum: "heading" | "line" | "subtotal" | "total";
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         StatementTransaction: {
             /** Format: uuid */
@@ -6759,6 +6861,22 @@ export interface components {
              * @default false
              */
             allow_gap: boolean;
+        };
+        Statements: {
+            balance_sheet: components["schemas"]["StatementRow"][];
+            profit_and_loss: components["schemas"]["StatementRow"][];
+            notes: components["schemas"]["Note"][];
+            regroupings: components["schemas"]["Regrouping"][];
+            footer: components["schemas"]["ReportFooter"];
+            /** @description False for the first year of books: there is nothing to compare with. */
+            has_previous: boolean;
+            /** @description Total liabilities equal total assets. */
+            balances: boolean;
+            /**
+             * Format: int64
+             * @description What sits in Suspense, shown on Other current assets or liabilities and warned about.
+             */
+            suspense_paise: number;
         };
         /**
          * @description * `PREVIEW` - Previewed, not applied
@@ -10121,6 +10239,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BalanceSheet"];
+                };
+            };
+        };
+    };
+    clients_reports_financial_statements_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Financial year by its starting year: 2025 means FY2025-26. */
+                fy?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Statements"];
                 };
             };
         };

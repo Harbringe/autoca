@@ -278,7 +278,7 @@ def test_a_booked_invoice_is_not_deleted_from_under_its_bill_unless_asked(api, c
     refused = api.delete(f"{base(client_record)}/invoices/{reading['id']}/")
     assert refused.status_code == 422 and "bill" in refused.json()["detail"].lower()
 
-    gone = api.delete(f"{base(client_record)}/invoices/{reading['id']}/", {"with_bill": "true"})
+    gone = api.delete(f"{base(client_record)}/invoices/{reading['id']}/?with_bill=true")
 
     assert gone.status_code == 204
     assert api.get(f"{base(client_record)}/bills/{reading['bill']}/").status_code == 404

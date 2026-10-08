@@ -117,6 +117,9 @@ class LedgerAccount(UUIDModel, FirmScopedModel):
         max_length=32, choices=LedgerGroup.choices, default=LedgerGroup.SUSPENSE
     )
     is_active = models.BooleanField(default=True)
+    #: Which line of the Balance Sheet or Statement of Profit and Loss (ICAI non-corporate format) this ledger is presented on,
+    #: when the person has said. Blank leaves it to the group, the name and the sign of the balance each year (``ledger.nce``).
+    nce_line = models.CharField(max_length=16, blank=True, default="", db_default="")
     status = models.CharField(max_length=16, choices=LedgerStatus.choices, default=LedgerStatus.ACTIVE)
     proposal_reason = models.TextField(blank=True, default="")
     tally_name = models.CharField(max_length=255, null=True, blank=True)

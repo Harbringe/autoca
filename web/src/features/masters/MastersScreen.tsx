@@ -27,6 +27,7 @@ import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDate, fyLabel, plural } from '@/lib/format'
+import { NCE_LINES } from '@/lib/nce'
 import { summariseRows, whyNoEntries } from '@/lib/ledgerRows'
 import { useFy } from '@/features/shell/useFy'
 import { cn } from '@/lib/utils'
@@ -347,11 +348,12 @@ function LedgerForm({ clientId, ledger, onClose }: { clientId: string; ledger: L
   const [name, setName] = useState(ledger?.name ?? '')
   const [group, setGroup] = useState<string>(ledger?.group || 'INDIRECT_EXPENSE')
   const [active, setActive] = useState(ledger?.is_active ?? true)
+  const [line, setLine] = useState<string>(ledger?.nce_line ?? '')
   const [error, setError] = useState<string | null>(null)
 
   async function save() {
     try {
-      const body = { name: name.trim(), group, is_active: active }
+      const body = { name: name.trim(), group, is_active: active, nce_line: line }
       if (ledger) await raw.patch(`${V1}/clients/${clientId}/ledgers/${ledger.id}/`, body)
       else await raw.post(`${V1}/clients/${clientId}/ledgers/`, body)
       await invalidate()
@@ -377,6 +379,20 @@ function LedgerForm({ clientId, ledger, onClose }: { clientId: string; ledger: L
             <Select {...p} value={group} onChange={(e) => setGroup(e.target.value)}>
               {LEDGER_GROUPS.map(([g, l]) => (
                 <option key={g} value={g}>{l}</option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        <Field label="Line on the financial statements" hint="Leave on Automatic to place it by its group, its name and the sign of its balance each year. Choose a line to pin it.">
+          {(p) => (
+            <Select {...p} value={line} onChange={(e) => setLine(e.target.value)}>
+              <option value="">Automatic</option>
+              {NCE_LINES.map((g) => (
+                <optgroup key={g.group} label={g.group}>
+                  {g.lines.map(([code, label]) => (
+                    <option key={code} value={code}>{label}</option>
+                  ))}
+                </optgroup>
               ))}
             </Select>
           )}

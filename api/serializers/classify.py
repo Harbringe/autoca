@@ -43,7 +43,7 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
         model = LedgerAccount
         fields = [
             "id", "name", "group", "is_bank_or_cash", "is_active",
-            "status", "proposal_reason", "row_count", "created_at",
+            "status", "proposal_reason", "row_count", "created_at", "nce_line",
         ]
         read_only_fields = ["id", "is_bank_or_cash", "status", "proposal_reason", "row_count", "created_at"]
         extra_kwargs = {
@@ -55,6 +55,13 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
                 )
             }
         }
+
+    def validate_nce_line(self, value: str) -> str:
+        from ledger.nce import LINES
+
+        if value and value not in LINES:
+            raise serializers.ValidationError("That is not a line of the Balance Sheet or the Statement of Profit and Loss.")
+        return value
 
     def validate_name(self, value: str) -> str:
         from classify.models import LedgerStatus

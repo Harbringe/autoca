@@ -3537,6 +3537,40 @@ paths:
               schema:
                 $ref: '#/components/schemas/BalanceSheet'
           description: ''
+  /api/v1/clients/{client_id}/reports/financial-statements/:
+    get:
+      operationId: clients_reports_financial_statements_retrieve
+      description: The vertical Balance Sheet and the Statement of Profit and Loss
+        of ICAI's Guidance Note on Financial Statements of Non-Corporate Entities,
+        the previous year beside the current one, the notes behind every line, and
+        any ledger whose balance changed sign between the years and so moved from
+        one line to another (a regrouping, with its disclosure drafted). Where a ledger
+        sits is worked out each year from its group, its name and its balance, unless
+        the ledger's `nce_line` says.
+      summary: Financial statements in the ICAI non-corporate format
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: 'Financial year by its starting year: 2025 means FY2025-26.'
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Statements'
+          description: ''
   /api/v1/clients/{client_id}/reports/profit-and-loss/:
     get:
       operationId: clients_reports_profit_and_loss_retrieve
@@ -9669,6 +9703,9 @@ components:
           type: string
           format: date-time
           readOnly: true
+        nce_line:
+          type: string
+          maxLength: 16
       required:
       - created_at
       - id
@@ -9691,6 +9728,9 @@ components:
           $ref: '#/components/schemas/LedgerGroupEnum'
         is_active:
           type: boolean
+        nce_line:
+          type: string
+          maxLength: 16
       required:
       - name
     LedgerAccountStatusEnum:
@@ -10664,6 +10704,37 @@ components:
       - severity
       - title
       - to
+    Note:
+      type: object
+      properties:
+        number:
+          type: integer
+        title:
+          type: string
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/NoteRow'
+        total_current_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        total_previous_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - number
+      - rows
+      - title
+      - total_current_paise
+      - total_previous_paise
     NoteRequest:
       type: object
       properties:
@@ -10671,6 +10742,35 @@ components:
           type: string
           default: ''
           maxLength: 1000
+    NoteRow:
+      type: object
+      properties:
+        label:
+          type: string
+        ledger:
+          type: string
+          format: uuid
+          nullable: true
+          description: The ledger, to open it.
+        current_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        previous_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - current_paise
+      - label
+      - ledger
+      - previous_paise
     NullEnum:
       enum:
       - null
@@ -12133,6 +12233,9 @@ components:
           $ref: '#/components/schemas/LedgerGroupEnum'
         is_active:
           type: boolean
+        nce_line:
+          type: string
+          maxLength: 16
     PatchedMemberUpdateRequest:
       type: object
       properties:
@@ -12980,6 +13083,44 @@ components:
         * `regular` - Regular
         * `composition` - Composition
         * `other` - Other
+    Regrouping:
+      type: object
+      properties:
+        ledger:
+          type: string
+          format: uuid
+        name:
+          type: string
+        previous_line:
+          type: string
+        current_line:
+          type: string
+        previous_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        current_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        text:
+          type: string
+          description: 'The disclosure, drafted: where it was shown, where it is shown
+            now, and why.'
+      required:
+      - current_line
+      - current_paise
+      - ledger
+      - name
+      - previous_line
+      - previous_paise
+      - text
     RemainderEnum:
       enum:
       - ON_ACCOUNT
@@ -14041,6 +14182,58 @@ components:
       - total_debit_display
       - total_debit_paise
       - transaction_count
+    StatementRow:
+      type: object
+      properties:
+        key:
+          type: string
+        label:
+          type: string
+        kind:
+          $ref: '#/components/schemas/StatementRowKindEnum'
+        level:
+          type: integer
+          description: Indentation, from 0.
+        note:
+          type: integer
+          nullable: true
+          description: The note this line is explained in.
+        current_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        previous_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - current_paise
+      - key
+      - kind
+      - label
+      - level
+      - note
+      - previous_paise
+    StatementRowKindEnum:
+      enum:
+      - heading
+      - line
+      - subtotal
+      - total
+      type: string
+      description: |-
+        * `heading` - heading
+        * `line` - line
+        * `subtotal` - subtotal
+        * `total` - total
     StatementTransaction:
       type: object
       description: Adds a ``*_display`` string beside every ``*_paise`` field named
@@ -14164,6 +14357,50 @@ components:
             it only when the earlier period genuinely is not available.
       required:
       - file
+    Statements:
+      type: object
+      properties:
+        balance_sheet:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatementRow'
+        profit_and_loss:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatementRow'
+        notes:
+          type: array
+          items:
+            $ref: '#/components/schemas/Note'
+        regroupings:
+          type: array
+          items:
+            $ref: '#/components/schemas/Regrouping'
+        footer:
+          $ref: '#/components/schemas/ReportFooter'
+        has_previous:
+          type: boolean
+          description: 'False for the first year of books: there is nothing to compare
+            with.'
+        balances:
+          type: boolean
+          description: Total liabilities equal total assets.
+        suspense_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: What sits in Suspense, shown on Other current assets or liabilities
+            and warned about.
+      required:
+      - balance_sheet
+      - balances
+      - footer
+      - has_previous
+      - notes
+      - profit_and_loss
+      - regroupings
+      - suspense_paise
     Status105Enum:
       enum:
       - PREVIEW

@@ -148,6 +148,6 @@ def test_every_report_line_says_which_ledger_it_is_so_it_can_be_opened(api, clie
     report = api.get(f"{base(client_record)}/reports/trial-balance/", {"fy": fy}).json()
 
     by_name = {line["name"]: line["ledger"] for line in report["rows"]}
-    ledgers = {l["name"]: l["id"] for l in api.get(f"{base(client_record)}/ledgers/").json()["results"]}
+    ledgers = {led["name"]: led["id"] for led in api.get(f"{base(client_record)}/ledgers/").json()["results"]}
     assert by_name["Ravi Traders"] == ledgers["Ravi Traders"]
     assert by_name.get("Difference in opening balances", None) is None

@@ -86,3 +86,34 @@ def test_the_prompt_asks_for_plain_numbers_iso_dates_and_the_fields_it_doubts():
     text = invoice_vision.INSTRUCTION
 
     assert "JSON NUMBER" in text and "YYYY-MM-DD" in text and '"unsure"' in text and "(-)0.16" in text
+
+
+def test_the_rest_of_the_form_is_read_cleaned_and_bounded():
+    rich = {
+        **GOOD,
+        "supplier_pan": " aabcr 1234f ", "supplier_address": "Silver Stone,\n Handewadi, Pune", "place_of_supply": "Maharashtra",
+        "due_date": "2025-09-11", "payment_mode": "Bank Transfer", "payment_terms": "Net 30", "currency": "inr",
+        "expense_category": "Food and beverages",
+        "items": [
+            {"description": "Biryani", "hsn_sac": "9963 ", "quantity": 2, "unit": "plate", "rate": 250.5, "amount": 501, "gst_rate": 5},
+            {"description": "", "amount": 5},
+            "not a line",
+            {"description": "Thali", "quantity": "many", "rate": "₹100.00", "amount": "100", "gst_rate": 500},
+        ],
+    }
+
+    reading = reading_from_fields(rich)
+
+    assert reading.supplier_pan == "AABCR1234F"
+    assert reading.supplier_address == "Silver Stone, Handewadi, Pune"
+    assert reading.due_date == datetime.date(2025, 9, 11)
+    assert reading.payment_mode == "bank_transfer" and reading.currency == "INR"
+    assert reading.expense_hint == "Food and beverages"
+    assert reading.items[0] == {"description": "Biryani", "hsn_sac": "9963", "quantity": "2", "unit": "plate", "rate_paise": 25050, "amount_paise": 50100, "gst_rate": 5.0}
+    assert len(reading.items) == 2  # the blank and the non-object are dropped
+    assert reading.items[1]["quantity"] == "" and reading.items[1]["gst_rate"] is None and reading.items[1]["rate_paise"] == 10000
+
+
+def test_what_cannot_be_trusted_is_left_empty():
+    reading = reading_from_fields({**GOOD, "supplier_pan": "nope", "payment_mode": "barter", "currency": "rupees", "due_date": "soon", "items": "none"})
+    assert (reading.supplier_pan, reading.payment_mode, reading.currency, reading.due_date, reading.items) == ("", "", "", None, [])

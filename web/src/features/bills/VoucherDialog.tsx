@@ -14,7 +14,7 @@ import { isApiError, messageOf } from '@/api/errors'
 import { ledgers as ledgersQuery, parties as partiesQuery } from '@/api/queries/books'
 import { usePostBill, useReviseBill } from '@/api/queries/bills'
 import { useInvalidateClient, V1 } from '@/api/queries/clients'
-import type { BillCreateRequest, Party } from '@/api/types'
+import type { BillCreateRequest, InvoiceReading, Party } from '@/api/types'
 import { Money } from '@/components/ca/Money'
 import { Button } from '@/components/ui/button'
 import { Checkbox, Select } from '@/components/ui/controls'
@@ -24,6 +24,7 @@ import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { LedgerPicker, usableLedgers } from '@/features/review/LedgerPicker'
 import { formatDate, parseDate, parseRupees } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import {
   isPurchaseSide,
   NOT_A_HEAD,
@@ -40,7 +41,25 @@ interface Head {
   key: number
   ledger: string | null
   amount: string
+  /** What the line was on the invoice, when it came from one. */
+  description?: string
 }
+
+type ReadItem = NonNullable<InvoiceReading['read']>['items'][number]
+
+/** What a receipt says that the voucher has no field for, shown beside the form so the person can see what was read. */
+export interface ReceiptFacts {
+  address: string
+  pan: string
+  place: string
+  terms: string
+  paymentMode: string
+  currency: string
+  category: string
+  unsure: string[]
+}
+
+const PAYMENT_MODE: Record<string, string> = { cash: 'Cash', card: 'Card', upi: 'UPI', bank_transfer: 'Bank transfer', cheque: 'Cheque', credit: 'On credit (not yet paid)' }
 
 const NEW_PARTY = '__new__'
 
@@ -59,11 +78,16 @@ export interface VoucherPrefill {
   cessPaise: number
   roundOffPaise: number
   /** The stored invoice file this voucher is being booked from, so it is attached and its reading closed. */
-  document: string
+  document?: string
   /** Set to change a bill already booked: the form starts from it and saving replaces it. */
   reviseBill?: string
   /** The ledger the taxable value went to, when changing a booked bill. */
   headLedger?: string
+  /** ISO date the invoice says payment is due. */
+  dueDate?: string | null
+  /** The lines the invoice listed, for the Itemizations tab. */
+  items?: ReadItem[]
+  facts?: ReceiptFacts
 }
 
 const asRupees = (paise: number | null | undefined) => (paise ? (paise / 100).toFixed(2) : '')
@@ -83,12 +107,17 @@ export function VoucherForm({
   onClose,
   initialKind = 'PURCHASE',
   prefill,
+  layout = 'dialog',
+  formId,
 }: {
   clientId: string
   /** Called after it is booked, and by Cancel. */
   onClose: () => void
   initialKind?: VoucherKind
   prefill?: VoucherPrefill
+  /** ``page``: tabs for Details and Itemizations, and no buttons of its own (the page's Save button submits it by ``formId``). */
+  layout?: 'dialog' | 'page'
+  formId?: string
 }) {
   const parties = useQuery(partiesQuery(clientId))
   const ledgers = useQuery(ledgersQuery(clientId))
@@ -100,7 +129,8 @@ export function VoucherForm({
   const [partyId, setPartyId] = useState(prefill?.partyId ?? '')
   const [reference, setReference] = useState(prefill?.reference ?? '')
   const [billDate, setBillDate] = useState(() => formatDate(prefill?.billDate ?? new Date().toISOString().slice(0, 10)))
-  const [dueDate, setDueDate] = useState('')
+  const [dueDate, setDueDate] = useState(prefill?.dueDate ? formatDate(prefill.dueDate) : '')
+  const [tab, setTab] = useState<'details' | 'items'>('details')
   const [heads, setHeads] = useState<Head[]>(() => [{ ...blankHead(), ledger: prefill?.headLedger ?? null, amount: asRupees(prefill?.taxablePaise) }])
   const [tax, setTax] = useState({
     cgst: asRupees(prefill?.cgstPaise),
@@ -121,6 +151,10 @@ export function VoucherForm({
   const purchaseSide = isPurchaseSide(kind)
   const canTds = kind === 'PURCHASE'
   const canRcm = kind === 'PURCHASE'
+  const items = prefill?.items ?? []
+  const itemsSum = items.reduce((sum, i) => sum + (i.amount_paise ?? 0), 0)
+  // The printed lines can stand in for the ledger lines only when they add up to the taxable value the form already has.
+  const itemsTie = items.length > 1 && items.every((i) => i.amount_paise != null) && itemsSum === (prefill?.taxablePaise ?? -1)
 
   const suitable = useMemo(
     () =>
@@ -163,6 +197,12 @@ export function VoucherForm({
     setTdsSection('')
     setNewParty(null)
     setErrors({})
+  }
+
+  function splitByLines() {
+    const ledger = heads[0]?.ledger ?? null
+    setHeads(items.map((i) => ({ ...blankHead(), ledger, amount: asRupees(i.amount_paise), description: i.description })))
+    setTab('details')
   }
 
   function reset() {
@@ -234,7 +274,7 @@ export function VoucherForm({
       tds_paise: canTds ? amounts.tds.paise : 0,
       tds_section: (canTds ? tdsSection : '') as BillCreateRequest['tds_section'],
       rcm: canRcm && rcm,
-      narration: narration.trim(),
+      narration: narration.trim() || heads.map((h) => h.description?.trim()).filter(Boolean).join('; ').slice(0, 200),
       own_gstin: ownGstin.trim().toUpperCase(),
       document: prefill?.document ?? null,
     }
@@ -262,6 +302,7 @@ export function VoucherForm({
 
   return (
     <form
+      id={formId}
       className="grid gap-4"
       noValidate
       onSubmit={(e) => {
@@ -269,6 +310,70 @@ export function VoucherForm({
         void submit()
       }}
     >
+      {layout === 'page' && (
+        <div role="tablist" aria-label="Sections of the form" className="no-print flex gap-5 border-b">
+          {(['details', 'items'] as const).map((id) => (
+            <button
+              key={id}
+              type="button"
+              role="tab"
+              aria-selected={tab === id}
+              onClick={() => setTab(id)}
+              className={cn('-mb-px border-b-2 px-0.5 pb-2 text-sm font-medium', tab === id ? 'border-primary text-heading' : 'border-transparent text-muted-foreground hover:text-foreground')}
+            >
+              {id === 'details' ? 'Details' : `Itemizations${items.length ? ` (${items.length})` : ''}`}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {layout === 'page' && tab === 'items' && (
+        <section aria-label="Itemizations" className="grid gap-3">
+          {items.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No lines were read from this invoice. The whole taxable value goes to the ledger on the Details tab; add more lines there to split it.</p>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[34rem] text-sm">
+                  <caption className="sr-only">Lines as printed on the invoice</caption>
+                  <thead className="border-b text-left text-xs text-muted-foreground">
+                    <tr>
+                      {['Description', 'HSN/SAC', 'Qty', 'Rate (₹)', 'Amount (₹)', 'GST %'].map((h, i) => (
+                        <th key={h} scope="col" className={cn('px-1 py-1 font-medium', i >= 2 && 'text-right')}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((i, n) => (
+                      <tr key={n} className="border-b border-dashed">
+                        <td className="px-1 py-1.5">{i.description}</td>
+                        <td className="px-1">{i.hsn_sac || '—'}</td>
+                        <td className="num px-1 text-right">{i.quantity ? `${i.quantity}${i.unit ? ` ${i.unit}` : ''}` : '—'}</td>
+                        <td className="num px-1 text-right">{i.rate_paise != null ? (i.rate_paise / 100).toFixed(2) : '—'}</td>
+                        <td className="num px-1 text-right">{i.amount_paise != null ? (i.amount_paise / 100).toFixed(2) : '—'}</td>
+                        <td className="num px-1 text-right">{i.gst_rate ?? '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {itemsTie ? (
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent-edge bg-accent p-2 text-sm">
+                  <span>These lines add up to the taxable value. Give each its own ledger?</span>
+                  <Button type="button" size="sm" variant="outline" onClick={splitByLines}>Use one line per item</Button>
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {items.some((i) => i.amount_paise == null) ? 'Some lines have no amount' : `The lines add up to ₹${(itemsSum / 100).toFixed(2)}, not the taxable value`}, so they are shown for reference only.
+                </p>
+              )}
+            </>
+          )}
+        </section>
+      )}
+
+      <div className={layout === 'page' && tab !== 'details' ? 'hidden' : 'grid gap-4'}>
+      {prefill?.facts && <ReceiptFactsCard facts={prefill.facts} />}
       <Field label="Voucher type">
         {(props) => (
           <Select {...props} value={kind} onChange={(e) => changeKind(e.target.value as VoucherKind)}>
@@ -348,6 +453,7 @@ export function VoucherForm({
                 label={index === 0 ? 'Ledger' : `Ledger ${index + 1}`}
                 suggestedGroup={suggestedHeadGroup(kind)}
               />
+              {head.description && <p className="mt-1 text-xs text-muted-foreground">{head.description}</p>}
               {errors[`head-${head.key}-ledger`] && <p role="alert" className="mt-1 text-sm text-destructive">{errors[`head-${head.key}-ledger`]}</p>}
             </div>
             <Field label="Amount (₹)" error={errors[`head-${head.key}-amount`]}>
@@ -430,6 +536,7 @@ export function VoucherForm({
           </Field>
         </div>
       </details>
+      </div>
 
       <section aria-label="What this comes to" className="grid gap-1 rounded-md border border-accent-edge bg-accent p-3 text-sm">
         {preview.error && anythingTyped ? (
@@ -450,11 +557,42 @@ export function VoucherForm({
         <p role="alert" className="text-sm text-destructive">{errors.root}</p>
       )}
 
-      <DialogFooter>
-        <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button type="submit" disabled={saving}>{saving ? (prefill?.reviseBill ? 'Saving…' : 'Booking…') : prefill?.reviseBill ? 'Save changes' : 'Book voucher'}</Button>
-      </DialogFooter>
+      {layout === 'dialog' && (
+        <DialogFooter>
+          <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+          <Button type="submit" disabled={saving}>{saving ? (prefill?.reviseBill ? 'Saving…' : 'Booking…') : prefill?.reviseBill ? 'Save changes' : 'Book voucher'}</Button>
+        </DialogFooter>
+      )}
     </form>
+  )
+}
+
+/** What was read off the receipt beyond the voucher's own fields, so the person sees all of it. */
+function ReceiptFactsCard({ facts }: { facts: ReceiptFacts }) {
+  const rows: [string, string][] = [
+    ['Address', facts.address],
+    ['PAN', facts.pan],
+    ['Place of supply', facts.place],
+    ['Paid by', PAYMENT_MODE[facts.paymentMode] ?? ''],
+    ['Payment terms', facts.terms],
+    ['Looks like', facts.category],
+  ]
+  const shown = rows.filter(([, v]) => v)
+  const foreign = facts.currency && facts.currency !== 'INR'
+  if (shown.length === 0 && !foreign) return null
+  return (
+    <section aria-label="Read from the receipt" className="grid gap-2 rounded-md border border-accent-edge bg-accent p-3 text-sm">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Read from the receipt</h3>
+      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+        {shown.map(([label, value]) => (
+          <div key={label} className="contents">
+            <dt className="text-muted-foreground">{label}</dt>
+            <dd>{value}</dd>
+          </div>
+        ))}
+      </dl>
+      {foreign && <p className="text-warning">The receipt is in {facts.currency}. Vouchers are booked in rupees: enter the rupee amounts.</p>}
+    </section>
   )
 }
 

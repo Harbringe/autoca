@@ -3,7 +3,7 @@
 // same-origin images, so nothing about the page's security policy has to loosen to show them.
 
 import { useQuery } from '@tanstack/react-query'
-import { ChevronLeft, ChevronRight, Download, ZoomIn, ZoomOut } from 'lucide-react'
+import { ChevronLeft, ChevronRight, Download, RotateCw, ZoomIn, ZoomOut } from 'lucide-react'
 import { useState } from 'react'
 import { raw } from '@/api/client'
 import { V1 } from '@/api/queries/clients'
@@ -43,8 +43,17 @@ export function DocumentViewer({ documentId, className }: { documentId: string; 
   })
   const [page, setPage] = useState(1)
   const [zoom, setZoom] = useState(1)
+  const [turn, setTurn] = useState(0)
+  const [size, setSize] = useState<{ w: number; h: number } | null>(null)
   const [loaded, setLoaded] = useState<number | null>(null)
   const pages = info.data?.pages ?? 0
+  const sideways = turn === 90 || turn === 270
+  const src = `${V1}/documents/${documentId}/preview/${page}/`
+  const alt = `Page ${page} of ${pages} of the uploaded file`
+  const onLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+    setLoaded(page)
+    setSize({ w: e.currentTarget.naturalWidth || 1, h: e.currentTarget.naturalHeight || 1 })
+  }
 
   if (info.isPending) return <ViewerSkeleton label="Preparing the document…" />
   if (info.isError || pages < 1) {
@@ -88,6 +97,9 @@ export function DocumentViewer({ documentId, className }: { documentId: string; 
           <Button size="icon" variant="ghost" aria-label="Zoom in" disabled={zoom >= ZOOMS[ZOOMS.length - 1]!} onClick={() => setZoom(ZOOMS[Math.min(ZOOMS.indexOf(zoom) + 1, ZOOMS.length - 1)]!)}>
             <ZoomIn />
           </Button>
+          <Button size="icon" variant="ghost" aria-label="Rotate" onClick={() => setTurn((t) => (t + 90) % 360)}>
+            <RotateCw />
+          </Button>
           <Button asChild size="icon" variant="ghost" aria-label="Download the original">
             <a href={`${V1}/documents/${documentId}/download/`}>
               <Download />
@@ -97,14 +109,28 @@ export function DocumentViewer({ documentId, className }: { documentId: string; 
       </div>
       <div className="relative min-h-0 overflow-auto rounded-md border bg-muted/30">
         {loaded !== page && <div className="skeleton absolute inset-0" aria-hidden />}
-        <img
-          key={page}
-          src={`${V1}/documents/${documentId}/preview/${page}/`}
-          alt={`Page ${page} of ${pages} of the uploaded file`}
-          style={{ width: `${zoom * 100}%`, maxWidth: 'none' }}
-          className="block bg-white"
-          onLoad={() => setLoaded(page)}
-        />
+        {sideways && size ? (
+          // A page turned on its side: a box of the turned shape, with the picture centred in it and rotated to fit.
+          <div className="relative" style={{ width: `${zoom * 100 * (size.h / size.w)}%`, aspectRatio: `${size.h} / ${size.w}` }}>
+            <img
+              key={page}
+              src={src}
+              alt={alt}
+              className="absolute left-1/2 top-1/2 block max-w-none bg-white"
+              style={{ width: `${100 * (size.w / size.h)}%`, transform: `translate(-50%, -50%) rotate(${turn}deg)` }}
+              onLoad={onLoad}
+            />
+          </div>
+        ) : (
+          <img
+            key={page}
+            src={src}
+            alt={alt}
+            style={{ width: `${zoom * 100}%`, maxWidth: 'none', transform: turn ? `rotate(${turn}deg)` : undefined }}
+            className="block bg-white"
+            onLoad={onLoad}
+          />
+        )}
       </div>
     </div>
   )

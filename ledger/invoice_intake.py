@@ -132,6 +132,16 @@ def _payload_of(parsed, kind: str) -> dict:
         "cess_paise": parsed.cess_paise,
         "round_off_paise": parsed.round_off_paise,
         "total_paise": parsed.total_paise,
+        "due_date": parsed.due_date.isoformat() if parsed.due_date else None,
+        "supplier_address": parsed.supplier_address,
+        "supplier_pan": parsed.supplier_pan,
+        "buyer_address": parsed.buyer_address,
+        "place_of_supply": parsed.place_of_supply,
+        "payment_mode": parsed.payment_mode,
+        "payment_terms": parsed.payment_terms,
+        "currency": parsed.currency,
+        "expense_hint": parsed.expense_hint,
+        "items": parsed.items,
     }
 
 
@@ -163,16 +173,21 @@ def read_upload(*, client, data: bytes, filename: str, kind: str = "", uploaded_
     parsed = None
     unreadable = ""
     tier = PipelineTier.TEXT_LAYER
-    if pdf.has_text_layer:
-        parsed = read_invoice(pdf.text)
-    elif invoice_vision.enabled():
+    if invoice_vision.enabled():
+        # With reading by the model switched on, every file is read from its pages, so the whole form fills in (address,
+        # due date, lines, how it was paid). A file with a text layer falls back to the plain reader if that fails.
         try:
             parsed = invoice_vision.read_scanned_invoice(
                 data, pdf.page_count, get_llm(), client=client, page_images=loaded.images
             )
             tier = PipelineTier.VISION
         except invoice_vision.InvoiceVisionError as exc:
-            unreadable = str(exc)
+            if pdf.has_text_layer:
+                parsed = read_invoice(pdf.text)
+            else:
+                unreadable = str(exc)
+    elif pdf.has_text_layer:
+        parsed = read_invoice(pdf.text)
     else:
         unreadable = (
             "This looks like a scan or a photo, and reading scans is not switched on. "

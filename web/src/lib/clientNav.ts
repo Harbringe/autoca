@@ -61,7 +61,6 @@ export const CLIENT_TABS: Record<string, ClientTab[]> = {
   bookkeeping: [
     { screen: 'bookkeeping', label: 'Books summary', permission: 'report.view' },
     { screen: 'bills', label: 'Purchases & Sales', permission: 'report.view' },
-    { screen: 'invoices', label: 'Invoices', permission: 'report.view' },
     { screen: 'tds', label: 'TDS', permission: 'report.view' },
     { screen: 'payroll', label: 'Payroll', permission: 'report.view' },
     { screen: 'assets', label: 'Assets', permission: 'report.view' },

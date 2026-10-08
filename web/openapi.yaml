@@ -13336,6 +13336,36 @@ components:
         total_display:
           type: string
           nullable: true
+        due_date:
+          type: string
+          format: date
+          nullable: true
+        supplier_address:
+          type: string
+        supplier_pan:
+          type: string
+        buyer_name:
+          type: string
+        buyer_address:
+          type: string
+        place_of_supply:
+          type: string
+        payment_mode:
+          type: string
+          description: cash, card, upi, bank_transfer, cheque or credit; blank when
+            the page does not say.
+        payment_terms:
+          type: string
+        currency:
+          type: string
+        expense_hint:
+          type: string
+          description: A few words for what it was for, to suggest a ledger.
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReadItem'
+          description: The invoice's lines, when the model read them.
         unsure:
           type: array
           items:
@@ -13343,20 +13373,70 @@ components:
           description: Fields the reader said it could not read clearly (a scan),
             to check against the page.
       required:
+      - buyer_address
+      - buyer_name
       - cess_paise
       - cgst_paise
       - counterparty_gstin
+      - currency
+      - due_date
+      - expense_hint
       - gstins
       - igst_paise
       - invoice_date
       - invoice_no
+      - items
+      - payment_mode
+      - payment_terms
+      - place_of_supply
       - round_off_paise
       - sgst_paise
+      - supplier_address
       - supplier_name
+      - supplier_pan
       - taxable_paise
       - total_display
       - total_paise
       - unsure
+    ReadItem:
+      type: object
+      properties:
+        description:
+          type: string
+        hsn_sac:
+          type: string
+        quantity:
+          type: string
+        unit:
+          type: string
+        rate_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: The line's taxable amount.
+        gst_rate:
+          type: number
+          format: double
+          nullable: true
+          description: Percent.
+      required:
+      - amount_paise
+      - description
+      - gst_rate
+      - hsn_sac
+      - quantity
+      - rate_paise
+      - unit
     RecategorizeRequest:
       type: object
       properties:

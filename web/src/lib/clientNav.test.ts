@@ -38,7 +38,7 @@ describe('the client panel list', () => {
   it('puts the closely related screens of a place in its tab row', () => {
     expect(clientTabsFor('/clients/c1/review', all).map((t) => t.label)).toEqual(['Statements', 'Review'])
     expect(clientTabsFor('/clients/c1/daybook', all).map((t) => t.label)).toEqual([
-      'Books summary', 'Purchases & Sales', 'Invoices', 'TDS', 'Payroll', 'Assets', 'Day Book', 'To fix', 'Ledgers', 'Parties & rules', 'Sign-off',
+      'Books summary', 'Purchases & Sales', 'TDS', 'Payroll', 'Assets', 'Day Book', 'To fix', 'Ledgers', 'Parties & rules', 'Sign-off',
     ])
     expect(clientTabsFor('/clients/c1/daybook', only('report.view')).map((t) => t.label)).not.toContain('Day Book')
     expect(clientTabsFor('/clients/c1', all)).toEqual([])

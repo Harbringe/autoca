@@ -56,6 +56,21 @@ class Reading:
     cess_paise: int = 0
     round_off_paise: int = 0
     total_paise: int | None = None
+    #: What else a scan or photo says, for the rest of the form. Every one is optional and none is ever trusted for the books'
+    #: arithmetic: they fill fields a person then confirms.
+    due_date: datetime.date | None = None
+    supplier_address: str = ""
+    supplier_pan: str = ""
+    buyer_address: str = ""
+    place_of_supply: str = ""
+    #: ``cash``, ``card``, ``upi``, ``bank_transfer``, ``cheque`` or ``credit``; blank when the page does not say.
+    payment_mode: str = ""
+    payment_terms: str = ""
+    currency: str = ""
+    #: A few words for what the invoice is for ("Food and beverages", "Office rent"), to suggest a ledger.
+    expense_hint: str = ""
+    #: The invoice's lines: description, HSN/SAC, quantity, unit, rate and amount (paise), GST rate (percent).
+    items: list[dict] = field(default_factory=list)
     checks: list[Check] = field(default_factory=list)
 
     @property
@@ -111,6 +126,17 @@ def read_invoice(text: str, *, today: datetime.date | None = None) -> Reading:
     return reading
 
 
+def _money_value(value) -> int | None:
+    """An amount a model copied, as paise; None when it is not one."""
+    if isinstance(value, bool) or value is None:
+        return None
+    if isinstance(value, int | float):
+        # A JSON number, as asked: through its shortest text, so 1178.58 stays 1178.58 and 0.4 stays 0.4.
+        return _paise(repr(float(value)) if isinstance(value, float) else str(value))
+    raw = re.sub(r"(?i)₹|\brs\.?|\binr\b", "", str(value)).strip()
+    return _paise(raw) if raw else None
+
+
 def reading_from_fields(fields: dict, *, today: datetime.date | None = None) -> Reading:
     """A draft from fields a vision model copied off a scan, put through the very same proof as a text read.
 
@@ -120,14 +146,7 @@ def reading_from_fields(fields: dict, *, today: datetime.date | None = None) -> 
     today = today or datetime.date.today()
 
     def money(key: str) -> int | None:
-        value = fields.get(key)
-        if isinstance(value, bool) or value is None:
-            return None
-        if isinstance(value, int | float):
-            # A JSON number, as asked: through its shortest text, so 1178.58 stays 1178.58 and 0.4 stays 0.4.
-            return _paise(repr(float(value)) if isinstance(value, float) else str(value))
-        raw = re.sub(r"(?i)₹|\brs\.?|\binr\b", "", str(value)).strip()
-        return _paise(raw) if raw else None
+        return _money_value(fields.get(key))
 
     reading = Reading(
         supplier_name=" ".join(str(fields.get("supplier_name") or "").split())[:120],
@@ -156,8 +175,61 @@ def reading_from_fields(fields: dict, *, today: datetime.date | None = None) -> 
     reading.igst_paise = money("igst") or 0
     reading.cess_paise = money("cess") or 0
     reading.round_off_paise = money("round_off") or 0
+
+    def text(key: str, limit: int) -> str:
+        return " ".join(str(fields.get(key) or "").split())[:limit]
+
+    due = str(fields.get("due_date") or "").strip()
+    try:
+        reading.due_date = datetime.date.fromisoformat(due) if due else None
+    except ValueError:
+        reading.due_date = None
+    reading.supplier_address = text("supplier_address", 300)
+    reading.buyer_address = text("buyer_address", 300)
+    reading.place_of_supply = text("place_of_supply", 60)
+    reading.payment_terms = text("payment_terms", 120)
+    reading.expense_hint = text("expense_category", 80)
+    pan = re.sub(r"\s+", "", str(fields.get("supplier_pan") or "")).upper()
+    reading.supplier_pan = pan if re.fullmatch(r"[A-Z]{5}\d{4}[A-Z]", pan) else ""
+    mode = re.sub(r"[\s-]+", "_", str(fields.get("payment_mode") or "").strip().lower())
+    reading.payment_mode = mode if mode in PAYMENT_MODES else ""
+    currency = str(fields.get("currency") or "").strip().upper()
+    reading.currency = currency if re.fullmatch(r"[A-Z]{3}", currency) else ""
+    reading.items = _items(fields.get("items"))
     reading.checks = _checks(reading, today)
     return reading
+
+
+PAYMENT_MODES = ("cash", "card", "upi", "bank_transfer", "cheque", "credit")
+
+
+def _items(raw) -> list[dict]:
+    """The lines a scan listed, cleaned: text bounded, amounts as paise, a rate only if it is a percentage."""
+    if not isinstance(raw, list):
+        return []
+    out = []
+    for entry in raw[:100]:
+        if not isinstance(entry, dict):
+            continue
+        description = " ".join(str(entry.get("description") or "").split())[:200]
+        if not description:
+            continue
+        quantity = entry.get("quantity")
+        rate_pct = entry.get("gst_rate")
+        sac = re.sub(r"\D", "", str(entry.get("hsn_sac") or ""))[:8]
+        out.append(
+            {
+                "description": description,
+                "hsn_sac": sac,
+                "quantity": str(quantity) if isinstance(quantity, int | float) and not isinstance(quantity, bool) and 0 <= quantity < 10**9 else "",
+                "unit": " ".join(str(entry.get("unit") or "").split())[:16],
+                "rate_paise": _money_value(entry.get("rate")),
+                "amount_paise": _money_value(entry.get("amount")),
+                "gst_rate": float(rate_pct) if isinstance(rate_pct, int | float) and not isinstance(rate_pct, bool) and 0 <= rate_pct <= 100 else None,
+            }
+        )
+    return out
+
 
 
 def _supplier_name(lines: list[str]) -> str:

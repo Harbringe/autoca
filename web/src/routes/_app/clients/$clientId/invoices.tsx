@@ -1,9 +1,8 @@
-import { createFileRoute } from '@tanstack/react-router'
-import { InvoicesScreen } from '@/features/invoices/InvoicesScreen'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-export const Route = createFileRoute('/_app/clients/$clientId/invoices')({ component: Screen })
-
-function Screen() {
-  const { clientId } = Route.useParams()
-  return <InvoicesScreen clientId={clientId} />
-}
+// Invoices and bills are one list now: Purchases & Sales.
+export const Route = createFileRoute('/_app/clients/$clientId/invoices')({
+  beforeLoad: ({ params }) => {
+    throw redirect({ to: '/clients/$clientId/bills', params: { clientId: params.clientId } })
+  },
+})

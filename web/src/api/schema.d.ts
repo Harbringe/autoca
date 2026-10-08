@@ -6343,8 +6343,44 @@ export interface components {
              */
             total_paise: number | null;
             total_display: string | null;
+            /** Format: date */
+            due_date: string | null;
+            supplier_address: string;
+            supplier_pan: string;
+            buyer_name: string;
+            buyer_address: string;
+            place_of_supply: string;
+            /** @description cash, card, upi, bank_transfer, cheque or credit; blank when the page does not say. */
+            payment_mode: string;
+            payment_terms: string;
+            currency: string;
+            /** @description A few words for what it was for, to suggest a ledger. */
+            expense_hint: string;
+            /** @description The invoice's lines, when the model read them. */
+            items: components["schemas"]["ReadItem"][];
             /** @description Fields the reader said it could not read clearly (a scan), to check against the page. */
             unsure: string[];
+        };
+        ReadItem: {
+            description: string;
+            hsn_sac: string;
+            quantity: string;
+            unit: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            rate_paise: number | null;
+            /**
+             * Format: int64
+             * @description The line's taxable amount.
+             */
+            amount_paise: number | null;
+            /**
+             * Format: double
+             * @description Percent.
+             */
+            gst_rate: number | null;
         };
         RecategorizeRequest: {
             /** Format: uuid */

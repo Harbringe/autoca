@@ -77,6 +77,16 @@ class CheckSerializer(serializers.Serializer):
     detail = serializers.CharField(allow_blank=True)
 
 
+class ReadItemSerializer(serializers.Serializer):
+    description = serializers.CharField()
+    hsn_sac = serializers.CharField(allow_blank=True)
+    quantity = serializers.CharField(allow_blank=True)
+    unit = serializers.CharField(allow_blank=True)
+    rate_paise = PaiseField(allow_null=True)
+    amount_paise = PaiseField(allow_null=True, help_text="The line's taxable amount.")
+    gst_rate = serializers.FloatField(allow_null=True, help_text="Percent.")
+
+
 class ReadFieldsSerializer(serializers.Serializer):
     supplier_name = serializers.CharField(allow_blank=True)
     gstins = serializers.ListField(child=serializers.CharField(), help_text="Every valid GSTIN printed on the invoice, in order.")
@@ -93,6 +103,17 @@ class ReadFieldsSerializer(serializers.Serializer):
     round_off_paise = PaiseField()
     total_paise = PaiseField(allow_null=True)
     total_display = serializers.CharField(allow_null=True)
+    due_date = serializers.DateField(allow_null=True)
+    supplier_address = serializers.CharField(allow_blank=True)
+    supplier_pan = serializers.CharField(allow_blank=True)
+    buyer_name = serializers.CharField(allow_blank=True)
+    buyer_address = serializers.CharField(allow_blank=True)
+    place_of_supply = serializers.CharField(allow_blank=True)
+    payment_mode = serializers.CharField(allow_blank=True, help_text="cash, card, upi, bank_transfer, cheque or credit; blank when the page does not say.")
+    payment_terms = serializers.CharField(allow_blank=True)
+    currency = serializers.CharField(allow_blank=True)
+    expense_hint = serializers.CharField(allow_blank=True, help_text="A few words for what it was for, to suggest a ledger.")
+    items = ReadItemSerializer(many=True, help_text="The invoice's lines, when the model read them.")
     unsure = serializers.ListField(
         child=serializers.CharField(), help_text="Fields the reader said it could not read clearly (a scan), to check against the page."
     )
@@ -173,6 +194,17 @@ def reading_payload(reading: InvoiceReading, fields: dict, party, matching, paym
                 "round_off_paise": fields.get("round_off_paise", 0),
                 "total_paise": total,
                 "total_display": format_inr(total) if total is not None else None,
+                "due_date": fields.get("due_date"),
+                "supplier_address": fields.get("supplier_address", ""),
+                "supplier_pan": fields.get("supplier_pan", ""),
+                "buyer_name": fields.get("buyer_name", ""),
+                "buyer_address": fields.get("buyer_address", ""),
+                "place_of_supply": fields.get("place_of_supply", ""),
+                "payment_mode": fields.get("payment_mode", ""),
+                "payment_terms": fields.get("payment_terms", ""),
+                "currency": fields.get("currency", ""),
+                "expense_hint": fields.get("expense_hint", ""),
+                "items": fields.get("items", []),
                 "unsure": fields.get("unsure", []),
             }
             if fields

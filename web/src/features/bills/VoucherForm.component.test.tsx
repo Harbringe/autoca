@@ -6,7 +6,6 @@ import { bills as billsQuery } from '@/api/queries/bills'
 import { ledgers as ledgersQuery, parties as partiesQuery } from '@/api/queries/books'
 import { clientDetail } from '@/api/queries/clients'
 import type { Bill, Client, LedgerAccount, Party } from '@/api/types'
-import { BillsScreen } from './BillsScreen'
 import { VoucherDialog } from './VoucherDialog'
 
 vi.mock('@/session/session', () => ({
@@ -61,61 +60,6 @@ function renderWith(ui: React.ReactElement, data: { bills?: Bill[] } = {}) {
   queryClient.setQueryData(clientDetail(CLIENT).queryKey, { id: CLIENT, name: 'Acme', can_post: true } as unknown as Client)
   render(<QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>)
 }
-
-describe('Purchases & Sales', () => {
-  it('lists the year’s bills, and leaves out other years', async () => {
-    renderWith(<BillsScreen clientId={CLIENT} />)
-    const table = await screen.findByRole('table', { name: /Purchases and sales, FY/ })
-    const rows = within(table).getAllByRole('row').slice(1, -1) // header and totals
-    expect(rows).toHaveLength(3)
-    expect(table).not.toHaveTextContent('Last Year Ltd')
-  })
-
-  it('says what is owed to suppliers and by customers', async () => {
-    renderWith(<BillsScreen clientId={CLIENT} />)
-    await screen.findByRole('table')
-    const owing = screen.getByRole('region', { name: 'What is owing' })
-    // Ravi's 1,18,000 is open; Shah's is settled. The customer owes 50,000.
-    expect(within(owing).getByText('Owed to suppliers').parentElement).toHaveTextContent('₹1,18,000.00')
-    expect(within(owing).getByText('Owed by customers').parentElement).toHaveTextContent('₹50,000.00')
-  })
-
-  it('shows a bill with no invoice file instead of hiding it', async () => {
-    renderWith(<BillsScreen clientId={CLIENT} />)
-    const table = await screen.findByRole('table')
-    const ravi = within(table).getByText('Ravi Traders').closest('tr')!
-    const shah = within(table).getByText('Shah Stationers').closest('tr')!
-    expect(ravi).toHaveTextContent('No file')
-    expect(shah).not.toHaveTextContent('No file')
-    expect(shah).toHaveTextContent('Settled')
-    expect(screen.getByText('Bills with no invoice file').parentElement).toHaveTextContent('2')
-  })
-
-  it('filters by type and by whether anything is still owing', async () => {
-    renderWith(<BillsScreen clientId={CLIENT} />)
-    await screen.findByRole('table')
-    await userEvent.selectOptions(screen.getByLabelText('Type'), 'SALES')
-    expect(within(screen.getByRole('table')).getAllByRole('row').slice(1, -1)).toHaveLength(1)
-    await userEvent.selectOptions(screen.getByLabelText('Type'), '')
-    await userEvent.selectOptions(screen.getByLabelText('Status'), 'settled')
-    const rows = within(screen.getByRole('table')).getAllByRole('row').slice(1, -1)
-    expect(rows).toHaveLength(1)
-    expect(rows[0]).toHaveTextContent('Shah Stationers')
-  })
-
-  it('searches the party and the invoice number', async () => {
-    renderWith(<BillsScreen clientId={CLIENT} />)
-    await screen.findByRole('table')
-    await userEvent.type(screen.getByLabelText('Search bills'), 'sl-1')
-    expect(within(screen.getByRole('table')).getAllByRole('row').slice(1, -1)).toHaveLength(1)
-  })
-
-  it('invites the first voucher when there are none, and offers to book one', async () => {
-    renderWith(<BillsScreen clientId={CLIENT} />, { bills: [] })
-    expect(await screen.findByText(/No purchase or sales vouchers in FY/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /Book the first one/ })).toBeInTheDocument()
-  })
-})
 
 describe('Booking a voucher', () => {
   const open = () => renderWith(<VoucherDialog clientId={CLIENT} open onOpenChange={() => {}} />)

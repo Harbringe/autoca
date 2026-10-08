@@ -89,7 +89,7 @@ def test_an_invoice_that_does_not_add_up_is_not_proved_and_says_why():
 
     assert not reading.proved
     assert [c.name for c in reading.failed] == ["arithmetic"]
-    assert "does not equal the total" in reading.failed[0].detail
+    assert "than the total" in reading.failed[0].detail
 
 
 def test_igst_together_with_cgst_is_refused():
@@ -128,3 +128,40 @@ def test_a_text_month_date_is_read():
     reading = read(INTRA_STATE.replace("12-08-2025", "12 Aug 2025"))
 
     assert reading.invoice_date == datetime.date(2025, 8, 12)
+
+
+def test_a_round_off_printed_with_its_minus_apart_from_the_figure_is_read_with_its_sign():
+    """Some invoices print ``(-)0.16``; reading that as nothing made a good invoice look wrong by 16 paise."""
+    from ledger.invoice_reader import _paise, reading_from_fields
+
+    for text in ("(-)0.16", "-0.16", "(0.16)", "−0.16"):
+        assert _paise(text) == -16
+    assert _paise("Rs. 49500") == 4_950_000
+    gstin = "27ABTPN5133F1ZF"
+    fields = {
+        "supplier_name": "Gajraj Trading Company", "supplier_gstin": gstin, "buyer_gstin": "", "invoice_no": "GTC 24/25 512",
+        "invoice_date": "01-08-2025", "taxable": "47,143.00", "cgst": "1,178.58", "sgst": "1,178.58",
+        "round_off": "(-)0.16", "total": "49,500.00",
+    }
+    from core.identifiers import gstin_check_character
+
+    fields["supplier_gstin"] = "27ABTPN5133F1Z" + gstin_check_character("27ABTPN5133F1Z")
+
+    reading = reading_from_fields(fields)
+
+    assert reading.round_off_paise == -16 and reading.proved
+
+
+def test_when_the_figures_are_a_few_paise_out_it_says_by_how_much_and_suggests_round_off():
+    from core.identifiers import gstin_check_character
+    from ledger.invoice_reader import reading_from_fields
+
+    fields = {
+        "supplier_gstin": "27ABTPN5133F1Z" + gstin_check_character("27ABTPN5133F1Z"), "invoice_no": "A/1",
+        "invoice_date": "01-08-2025", "taxable": "47,143.00", "cgst": "1,178.58", "sgst": "1,178.58", "total": "49,500.00",
+    }
+
+    reading = reading_from_fields(fields)
+
+    assert not reading.proved
+    assert "0.16 more than the total" in reading.failed[0].detail and "Round off" in reading.failed[0].detail

@@ -161,7 +161,7 @@ export function InvoiceCapture({
           </div>
         ) : (
           <div className="grid gap-3">
-            {(reading.attention || reading.unreadable_reason) && reading.status === 'OPEN' && (
+            {(reading.unreadable_reason || (reading.attention && !(reading.read && !reading.proved))) && reading.status === 'OPEN' && (
               <p className="flex items-start gap-2 rounded-md border border-accent-edge bg-accent p-2 text-sm">
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
                 <span>{reading.unreadable_reason || reading.attention}</span>

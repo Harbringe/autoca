@@ -206,9 +206,11 @@ def _parse_date(text: str) -> datetime.date | None:
 
 
 def _paise(token: str) -> int | None:
+    """An amount as printed, in paise. Minus can be a hyphen, a Unicode minus or brackets, and may stand apart from the
+    figure (``(-)0.16`` is how some invoices print a round-off); anything else around the digits is ignored."""
     cleaned = token.strip()
-    negative = cleaned.startswith("(") and cleaned.endswith(")") or cleaned.lstrip("(").startswith("-")
-    digits = cleaned.strip("()").replace("-", "").replace(",", "").replace(" ", "")
+    negative = bool(re.search(r"[-\u2212\u2013]", cleaned)) or (cleaned.startswith("(") and cleaned.endswith(")"))
+    digits = re.sub(r"[^0-9.]", "", cleaned).strip(".")
     if not digits:
         return None
     try:
@@ -300,7 +302,18 @@ def _checks(reading: Reading, today: datetime.date) -> list[Check]:
             "cess": reading.cess_paise, "round_off": reading.round_off_paise,
         }
         tied = _ties(reading.taxable_paise, reading.total_paise, values)
-        checks.append(Check("arithmetic", tied, "" if tied else "Taxable value plus tax and round-off does not equal the total."))
+        if tied:
+            detail = ""
+        else:
+            gap = (
+                reading.taxable_paise + reading.cgst_paise + reading.sgst_paise + reading.igst_paise
+                + reading.cess_paise + reading.round_off_paise - reading.total_paise
+            )
+            detail = (
+                f"Taxable value plus tax and round-off is {abs(gap) / 100:,.2f} {'more' if gap > 0 else 'less'} than the total."
+                + (" If the invoice rounds off, enter it as Round off." if abs(gap) < 100 else "")
+            )
+        checks.append(Check("arithmetic", tied, detail))
         split = _split_ok(values)
         checks.append(Check("tax_split", split, "" if split else "Tax is either IGST or an equal CGST and SGST, not both."))
     checks.append(Check("gstin", bool(reading.gstins), "" if reading.gstins else "No valid GSTIN was found on the invoice."))

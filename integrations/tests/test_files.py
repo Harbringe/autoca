@@ -152,7 +152,7 @@ def test_something_that_is_none_of_these_is_refused_in_words():
 def test_a_huge_document_is_previewed_as_its_first_pages_only():
     from documents import preview
 
-    big = docx(["line %d of a very long document" % i for i in range(5000)])
+    big = docx([f"line {i} of a very long document" for i in range(5000)])
 
     pages = preview._convert(files.load(big, "big.docx"))
 

@@ -4469,6 +4469,11 @@ export interface components {
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         LedgerBalance: {
             name: string;
+            /**
+             * Format: uuid
+             * @description The ledger this line is, to open it; null for a line that is not one ledger.
+             */
+            ledger: string | null;
             group: string;
             /**
              * Format: int64

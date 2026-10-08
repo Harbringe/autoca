@@ -138,3 +138,16 @@ def test_the_review_screen_is_told_where_a_placement_came_from(api, client_recor
     detail = api.get(f"/api/v1/classifications/{row.pk}/").json()
 
     assert detail["memory"]["kind"] == "matched" and "Matched to" in detail["memory"]["note"]
+
+
+def test_every_report_line_says_which_ledger_it_is_so_it_can_be_opened(api, client_record, statement):
+    row = the_payment(client_record)
+    party, bill = book_bill(api, client_record, row.transaction.amount_paise)
+    fy = 2025 if row.transaction.value_date.month >= 4 else 2024
+
+    report = api.get(f"{base(client_record)}/reports/trial-balance/", {"fy": fy}).json()
+
+    by_name = {line["name"]: line["ledger"] for line in report["rows"]}
+    ledgers = {l["name"]: l["id"] for l in api.get(f"{base(client_record)}/ledgers/").json()["results"]}
+    assert by_name["Ravi Traders"] == ledgers["Ravi Traders"]
+    assert by_name.get("Difference in opening balances", None) is None

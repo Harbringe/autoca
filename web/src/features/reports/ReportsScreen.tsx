@@ -101,7 +101,10 @@ function ReportFrame({
               {!footer.is_complete && (
                 <>
                   {' '}
-                  {plural(footer.pending_review, 'transaction')} in this period {footer.pending_review === 1 ? 'is' : 'are'} classified but not
+                  <Link to="/clients/$clientId/review" params={{ clientId }} search={{ stage: 'pending_approval' }} className="underline underline-offset-2">
+                    {plural(footer.pending_review, 'transaction')}
+                  </Link>{' '}
+                  in this period {footer.pending_review === 1 ? 'is' : 'are'} classified but not
                   yet posted, so {footer.pending_review === 1 ? 'it is' : 'they are'} not in these figures.
                 </>
               )}
@@ -170,7 +173,9 @@ function TrialBalanceReport({ clientId, fy }: { clientId: string; fy: number }) 
               const nil = !row.closing_debit_paise && !row.closing_credit_paise
               return (
                 <tr key={row.name} className={tbl.row}>
-                  <td className={tbl.td}>{row.name}</td>
+                  <td className={tbl.td}>
+                    <LedgerLink clientId={clientId} ledger={row.ledger} name={row.name} />
+                  </td>
                   <td className={`${tbl.td} text-muted-foreground`}>{GROUP_LABEL[row.group ?? ''] ?? row.group}</td>
                   <td className={tbl.tdNum}>
                     <Money dash display={row.opening_paise ? drCr(row.opening_paise) : undefined} paise={row.opening_paise ? undefined : 0} symbol={false} />
@@ -203,6 +208,25 @@ function TrialBalanceReport({ clientId, fy }: { clientId: string; fy: number }) 
   )
 }
 
+/** A line of a report as a link to its ledger, with every voucher in it. The opening difference has no ledger: it opens the openings. */
+function LedgerLink({ clientId, ledger, name }: { clientId: string; ledger?: string | null; name: string }) {
+  if (ledger) {
+    return (
+      <Link to="/clients/$clientId/ledgers" params={{ clientId }} search={{ ledger }} className="hover:underline" title={`Open ${name}`}>
+        {name}
+      </Link>
+    )
+  }
+  if (name === 'Difference in opening balances') {
+    return (
+      <Link to="/clients/$clientId/statements" params={{ clientId }} className="hover:underline" title="Confirm the opening balances">
+        {name}
+      </Link>
+    )
+  }
+  return <>{name}</>
+}
+
 /** The green tick means "tallies and final". While the banner is up the figures are not final, so it says so instead. */
 function TallyMark({ clientId, footer, balances }: { clientId: string; footer: ReportFooter; balances: boolean }) {
   const unconfirmed = useUnconfirmedOpenings(clientId)
@@ -217,8 +241,10 @@ function drCr(paise: number): string {
 }
 
 /** A side of a horizontal statement: its lines, padded so both sides end on the same row. */
-function Side({ heading, rows, total, rowsTo, amount }: { heading: string; rows: [string, string | null][]; total: string | null; rowsTo: number; amount: string }) {
-  const padded = [...rows, ...Array.from({ length: Math.max(0, rowsTo - rows.length) }, () => ['', null] as [string, string | null])]
+type SideRow = [name: string, value: string | null, ledger?: string | null]
+
+function Side({ clientId, heading, rows, total, rowsTo, amount }: { clientId: string; heading: string; rows: SideRow[]; total: string | null; rowsTo: number; amount: string }) {
+  const padded: SideRow[] = [...rows, ...Array.from({ length: Math.max(0, rowsTo - rows.length) }, () => ['', null] as SideRow)]
   return (
     <table className={cn(tbl.table, 'h-full')}>
       <thead className={tbl.head}>
@@ -228,9 +254,9 @@ function Side({ heading, rows, total, rowsTo, amount }: { heading: string; rows:
         </tr>
       </thead>
       <tbody>
-        {padded.map(([name, value], i) => (
+        {padded.map(([name, value, ledger], i) => (
           <tr key={`${name}-${i}`} className="h-(--row-h) border-b border-dashed last:border-b-0">
-            <td className={tbl.td}>{name}</td>
+            <td className={tbl.td}>{ledger ? <LedgerLink clientId={clientId} ledger={ledger} name={name} /> : name}</td>
             <td className={tbl.tdNum}>{value}</td>
           </tr>
         ))}
@@ -253,8 +279,8 @@ function ProfitAndLossReport({ clientId, fy }: { clientId: string; fy: number })
   const profit = pl.net_profit_paise >= 0
   const net = formatPaise(Math.abs(pl.net_profit_paise), { symbol: false })
   const netText = formatPaise(Math.abs(pl.net_profit_paise))
-  const left: [string, string | null][] = pl.expenses.map((e) => [e.name, closingLine(e, 'expense', NO_SYMBOL)])
-  const right: [string, string | null][] = pl.income.map((i) => [i.name, closingLine(i, 'income', NO_SYMBOL)])
+  const left: SideRow[] = pl.expenses.map((e) => [e.name, closingLine(e, 'expense', NO_SYMBOL), e.ledger])
+  const right: SideRow[] = pl.income.map((i) => [i.name, closingLine(i, 'income', NO_SYMBOL), i.ledger])
   if (profit) left.push(['Net Profit (carried to Capital)', net])
   else right.push(['Net Loss (carried to Capital)', net])
   const total = formatPaise(Math.max(pl.total_income_paise, pl.total_expenses_paise), { symbol: false })
@@ -262,8 +288,8 @@ function ProfitAndLossReport({ clientId, fy }: { clientId: string; fy: number })
   return (
     <ReportFrame clientId={clientId} title="Profit & Loss A/c" footer={pl.footer}>
       <div className="grid gap-4 md:grid-cols-2 md:gap-0 md:divide-x">
-        <Side heading="Dr · Expenses" amount="Amount ₹" rows={left} rowsTo={rowsTo} total={total} />
-        <Side heading="Cr · Income" amount="Amount ₹" rows={right} rowsTo={rowsTo} total={total} />
+        <Side clientId={clientId} heading="Dr · Expenses" amount="Amount ₹" rows={left} rowsTo={rowsTo} total={total} />
+        <Side clientId={clientId} heading="Cr · Income" amount="Amount ₹" rows={right} rowsTo={rowsTo} total={total} />
       </div>
       <p className={cn('mt-3 text-sm font-medium', profit ? 'text-success' : 'text-destructive')}>
         {profit ? 'Net Profit' : 'Net Loss'} for the year: {netText}
@@ -277,9 +303,9 @@ function BalanceSheetReport({ clientId, fy }: { clientId: string; fy: number }) 
   if (!r.data) return r.node
   const bs = r.data
   if (!bs.assets.length && !bs.liabilities.length) return <NothingYet clientId={clientId} fy={fy} />
-  const liabilities: [string, string | null][] = bs.liabilities.map((l) => [l.name, closingLine(l, 'liability', NO_SYMBOL)])
+  const liabilities: SideRow[] = bs.liabilities.map((l) => [l.name, closingLine(l, 'liability', NO_SYMBOL), l.ledger])
   liabilities.push([bs.net_profit_paise >= 0 ? 'Add: Net Profit for the year' : 'Less: Net Loss for the year', formatPaise(Math.abs(bs.net_profit_paise), { symbol: false })])
-  const assets: [string, string | null][] = bs.assets.map((a) => [a.name, closingLine(a, 'asset', NO_SYMBOL)])
+  const assets: SideRow[] = bs.assets.map((a) => [a.name, closingLine(a, 'asset', NO_SYMBOL), a.ledger])
   const rowsTo = Math.max(liabilities.length, assets.length)
   return (
     <ReportFrame clientId={clientId} title="Balance Sheet" footer={bs.footer} period={asAt(fy)}>
@@ -298,8 +324,8 @@ function BalanceSheetReport({ clientId, fy }: { clientId: string; fy: number }) 
         </div>
       )}
       <div className="grid gap-4 md:grid-cols-2 md:gap-0 md:divide-x">
-        <Side heading="Liabilities" amount="Amount ₹" rows={liabilities} rowsTo={rowsTo} total={sideTotal(bs.total_liabilities_and_profit_paise, 'Cr', NO_SYMBOL)} />
-        <Side heading="Assets" amount="Amount ₹" rows={assets} rowsTo={rowsTo} total={sideTotal(bs.total_assets_paise, 'Dr', NO_SYMBOL)} />
+        <Side clientId={clientId} heading="Liabilities" amount="Amount ₹" rows={liabilities} rowsTo={rowsTo} total={sideTotal(bs.total_liabilities_and_profit_paise, 'Cr', NO_SYMBOL)} />
+        <Side clientId={clientId} heading="Assets" amount="Amount ₹" rows={assets} rowsTo={rowsTo} total={sideTotal(bs.total_assets_paise, 'Dr', NO_SYMBOL)} />
       </div>
     </ReportFrame>
   )

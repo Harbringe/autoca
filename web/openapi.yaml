@@ -9607,6 +9607,12 @@ components:
       properties:
         name:
           type: string
+        ledger:
+          type: string
+          format: uuid
+          nullable: true
+          description: The ledger this line is, to open it; null for a line that is
+            not one ledger.
         group:
           type: string
         opening_paise:
@@ -9678,6 +9684,7 @@ components:
       - debit_display
       - debit_paise
       - group
+      - ledger
       - name
       - opening_display
       - opening_paise

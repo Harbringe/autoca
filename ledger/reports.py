@@ -29,7 +29,7 @@ from dataclasses import dataclass
 from django.db.models import Q, Sum
 from django.utils import timezone
 
-from classify.models import LedgerGroup
+from classify.models import LedgerAccount, LedgerGroup
 from core.fy import fy_bounds, fy_label
 from core.money import format_inr
 from ledger.models import JournalLine, LedgerOpening
@@ -134,6 +134,8 @@ class LedgerBalance:
     credit_paise: int
     #: Debits positive, like ``net_paise``.
     opening_paise: int = 0
+    #: The ledger this row is, so a screen can open it. None for a line that is not one ledger (the opening difference).
+    ledger_id: object = None
 
     @property
     def net_paise(self) -> int:
@@ -359,6 +361,7 @@ def _balances(client, financial_year: int) -> tuple[tuple[LedgerBalance, ...], R
             entry = balances.setdefault(name, {"group": LedgerGroup.CAPITAL, "debit": 0, "credit": 0, "opening": 0})
             entry["opening"] += opening
 
+    ledger_ids = dict(LedgerAccount.objects.filter(firm_id=client.firm_id, client=client).values_list("name", "pk"))
     rows = tuple(
         sorted(
             (
@@ -368,6 +371,7 @@ def _balances(client, financial_year: int) -> tuple[tuple[LedgerBalance, ...], R
                     debit_paise=values["debit"],
                     credit_paise=values["credit"],
                     opening_paise=values["opening"],
+                    ledger_id=ledger_ids.get(name),
                 )
                 for name, values in balances.items()
                 if values["debit"] or values["credit"] or values["opening"]

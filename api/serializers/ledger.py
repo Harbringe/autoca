@@ -146,6 +146,9 @@ class LedgerBalanceSerializer(MoneySerializerMixin, serializers.Serializer):
     money = ("opening_paise", "debit_paise", "credit_paise", "closing_debit_paise", "closing_credit_paise")
 
     name = serializers.CharField()
+    ledger = serializers.UUIDField(
+        source="ledger_id", allow_null=True, help_text="The ledger this line is, to open it; null for a line that is not one ledger."
+    )
     group = serializers.CharField()
     opening_paise = PaiseField(help_text="Balance before the year. Debits positive.")
     debit_paise = PaiseField()

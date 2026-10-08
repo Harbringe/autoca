@@ -8,7 +8,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Bot, Plus, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
@@ -42,7 +42,7 @@ function sideOf(entry: JournalEntry, ledgerId: string, side: 'DR' | 'CR') {
 
 export type MasterTab = 'ledgers' | 'parties' | 'rules'
 
-export function MastersScreen({ clientId, tab }: { clientId: string; tab: MasterTab }) {
+export function MastersScreen({ clientId, tab, ledgerId }: { clientId: string; tab: MasterTab; ledgerId?: string }) {
   const tabs: { tab: MasterTab; label: string }[] = [
     { tab: 'parties', label: 'Parties' },
     { tab: 'rules', label: 'Rules' },
@@ -66,7 +66,7 @@ export function MastersScreen({ clientId, tab }: { clientId: string; tab: Master
           ))}
         </nav>
       )}
-      {tab === 'ledgers' && <Ledgers clientId={clientId} />}
+      {tab === 'ledgers' && <Ledgers clientId={clientId} openLedger={ledgerId} />}
       {tab === 'parties' && <Parties clientId={clientId} />}
       {tab === 'rules' && <Rules clientId={clientId} />}
     </div>
@@ -75,7 +75,7 @@ export function MastersScreen({ clientId, tab }: { clientId: string; tab: Master
 
 // --- Ledgers ------------------------------------------------------------------------------------
 
-function Ledgers({ clientId }: { clientId: string }) {
+function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: string }) {
   const { can } = useSession()
   const { fy, setFy } = useFy()
   const client = useQuery(clientDetail(clientId))
@@ -85,11 +85,20 @@ function Ledgers({ clientId }: { clientId: string }) {
   const [editing, setEditing] = useState<LedgerAccount | 'new' | null>(null)
   const [deciding, setDeciding] = useState<LedgerAccount | null>(null)
   const [showInactive, setShowInactive] = useState(false)
-  const [selectedLedger, setSelectedLedger] = useState<string | null>(null)
+  const [selectedLedger, setSelectedLedger] = useState<string | null>(openLedger ?? null)
   const [entrySearch, setEntrySearch] = useState('')
   // Rows placed in the open ledger, in every year and posted or not: the ledger list counts these,
   // while the entries below are only what has been posted, in the year on screen.
   const placed = useQuery({ ...ledgerRows(clientId, selectedLedger ?? ''), enabled: !!selectedLedger && can('transaction.view') })
+
+  // Arriving from a report line: open that ledger and bring its entries into view.
+  useEffect(() => {
+    if (openLedger) setSelectedLedger(openLedger)
+  }, [openLedger])
+  const ready = !all.isPending && !entries.isPending
+  useEffect(() => {
+    if (openLedger && ready) document.getElementById('ledger-detail')?.scrollIntoView({ block: 'start' })
+  }, [openLedger, ready])
 
   if (all.isPending || entries.isPending) return <Spinner />
   if (all.error) return <ErrorState error={all.error} retry={() => void all.refetch()} />
@@ -233,7 +242,7 @@ function Ledgers({ clientId }: { clientId: string }) {
       />
 
       {selected && (
-        <Card className="grid gap-4 p-4" aria-label={`${selected.name} ledger details`}>
+        <Card id="ledger-detail" className="grid gap-4 p-4" aria-label={`${selected.name} ledger details`}>
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="text-xs font-medium text-muted-foreground">Ledger detail, FY {fyLabel(fy)}</div>

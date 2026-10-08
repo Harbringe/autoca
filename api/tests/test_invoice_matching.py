@@ -30,7 +30,9 @@ def attribute_row_to(client_record, row, party_id):
     with firm_context(client_record.firm_id):
         classification = row.transaction.classification
         classification.party_id = party_id  # still unplaced: only whose it is is known
-        classification.save(update_fields=["party"])
+        # The fixture's payee has the account holder's own name, so it reads as a transfer to self; this one is not.
+        classification.is_self_transfer = False
+        classification.save(update_fields=["party", "is_self_transfer"])
 
 
 def test_a_row_that_is_the_parties_payment_of_exactly_the_bills_amount_is_settled_against_it(api, client_record, statement):

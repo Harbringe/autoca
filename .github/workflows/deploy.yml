@@ -25,8 +25,9 @@ permissions:
 
 env:
   AWS_REGION: ap-south-1
-  ROLE_ARN: arn:aws:iam::000246635189:role/autoca-github-deploy
-  INSTANCE_ID: i-042e3587af280cb66
+  # Held as repository variables (Settings > Secrets and variables > Actions > Variables), not in the code.
+  ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+  INSTANCE_ID: ${{ vars.DEPLOY_INSTANCE_ID }}
   DOCUMENT: autoca-deploy
 
 jobs:

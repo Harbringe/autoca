@@ -23,7 +23,7 @@ Next -> leave rotation off -> Next -> Store.
 {
   "Effect": "Allow",
   "Action": "secretsmanager:GetSecretValue",
-  "Resource": "arn:aws:secretsmanager:ap-south-1:000246635189:secret:autoca/prod/env-*"
+  "Resource": "arn:aws:secretsmanager:ap-south-1:<ACCOUNT_ID>:secret:autoca/prod/env-*"
 }
 ```
 
@@ -66,8 +66,8 @@ Create inline policy -> JSON, name it `autoca-read-parameters`:
       "Effect": "Allow",
       "Action": ["ssm:GetParametersByPath", "ssm:GetParameters", "ssm:GetParameter"],
       "Resource": [
-        "arn:aws:ssm:ap-south-1:000246635189:parameter/autoca/prod",
-        "arn:aws:ssm:ap-south-1:000246635189:parameter/autoca/prod/*"
+        "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/autoca/prod",
+        "arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:parameter/autoca/prod/*"
       ]
     }
   ]

@@ -34,7 +34,7 @@ your PC                                   the server (EC2)
          "Effect": "Allow",
          "Action": "ssm:StartSession",
          "Resource": [
-           "arn:aws:ec2:ap-south-1:000246635189:instance/i-042e3587af280cb66",
+           "arn:aws:ec2:ap-south-1:<ACCOUNT_ID>:instance/<INSTANCE_ID>",
            "arn:aws:ssm:ap-south-1::document/AWS-StartPortForwardingSession"
          ]
        },
@@ -44,7 +44,8 @@ your PC                                   the server (EC2)
    ```
 3. **The database port must be published.** That is the `ports:` line in `compose.prod.yaml`; it takes effect with the next
    deploy (`git push origin dev:main dev:prod`, once CI is green). Until then the tunnel connects and is refused.
-4. **Fill in `.env.live`.** Copy `deploy/live.env.example` to `.env.live` (git ignores it). Take the values from the server with a
+4. **Tell the script which server.** Set `AUTOCA_INSTANCE_ID` to the instance id (a Windows user variable is enough). It is not kept in the code.
+5. **Fill in `.env.live`.** Copy `deploy/live.env.example` to `.env.live` (git ignores it). Take the values from the server with a
    Session Manager shell, never by pasting them into a chat or an email:
    - `DATABASE_URL`: the `DATABASE_URL` line of `.env.prod`, with the host and port changed to `localhost:5433`.
    - `KMS_LOCAL_MASTER_KEY` and `BLIND_INDEX_KEY`: the same lines of `.env.prod`.

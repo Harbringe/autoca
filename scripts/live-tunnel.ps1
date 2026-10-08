@@ -8,11 +8,15 @@
 
 param(
     [int]$LocalPort = 5433,
-    [string]$InstanceId = "i-042e3587af280cb66",
+    [string]$InstanceId = $env:AUTOCA_INSTANCE_ID,
     [string]$Region = "ap-south-1"
 )
 
 $ErrorActionPreference = "Stop"
+
+if (-not $InstanceId) {
+    Write-Error "Say which server: set AUTOCA_INSTANCE_ID (the instance id, i-...) or pass -InstanceId."
+}
 
 if (-not (Get-Command aws -ErrorAction SilentlyContinue)) {
     Write-Error "The AWS CLI is not installed. Install it with:  winget install Amazon.AWSCLI   then open a new window."

@@ -141,10 +141,13 @@ export function useUploadInvoice(clientId: string) {
   const invalidate = useInvalidateClient(clientId)
   return useMutation({
     // No kind: the server tells a purchase from a sale by the client's own GSTIN and books it when certain.
-    mutationFn: ({ file, kind }: { file: File; kind?: 'PURCHASE' | 'SALES' }) => {
+    // `book: false` reads the file into a draft for a person to complete (the capture screen); otherwise a certain
+    // invoice is booked at once.
+    mutationFn: ({ file, kind, book }: { file: File; kind?: 'PURCHASE' | 'SALES'; book?: boolean }) => {
       const form = new FormData()
       form.append('file', file)
       if (kind) form.append('kind', kind)
+      if (book === false) form.append('book', 'false')
       return raw.post<InvoiceReading>(`${V1}/clients/${clientId}/invoices/upload/`, form)
     },
     onSuccess: invalidate,

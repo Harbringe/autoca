@@ -4671,6 +4671,60 @@ paths:
       responses:
         '200':
           description: No response body
+  /api/v1/documents/{id}/preview/:
+    get:
+      operationId: documents_preview_retrieve
+      description: How many pages a stored file shows as, for the viewer beside a
+        form.
+      summary: Pages of a stored file
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - documents
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DocumentPreview'
+          description: ''
+  /api/v1/documents/{id}/preview/{number}/:
+    get:
+      operationId: documents_preview_retrieve_2
+      description: One page of a stored file as an image. A PDF is drawn; a sheet
+        or Word file is converted to pages first.
+      summary: One page of a stored file, as a PNG
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: number
+        schema:
+          type: integer
+        required: true
+      tags:
+      - documents
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+          description: ''
   /api/v1/firm/:
     get:
       operationId: firm_retrieve
@@ -8498,6 +8552,17 @@ components:
       - pipeline_tier
       - sha256
       - status
+    DocumentPreview:
+      type: object
+      properties:
+        pages:
+          type: integer
+          description: How many pages the viewer shows.
+        filename:
+          type: string
+      required:
+      - filename
+      - pages
     Employee:
       type: object
       properties:
@@ -9125,6 +9190,11 @@ components:
           oneOf:
           - $ref: '#/components/schemas/KindA27Enum'
           - $ref: '#/components/schemas/BlankEnum'
+        book:
+          type: boolean
+          default: true
+          description: Leave true to have a certain invoice booked at once. False
+            reads it into a draft for a person to complete and book.
       required:
       - file
     ItcStatusEnum:

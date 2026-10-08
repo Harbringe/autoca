@@ -77,16 +77,16 @@ function amountOf(text: string): { paise: number; ok: boolean } {
   return paise === null ? { paise: 0, ok: false } : { paise, ok: true }
 }
 
-export function VoucherDialog({
+/** The voucher's fields and the booking of it, with no frame of its own: a dialog, or half of the invoice capture screen. */
+export function VoucherForm({
   clientId,
-  open,
-  onOpenChange,
+  onClose,
   initialKind = 'PURCHASE',
   prefill,
 }: {
   clientId: string
-  open: boolean
-  onOpenChange: (open: boolean) => void
+  /** Called after it is booked, and by Cancel. */
+  onClose: () => void
   initialKind?: VoucherKind
   prefill?: VoucherPrefill
 }) {
@@ -245,7 +245,7 @@ export function VoucherDialog({
         : await post.mutateAsync(body)
       toast.success(`${made.voucher_type} No. ${made.entry_no} ${prefill?.reviseBill ? 'changed' : 'booked'} · ${made.reference}`)
       reset()
-      onOpenChange(false)
+      onClose()
     } catch (e) {
       const next: Record<string, string> = {}
       if (isApiError(e) && Object.keys(e.fields).length) {
@@ -261,209 +261,226 @@ export function VoucherDialog({
   const partyLabel = purchaseSide ? 'Supplier' : 'Customer'
 
   return (
+    <form
+      className="grid gap-4"
+      noValidate
+      onSubmit={(e) => {
+        e.preventDefault()
+        void submit()
+      }}
+    >
+      <Field label="Voucher type">
+        {(props) => (
+          <Select {...props} value={kind} onChange={(e) => changeKind(e.target.value as VoucherKind)}>
+            {VOUCHER_KINDS.map((k) => (
+              <option key={k.value} value={k.value}>{k.label}</option>
+            ))}
+          </Select>
+        )}
+      </Field>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid gap-2">
+          <Field label={partyLabel} error={errors.party}>
+            {(props) => (
+              <Select
+                {...props}
+                value={newParty ? NEW_PARTY : partyId}
+                onChange={(e) => {
+                  if (e.target.value === NEW_PARTY) {
+                    setNewParty({ name: '', gstin: '' })
+                    setPartyId('')
+                  } else {
+                    setNewParty(null)
+                    setPartyId(e.target.value)
+                  }
+                }}
+              >
+                <option value="">Choose…</option>
+                {suitable.map((p) => (
+                  <option key={p.id} value={p.id}>{p.canonical_name}</option>
+                ))}
+                <option value={NEW_PARTY}>+ Add a new {partyLabel.toLowerCase()}…</option>
+              </Select>
+            )}
+          </Field>
+          {newParty && (
+            <fieldset className="grid gap-2 rounded-md border border-input bg-card p-3">
+              <Field label="Name" error={errors.newPartyName}>
+                {(props) => <Input {...props} autoFocus value={newParty.name} onChange={(e) => setNewParty({ ...newParty, name: e.target.value })} />}
+              </Field>
+              <Field label="GSTIN (leave blank if unregistered)" error={errors.newPartyGstin} mask="gstin">
+                {(props, m) => <Input {...props} {...m} value={newParty.gstin} onChange={(e) => setNewParty({ ...newParty, gstin: e.target.value })} />}
+              </Field>
+              <div className="flex justify-end gap-2">
+                <Button type="button" variant="ghost" size="sm" onClick={() => setNewParty(null)}>Cancel</Button>
+                <Button type="button" size="sm" disabled={!newParty.name.trim()} onClick={() => void createParty()}>
+                  Add {partyLabel.toLowerCase()}
+                </Button>
+              </div>
+            </fieldset>
+          )}
+        </div>
+        <Field label="Invoice number" error={errors.reference} hint="As printed on the document. The same number from the same party is refused as a duplicate.">
+          {(props) => <Input {...props} autoComplete="off" value={reference} onChange={(e) => setReference(e.target.value)} />}
+        </Field>
+      </div>
+
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Invoice date" error={errors.bill_date}>
+          {(props) => <DateInput {...props} value={billDate} onChange={(e) => setBillDate(e.target.value)} />}
+        </Field>
+        <Field label="Due date (optional)" error={errors.due_date}>
+          {(props) => <DateInput {...props} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />}
+        </Field>
+      </div>
+
+      <fieldset className="grid gap-3">
+        <legend className="mb-1 text-[13px] font-medium">What it is for (taxable value, before GST)</legend>
+        {heads.map((head, index) => (
+          <div key={head.key} className="grid items-start gap-2 sm:grid-cols-[1fr_11rem_auto]">
+            <div>
+              <LedgerPicker
+                clientId={clientId}
+                ledgers={headLedgers}
+                value={head.ledger}
+                onChange={(id) => setHeads(heads.map((h) => (h.key === head.key ? { ...h, ledger: id } : h)))}
+                label={index === 0 ? 'Ledger' : `Ledger ${index + 1}`}
+                suggestedGroup={suggestedHeadGroup(kind)}
+              />
+              {errors[`head-${head.key}-ledger`] && <p role="alert" className="mt-1 text-sm text-destructive">{errors[`head-${head.key}-ledger`]}</p>}
+            </div>
+            <Field label="Amount (₹)" error={errors[`head-${head.key}-amount`]}>
+              {(props) => (
+                <Input
+                  {...props}
+                  inputMode="decimal"
+                  className="text-right tabular-nums"
+                  value={head.amount}
+                  onChange={(e) => setHeads(heads.map((h) => (h.key === head.key ? { ...h, amount: e.target.value } : h)))}
+                />
+              )}
+            </Field>
+            {heads.length > 1 && (
+              <Button type="button" variant="ghost" size="icon" aria-label={`Remove line ${index + 1}`} className="mt-6" onClick={() => setHeads(heads.filter((h) => h.key !== head.key))}>
+                <X />
+              </Button>
+            )}
+          </div>
+        ))}
+        <div>
+          <Button type="button" variant="outline" size="sm" onClick={() => setHeads([...heads, blankHead()])}>
+            <Plus /> Add another line
+          </Button>
+        </div>
+      </fieldset>
+
+      <fieldset className="grid gap-3">
+        <legend className="mb-1 text-[13px] font-medium">GST, as printed on the invoice</legend>
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {(['cgst', 'sgst', 'igst', 'cess'] as const).map((name) => (
+            <Field key={name} label={name === 'cess' ? 'Cess' : name.toUpperCase()}>
+              {(props) => (
+                <Input
+                  {...props}
+                  inputMode="decimal"
+                  className="text-right tabular-nums"
+                  value={tax[name]}
+                  onChange={(e) => setTax({ ...tax, [name]: e.target.value })}
+                />
+              )}
+            </Field>
+          ))}
+        </div>
+        <div className="grid gap-3 sm:grid-cols-3">
+          <Field label="Round off (₹, + or −)" hint="Positive if the invoice rounds up.">
+            {(props) => <Input {...props} inputMode="decimal" className="text-right tabular-nums" value={roundOff} onChange={(e) => setRoundOff(e.target.value)} />}
+          </Field>
+          {canTds && (
+            <>
+              <Field label="TDS deducted (₹)" hint="Deducted when the bill is booked; the supplier is owed the net.">
+                {(props) => <Input {...props} inputMode="decimal" className="text-right tabular-nums" value={tds} onChange={(e) => setTds(e.target.value)} />}
+              </Field>
+              <Field label="TDS section">
+                {(props) => (
+                  <Select {...props} value={tdsSection} onChange={(e) => setTdsSection(e.target.value)}>
+                    <option value="">None</option>
+                    {TDS_SECTIONS.map(([code, label]) => (
+                      <option key={code} value={code}>{label}</option>
+                    ))}
+                  </Select>
+                )}
+              </Field>
+            </>
+          )}
+        </div>
+        {canRcm && (
+          <Checkbox label="Reverse charge: the GST is ours to pay, not the supplier’s" checked={rcm} onChange={(e) => setRcm(e.target.checked)} />
+        )}
+      </fieldset>
+
+      <details className="rounded-md border border-input px-3 py-2 text-sm">
+        <summary className="cursor-pointer font-medium">More details (optional)</summary>
+        <div className="mt-3 grid gap-3">
+          <Field label="Narration" hint="Leave blank for a standard one.">
+            {(props) => <Input {...props} value={narration} onChange={(e) => setNarration(e.target.value)} />}
+          </Field>
+          <Field label="Your GSTIN for this invoice" hint="Only needed if the client has more than one." error={errors.own_gstin} mask="gstin">
+            {(props, m) => <Input {...props} {...m} value={ownGstin} onChange={(e) => setOwnGstin(e.target.value)} />}
+          </Field>
+        </div>
+      </details>
+
+      <section aria-label="What this comes to" className="grid gap-1 rounded-md border border-accent-edge bg-accent p-3 text-sm">
+        {preview.error && anythingTyped ? (
+          <p role="status" className="text-warning">{preview.error}</p>
+        ) : (
+          <>
+            <div className="flex justify-between"><span>Taxable value</span><Money paise={preview.taxable} /></div>
+            <div className="flex justify-between"><span>GST</span><Money paise={preview.tax} /></div>
+            <div className="flex justify-between border-t border-accent-edge pt-1 font-medium">
+              <span>{partyLabel}’s account ({partySide(kind)})</span>
+              <Money paise={preview.party} />
+            </div>
+          </>
+        )}
+      </section>
+
+      {errors.root && (
+        <p role="alert" className="text-sm text-destructive">{errors.root}</p>
+      )}
+
+      <DialogFooter>
+        <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
+        <Button type="submit" disabled={saving}>{saving ? (prefill?.reviseBill ? 'Saving…' : 'Booking…') : prefill?.reviseBill ? 'Save changes' : 'Book voucher'}</Button>
+      </DialogFooter>
+    </form>
+  )
+}
+
+export function VoucherDialog({
+  clientId,
+  open,
+  onOpenChange,
+  initialKind = 'PURCHASE',
+  prefill,
+}: {
+  clientId: string
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  initialKind?: VoucherKind
+  prefill?: VoucherPrefill
+}) {
+  return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent aria-describedby={undefined} className="max-h-[92svh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{prefill?.reviseBill ? 'Change this bill' : 'Book a voucher'}</DialogTitle>
           <DialogDescription>
-            The invoice goes on its own date to the {partyLabel.toLowerCase()}’s account, so what is owed is always visible. Payments settle it later.
+            The invoice goes on its own date to the party’s account, so what is owed is always visible. Payments settle it later.
           </DialogDescription>
         </DialogHeader>
-
-        <form
-          className="grid gap-4"
-          noValidate
-          onSubmit={(e) => {
-            e.preventDefault()
-            void submit()
-          }}
-        >
-          <Field label="Voucher type">
-            {(props) => (
-              <Select {...props} value={kind} onChange={(e) => changeKind(e.target.value as VoucherKind)}>
-                {VOUCHER_KINDS.map((k) => (
-                  <option key={k.value} value={k.value}>{k.label}</option>
-                ))}
-              </Select>
-            )}
-          </Field>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <div className="grid gap-2">
-              <Field label={partyLabel} error={errors.party}>
-                {(props) => (
-                  <Select
-                    {...props}
-                    value={newParty ? NEW_PARTY : partyId}
-                    onChange={(e) => {
-                      if (e.target.value === NEW_PARTY) {
-                        setNewParty({ name: '', gstin: '' })
-                        setPartyId('')
-                      } else {
-                        setNewParty(null)
-                        setPartyId(e.target.value)
-                      }
-                    }}
-                  >
-                    <option value="">Choose…</option>
-                    {suitable.map((p) => (
-                      <option key={p.id} value={p.id}>{p.canonical_name}</option>
-                    ))}
-                    <option value={NEW_PARTY}>+ Add a new {partyLabel.toLowerCase()}…</option>
-                  </Select>
-                )}
-              </Field>
-              {newParty && (
-                <fieldset className="grid gap-2 rounded-md border border-input bg-card p-3">
-                  <Field label="Name" error={errors.newPartyName}>
-                    {(props) => <Input {...props} autoFocus value={newParty.name} onChange={(e) => setNewParty({ ...newParty, name: e.target.value })} />}
-                  </Field>
-                  <Field label="GSTIN (leave blank if unregistered)" error={errors.newPartyGstin} mask="gstin">
-                    {(props, m) => <Input {...props} {...m} value={newParty.gstin} onChange={(e) => setNewParty({ ...newParty, gstin: e.target.value })} />}
-                  </Field>
-                  <div className="flex justify-end gap-2">
-                    <Button type="button" variant="ghost" size="sm" onClick={() => setNewParty(null)}>Cancel</Button>
-                    <Button type="button" size="sm" disabled={!newParty.name.trim()} onClick={() => void createParty()}>
-                      Add {partyLabel.toLowerCase()}
-                    </Button>
-                  </div>
-                </fieldset>
-              )}
-            </div>
-            <Field label="Invoice number" error={errors.reference} hint="As printed on the document. The same number from the same party is refused as a duplicate.">
-              {(props) => <Input {...props} autoComplete="off" value={reference} onChange={(e) => setReference(e.target.value)} />}
-            </Field>
-          </div>
-
-          <div className="grid gap-4 sm:grid-cols-2">
-            <Field label="Invoice date" error={errors.bill_date}>
-              {(props) => <DateInput {...props} value={billDate} onChange={(e) => setBillDate(e.target.value)} />}
-            </Field>
-            <Field label="Due date (optional)" error={errors.due_date}>
-              {(props) => <DateInput {...props} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />}
-            </Field>
-          </div>
-
-          <fieldset className="grid gap-3">
-            <legend className="mb-1 text-[13px] font-medium">What it is for (taxable value, before GST)</legend>
-            {heads.map((head, index) => (
-              <div key={head.key} className="grid items-start gap-2 sm:grid-cols-[1fr_11rem_auto]">
-                <div>
-                  <LedgerPicker
-                    clientId={clientId}
-                    ledgers={headLedgers}
-                    value={head.ledger}
-                    onChange={(id) => setHeads(heads.map((h) => (h.key === head.key ? { ...h, ledger: id } : h)))}
-                    label={index === 0 ? 'Ledger' : `Ledger ${index + 1}`}
-                    suggestedGroup={suggestedHeadGroup(kind)}
-                  />
-                  {errors[`head-${head.key}-ledger`] && <p role="alert" className="mt-1 text-sm text-destructive">{errors[`head-${head.key}-ledger`]}</p>}
-                </div>
-                <Field label="Amount (₹)" error={errors[`head-${head.key}-amount`]}>
-                  {(props) => (
-                    <Input
-                      {...props}
-                      inputMode="decimal"
-                      className="text-right tabular-nums"
-                      value={head.amount}
-                      onChange={(e) => setHeads(heads.map((h) => (h.key === head.key ? { ...h, amount: e.target.value } : h)))}
-                    />
-                  )}
-                </Field>
-                {heads.length > 1 && (
-                  <Button type="button" variant="ghost" size="icon" aria-label={`Remove line ${index + 1}`} className="mt-6" onClick={() => setHeads(heads.filter((h) => h.key !== head.key))}>
-                    <X />
-                  </Button>
-                )}
-              </div>
-            ))}
-            <div>
-              <Button type="button" variant="outline" size="sm" onClick={() => setHeads([...heads, blankHead()])}>
-                <Plus /> Add another line
-              </Button>
-            </div>
-          </fieldset>
-
-          <fieldset className="grid gap-3">
-            <legend className="mb-1 text-[13px] font-medium">GST, as printed on the invoice</legend>
-            <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              {(['cgst', 'sgst', 'igst', 'cess'] as const).map((name) => (
-                <Field key={name} label={name === 'cess' ? 'Cess' : name.toUpperCase()}>
-                  {(props) => (
-                    <Input
-                      {...props}
-                      inputMode="decimal"
-                      className="text-right tabular-nums"
-                      value={tax[name]}
-                      onChange={(e) => setTax({ ...tax, [name]: e.target.value })}
-                    />
-                  )}
-                </Field>
-              ))}
-            </div>
-            <div className="grid gap-3 sm:grid-cols-3">
-              <Field label="Round off (₹, + or −)" hint="Positive if the invoice rounds up.">
-                {(props) => <Input {...props} inputMode="decimal" className="text-right tabular-nums" value={roundOff} onChange={(e) => setRoundOff(e.target.value)} />}
-              </Field>
-              {canTds && (
-                <>
-                  <Field label="TDS deducted (₹)" hint="Deducted when the bill is booked; the supplier is owed the net.">
-                    {(props) => <Input {...props} inputMode="decimal" className="text-right tabular-nums" value={tds} onChange={(e) => setTds(e.target.value)} />}
-                  </Field>
-                  <Field label="TDS section">
-                    {(props) => (
-                      <Select {...props} value={tdsSection} onChange={(e) => setTdsSection(e.target.value)}>
-                        <option value="">None</option>
-                        {TDS_SECTIONS.map(([code, label]) => (
-                          <option key={code} value={code}>{label}</option>
-                        ))}
-                      </Select>
-                    )}
-                  </Field>
-                </>
-              )}
-            </div>
-            {canRcm && (
-              <Checkbox label="Reverse charge: the GST is ours to pay, not the supplier’s" checked={rcm} onChange={(e) => setRcm(e.target.checked)} />
-            )}
-          </fieldset>
-
-          <details className="rounded-md border border-input px-3 py-2 text-sm">
-            <summary className="cursor-pointer font-medium">More details (optional)</summary>
-            <div className="mt-3 grid gap-3">
-              <Field label="Narration" hint="Leave blank for a standard one.">
-                {(props) => <Input {...props} value={narration} onChange={(e) => setNarration(e.target.value)} />}
-              </Field>
-              <Field label="Your GSTIN for this invoice" hint="Only needed if the client has more than one." error={errors.own_gstin} mask="gstin">
-                {(props, m) => <Input {...props} {...m} value={ownGstin} onChange={(e) => setOwnGstin(e.target.value)} />}
-              </Field>
-            </div>
-          </details>
-
-          <section aria-label="What this comes to" className="grid gap-1 rounded-md border border-accent-edge bg-accent p-3 text-sm">
-            {preview.error && anythingTyped ? (
-              <p role="status" className="text-warning">{preview.error}</p>
-            ) : (
-              <>
-                <div className="flex justify-between"><span>Taxable value</span><Money paise={preview.taxable} /></div>
-                <div className="flex justify-between"><span>GST</span><Money paise={preview.tax} /></div>
-                <div className="flex justify-between border-t border-accent-edge pt-1 font-medium">
-                  <span>{partyLabel}’s account ({partySide(kind)})</span>
-                  <Money paise={preview.party} />
-                </div>
-              </>
-            )}
-          </section>
-
-          {errors.root && (
-            <p role="alert" className="text-sm text-destructive">{errors.root}</p>
-          )}
-
-          <DialogFooter>
-            <Button type="button" variant="ghost" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button type="submit" disabled={saving}>{saving ? (prefill?.reviseBill ? 'Saving…' : 'Booking…') : prefill?.reviseBill ? 'Save changes' : 'Book voucher'}</Button>
-          </DialogFooter>
-        </form>
+        <VoucherForm clientId={clientId} initialKind={initialKind} prefill={prefill} onClose={() => onOpenChange(false)} />
       </DialogContent>
     </Dialog>
   )

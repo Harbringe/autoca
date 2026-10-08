@@ -130,14 +130,14 @@ describe('Invoices', () => {
     renderScreen()
     const scan = (await screen.findByText('photo.pdf')).closest('li')!
     expect(within(scan).getByText(/scan or a photo/)).toBeInTheDocument()
-    expect(within(scan).queryByRole('button', { name: 'Book it' })).not.toBeInTheDocument()
+    expect(within(scan).queryByRole('button', { name: 'Fill in and book' })).not.toBeInTheDocument()
     expect(within(scan).getByRole('button', { name: 'Set aside' })).toBeInTheDocument()
   })
 
-  it('opens the voucher form filled in from the reading when booking', async () => {
+  it('puts the file beside a voucher form filled in from the reading', async () => {
     renderScreen()
     const proved = (await screen.findByText('ravi-042.pdf')).closest('li')!
-    await userEvent.click(within(proved).getByRole('button', { name: 'Book it' }))
+    await userEvent.click(within(proved).getByRole('button', { name: 'Fill in and book' }))
     expect(await screen.findByDisplayValue('RT/042')).toBeInTheDocument()
     expect(screen.getByDisplayValue('12-08-2025')).toBeInTheDocument()
   })
@@ -147,7 +147,7 @@ describe('Invoices', () => {
     const auto = (await screen.findByText('auto.pdf')).closest('li')!
     expect(within(auto).getByText('Booked automatically')).toBeInTheDocument()
     expect(within(auto).getByRole('button', { name: 'Change' })).toBeInTheDocument()
-    expect(within(auto).queryByRole('button', { name: 'Book it' })).not.toBeInTheDocument()
+    expect(within(auto).queryByRole('button', { name: 'Fill in and book' })).not.toBeInTheDocument()
   })
 
   it('says why it could not tell, and lets a person say purchase or sale instead of booking blind', async () => {
@@ -156,6 +156,6 @@ describe('Invoices', () => {
     expect(within(unknown).getByText(/own GSTIN is not on record/)).toBeInTheDocument()
     expect(within(unknown).getByRole('button', { name: 'It’s a purchase' })).toBeInTheDocument()
     expect(within(unknown).getByRole('button', { name: 'It’s a sale' })).toBeInTheDocument()
-    expect(within(unknown).queryByRole('button', { name: 'Book it' })).not.toBeInTheDocument()
+    expect(within(unknown).queryByRole('button', { name: 'Fill in and book' })).toBeInTheDocument()
   })
 })

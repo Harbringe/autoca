@@ -2087,6 +2087,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents/{id}/preview/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pages of a stored file
+         * @description How many pages a stored file shows as, for the viewer beside a form.
+         */
+        get: operations["documents_preview_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{id}/preview/{number}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One page of a stored file, as a PNG
+         * @description One page of a stored file as an image. A PDF is drawn; a sheet or Word file is converted to pages first.
+         */
+        get: operations["documents_preview_retrieve_2"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/firm/": {
         parameters: {
             query?: never;
@@ -3985,6 +4025,11 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
         };
+        DocumentPreview: {
+            /** @description How many pages the viewer shows. */
+            pages: number;
+            filename: string;
+        };
         Employee: {
             /** Format: uuid */
             readonly id: string;
@@ -4257,6 +4302,11 @@ export interface components {
              * @default
              */
             kind: components["schemas"]["KindA27Enum"] | components["schemas"]["BlankEnum"];
+            /**
+             * @description Leave true to have a certain invoice booked at once. False reads it into a draft for a person to complete and book.
+             * @default true
+             */
+            book: boolean;
         };
         /**
          * @description * `eligible` - eligible
@@ -10965,6 +11015,49 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    documents_preview_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DocumentPreview"];
+                };
+            };
+        };
+    };
+    documents_preview_retrieve_2: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+                number: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/png": string;
+                };
             };
         };
     };

@@ -232,3 +232,27 @@ def test_a_file_of_a_kind_that_cannot_be_read_is_refused_in_words(api, client_re
     response = api.post(f"{base(client_record)}/invoices/upload/", {"file": file}, format="multipart")
 
     assert response.status_code == 400 and "cannot be read" in response.json()["fields"]["file"][0]
+
+
+def test_a_draft_upload_is_read_but_never_booked_so_a_person_can_complete_it(api, client_record):
+    register_own_gstin(client_record)
+    file = _file("inv.pdf", b"%PDF-1.4\n" + PURCHASE.encode())
+
+    reading = api.post(f"{base(client_record)}/invoices/upload/", {"file": file, "book": "false"}, format="multipart").json()
+
+    assert reading["kind"] == "PURCHASE" and reading["status"] == "OPEN" and reading["bill"] is None
+    assert reading["read"]["invoice_no"] == "RT/900"
+
+
+def test_a_stored_invoice_can_be_shown_as_pages_in_the_viewer(api, client_record):
+    from integrations.tests.test_files import docx
+
+    file = _file("invoice.docx", docx(PURCHASE.splitlines()))
+    reading = api.post(f"{base(client_record)}/invoices/upload/", {"file": file, "book": "false"}, format="multipart").json()
+
+    info = api.get(f"/api/v1/documents/{reading['document']}/preview/")
+    page = api.get(f"/api/v1/documents/{reading['document']}/preview/1/")
+
+    assert info.status_code == 200 and info.json()["pages"] >= 1
+    assert page.status_code == 200 and page["Content-Type"] == "image/png" and page.content.startswith(b"\x89PNG")
+    assert api.get(f"/api/v1/documents/{reading['document']}/preview/99/").status_code == 404

@@ -37,7 +37,12 @@ from api.views.classify import (
 from api.views.close import CloseView
 from api.views.core import ClientViewSet, JobViewSet, MeView
 from api.views.dashboard import ClientAlertsView, ClientSnapshotView, FirmAlertsView, PortfolioView
-from api.views.documents import DocumentDownloadView, FirmDocumentListView
+from api.views.documents import (
+    DocumentDownloadView,
+    DocumentPageView,
+    DocumentPreviewView,
+    FirmDocumentListView,
+)
 from api.views.gst import RegistrationViewSet, RunSignOffView, RunViewSet
 from api.views.invoices import InvoiceReadingViewSet
 from api.views.ledger import (
@@ -95,6 +100,8 @@ urlpatterns = [
     path("me/", MeView.as_view(), name="me"),
     path("documents/", FirmDocumentListView.as_view(), name="documents"),
     path("documents/<uuid:pk>/download/", DocumentDownloadView.as_view(), name="document-download"),
+    path("documents/<uuid:pk>/preview/", DocumentPreviewView.as_view(), name="document-preview"),
+    path("documents/<uuid:pk>/preview/<int:number>/", DocumentPageView.as_view(), name="document-page"),
     # Literal routes first, so intent beats pattern matching where both would
     # work at all.
     path(

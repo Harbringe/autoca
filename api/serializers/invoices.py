@@ -26,6 +26,12 @@ class InvoiceUploadSerializer(serializers.Serializer):
         ),
     )
 
+    book = serializers.BooleanField(
+        required=False,
+        default=True,
+        help_text="Leave true to have a certain invoice booked at once. False reads it into a draft for a person to complete and book.",
+    )
+
     def validate_file(self, upload):
         """Size, signature and page count are checked before a byte is read into memory or extracted.
 

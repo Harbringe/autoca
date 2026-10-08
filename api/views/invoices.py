@@ -89,7 +89,7 @@ class InvoiceReadingViewSet(
             kind=payload.validated_data["kind"],
             uploaded_by=request.user,
         )
-        if is_new and not payload.validated_data["kind"]:
+        if is_new and not payload.validated_data["kind"] and payload.validated_data["book"]:
             # Left to the system: certain, then it is booked now; if not, it waits with the reason, and an alert.
             # (A person who names the kind is doing the booking themselves and gets the draft, as before.)
             reading = invoice_intake.try_auto_book(reading, membership=request.membership)

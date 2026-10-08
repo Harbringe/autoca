@@ -1,4 +1,7 @@
-// Invoices: files the client has sent, and what became of each.
+// Invoices: capture one with the file beside its form, and see what became of every file sent.
+//
+// Capture (InvoiceCapture): drop a file, see it as pages on the left, and complete the voucher on the right, which is filled
+// in from what was read. Below, every file sent: the ones the system booked itself, and those waiting for a person.
 //
 // An upload is stored with the client's other documents, read (its text, or for a scan the vision model), and told apart as
 // a purchase or a sale by the client's own GSTIN. When everything is certain it is booked at once as an ordinary bill, which
@@ -20,6 +23,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { VoucherDialog, type VoucherPrefill } from '@/features/bills/VoucherDialog'
+import { InvoiceCapture } from './InvoiceCapture'
 import { ACCEPT } from '@/lib/fileTypes'
 import { formatDate, plural } from '@/lib/format'
 import { useSession } from '@/session/session'
@@ -32,26 +36,6 @@ function statusOf(r: InvoiceReading): { label: string; tone: 'attention' | 'done
 }
 
 const KIND_LABEL: Record<string, string> = { PURCHASE: 'Purchase', SALES: 'Sales', '': 'Purchase or sale not known' }
-
-function prefillOf(reading: InvoiceReading): VoucherPrefill | null {
-  const read = reading.read
-  if (!read || !reading.kind) return null
-  const purchase = reading.kind === 'PURCHASE'
-  return {
-    kind: purchase ? 'PURCHASE' : 'SALES',
-    partyId: reading.suggested_party?.id,
-    newParty: reading.suggested_party || !purchase ? undefined : { name: read.supplier_name, gstin: read.counterparty_gstin },
-    reference: read.invoice_no,
-    billDate: read.invoice_date,
-    taxablePaise: read.taxable_paise,
-    cgstPaise: read.cgst_paise,
-    sgstPaise: read.sgst_paise,
-    igstPaise: read.igst_paise,
-    cessPaise: read.cess_paise,
-    roundOffPaise: read.round_off_paise,
-    document: reading.document,
-  }
-}
 
 /** The booked bill as a form to change: its figures, and the ledger its taxable value went to. */
 function prefillOfBill(bill: BillDetail, document: string): VoucherPrefill {
@@ -82,7 +66,8 @@ export function InvoicesScreen({ clientId }: { clientId: string }) {
   const decide = useDecideInvoice(clientId)
   const sayKind = useSayInvoiceKind(clientId)
   const input = useRef<HTMLInputElement>(null)
-  const [booking, setBooking] = useState<VoucherPrefill | null>(null)
+  const [changing, setChanging] = useState<VoucherPrefill | null>(null)
+  const [capture, setCapture] = useState<InvoiceReading | null>(null)
   const mayUpload = can('document.upload')
   const mayDecide = can('journal.approve') && !!client.data?.can_post
 
@@ -126,7 +111,7 @@ export function InvoicesScreen({ clientId }: { clientId: string }) {
   async function change(reading: InvoiceReading) {
     try {
       const bill = await raw.get<BillDetail>(`${V1}/clients/${clientId}/bills/${reading.bill}/`)
-      setBooking(prefillOfBill(bill, reading.document))
+      setChanging(prefillOfBill(bill, reading.document))
     } catch (e) {
       toast.error(messageOf(e))
     }
@@ -139,11 +124,18 @@ export function InvoicesScreen({ clientId }: { clientId: string }) {
 
   return (
     <div className="grid gap-4 [&>*]:min-w-0">
+      {mayUpload && mayDecide && (
+        <InvoiceCapture clientId={clientId} reading={capture} onReading={setCapture} onBooked={() => void list.refetch()} />
+      )}
+
       <div className="no-print flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          {waiting === 0 ? 'Nothing is waiting.' : `${plural(waiting, 'invoice')} waiting for you.`} Each file is read, told apart as a purchase or a
-          sale, and booked when it is certain. Anything unsure waits here.
-        </p>
+        <div>
+          <h2 className="text-sm font-semibold text-heading">Every file sent</h2>
+          <p className="text-sm text-muted-foreground">
+            {waiting === 0 ? 'Nothing is waiting.' : `${plural(waiting, 'invoice')} waiting for you.`} Certain invoices are booked automatically; anything
+            unsure waits here.
+          </p>
+        </div>
         {mayUpload && (
           <>
             <input
@@ -155,8 +147,8 @@ export function InvoicesScreen({ clientId }: { clientId: string }) {
               aria-label="Choose invoice files"
               onChange={(e) => void pick(e.target.files)}
             />
-            <Button onClick={() => input.current?.click()} disabled={upload.isPending}>
-              <FileUp /> {upload.isPending ? 'Reading…' : 'Upload invoices'}
+            <Button variant="outline" onClick={() => input.current?.click()} disabled={upload.isPending}>
+              <FileUp /> {upload.isPending ? 'Reading…' : 'Upload many, book automatically'}
             </Button>
           </>
         )}
@@ -234,9 +226,15 @@ export function InvoicesScreen({ clientId }: { clientId: string }) {
                         Attach to {r.matching_bill.party_name}’s bill {r.matching_bill.reference}
                       </Button>
                     )}
-                    {r.read && r.kind && (
-                      <Button size="sm" onClick={() => setBooking(prefillOf(r))}>
-                        Book it
+                    {r.read && (
+                      <Button
+                        size="sm"
+                        onClick={() => {
+                          setCapture(r)
+                          window.scrollTo({ top: 0, behavior: 'smooth' })
+                        }}
+                      >
+                        Fill in and book
                       </Button>
                     )}
                     <Button variant="ghost" size="sm" onClick={() => void act(r, 'discard')}>
@@ -259,7 +257,7 @@ export function InvoicesScreen({ clientId }: { clientId: string }) {
         </ul>
       )}
 
-      {booking && <VoucherDialog clientId={clientId} open onOpenChange={(open) => !open && setBooking(null)} prefill={booking} />}
+      {changing && <VoucherDialog clientId={clientId} open onOpenChange={(open) => !open && setChanging(null)} prefill={changing} />}
     </div>
   )
 }

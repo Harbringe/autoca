@@ -19,6 +19,13 @@ from integrations import files
 PAGE_W, PAGE_H = 910, 1286
 MARGIN = 54
 SCALE = 1.5  # PDF points to pixels, about 108 dpi
+#: Bounds on what one request may cost: a page is drawn no bigger than this, and a converted file shows this many pages.
+MAX_SIDE_PX = 2000
+MAX_CONVERTED_PAGES = 40
+
+
+class _Enough(Exception):
+    """The preview has all the pages it will show."""
 
 
 def _font(size: int):
@@ -49,28 +56,33 @@ def _convert(loaded: files.LoadedFile) -> list[bytes]:
     def need(height: int):
         nonlocal draw
         if state["y"] + height > PAGE_H - MARGIN:
+            if len(pages) >= MAX_CONVERTED_PAGES:
+                raise _Enough
             draw = new_page()
 
-    for document_page in loaded.document.pages:
-        for line in document_page.text.splitlines():
-            if not line.strip():
-                continue
-            for wrapped in textwrap.wrap(line, 78) or [""]:
-                need(26)
-                draw.text((MARGIN, state["y"]), wrapped, fill="#1a1a1a", font=body)
-                state["y"] += 26
-        for table in document_page.tables:
-            columns = max(len(row) for row in table)
-            width = (PAGE_W - 2 * MARGIN) // max(columns, 1)
-            state["y"] += 10
-            for row in table:
-                need(30)
-                for index, cell in enumerate(row):
-                    x = MARGIN + index * width
-                    draw.rectangle([x, state["y"], x + width, state["y"] + 28], outline="#c8c8c8")
-                    draw.text((x + 6, state["y"] + 6), str(cell)[: max(width // 9, 4)], fill="#1a1a1a", font=small)
-                state["y"] += 28
-            state["y"] += 10
+    try:
+        for document_page in loaded.document.pages:
+            for line in document_page.text.splitlines():
+                if not line.strip():
+                    continue
+                for wrapped in textwrap.wrap(line, 78) or [""]:
+                    need(26)
+                    draw.text((MARGIN, state["y"]), wrapped, fill="#1a1a1a", font=body)
+                    state["y"] += 26
+            for table in document_page.tables:
+                columns = max(len(row) for row in table)
+                width = (PAGE_W - 2 * MARGIN) // max(columns, 1)
+                state["y"] += 10
+                for row in table:
+                    need(30)
+                    for index, cell in enumerate(row):
+                        x = MARGIN + index * width
+                        draw.rectangle([x, state["y"], x + width, state["y"] + 28], outline="#c8c8c8")
+                        draw.text((x + 6, state["y"] + 6), str(cell)[: max(width // 9, 4)], fill="#1a1a1a", font=small)
+                    state["y"] += 28
+                state["y"] += 10
+    except _Enough:
+        pass  # a very long sheet is shown as its first pages; the original has the rest
     out = []
     for page in pages:
         buffer = io.BytesIO()
@@ -85,6 +97,27 @@ def _pdf_page_count(data: bytes) -> int:
     pdf = pdfium.PdfDocument(data)
     try:
         return len(pdf)
+    finally:
+        pdf.close()
+
+
+def _pdf_page(data: bytes, index: int) -> bytes | None:
+    """One PDF page as a PNG, never bigger than ``MAX_SIDE_PX`` however large the page claims to be."""
+    import pypdfium2 as pdfium
+
+    pdf = pdfium.PdfDocument(data)
+    try:
+        if index >= len(pdf):
+            return None
+        page = pdf[index]
+        try:
+            width, height = page.get_size()
+            scale = min(SCALE, MAX_SIDE_PX / max(width, height, 1))
+            buffer = io.BytesIO()
+            page.render(scale=scale).to_pil().convert("RGB").save(buffer, format="PNG", optimize=True)
+            return buffer.getvalue()
+        finally:
+            page.close()
     finally:
         pdf.close()
 
@@ -120,9 +153,6 @@ def page_image(data: bytes, filename: str, key: str, number: int) -> bytes | Non
     if number < 1:
         return None
     if kind == files.PDF:
-        from banking.scan import render_pages
-
-        pages = render_pages(data, dpi=int(72 * SCALE), first=number - 1, count=1)
-        return pages[0] if pages else None
+        return _pdf_page(data, number - 1)
     pages = _converted(data, filename, key)
     return pages[number - 1] if number <= len(pages) else None

@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 
 from api.pagination import DefaultPagination
 from api.permissions import HasFirmPermission
+from api.throttles import enforce
 from core.access import visible_clients
 from documents import preview
 from documents.models import Document
@@ -103,6 +104,7 @@ class DocumentPreviewView(APIView):
 
     @extend_schema(summary="Pages of a stored file", responses=DocumentPreviewSerializer)
     def get(self, request, pk):
+        enforce(request, self, "preview")
         document, data = _stored(request, pk)
         try:
             pages = preview.page_count(data, document.original_filename or "", str(document.pk))
@@ -120,6 +122,7 @@ class DocumentPageView(APIView):
 
     @extend_schema(summary="One page of a stored file, as a PNG", responses={(200, "image/png"): bytes})
     def get(self, request, pk, number):
+        enforce(request, self, "preview")
         document, data = _stored(request, pk)
         try:
             image = preview.page_image(data, document.original_filename or "", str(document.pk), number)

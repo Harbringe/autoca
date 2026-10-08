@@ -608,7 +608,7 @@ REST_FRAMEWORK = {
     "COERCE_DECIMAL_TO_STRING": True,
     "DATETIME_FORMAT": "iso-8601",
     # Per signed-in person; see api/throttles.py. Backstops, well above real use.
-    "DEFAULT_THROTTLE_RATES": {"upload": "120/hour", "model": "1500/hour"},
+    "DEFAULT_THROTTLE_RATES": {"upload": "120/hour", "model": "1500/hour", "preview": "3000/hour"},
 }
 
 SPECTACULAR_SETTINGS = {

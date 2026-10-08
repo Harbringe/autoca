@@ -382,7 +382,7 @@ function LedgerForm({ clientId, ledger, onClose }: { clientId: string; ledger: L
   )
 }
 
-function ProposalDecision({ clientId, proposal, existing, onClose }: { clientId: string; proposal: LedgerAccount; existing: LedgerAccount[]; onClose: () => void }) {
+export function ProposalDecision({ clientId, proposal, existing, onClose }: { clientId: string; proposal: LedgerAccount; existing: LedgerAccount[]; onClose: () => void }) {
   const invalidate = useInvalidateClient(clientId)
   const [mode, setMode] = useState<'accept' | 'merge' | 'reject'>('accept')
   const [name, setName] = useState(proposal.name)

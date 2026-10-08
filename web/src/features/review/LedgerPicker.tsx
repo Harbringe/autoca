@@ -125,9 +125,20 @@ export function LedgerPicker({
 
   return (
     <div className="relative grid gap-1.5">
-      <label className="text-[13px] font-medium" htmlFor={`${clientId}-ledger`}>
-        {label}
-      </label>
+      <div className="flex items-center justify-between gap-2">
+        <label className="text-[13px] font-medium" htmlFor={`${clientId}-ledger`}>
+          {label}
+        </label>
+        {can('ledger.manage') && (
+          <button
+            type="button"
+            className="text-xs font-medium text-link hover:underline"
+            onClick={() => setCreating({ name: text.trim(), group: suggestedGroup ?? 'INDIRECT_EXPENSE' })}
+          >
+            + New ledger
+          </button>
+        )}
+      </div>
       <Input
         id={`${clientId}-ledger`}
         ref={inputRef}

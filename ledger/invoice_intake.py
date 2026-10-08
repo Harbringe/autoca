@@ -495,6 +495,11 @@ def settle_payment(bill: Bill) -> bool:
         .exclude(line__direction=bill.direction)
         .select_related("line__entry")
     )
+    if len(free) + len(held) == 0:
+        # Nothing on the party's account yet: look for a bank row not placed or posted that is plainly this payment.
+        from ledger import matching
+
+        return matching.match_bill(bill)
     if len(free) + len(held) != 1:
         return False
     try:

@@ -200,6 +200,10 @@ def process_next_batch(client, *, max_rows: int | None = None) -> BatchOutcome:
         return _paused_outcome(paused, left)
 
     with firm_context(firm_id):
+        # A row that is plainly an invoice's payment is settled against it, and never sent to the model.
+        from ledger.matching import match_client
+
+        match_client(client)
         claim = _claim(client, size)
     if not claim.rows:
         if claim.waiting:

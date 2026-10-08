@@ -153,6 +153,12 @@ def _ingest(*, client, data, filename, user, allow_gap, layout=None) -> dict:
     seed_client(client, created_by=user)
     classified = classify_statement(result.statement)
 
+    # A row that is plainly the payment of an invoice already on the books is settled against it here, before it is
+    # sent anywhere to be guessed at.
+    from ledger.matching import match_client
+
+    matched = match_client(client)
+
     # Whatever the rules left waits for the assistant, which reads it a few rows at a
     # time through the next-batch endpoint. The model is never asked from here: a
     # rate limit part-way through used to abandon the rest, and the wait sat inside
@@ -178,6 +184,7 @@ def _ingest(*, client, data, filename, user, allow_gap, layout=None) -> dict:
         "queued_for_review": classified.queued,
         "waiting_for_assistant": waiting,
         "auto_posted": auto_posted,
+        "matched_to_invoices": matched,
         # Where this statement's own rows stand now, after rules and auto-posting.
         # The three always add up to the rows in the statement; the counters above are the
         # steps' own tallies, which overlap and are not for showing a person.

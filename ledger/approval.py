@@ -419,6 +419,58 @@ def auto_post(classification) -> JournalEntry | None:
     )
 
 
+def auto_post_settlement(classification, bill) -> JournalEntry | None:
+    """Post a bank row as the payment of a bill, when ``ledger.matching`` has found them to be one and the same.
+
+    The row goes on the party's own account and the bill is allocated in the same step, so the bill is settled and the
+    bank row is explained by one entry. Like every entry the machine posts it is marked ``AI_POSTED`` and can be corrected
+    or removed by a person until sign-off. Refused (``None``) for a row a person has handled, already posted, inside signed-off
+    books, or that is not a plain payment or receipt on a bank account.
+    """
+    from classify.models import LedgerGroup
+    from ledger import billing
+    from ledger.editing import locked_through
+
+    txn = classification.transaction
+    if (
+        classification.method == ClassificationMethod.REVIEWED
+        or classification.mirrored_entry_id
+        or txn.bank_account.is_liability
+        or classification.is_self_transfer
+        or _live_entry_for(txn) is not None
+    ):
+        return None
+    through = locked_through(txn.bank_account.client_id)
+    if through is not None and (txn.value_date <= through or bill.bill_date <= through):
+        return None
+    if bill.party.client_id != txn.bank_account.client_id:
+        return None
+
+    side = LedgerGroup.CREDITOR if bill.direction == Direction.CREDIT else LedgerGroup.DEBTOR
+    ledger = billing.party_ledger_for(bill.party, side=side)
+    if ledger.name == txn.bank_account.ledger_name:
+        return None
+
+    classification.ledger = ledger
+    classification.party = bill.party
+    classification.method = ClassificationMethod.RULE
+    classification.confidence = 1.0
+    classification.needs_review = False
+    classification.rationale = f"Matched to {bill.reference}: the same amount, the same party, and nothing else fits."
+    classification.save(update_fields=["ledger", "party", "method", "confidence", "needs_review", "rationale"])
+
+    entry = _write_entry(
+        classification,
+        voucher_type=voucher_type_for(classification),
+        narration=f"Against {bill.reference} of {bill.party.canonical_name} (matched automatically)",
+        approved_by=None,
+        marker=EntryMarker.AI_POSTED,
+    )
+    line = entry.lines.get(ledger_account=ledger)
+    billing.allocate(line, amount_paise=txn.amount_paise, bill=bill)
+    return entry
+
+
 def auto_post_client(client) -> int:
     """Post everything for ``client`` that ``auto_post`` is willing to. Returns the count.
 

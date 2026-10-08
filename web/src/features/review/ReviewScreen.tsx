@@ -16,7 +16,7 @@ import { messageOf } from '@/api/errors'
 import { waitForJob } from '@/api/jobs'
 import { ledgers as ledgersQuery, parties as partiesQuery, reviewQueue, rules as rulesQuery, type ReviewTab, type Stage } from '@/api/queries/books'
 import { bankAccounts, clientDetail, reviewSummary, useInvalidateClient, V1 } from '@/api/queries/clients'
-import { TDS_SECTIONS, type Classification, type Job, type JournalEntry, type PlacementResult } from '@/api/types'
+import { GROUP_LABEL, TDS_SECTIONS, type Classification, type Job, type JournalEntry, type PlacementResult } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
 import { Money } from '@/components/ca/Money'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
@@ -37,6 +37,7 @@ import { useSession } from '@/session/session'
 import { summariseBulk, type BulkSummary } from './bulkPost'
 import { SettlementPanel } from './SettlementPanel'
 import { LedgerPicker, usableLedgers } from './LedgerPicker'
+import { ProposalDecision } from '@/features/masters/MastersScreen'
 import { PostedEntries } from './PostedEntries'
 import { StageNav, STAGES } from './StageNav'
 
@@ -129,6 +130,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
   const postable = (r: Classification) => !!r.ledger && !r.is_posted && !r.on_party_account
   const tickedRows = rows.filter((r) => ticked.has(r.id) && postable(r))
   const proposed = (ledgers.data ?? []).filter((l) => l.status === 'PROPOSED')
+  const proposedIds = new Set(proposed.map((l) => l.id))
 
   const suggest = useMutation({
     mutationFn: async () => waitForJob(await raw.post<Job>(`${V1}/clients/${clientId}/review-queue/suggest/`)),
@@ -376,6 +378,11 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
                       {r.ledger_name ? (
                         <span className="flex items-center gap-1.5">
                           <span className="max-w-[14ch] truncate" title={r.ledger_name}>{r.ledger_name}</span>
+                          {proposedIds.has(r.ledger ?? '') && (
+                            <span className="shrink-0 rounded-sm bg-info-bg px-1 text-[11px] font-medium text-info" title="A new ledger the assistant proposed. A senior CA accepts it before rows can go in.">
+                              New
+                            </span>
+                          )}
                           {DOT[r.review_band] && r.method !== 'REVIEWED' && (
                             <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground" title={DOT[r.review_band]!.title}>
                               <span aria-hidden className={cn('size-2 rounded-full', DOT[r.review_band]!.className)} />
@@ -400,6 +407,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
               clientId={clientId}
               row={selected}
               ledgers={usableLedgers(ledgers.data, bankLedgerOf(selected))}
+              allLedgers={ledgers.data ?? []}
               canPost={canPost}
               onDone={() => move(0)}
             />
@@ -414,6 +422,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
                   clientId={clientId}
                   row={selected}
                   ledgers={usableLedgers(ledgers.data, bankLedgerOf(selected))}
+                  allLedgers={ledgers.data ?? []}
                   canPost={canPost}
                   flat
                   onDone={() => move(0)}
@@ -512,6 +521,7 @@ function Decision({
   clientId,
   row,
   ledgers,
+  allLedgers,
   canPost,
   flat,
   onDone,
@@ -519,6 +529,8 @@ function Decision({
   clientId: string
   row: Classification
   ledgers: ReturnType<typeof usableLedgers>
+  /** Every ledger including the proposed ones, so a proposal the row points at can be shown and decided here. */
+  allLedgers: ReturnType<typeof usableLedgers>
   canPost: boolean
   /** Inside a sheet: no card of its own, no sticky positioning. */
   flat?: boolean
@@ -530,6 +542,8 @@ function Decision({
   const queryClient = useQueryClient()
   const ledgerInput = useRef<HTMLInputElement>(null)
   const suggested = ledgers.some((l) => l.id === row.ledger) ? row.ledger : null
+  const proposal = allLedgers.find((l) => l.id === row.ledger && l.status === 'PROPOSED') ?? null
+  const [deciding, setDeciding] = useState(false)
   const [ledger, setLedger] = useState<string | null>(suggested)
   const [party, setParty] = useState<string>(row.party ?? '')
   const [tds, setTds] = useState<string>(row.tds_section ?? '')
@@ -677,6 +691,26 @@ function Decision({
           {row.rationale && <p className="mt-0.5">{row.rationale}</p>}
         </div>
       )}
+
+      {proposal && (
+        <div className="grid gap-2 rounded-md border border-info/30 bg-info-bg p-3 text-sm">
+          <div>
+            <Bot className="mr-1.5 inline size-4 text-info" aria-hidden />
+            The assistant suggests opening a <strong>new ledger, “{proposal.name}”</strong>
+            {proposal.group ? ` (${GROUP_LABEL[proposal.group] ?? proposal.group})` : ''} for this row.
+            {proposal.proposal_reason ? <span className="block text-muted-foreground">{proposal.proposal_reason}</span> : null}
+          </div>
+          {can('journal.approve') ? (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" onClick={() => setDeciding(true)}>Accept, merge or reject</Button>
+              <span className="text-xs text-muted-foreground">Or choose another ledger below.</span>
+            </div>
+          ) : (
+            <p className="text-xs text-muted-foreground">A senior CA accepts it before this row can go in it. You can choose another ledger below.</p>
+          )}
+        </div>
+      )}
+      {deciding && proposal && <ProposalDecision clientId={clientId} proposal={proposal} existing={ledgers} onClose={() => setDeciding(false)} />}
 
       {canPlace ? (
         <div className="grid gap-3">

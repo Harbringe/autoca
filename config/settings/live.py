@@ -12,6 +12,15 @@ from django.core.exceptions import ImproperlyConfigured
 
 from .dev import *  # noqa: F401,F403
 
+# Nothing on this PC may send live rows to a model or write a file: whatever the project's own .env says, the model is the stub
+# and storage refuses. (The project .env is loaded by the base settings and may hold a real model key.)
+INTEGRATIONS = {  # noqa: F405
+    **INTEGRATIONS,  # noqa: F405
+    "llm": "integrations.llm.stub.StubLLMAdapter",
+    "storage": "integrations.storage.refused.RefusedStorageAdapter",
+}
+VISION_READING = False
+
 ALLOWED_COMMANDS = {"runserver", "check", "showmigrations", "diffsettings", "shell"}
 
 _command = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else None

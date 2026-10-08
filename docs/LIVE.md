@@ -69,4 +69,6 @@ cd web; npm run dev         # window 3: http://localhost:5173, sign in with your
   on whatever server it is pointed at.
 - Your local code can be ahead of the live database. A field added on `dev` that is not migrated on the server fails with a
   database error on the page that uses it. That is expected until the change is deployed.
-- The model key is left out of `.env.live` on purpose, so reading uploaded files does not run unless you add it.
+- Whatever is in the project's own `.env` (it may hold a real model key), the live settings use a stub in place of the model and a
+  storage adapter that refuses every read and write. Live rows are never sent to a model from this PC, and no file is written
+  that the server's bucket does not have. Pages that need a file show an error here; open them on the live site.

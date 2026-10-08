@@ -34,6 +34,12 @@ def pytest_sessionstart(session):
 
     In CI the database is an ephemeral container and this is a no-op.
     """
+    import os
+
+    # The test suite creates and drops a database on whatever server the settings point at. Never the live one.
+    if os.environ.get("AUTOCA_LIVE_DB"):
+        raise SystemExit("AUTOCA_LIVE_DB is set: this shell is wired to the live database. Open a new one to run the tests.")
+
     from django.conf import settings
 
     owner = settings.DATABASES["owner"]

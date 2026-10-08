@@ -54,6 +54,10 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    # Reachable from the instance itself and from nowhere else: an administrator's SSM port-forwarding session ends here
+    # (docs/LIVE.md). Bound to loopback, so it is not on the network and not on the internet.
+    ports:
+      - "127.0.0.1:5432:5432"
     logging: *cloudwatch
     restart: unless-stopped
 

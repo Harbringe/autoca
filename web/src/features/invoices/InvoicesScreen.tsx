@@ -9,15 +9,16 @@
 // open item and an alert, so staff deal with exactly that: say which it is, check the figures, or book it by hand.
 
 import { useQuery } from '@tanstack/react-query'
-import { CircleCheck, CircleX, FileUp, TriangleAlert } from 'lucide-react'
+import { CircleCheck, CircleX, FileUp, Trash2, TriangleAlert } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
 import { messageOf } from '@/api/errors'
-import { invoiceReadings, useDecideInvoice, useSayInvoiceKind, useUploadInvoice } from '@/api/queries/bills'
+import { invoiceReadings, useDecideInvoice, useDeleteInvoice, useSayInvoiceKind, useUploadInvoice } from '@/api/queries/bills'
 import { clientDetail, V1 } from '@/api/queries/clients'
 import type { BillDetail, InvoiceReading } from '@/api/types'
 import { Money } from '@/components/ca/Money'
+import { Confirm } from '@/components/ca/Confirm'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -68,6 +69,8 @@ export function InvoicesScreen({ clientId }: { clientId: string }) {
   const input = useRef<HTMLInputElement>(null)
   const [changing, setChanging] = useState<VoucherPrefill | null>(null)
   const [capture, setCapture] = useState<InvoiceReading | null>(null)
+  const [deleting, setDeleting] = useState<InvoiceReading | null>(null)
+  const deleteInvoice = useDeleteInvoice(clientId)
   const mayUpload = can('document.upload')
   const mayDecide = can('journal.approve') && !!client.data?.can_post
 
@@ -243,6 +246,14 @@ export function InvoicesScreen({ clientId }: { clientId: string }) {
                   </div>
                 )}
 
+                {mayDecide && (r.status === 'DISCARDED' || r.status === 'OPEN' || r.bill) && (
+                  <div className="flex justify-end">
+                    <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setDeleting(r)} aria-label={`Delete ${r.filename || 'this invoice'}`}>
+                      <Trash2 /> {r.bill ? 'Delete with its bill' : 'Delete'}
+                    </Button>
+                  </div>
+                )}
+
                 {r.status === 'BOOKED' && r.bill && mayDecide && (
                   <div className="flex flex-wrap items-center justify-end gap-2">
                     {r.auto_booked && <span className="text-xs text-muted-foreground">Check it; change it if anything is wrong.</span>}
@@ -256,6 +267,26 @@ export function InvoicesScreen({ clientId }: { clientId: string }) {
           })}
         </ul>
       )}
+
+      <Confirm
+        open={!!deleting}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        title={deleting?.bill ? 'Delete this invoice and its bill?' : 'Delete this invoice?'}
+        confirmLabel="Delete"
+        destructive
+        onConfirm={async () => {
+          if (!deleting) return
+          await deleteInvoice.mutateAsync({ id: deleting.id, withBill: !!deleting.bill })
+          if (capture?.id === deleting.id) setCapture(null)
+          toast.success('Deleted')
+        }}
+      >
+        <p>
+          {deleting?.bill
+            ? 'The bill and its voucher are taken out of the books (what it was is kept in the change log), and the uploaded file is deleted. This is refused if a payment is settled against the bill or the books are signed off.'
+            : 'The uploaded file and what was read from it are deleted for good.'}
+        </p>
+      </Confirm>
 
       {changing && <VoucherDialog clientId={clientId} open onOpenChange={(open) => !open && setChanging(null)} prefill={changing} />}
     </div>

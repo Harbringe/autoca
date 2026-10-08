@@ -536,3 +536,36 @@ def say_kind(reading: InvoiceReading, kind: str, *, membership) -> InvoiceReadin
     reading.save(update_fields=["kind", "attention", "payload_enc", "invoice_key"])
     Document.objects.filter(pk=reading.document_id).update(kind=_document_kind(kind))
     return try_auto_book(reading, membership=membership)
+
+
+@transaction.atomic
+def delete_reading(reading: InvoiceReading, *, membership, with_bill: bool = False) -> None:
+    """Delete an uploaded invoice for good: the reading, the stored file, and (only if asked) the bill booked from it.
+
+    An invoice nobody has booked, or set aside, simply goes. One that is booked is not deleted from under its bill: say
+    ``with_bill`` and the bill and its voucher are removed first, by the same rules as removing a bill (nothing settled
+    against it, books not signed off), and nothing changes if that is refused.
+    """
+    from django.db.models import ProtectedError
+
+    from ledger import billing
+
+    require_permission(membership, "journal.approve")
+    require_posting_rights(membership, reading.client)
+    if reading.bill_id is not None:
+        if not with_bill:
+            raise IntakeError(
+                f"This invoice is booked as {reading.bill.reference!r}. Delete it together with its bill, or remove the bill first."
+            )
+        billing.remove_bill(reading.bill, membership=membership, note="The uploaded invoice was deleted.")
+        reading.refresh_from_db()
+    document = reading.document
+    key = document.storage_key
+    try:
+        reading.delete()
+        document.delete()
+    except ProtectedError as exc:
+        raise IntakeError("This invoice is still referred to by something in the books, so it cannot be deleted.") from exc
+    if key:
+        storage = get_storage()
+        transaction.on_commit(lambda: storage.delete(key))

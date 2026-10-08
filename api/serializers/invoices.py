@@ -93,6 +93,9 @@ class ReadFieldsSerializer(serializers.Serializer):
     round_off_paise = PaiseField()
     total_paise = PaiseField(allow_null=True)
     total_display = serializers.CharField(allow_null=True)
+    unsure = serializers.ListField(
+        child=serializers.CharField(), help_text="Fields the reader said it could not read clearly (a scan), to check against the page."
+    )
 
 
 class PartyHintSerializer(serializers.Serializer):
@@ -170,6 +173,7 @@ def reading_payload(reading: InvoiceReading, fields: dict, party, matching, paym
                 "round_off_paise": fields.get("round_off_paise", 0),
                 "total_paise": total,
                 "total_display": format_inr(total) if total is not None else None,
+                "unsure": fields.get("unsure", []),
             }
             if fields
             else None

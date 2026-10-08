@@ -2368,6 +2368,39 @@ paths:
               schema:
                 $ref: '#/components/schemas/InvoiceReading'
           description: ''
+    delete:
+      operationId: clients_invoices_destroy
+      description: Removes the reading, the stored file and its pages for good. An
+        invoice that is booked is refused unless `with_bill=true`, which removes its
+        bill and voucher first by the rules for removing a bill (nothing settled against
+        it, books not signed off). Needs `journal.approve` on a client the caller
+        may post to.
+      summary: Delete an uploaded invoice
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      - in: query
+        name: with_bill
+        schema:
+          type: boolean
+        description: Also remove the bill booked from it.
+      tags:
+      - invoices
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/clients/{client_id}/invoices/{id}/attach/:
     post:
       operationId: clients_invoices_attach_create

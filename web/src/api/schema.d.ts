@@ -1092,7 +1092,11 @@ export interface paths {
         get: operations["clients_invoices_retrieve"];
         put?: never;
         post?: never;
-        delete?: never;
+        /**
+         * Delete an uploaded invoice
+         * @description Removes the reading, the stored file and its pages for good. An invoice that is booked is refused unless `with_bill=true`, which removes its bill and voucher first by the rules for removing a bill (nothing settled against it, books not signed off). Needs `journal.approve` on a client the caller may post to.
+         */
+        delete: operations["clients_invoices_destroy"];
         options?: never;
         head?: never;
         patch?: never;
@@ -9298,6 +9302,30 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["InvoiceReading"];
                 };
+            };
+        };
+    };
+    clients_invoices_destroy: {
+        parameters: {
+            query?: {
+                /** @description Also remove the bill booked from it. */
+                with_bill?: boolean;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

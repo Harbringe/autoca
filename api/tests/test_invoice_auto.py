@@ -256,3 +256,30 @@ def test_a_stored_invoice_can_be_shown_as_pages_in_the_viewer(api, client_record
     assert info.status_code == 200 and info.json()["pages"] >= 1
     assert page.status_code == 200 and page["Content-Type"] == "image/png" and page.content.startswith(b"\x89PNG")
     assert api.get(f"/api/v1/documents/{reading['document']}/preview/99/").status_code == 404
+
+
+def test_an_unbooked_invoice_can_be_deleted_with_its_file(api, client_record):
+    register_own_gstin(client_record)
+    file = _file("inv.pdf", b"%PDF-1.4\n" + PURCHASE.encode())
+    reading = api.post(f"{base(client_record)}/invoices/upload/", {"file": file, "book": "false"}, format="multipart").json()
+
+    gone = api.delete(f"{base(client_record)}/invoices/{reading['id']}/")
+
+    assert gone.status_code == 204
+    assert api.get(f"{base(client_record)}/invoices/{reading['id']}/").status_code == 404
+    assert api.get(f"/api/v1/documents/{reading['document']}/preview/").status_code == 404
+
+
+def test_a_booked_invoice_is_not_deleted_from_under_its_bill_unless_asked(api, client_record):
+    register_own_gstin(client_record)
+    reading = upload(api, client_record, PURCHASE).json()
+    assert reading["status"] == "BOOKED"
+
+    refused = api.delete(f"{base(client_record)}/invoices/{reading['id']}/")
+    assert refused.status_code == 422 and "bill" in refused.json()["detail"].lower()
+
+    gone = api.delete(f"{base(client_record)}/invoices/{reading['id']}/", {"with_bill": "true"})
+
+    assert gone.status_code == 204
+    assert api.get(f"{base(client_record)}/bills/{reading['bill']}/").status_code == 404
+    assert api.get(f"{base(client_record)}/invoices/{reading['id']}/").status_code == 404

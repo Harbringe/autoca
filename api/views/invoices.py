@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -26,7 +26,7 @@ from ledger.models import Bill, InvoiceReading
 
 @extend_schema(tags=["invoices"])
 class InvoiceReadingViewSet(
-    ClientScopedMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, viewsets.GenericViewSet
+    ClientScopedMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.DestroyModelMixin, viewsets.GenericViewSet
 ):
     """Invoices uploaded as files, and what each appears to say.
 
@@ -38,7 +38,7 @@ class InvoiceReadingViewSet(
     permission_classes = [HasFirmPermission]
     pagination_class = DefaultPagination
     parser_classes = [JSONParser, MultiPartParser, FormParser]
-    required_permission = {"GET": "journal.view", "POST": "document.upload"}
+    required_permission = {"GET": "journal.view", "POST": "document.upload", "DELETE": "journal.approve"}
     queryset = InvoiceReading.objects.all()
     serializer_class = InvoiceReadingSerializer
 
@@ -112,6 +112,22 @@ class InvoiceReadingViewSet(
         bill = get_object_or_404(Bill, pk=payload.validated_data["bill"], firm_id=request.firm.pk, client=self.client)
         invoice_intake.attach_to_bill(reading, bill, membership=request.membership)
         return Response(InvoiceReadingSerializer(self._payload(self.get_queryset().get(pk=reading.pk))).data)
+
+    @extend_schema(
+        summary="Delete an uploaded invoice",
+        description=(
+            "Removes the reading, the stored file and its pages for good. An invoice that is booked is refused unless "
+            "`with_bill=true`, which removes its bill and voucher first by the rules for removing a bill (nothing settled "
+            "against it, books not signed off). Needs `journal.approve` on a client the caller may post to."
+        ),
+        parameters=[OpenApiParameter("with_bill", bool, description="Also remove the bill booked from it.")],
+        responses={204: None},
+    )
+    def destroy(self, request, client_id=None, pk=None):
+        reading = self.get_object()
+        with_bill = request.query_params.get("with_bill", "").lower() in {"1", "true", "yes"}
+        invoice_intake.delete_reading(reading, membership=request.membership, with_bill=with_bill)
+        return Response(status=status.HTTP_204_NO_CONTENT)
 
     @extend_schema(
         summary="Say whether this invoice is a purchase or a sale",

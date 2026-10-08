@@ -29,6 +29,7 @@ ACTIONS: list[tuple[str, str, str]] = [
     ("GET", rf"^/api/v1/clients/(?P<client>{UUID})/bank-accounts/{UUID}/$", "Opened a bank account of {client}, number shown"),
     ("POST", rf"^/api/v1/clients/(?P<client>{UUID})/bills/$", "Booked a purchase or sales voucher for {client}"),
     ("POST", rf"^/api/v1/clients/(?P<client>{UUID})/bills/{UUID}/remove/$", "Removed a voucher of {client}"),
+    ("DELETE", rf"^/api/v1/clients/(?P<client>{UUID})/invoices/{UUID}/$", "Deleted an uploaded invoice of {client}"),
     ("POST", rf"^/api/v1/journal-entries/{UUID}/settle/$", "Settled a payment against bills"),
     ("POST", rf"^/api/v1/journal-entries/{UUID}/bill-status/$", "Said why a payment has no invoice"),
     ("POST", rf"^/api/v1/clients/(?P<client>{UUID})/books/sign-off/$", "Signed off the books of {client}"),

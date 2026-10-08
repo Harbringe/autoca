@@ -164,6 +164,16 @@ export function useSayInvoiceKind(clientId: string) {
   })
 }
 
+/** Delete an uploaded invoice for good; `withBill` also removes the bill booked from it. */
+export function useDeleteInvoice(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: ({ id, withBill }: { id: string; withBill?: boolean }) =>
+      raw.delete<void>(`${V1}/clients/${clientId}/invoices/${id}/${withBill ? '?with_bill=true' : ''}`),
+    onSuccess: invalidate,
+  })
+}
+
 export function useDecideInvoice(clientId: string) {
   const invalidate = useInvalidateClient(clientId)
   return useMutation({

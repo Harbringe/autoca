@@ -118,6 +118,7 @@ def _payload_of(parsed, kind: str) -> dict:
     return {
         "supplier_name": parsed.supplier_name,
         "buyer_name": parsed.buyer_name,
+        "unsure": parsed.unsure,
         "gstins": parsed.gstins,
         "supplier_gstin": parsed.supplier_gstin,
         "buyer_gstin": parsed.buyer_gstin,

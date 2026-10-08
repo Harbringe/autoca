@@ -41,6 +41,22 @@ export function prefillFrom(reading: InvoiceReading, headLedger?: string): Vouch
   }
 }
 
+const FIELD_NAME: Record<string, string> = {
+  supplier_name: 'supplier name',
+  supplier_gstin: 'supplier GSTIN',
+  buyer_name: 'buyer name',
+  buyer_gstin: 'buyer GSTIN',
+  invoice_no: 'invoice number',
+  invoice_date: 'invoice date',
+  taxable: 'taxable value',
+  cgst: 'CGST',
+  sgst: 'SGST',
+  igst: 'IGST',
+  cess: 'cess',
+  round_off: 'round off',
+  total: 'total',
+}
+
 function FormSkeleton({ animated }: { animated: boolean }) {
   const bar = cn('rounded bg-muted', animated && 'skeleton')
   return (
@@ -165,6 +181,11 @@ export function InvoiceCapture({
               <p className="flex items-start gap-2 rounded-md border border-accent-edge bg-accent p-2 text-sm">
                 <TriangleAlert className="mt-0.5 size-4 shrink-0" aria-hidden />
                 <span>{reading.unreadable_reason || reading.attention}</span>
+              </p>
+            )}
+            {reading.read && (reading.read.unsure ?? []).length > 0 && (
+              <p className="rounded-md border border-accent-edge bg-accent p-2 text-sm">
+                The reader was not sure of: <strong>{reading.read.unsure.map((k) => FIELD_NAME[k] ?? k).join(', ')}</strong>. Check {reading.read.unsure.length === 1 ? 'it' : 'them'} against the page.
               </p>
             )}
             {reading.read && !reading.proved && (

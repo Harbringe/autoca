@@ -23,16 +23,22 @@ from usage.recorder import record
 
 SYSTEM = (
     "You copy the contents of a scanned GST tax invoice into JSON. You do not calculate, correct, round or infer "
-    "anything: copy each figure exactly as printed, digit for digit. If something is not on the pages, use an empty "
-    "string. Reply with one JSON object and nothing else."
+    "anything: every value is what the page prints, digit for digit. Reply with one JSON object and nothing else, in "
+    "exactly the shape you are given. Use null for anything that is not on the pages or that you cannot read."
 )
 
 INSTRUCTION = (
-    "These are the pages of one invoice. Return JSON with exactly these keys: "
-    '"supplier_name" (who issued the invoice), "supplier_gstin" (the issuer\'s GSTIN), "buyer_name" and "buyer_gstin" '
-    '(the party billed, "bill to"), "invoice_no", "invoice_date" (DD-MM-YYYY), "taxable" (total taxable value before '
-    'tax), "cgst", "sgst", "igst", "cess" (the total tax amounts, not the rates), "round_off" (with its sign) and '
-    '"total" (the invoice total). Amounts as printed, without the currency symbol.'
+    "These are the pages of one invoice. Return one JSON object with exactly these keys.\n"
+    "Text, copied as printed: \"supplier_name\" (who issued the invoice), \"supplier_gstin\" (the issuer's GSTIN), "
+    "\"buyer_name\" and \"buyer_gstin\" (the party billed, \"bill to\"), \"invoice_no\".\n"
+    "Date: \"invoice_date\" as YYYY-MM-DD (read the day, month and year digits carefully; a two-digit year is 20xx).\n"
+    "Amounts: \"taxable\" (the total taxable value before tax), \"cgst\", \"sgst\", \"igst\", \"cess\" (the total tax "
+    "AMOUNTS, never the rates), \"round_off\" and \"total\" (the invoice total). Each amount is a JSON NUMBER in rupees: "
+    "plain digits with a decimal point, no quotes, no currency symbol, no commas, no brackets. A negative amount has a "
+    "leading minus, for example a round-off printed as (-)0.16 or -0.16 is -0.16, and one printed as 0.40 is 0.4. Use null "
+    "for a tax that is not charged.\n"
+    "Doubt: \"unsure\" is a list of the key names above that you could not read clearly or had to guess; an empty list if "
+    "you are sure of everything."
 )
 
 

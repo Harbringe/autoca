@@ -45,6 +45,8 @@ class Reading:
     #: Who issued it and who is billed, when the page says which GSTIN is which; blank when only one is printed.
     supplier_gstin: str = ""
     buyer_gstin: str = ""
+    #: Fields the reader said it could not read clearly (a scan only), for a person to check against the page.
+    unsure: list[str] = field(default_factory=list)
     invoice_no: str = ""
     invoice_date: datetime.date | None = None
     taxable_paise: int | None = None
@@ -118,7 +120,13 @@ def reading_from_fields(fields: dict, *, today: datetime.date | None = None) -> 
     today = today or datetime.date.today()
 
     def money(key: str) -> int | None:
-        raw = re.sub(r"(?i)₹|\brs\.?|\binr\b", "", str(fields.get(key) or "")).strip()
+        value = fields.get(key)
+        if isinstance(value, bool) or value is None:
+            return None
+        if isinstance(value, int | float):
+            # A JSON number, as asked: through its shortest text, so 1178.58 stays 1178.58 and 0.4 stays 0.4.
+            return _paise(repr(float(value)) if isinstance(value, float) else str(value))
+        raw = re.sub(r"(?i)₹|\brs\.?|\binr\b", "", str(value)).strip()
         return _paise(raw) if raw else None
 
     reading = Reading(
@@ -134,7 +142,13 @@ def reading_from_fields(fields: dict, *, today: datetime.date | None = None) -> 
     reading.gstins = [g for g in dict.fromkeys((supplier, buyer)) if g]
     reading.supplier_gstin, reading.buyer_gstin = supplier, buyer
     reading.invoice_no = str(fields.get("invoice_no") or "").strip().strip(".-/_")[:64]
-    reading.invoice_date = _parse_date(str(fields.get("invoice_date") or ""))
+    printed_date = str(fields.get("invoice_date") or "").strip()
+    try:
+        reading.invoice_date = datetime.date.fromisoformat(printed_date)
+    except ValueError:
+        reading.invoice_date = _parse_date(printed_date)
+    doubtful = fields.get("unsure")
+    reading.unsure = [str(k) for k in doubtful if isinstance(k, str)][:12] if isinstance(doubtful, list) else []
     reading.taxable_paise = money("taxable")
     reading.total_paise = money("total")
     reading.cgst_paise = money("cgst") or 0

@@ -6101,6 +6101,8 @@ export interface components {
              */
             total_paise: number | null;
             total_display: string | null;
+            /** @description Fields the reader said it could not read clearly (a scan), to check against the page. */
+            unsure: string[];
         };
         RecategorizeRequest: {
             /** Format: uuid */

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import datetime
 import json
 
 import pytest
@@ -66,3 +67,22 @@ def test_the_model_reply_is_read_through_the_same_proof():
 def test_an_unavailable_model_says_so_in_words():
     with pytest.raises(invoice_vision.InvoiceVisionError, match="not set up"):
         invoice_vision.read_scanned_invoice(b"%PDF", 1, Llm(LLMUnavailable("none")))
+
+
+def test_amounts_as_json_numbers_and_an_iso_date_are_read_exactly():
+    fields = {
+        **GOOD, "invoice_date": "2025-08-12", "taxable": 47143.0, "cgst": 1178.58, "sgst": 1178.58, "igst": None,
+        "cess": None, "round_off": -0.16, "total": 49500.0, "unsure": ["invoice_date", 5],
+    }
+
+    reading = reading_from_fields(fields)
+
+    assert reading.taxable_paise == 47_143_00 and reading.cgst_paise == 1_178_58 and reading.round_off_paise == -16
+    assert reading.invoice_date == datetime.date(2025, 8, 12) and reading.proved
+    assert reading.unsure == ["invoice_date"]
+
+
+def test_the_prompt_asks_for_plain_numbers_iso_dates_and_the_fields_it_doubts():
+    text = invoice_vision.INSTRUCTION
+
+    assert "JSON NUMBER" in text and "YYYY-MM-DD" in text and '"unsure"' in text and "(-)0.16" in text

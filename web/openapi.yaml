@@ -12875,6 +12875,12 @@ components:
         total_display:
           type: string
           nullable: true
+        unsure:
+          type: array
+          items:
+            type: string
+          description: Fields the reader said it could not read clearly (a scan),
+            to check against the page.
       required:
       - cess_paise
       - cgst_paise
@@ -12889,6 +12895,7 @@ components:
       - taxable_paise
       - total_display
       - total_paise
+      - unsure
     RecategorizeRequest:
       type: object
       properties:

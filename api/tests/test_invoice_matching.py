@@ -29,9 +29,8 @@ def book_bill(api, client_record, amount, name="Ravi Traders", on=None):
 def attribute_row_to(client_record, row, party_id):
     with firm_context(client_record.firm_id):
         classification = row.transaction.classification
-        classification.party_id = party_id
-        classification.method = ClassificationMethod.RULE
-        classification.save(update_fields=["party", "method"])
+        classification.party_id = party_id  # still unplaced: only whose it is is known
+        classification.save(update_fields=["party"])
 
 
 def test_a_row_that_is_the_parties_payment_of_exactly_the_bills_amount_is_settled_against_it(api, client_record, statement):
@@ -87,10 +86,13 @@ def test_two_bills_that_the_same_row_could_pay_are_left_for_a_person(api, client
 def test_a_row_a_person_has_placed_is_left_alone(api, client_record, statement):
     row = the_payment(client_record)
     party, _ = book_bill(api, client_record, row.transaction.amount_paise)
+    expense = make_ledger(api, client_record, "Office Expenses", "INDIRECT_EXPENSE")
     with firm_context(client_record.firm_id):
         classification = row.transaction.classification
         classification.party_id = party["id"]
+        classification.ledger_id = expense["id"]
         classification.method = ClassificationMethod.REVIEWED
-        classification.save(update_fields=["party", "method"])
+        classification.needs_review = False
+        classification.save(update_fields=["party", "ledger", "method", "needs_review"])
 
         assert matching.match_client(client_record) == 0

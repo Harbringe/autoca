@@ -46,7 +46,7 @@ your PC                                   the server (EC2)
    deploy (`git push origin dev:main dev:prod`, once CI is green). Until then the tunnel connects and is refused.
    **To read the three values in step 5 you also need a shell on the server for a few minutes.** Add this document to the `Resource` list
    of the first statement, and **remove it again afterwards**: a shell on the server can read and change everything.
-   `"arn:aws:ssm:ap-south-1::document/SSM-SessionManagerRunShell"`
+   `"arn:aws:ssm:ap-south-1:<ACCOUNT_ID>:document/SSM-SessionManagerRunShell"` (this one is a document in your own account, so it carries the account number; the AWS-owned `AWS-StartPortForwardingSession` above does not)
 4. **Tell the script which server.** Set `AUTOCA_INSTANCE_ID` to the instance id (a Windows user variable is enough). It is not kept in the code.
 5. **Fill in `.env.live`.** Copy `deploy/live.env.example` to `.env.live` (git ignores it). Take the values from the server with a
    Session Manager shell, never by pasting them into a chat or an email:

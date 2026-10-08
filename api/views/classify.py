@@ -590,7 +590,7 @@ class ClassificationViewSet(
         rows = TransactionClassification.objects.filter(
             firm_id=self.request.firm.pk,
             transaction__bank_account__client__in=visible_client_ids(self.request.membership),
-        ).select_related("transaction__bank_account", "ledger__party_record", "party").order_by(
+        ).select_related("transaction__bank_account", "ledger__party_record", "party", "rule__ledger").order_by(
             # Statement order, so paging never repeats or skips a row.
             "transaction__value_date", "transaction__row_number", "pk"
         )

@@ -7673,6 +7673,11 @@ components:
           allOf:
           - $ref: '#/components/schemas/StatementTransaction'
           readOnly: true
+        memory:
+          allOf:
+          - $ref: '#/components/schemas/PlacementMemory'
+          nullable: true
+          readOnly: true
         on_party_account:
           type: boolean
           description: |-
@@ -7809,6 +7814,7 @@ components:
       - ledger_name
       - ledger_opened_by_model
       - ledger_status
+      - memory
       - method
       - method_display
       - needs_review
@@ -12310,6 +12316,37 @@ components:
         * `OCR` - Optical character recognition
         * `VISION` - Read from page images by a vision model
         * `MANUAL` - Keyed in by hand
+    PlacementMemory:
+      type: object
+      properties:
+        kind:
+          $ref: '#/components/schemas/PlacementMemoryKindEnum'
+        label:
+          type: string
+          description: 'A few words for a chip: where the placement came from.'
+        note:
+          type: string
+          description: One sentence saying what the system is going on.
+        learned_on:
+          type: string
+          format: date
+          nullable: true
+          description: When the rule behind it was made, for a rule.
+      required:
+      - kind
+      - label
+      - learned_on
+      - note
+    PlacementMemoryKindEnum:
+      enum:
+      - rule
+      - matched
+      - ai
+      type: string
+      description: |-
+        * `rule` - rule
+        * `matched` - matched
+        * `ai` - ai
     PlacementResult:
       type: object
       description: What changed when a row was placed.

@@ -6,7 +6,8 @@ twice). This module finds the pairs and settles them.
 
 **It decides only when nothing is left to decide.** A pair is settled by the system when all of these hold:
 
-* the amount is the bill's open amount to the paise, in the right direction (money out for a purchase, in for a sale);
+* the amount is the bill's open amount to the paise, in the right direction (money out for a purchase, in for a sale), or,
+  for a sales bill to a customer whose TDS section is on record, that amount less the TDS the section allows (to the rupee);
 * the row's date is within a sensible window of the invoice (a little before it, for an advance, to a few months after);
 * the row is the party's: the classification already names that party, or the narration contains the party's full name or
   one of its confirmed spellings (``PartyAlias``). Similar-looking is never enough;
@@ -52,6 +53,24 @@ def _says(narration: str, names: list[str]) -> bool:
     return any(f" {n} " in text for n in names)
 
 
+#: What a customer may deduct under each section, in basis points of the taxable value (the rate depends on who is paid, so
+#: every usual rate is tried). TDS is deducted to the nearest rupee.
+TDS_RATES_BP = {"194C": (100, 200), "194H": (500,), "194I": (1000, 200), "194J": (1000, 200), "194Q": (10,), "194A": (1000,)}
+
+
+def _tds_options(bill: Bill) -> list[int]:
+    """The TDS amounts (paise) a customer could have deducted from this whole, unpaid sales bill."""
+    if bill.kind != BillKind.SALES or not bill.party.tds_section or _open_amount(bill) != bill.total_paise:
+        return []
+    out = []
+    for bp in TDS_RATES_BP.get(bill.party.tds_section, ()):
+        rupees = (bill.taxable_paise * bp // 10_000 + 50) // 100
+        tds = rupees * 100
+        if 0 < tds < bill.total_paise and tds not in out:
+            out.append(tds)
+    return out
+
+
 def _field(bill: Bill) -> str:
     """The statement column a bill's payment sits in: money out pays a purchase, money in pays a sale."""
     return "debit_paise" if bill.kind == BillKind.PURCHASE else "credit_paise"
@@ -61,18 +80,24 @@ def _open_amount(bill: Bill) -> int:
     return bill.open_paise if hasattr(bill, "open_paise") else billing.open_amount(bill)
 
 
-def _rows_for(bill: Bill, names: list[str]) -> list[StatementTransaction]:
-    """Unposted bank rows that could be this bill's payment, by amount, date and evidence of whose they are."""
+def _rows_for(bill: Bill, names: list[str]) -> list[tuple[StatementTransaction, int]]:
+    """Unposted bank rows that could be this bill's payment, with the TDS each implies (0 when it is paid in full).
+
+    By amount, date and evidence of whose they are.
+    """
     amount = _open_amount(bill)
     if amount <= 0 or bill.kind not in (BillKind.PURCHASE, BillKind.SALES):
         return []
+    amounts = {amount: 0}
+    for tds in _tds_options(bill):
+        amounts.setdefault(amount - tds, tds)
     rows = (
         StatementTransaction.objects.filter(
             firm_id=bill.firm_id,
             bank_account__client_id=bill.client_id,
             value_date__gte=bill.bill_date - datetime.timedelta(days=DAYS_BEFORE),
             value_date__lte=bill.bill_date + datetime.timedelta(days=DAYS_AFTER),
-            **{_field(bill): amount},
+            **{f"{_field(bill)}__in": list(amounts)},
         )
         .select_related("classification", "bank_account")
         .prefetch_related("journal_entries")
@@ -85,7 +110,7 @@ def _rows_for(bill: Bill, names: list[str]) -> list[StatementTransaction]:
         if classification.method == ClassificationMethod.REVIEWED:
             continue  # a person has already decided what this row is
         if classification.party_id == bill.party_id or _says(row.narration, names):
-            found.append(row)
+            found.append((row, amounts[getattr(row, _field(bill))]))
     return found
 
 
@@ -108,15 +133,15 @@ def match_client(client) -> int:
 
     claims: dict = {}
     for bill in bills:
-        for row in by_bill[bill.pk]:
+        for row, _ in by_bill[bill.pk]:
             claims.setdefault(row.pk, []).append(bill.pk)
 
     settled = 0
     for bill in bills:
         rows = by_bill[bill.pk]
-        if len(rows) != 1 or len(claims[rows[0].pk]) != 1:
+        if len(rows) != 1 or len(claims[rows[0][0].pk]) != 1:
             continue  # nothing matches, or it is not the only candidate on one side
-        if _settle(bill, rows[0]):
+        if _settle(bill, *rows[0]):
             settled += 1
     return settled
 
@@ -127,16 +152,16 @@ def match_bill(bill: Bill) -> bool:
     rows = _rows_for(bill, names)
     if len(rows) != 1:
         return False
-    row = rows[0]
+    row, tds = rows[0]
     for other in _open_bills(bill.client):
-        if other.pk != bill.pk and any(r.pk == row.pk for r in _rows_for(other, _names_of(other.party))):
+        if other.pk != bill.pk and any(r.pk == row.pk for r, _ in _rows_for(other, _names_of(other.party))):
             return False
-    return _settle(bill, row)
+    return _settle(bill, row, tds)
 
 
-def _settle(bill: Bill, row: StatementTransaction) -> bool:
+def _settle(bill: Bill, row: StatementTransaction, tds: int = 0) -> bool:
     try:
         with transaction.atomic():
-            return approval.auto_post_settlement(row.classification, bill) is not None
+            return approval.auto_post_settlement(row.classification, bill, tds_paise=tds) is not None
     except (billing.BillingError, approval.NotApprovableError):
         return False

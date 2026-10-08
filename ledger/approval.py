@@ -419,12 +419,13 @@ def auto_post(classification) -> JournalEntry | None:
     )
 
 
-def auto_post_settlement(classification, bill) -> JournalEntry | None:
+def auto_post_settlement(classification, bill, tds_paise: int = 0) -> JournalEntry | None:
     """Post a bank row as the payment of a bill, when ``ledger.matching`` has found them to be one and the same.
 
     The row goes on the party's own account and the bill is allocated in the same step, so the bill is settled and the
     bank row is explained by one entry. Like every entry the machine posts it is marked ``AI_POSTED`` and can be corrected
-    or removed by a person until sign-off. Refused (``None``) for a row a person has handled, already posted, inside signed-off
+    or removed by a person until sign-off. ``tds_paise`` is the tax a customer deducted before paying a sales bill: the
+    receipt is the bill less that, and the entry then has a third line, to TDS Receivable. Refused (``None``) for a row a person has handled, already posted, inside signed-off
     books, or that is not a plain payment or receipt on a bank account.
     """
     from classify.models import LedgerGroup
@@ -445,6 +446,8 @@ def auto_post_settlement(classification, bill) -> JournalEntry | None:
         return None
     if bill.party.client_id != txn.bank_account.client_id:
         return None
+    if tds_paise and (txn.is_debit or bill.kind != "SALES"):
+        return None  # only a receipt against a sales bill carries tax the customer deducted
 
     side = LedgerGroup.CREDITOR if bill.direction == Direction.CREDIT else LedgerGroup.DEBTOR
     ledger = billing.party_ledger_for(bill.party, side=side)
@@ -456,18 +459,28 @@ def auto_post_settlement(classification, bill) -> JournalEntry | None:
     classification.method = ClassificationMethod.RULE
     classification.confidence = 1.0
     classification.needs_review = False
-    classification.rationale = f"Matched to {bill.reference}: the same amount, the same party, and nothing else fits."
+    classification.rationale = (
+        f"Matched to {bill.reference}: the amount is the bill less the {bill.party.tds_section} TDS the customer deducts, "
+        "the same party, and nothing else fits."
+        if tds_paise
+        else f"Matched to {bill.reference}: the same amount, the same party, and nothing else fits."
+    )
     classification.save(update_fields=["ledger", "party", "method", "confidence", "needs_review", "rationale"])
 
+    tds_receipt = (
+        (billing.standard_ledger(bill.client, "TDS Receivable"), tds_paise, bill.party.tds_section) if tds_paise else None
+    )
+    note = f", less Rs {tds_paise / 100:,.2f} TDS deducted by the customer" if tds_paise else ""
     entry = _write_entry(
         classification,
         voucher_type=voucher_type_for(classification),
-        narration=f"Against {bill.reference} of {bill.party.canonical_name} (matched automatically)",
+        narration=f"Against {bill.reference} of {bill.party.canonical_name}{note} (matched automatically)",
         approved_by=None,
         marker=EntryMarker.AI_POSTED,
+        tds_receipt=tds_receipt,
     )
     line = entry.lines.get(ledger_account=ledger)
-    billing.allocate(line, amount_paise=txn.amount_paise, bill=bill)
+    billing.allocate(line, amount_paise=txn.amount_paise + tds_paise, bill=bill)
     return entry
 
 
@@ -596,7 +609,7 @@ def reversal_lines(entry, original) -> list[JournalLine]:
 
 def _write_entry(
     classification, *, voucher_type, narration, approved_by, supersedes=None, reversal_of=None,
-    entry_date=None, marker=EntryMarker.NONE,
+    entry_date=None, marker=EntryMarker.NONE, tds_receipt=None,
 ) -> JournalEntry:
     txn = classification.transaction
     client = txn.bank_account.client
@@ -625,6 +638,19 @@ def _write_entry(
         lines.extend(reversal_lines(entry, reversal_of))
 
     lines.extend(_double_entry(entry, classification))
+    if tds_receipt is not None:
+        # A customer paid net of the TDS they deducted: the bank got the net, the customer's account clears in full, and the
+        # difference is tax the client will claim, held in TDS Receivable.
+        tds_ledger, tds_paise, section = tds_receipt
+        for line in lines:
+            if line.ledger_account_id == classification.ledger_id and line.direction == Direction.CREDIT:
+                line.amount_paise += tds_paise
+                line.signed_paise -= tds_paise
+        lines.append(
+            JournalLine.build(
+                entry=entry, ledger_account=tds_ledger, direction=Direction.DEBIT, amount_paise=tds_paise, tds_section=section
+            )
+        )
     JournalLine.objects.bulk_create(lines)
     return entry
 

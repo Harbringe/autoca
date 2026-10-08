@@ -3619,6 +3619,7 @@ export interface components {
             /** Format: uuid */
             readonly id: string;
             readonly transaction: components["schemas"]["StatementTransaction"];
+            readonly memory: components["schemas"]["PlacementMemory"] | null;
             /**
              * @description True when the row is placed on a supplier's or customer's own account.
              *
@@ -5808,6 +5809,25 @@ export interface components {
          * @enum {string}
          */
         PipelineTierEnum: "UNKNOWN" | "TEXT_LAYER" | "OCR" | "VISION" | "MANUAL";
+        PlacementMemory: {
+            kind: components["schemas"]["PlacementMemoryKindEnum"];
+            /** @description A few words for a chip: where the placement came from. */
+            label: string;
+            /** @description One sentence saying what the system is going on. */
+            note: string;
+            /**
+             * Format: date
+             * @description When the rule behind it was made, for a rule.
+             */
+            learned_on: string | null;
+        };
+        /**
+         * @description * `rule` - rule
+         *     * `matched` - matched
+         *     * `ai` - ai
+         * @enum {string}
+         */
+        PlacementMemoryKindEnum: "rule" | "matched" | "ai";
         /** @description What changed when a row was placed. */
         PlacementResult: {
             readonly classification: components["schemas"]["Classification"];

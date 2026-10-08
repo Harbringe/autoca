@@ -98,3 +98,43 @@ def test_a_row_a_person_has_placed_is_left_alone(api, client_record, statement):
         classification.save(update_fields=["party", "ledger", "method", "needs_review"])
 
         assert matching.match_client(client_record) == 0
+
+
+def test_a_receipt_net_of_the_tds_the_customer_deducts_settles_the_bill_in_full(api, client_record, statement):
+    # The statement's NEFT credit of 7,403.75 is the bill (taxable 8,226.75) less 10% TDS (822.675, to the rupee: 823).
+    with firm_context(client_record.firm_id):
+        from classify.models import TransactionClassification
+
+        row = TransactionClassification.objects.get(transaction__credit_paise=740_375, transaction__value_date__month=9)
+    party = make_party(api, client_record, name="Sovereign Clients", role="CUSTOMER", gstin=SUPPLIER)
+    api.patch(f"{base(client_record)}/parties/{party['id']}/", {"tds_section": "194J"}, format="json")
+    sales = make_ledger(api, client_record, "Sales", "SALES")
+    body = voucher(
+        party, sales, kind="SALES", reference="S-1", cgst_paise=0, sgst_paise=0, bill_date=row.transaction.value_date.isoformat(),
+        heads=[{"ledger": sales["id"], "amount_paise": 822_675}],
+    )
+    bill = post_bill(api, client_record, body).json()
+    assert bill["total_paise"] == 822_675
+    attribute_row_to(client_record, row, party["id"])
+
+    with firm_context(client_record.firm_id):
+        settled = matching.match_client(client_record)
+        entry = JournalEntry.objects.get(source_transaction=row.transaction)
+        lines = {line.ledger_account.name: (line.direction, line.amount_paise) for line in entry.lines.select_related("ledger_account")}
+
+    assert settled == 1
+    assert lines["TDS Receivable"] == ("DR", 82_300)
+    assert lines["Sovereign Clients"] == ("CR", 822_675)
+    assert api.get(f"{base(client_record)}/bills/{bill['id']}/").json()["open_paise"] == 0
+
+
+def test_the_review_screen_is_told_where_a_placement_came_from(api, client_record, statement):
+    row = the_payment(client_record)
+    party, _ = book_bill(api, client_record, row.transaction.amount_paise)
+    attribute_row_to(client_record, row, party["id"])
+    with firm_context(client_record.firm_id):
+        assert matching.match_client(client_record) == 1
+
+    detail = api.get(f"/api/v1/classifications/{row.pk}/").json()
+
+    assert detail["memory"]["kind"] == "matched" and "Matched to" in detail["memory"]["note"]

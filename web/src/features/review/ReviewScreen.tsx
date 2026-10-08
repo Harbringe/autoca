@@ -8,7 +8,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Bot, CheckCheck, Search, Sparkles } from 'lucide-react'
+import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Bot, Brain, CheckCheck, Link2, Search, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
@@ -378,6 +378,12 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
                       {r.ledger_name ? (
                         <span className="flex items-center gap-1.5">
                           <span className="max-w-[14ch] truncate" title={r.ledger_name}>{r.ledger_name}</span>
+                          {r.memory && r.method !== 'REVIEWED' && (
+                            <span className="inline-flex shrink-0 text-info" title={r.memory.note}>
+                              <MemoryIcon kind={r.memory.kind} className="size-3.5" />
+                              <span className="sr-only">{r.memory.label}: {r.memory.note}</span>
+                            </span>
+                          )}
                           {proposedIds.has(r.ledger ?? '') && (
                             <span className="shrink-0 rounded-sm bg-info-bg px-1 text-[11px] font-medium text-info" title="A new ledger the assistant proposed. A senior CA accepts it before rows can go in.">
                               New
@@ -685,10 +691,16 @@ function Decision({
       )}
 
       {row.ledger && row.method !== 'REVIEWED' && (
-        <div className="text-[13px] text-muted-foreground">
-          <span className="font-medium text-foreground">{row.method_display}</span>
-          {row.confidence ? ` · ${Math.round(row.confidence * 100)}% sure` : ''}
-          {row.rationale && <p className="mt-0.5">{row.rationale}</p>}
+        <div className="grid gap-1 rounded-md border border-info/30 bg-info-bg px-3 py-2 text-[13px]">
+          <div className="flex items-center gap-1.5 font-medium text-foreground">
+            {row.memory ? <MemoryIcon kind={row.memory.kind} className="size-4 text-info" /> : null}
+            {row.memory?.label ?? row.method_display}
+            <span className="font-normal text-muted-foreground">{row.confidence ? ` · ${Math.round(row.confidence * 100)}% sure` : ''}</span>
+          </div>
+          <p className="text-muted-foreground">{row.memory?.note ?? row.rationale}</p>
+          {row.memory?.kind === 'rule' && (
+            <p className="text-xs text-muted-foreground">Wrong? Place it in the right ledger below and tick “also place future…” to teach it the correct one.</p>
+          )}
         </div>
       )}
 
@@ -801,4 +813,11 @@ function Decision({
       )}
     </Card>
   )
+}
+
+
+/** Where a placement came from: a rule the system learned from a person, an invoice it matched, or the AI's own guess. */
+function MemoryIcon({ kind, className }: { kind: 'rule' | 'matched' | 'ai'; className?: string }) {
+  const Icon = kind === 'rule' ? Brain : kind === 'matched' ? Link2 : Sparkles
+  return <Icon className={className} aria-hidden />
 }

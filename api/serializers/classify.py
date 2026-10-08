@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import re
 
+from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
 from api.fields import PaiseField
@@ -348,6 +349,13 @@ class ConfirmPartySerializer(serializers.Serializer):
     party = serializers.UUIDField(help_text="The party this payee is.")
 
 
+class PlacementMemorySerializer(serializers.Serializer):
+    kind = serializers.ChoiceField(choices=["rule", "matched", "ai"])
+    label = serializers.CharField(help_text="A few words for a chip: where the placement came from.")
+    note = serializers.CharField(help_text="One sentence saying what the system is going on.")
+    learned_on = serializers.DateField(allow_null=True, help_text="When the rule behind it was made, for a rule.")
+
+
 class ClassificationSerializer(serializers.ModelSerializer):
     """A row awaiting a decision, with everything needed to make it."""
 
@@ -369,12 +377,14 @@ class ClassificationSerializer(serializers.ModelSerializer):
     is_posted = serializers.SerializerMethodField()
     method_display = serializers.CharField(source="get_method_display", read_only=True)
     on_party_account = serializers.SerializerMethodField()
+    memory = serializers.SerializerMethodField()
 
     class Meta:
         model = TransactionClassification
         fields = [
             "id",
             "transaction",
+            "memory",
             "on_party_account",
             "ledger",
             "ledger_name",
@@ -406,6 +416,38 @@ class ClassificationSerializer(serializers.ModelSerializer):
             "reviewed_at",
         ]
         read_only_fields = fields
+
+    @extend_schema_field(PlacementMemorySerializer(allow_null=True))
+    def get_memory(self, obj):
+        """Where this placement came from, in words: a rule the system learned, an invoice it matched, or the AI's own guess.
+
+        Nothing here is decided by it; it is shown so a person can see what the system is going on and correct it.
+        """
+        from classify.models import ClassificationMethod, RuleSource
+
+        if obj.method == ClassificationMethod.RULE and (obj.rationale or "").startswith("Matched to"):
+            return {"kind": "matched", "label": "Matched to an invoice", "note": obj.rationale, "learned_on": None}
+        if obj.method == ClassificationMethod.RULE and obj.rule_id:
+            rule = obj.rule
+            where = rule.ledger.name
+            if rule.source == RuleSource.LEARNED:
+                note = (
+                    f"From memory: on {rule.created_at:%d-%m-%Y} a person placed a payment matching \u201c{rule.pattern}\u201d "
+                    f"in {where}, and the system has done the same since."
+                )
+                label = "From memory"
+            elif rule.source == RuleSource.MANUAL:
+                note = f"A rule written by hand: \u201c{rule.pattern}\u201d goes to {where}."
+                label = "Your rule"
+            else:
+                note = f"A built-in rule: \u201c{rule.pattern}\u201d goes to {where}."
+                label = "Built-in rule"
+            if obj.party_resolution == "CONFIRMED":
+                note += " The payee is a spelling a person confirmed earlier."
+            return {"kind": "rule", "label": label, "note": note, "learned_on": rule.created_at.date()}
+        if obj.method == ClassificationMethod.LLM:
+            return {"kind": "ai", "label": "AI suggestion", "note": obj.rationale or "Suggested by the assistant.", "learned_on": None}
+        return None
 
     def get_on_party_account(self, obj) -> bool:
         """True when the row is placed on a supplier's or customer's own account.

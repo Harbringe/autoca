@@ -58,7 +58,7 @@ export function LedgerPicker({
     })
   }, [ledgers, text])
   const exact = ledgers.some((l) => l.name.toLowerCase() === text.trim().toLowerCase())
-  const offerCreate = can('ledger.manage') && text.trim().length >= 2 && !exact
+  const offerCreate = can('ledger.manage') && !exact
   const options = matches.length + (offerCreate ? 1 : 0)
 
   function pick(i: number) {
@@ -192,7 +192,7 @@ export function LedgerPicker({
               }}
               className={cn('cursor-default rounded-sm px-2 py-1.5 text-sm text-info', active === matches.length && 'bg-hover')}
             >
-              + Create ledger “{text.trim()}”
+              {text.trim().length >= 2 ? `+ Create ledger “${text.trim()}”` : '+ Create a new ledger…'}
             </li>
           )}
         </ul>

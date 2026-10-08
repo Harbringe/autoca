@@ -12,11 +12,11 @@ import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Bot, Brain, CheckCheck,
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
-import { messageOf } from '@/api/errors'
+import { isApiError, messageOf } from '@/api/errors'
 import { waitForJob } from '@/api/jobs'
 import { ledgers as ledgersQuery, parties as partiesQuery, reviewQueue, rules as rulesQuery, type ReviewTab, type Stage } from '@/api/queries/books'
 import { bankAccounts, clientDetail, reviewSummary, useInvalidateClient, V1 } from '@/api/queries/clients'
-import { GROUP_LABEL, TDS_SECTIONS, type Classification, type Job, type JournalEntry, type PlacementResult } from '@/api/types'
+import { GROUP_LABEL, TDS_SECTIONS, type Classification, type Party, type Job, type JournalEntry, type PlacementResult } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
 import { Money } from '@/components/ca/Money'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
@@ -522,6 +522,8 @@ function SortTh({
   )
 }
 
+const NEW_PARTY = '__new__'
+
 /** Everything needed to decide one row, and the two actions: place it, and post it. */
 function Decision({
   clientId,
@@ -550,6 +552,27 @@ function Decision({
   const suggested = ledgers.some((l) => l.id === row.ledger) ? row.ledger : null
   const proposal = allLedgers.find((l) => l.id === row.ledger && l.status === 'PROPOSED') ?? null
   const [deciding, setDeciding] = useState(false)
+  const [newParty, setNewParty] = useState<{ name: string; gstin: string; error: string | null; busy: boolean } | null>(null)
+
+  async function createParty() {
+    if (!newParty) return
+    setNewParty({ ...newParty, busy: true, error: null })
+    try {
+      const made = await raw.post<Party>(`${V1}/clients/${clientId}/parties/`, {
+        canonical_name: newParty.name.trim(),
+        role: row.transaction.is_debit ? 'VENDOR' : 'CUSTOMER',
+        gstin: newParty.gstin.trim(),
+      })
+      await invalidate()
+      setParty(made.id)
+      setNewParty(null)
+      toast.success(`${made.canonical_name} added`)
+    } catch (e) {
+      const fields = isApiError(e) ? e.fields : {}
+      const message = fields.canonical_name?.[0] ?? fields.gstin?.[0] ?? messageOf(e)
+      setNewParty((current) => (current ? { ...current, busy: false, error: message } : current))
+    }
+  }
   const [ledger, setLedger] = useState<string | null>(suggested)
   const [party, setParty] = useState<string>(row.party ?? '')
   const [tds, setTds] = useState<string>(row.tds_section ?? '')
@@ -764,14 +787,44 @@ function Decision({
                 ))}
               </div>
             )}
-            <Select id={`party-${row.id}`} value={party} onChange={(e) => setParty(e.target.value)}>
+            <Select
+              id={`party-${row.id}`}
+              value={newParty ? NEW_PARTY : party}
+              onChange={(e) => {
+                if (e.target.value === NEW_PARTY) setNewParty({ name: row.counterparty ?? '', gstin: '', error: null, busy: false })
+                else {
+                  setNewParty(null)
+                  setParty(e.target.value)
+                }
+              }}
+            >
               <option value="">No party</option>
               {(parties.data ?? [])
                 .filter((p) => p.is_active !== false)
                 .map((p) => (
                   <option key={p.id} value={p.id}>{p.canonical_name}</option>
                 ))}
+              {can('party.manage') && <option value={NEW_PARTY}>+ Add a new party…</option>}
             </Select>
+            {newParty && (
+              <fieldset className="grid gap-2 rounded-md border bg-muted/40 p-3">
+                <div className="text-[13px] font-medium">New {t.is_debit ? 'supplier' : 'customer'}</div>
+                <Input aria-label="New party name" autoFocus placeholder="Name" value={newParty.name} onChange={(e) => setNewParty({ ...newParty, name: e.target.value, error: null })} />
+                <Input
+                  aria-label="New party GSTIN"
+                  placeholder="GSTIN (leave blank if unregistered)"
+                  value={newParty.gstin}
+                  onChange={(e) => setNewParty({ ...newParty, gstin: e.target.value.toUpperCase(), error: null })}
+                />
+                {newParty.error && <p role="alert" className="text-xs text-destructive">{newParty.error}</p>}
+                <div className="flex justify-end gap-2">
+                  <Button size="sm" variant="ghost" onClick={() => setNewParty(null)}>Cancel</Button>
+                  <Button size="sm" disabled={newParty.busy || newParty.name.trim().length < 2} onClick={() => void createParty()}>
+                    {newParty.busy ? 'Adding…' : 'Add and use'}
+                  </Button>
+                </div>
+              </fieldset>
+            )}
           </div>
 
           <div className="grid grid-cols-2 gap-3">

@@ -90,13 +90,13 @@ def workbook(client, financial_year: int, s: Statements) -> bytes:
     ws.append(["", _safe_cell(s.about) or "Not written."])
     ws.append(["Note 2", "Significant Accounting Policies"])
     ws[f"A{ws.max_row}"].font = ws[f"B{ws.max_row}"].font = bold
-    ws.append(["", _safe_cell(s.policies) or "Not written."])
+    ws.append(["", ((_safe_cell(s.policies) + "\n\n") if s.policies else "") + s.size_statement])
     for r in (6, 8):
         ws[f"B{r}"].alignment = wrap
         ws.merge_cells(f"B{r}:J{r}")
         ws.row_dimensions[r].height = 90
     ws.append([])
-    ws.append(["Note 3", "Owners' Capital Account"])
+    ws.append(["Note 3", s.capital_title])
     ws[f"A{ws.max_row}"].font = ws[f"B{ws.max_row}"].font = bold
     ws.append(
         ["Sr.", "Name of Partner/ Proprietor/ Owner", "Share of profit/ (loss) (%)", "Opening balance", "Capital introduced", "Remuneration", "Interest", "Withdrawals", "Share of profit/ (loss)", "Closing balance"]
@@ -150,6 +150,16 @@ def workbook(client, financial_year: int, s: Statements) -> bytes:
             c.font = bold
             c.border = line
         ws[f"C{ws.max_row}"].number_format = ws[f"D{ws.max_row}"].number_format = number_format
+        for sched in (x for x in s.schedules if x.note == note.number):
+            ws.append([])
+            ws.append(["", _safe_cell(sched.title), *sched.columns])
+            for c in ws[ws.max_row]:
+                c.font = bold
+            for r in sched.rows:
+                ws.append(["", _safe_cell(r.label), *[None if v is None else _figure(v, unit) for v in r.values]])
+                for c in ws[ws.max_row]:
+                    c.font = Font(bold=r.kind != "line")
+                    c.number_format = number_format
 
     if s.regroupings:
         ws.append([])

@@ -14,10 +14,12 @@ The ledgers behind every line are the notes (``Note.rows``), each with both year
 
 from __future__ import annotations
 
+import datetime
 import re
 from dataclasses import dataclass, replace
 
-from classify.models import LedgerAccount, LedgerGroup
+from classify.models import LedgerAccount, LedgerGroup, Party
+from ledger.nce_ageing import outstanding_bills, split_by_age
 from ledger.reports import OPENING_DIFFERENCE, PROFIT_BROUGHT_FORWARD, LedgerBalance, _balances
 
 # ---------------------------------------------------------------------------
@@ -177,6 +179,8 @@ class NoteRow:
     previous_paise: int
     #: The sub-head of the note this row falls under (Note 19: "Sale of services"); blank where the note has none.
     section: str = ""
+    #: The sub-head came from the ledger's name falling through to the catch-all, not from a rule or from a person.
+    guessed: bool = False
 
 
 @dataclass(frozen=True)
@@ -184,6 +188,8 @@ class Note:
     number: int
     title: str
     rows: tuple[NoteRow, ...]
+    #: The sub-heads a ledger in this note can be pinned to.
+    choices: tuple[str, ...] = ()
 
     @property
     def total_current_paise(self) -> int:
@@ -221,6 +227,25 @@ class Regrouping:
             f"{self.name}: shown under {LINES[self.previous_line].label} last year and under {LINES[self.current_line].label} "
             "this year, because the sign of its balance changed. Profit is not affected; only where it is presented."
         )
+
+
+@dataclass(frozen=True)
+class ScheduleRow:
+    label: str
+    #: One figure (paise) per column; None leaves the cell empty.
+    values: tuple[int | None, ...]
+    #: ``line``, ``heading`` (no figures) or ``total``.
+    kind: str = "line"
+
+
+@dataclass(frozen=True)
+class Schedule:
+    """A table that belongs to a note and is not a list of ledgers: the age of receivables, the MSMED Act split, the asset block."""
+
+    note: int
+    title: str
+    columns: tuple[str, ...]
+    rows: tuple[ScheduleRow, ...]
 
 
 @dataclass(frozen=True)
@@ -278,6 +303,15 @@ class Statements:
     capital: CapitalTable | None = None
     #: Things the person should do before these go out, in words.
     warnings: tuple[str, ...] = ()
+    schedules: tuple[Schedule, ...] = ()
+    entity_type: str = ""
+    #: ``msme`` or ``large``: the person's choice, else what the books suggest.
+    size: str = "msme"
+    size_suggested: str = "msme"
+    size_reason: str = ""
+    #: The disclosure that goes with the size, drafted for Note 2.
+    size_statement: str = ""
+    capital_title: str = "Owners' Capital Account"
 
 
 # ---------------------------------------------------------------------------
@@ -294,6 +328,34 @@ UNITS: dict[str, tuple[int, str]] = {
 }
 
 _TEXT_MAX = 8000
+ENTITY_TYPES = ("proprietor", "partnership", "other")
+#: Figures a person enters for a year: the part of old receivables that is doubtful, and the MSMED Act interest disclosures.
+YEAR_AMOUNTS = ("receivables_doubtful_paise", "msme_interest_due_paise", "msme_interest_paid_paise", "msme_delay_interest_paise", "msme_further_interest_paise")
+CAPITAL_TITLE = {"proprietor": "Proprietor's Capital Account", "partnership": "Partners' Capital Accounts", "other": "Owners' Capital Account", "": "Owners' Capital Account"}
+#: Criteria for an MSME (ICAI Announcement on the classification of non-company entities): turnover up to Rs 250 crore in the
+#: preceding year, borrowings never above Rs 50 crore, not a bank, financial institution or insurer, and no parent or
+#: subsidiary that is not itself an MSME.
+MSME_TURNOVER_PAISE = 250 * 10_000_000 * 100
+MSME_BORROWINGS_PAISE = 50 * 10_000_000 * 100
+
+
+def suggest_size(turnover_paise: int, borrowings_paise: int, *, bank_or_insurer: bool = False, non_msme_group: bool = False) -> tuple[str, str]:
+    """``("msme" | "large", why)`` from the books and two answers only a person can give."""
+    if bank_or_insurer:
+        return "large", "A bank, financial institution or insurance company is not an MSME."
+    if non_msme_group:
+        return "large", "An entity that is a holding or subsidiary of one that is not an MSME is not an MSME."
+    if turnover_paise > MSME_TURNOVER_PAISE:
+        return "large", "Turnover in the preceding year is above Rs 250 crore."
+    if borrowings_paise > MSME_BORROWINGS_PAISE:
+        return "large", "Borrowings are above Rs 50 crore."
+    return "msme", "Turnover is up to Rs 250 crore and borrowings up to Rs 50 crore."
+
+
+SIZE_STATEMENT = {
+    "msme": "The entity is a Micro, Small and Medium Sized Entity (MSME) as defined in the Announcement of the Institute of Chartered Accountants of India on the criteria for classifying non-company entities, and has availed the exemptions and relaxations available to an MSME under the Accounting Standards.",
+    "large": "The entity is a Large entity under the Announcement of the Institute of Chartered Accountants of India on the criteria for classifying non-company entities, and complies in full with the Accounting Standards.",
+}
 _PARTNER_AMOUNTS = ("introduced_paise", "remuneration_paise", "interest_paise", "withdrawals_paise")
 
 
@@ -336,9 +398,17 @@ def normalise_settings(raw) -> dict:
                     **{k: _amount(p.get(k)) or 0 for k in _PARTNER_AMOUNTS},
                 }
             )
-        years[str(fy)] = {"closing_stock_paise": _amount(body.get("closing_stock_paise")), "partners": partners}
+        years[str(fy)] = {
+            "closing_stock_paise": _amount(body.get("closing_stock_paise")),
+            "partners": partners,
+            **{k: _amount(body.get(k)) or 0 for k in YEAR_AMOUNTS},
+        }
     rounding = raw.get("rounding")
     return {
+        "entity_type": raw.get("entity_type") if raw.get("entity_type") in ENTITY_TYPES else "",
+        "size": raw.get("size") if raw.get("size") in ("msme", "large") else "",
+        "bank_or_insurer": bool(raw.get("bank_or_insurer")),
+        "non_msme_group": bool(raw.get("non_msme_group")),
         "about": str(raw.get("about", ""))[:_TEXT_MAX],
         "policies": str(raw.get("policies", ""))[:_TEXT_MAX],
         "rounding": rounding if rounding in UNITS else "rupees",
@@ -450,6 +520,38 @@ _SECTIONS: dict[int, list[tuple[str, str]]] = {
 }
 
 
+KINDS_5 = ("Term loans from banks", "Term loans from other parties", "Loans repayable on demand", "Loans and advances from related parties", "Other loans and advances")
+KINDS_8 = ("Provision for employee benefits", "Provision for income tax", "Other provisions")
+KINDS_13 = ("Security deposits", "Loans and advances to related parties", "Advances to suppliers and others")
+#: Notes whose sub-head is prefixed with the horizon ("Long-term · Term loans from banks").
+_HORIZON_NOTES = (5, 8, 13)
+#: Where a ledger that matches no rule falls to the catch-all, a person should look.
+_GUESS_NOTES = (10, 11, 12, 15, 18, 20, 25)
+
+
+def _tail_choices(note: int) -> tuple[str, ...]:
+    if note == 5:
+        return KINDS_5
+    if note == 8:
+        return KINDS_8
+    if note == 13:
+        return KINDS_13
+    return tuple(label for label, _ in _SECTIONS.get(note, []) if label != "Changes in inventories")
+
+
+def section_choices() -> dict[int, tuple[str, ...]]:
+    return {n: c for n in (5, 8, 10, 11, 12, 13, 15, 17, 18, 19, 20, 21, 22, 23, 24, 25) if (c := _tail_choices(n))}
+
+
+def all_section_choices() -> frozenset[str]:
+    return frozenset(label for labels in section_choices().values() for label in labels)
+
+
+def _matches(note: int, name: str, *, skip_first: bool = False) -> bool:
+    rules = _SECTIONS[note][1:] if skip_first else _SECTIONS[note]
+    return any(pattern and re.search(pattern, name, _I) for _, pattern in rules)
+
+
 def _pick(note: int, name: str, *, strict: bool = False, skip_first: bool = False) -> str:
     rules = _SECTIONS[note][1:] if skip_first else _SECTIONS[note]
     for label, pattern in rules:
@@ -458,44 +560,53 @@ def _pick(note: int, name: str, *, strict: bool = False, skip_first: bool = Fals
     return "" if strict else rules[-1][0]
 
 
-def _section(note: int | None, code: str, row: LedgerBalance) -> str:
-    """The sub-head of ``note`` this ledger is listed under; blank where the note has no sub-heads."""
+def _section(note: int | None, code: str, row: LedgerBalance, pinned: str = "") -> tuple[str, bool]:
+    """``(the sub-head of the note this ledger is listed under, whether that was a guess)``; blank where the note has none."""
     name, group = row.name, row.group
     horizon = "Long-term" if code.startswith("NC") else "Short-term"
+    if note is None:
+        return "", False
+    if pinned and pinned in _tail_choices(note):
+        if note in _HORIZON_NOTES:
+            return f"{horizon} · {pinned}", False
+        if note == 12:
+            return f"{'Current' if code.startswith('CA') else 'Non-current'} · {pinned}", False
+        return pinned, False
+    guessed = note in _GUESS_NOTES and note in _SECTIONS and not _matches(note, name)
     if note == 5:
         secured = " (unsecured)" if re.search(r"unsecured", name, _I) else " (secured)" if re.search(r"secured", name, _I) else ""
         if re.search(_RELATED, name, _I):
-            kind = "Loans and advances from related parties"
+            kind = KINDS_5[3]
         elif group == LedgerGroup.BANK_OD or re.search(r"overdraft|\bo/?d\b|cash credit|\bcc\b", name, _I):
-            kind = "Loans repayable on demand"
+            kind = KINDS_5[2]
         elif re.search(r"term loan|housing|vehicle|car loan|equipment", name, _I):
-            kind = "Term loans from banks" if re.search(_BANKISH, name, _I) else "Term loans from other parties"
+            kind = KINDS_5[0] if re.search(_BANKISH, name, _I) else KINDS_5[1]
         else:
-            kind = "Other loans and advances"
-        return f"{horizon} · {kind}{secured}"
+            kind = KINDS_5[4]
+        return f"{horizon} · {kind}{secured}", kind == KINDS_5[4]
     if note == 8:
         if re.search(r"gratuity|leave|encash|bonus|\bpf\b|employee", name, _I):
-            return f"{horizon} · Provision for employee benefits"
+            return f"{horizon} · {KINDS_8[0]}", False
         if re.search(r"tax", name, _I):
-            return f"{horizon} · Provision for income tax"
-        return f"{horizon} · Other provisions"
+            return f"{horizon} · {KINDS_8[1]}", False
+        return f"{horizon} · {KINDS_8[2]}", True
     if note == 13:
         if re.search(r"deposit", name, _I):
-            return f"{horizon} · Security deposits"
+            return f"{horizon} · {KINDS_13[0]}", False
         if re.search(_RELATED, name, _I):
-            return f"{horizon} · Loans and advances to related parties"
-        return f"{horizon} · Advances to suppliers and others"
+            return f"{horizon} · {KINDS_13[1]}", False
+        return f"{horizon} · {KINDS_13[2]}", False
     if note == 12:
-        return f"{'Current' if code.startswith('CA') else 'Non-current'} · {_pick(12, name)}"
+        return f"{'Current' if code.startswith('CA') else 'Non-current'} · {_pick(12, name)}", guessed
     if note == 19:
-        return _pick(19, name, strict=True) or ("Sale of services" if group == LedgerGroup.DIRECT_INCOME else "Sale of products")
+        return _pick(19, name, strict=True) or ("Sale of services" if group == LedgerGroup.DIRECT_INCOME else "Sale of products"), False
     if note == 21:
-        return "Purchases of stock-in-trade" if group == LedgerGroup.PURCHASE else _pick(21, name)
+        return ("Purchases of stock-in-trade" if group == LedgerGroup.PURCHASE else _pick(21, name)), False
     if note == 17:
-        return "Cash on hand" if group == LedgerGroup.CASH else _pick(17, name, skip_first=True)
+        return ("Cash on hand" if group == LedgerGroup.CASH else _pick(17, name, skip_first=True)), False
     if note in _SECTIONS:
-        return _pick(note, name)
-    return ""
+        return _pick(note, name), guessed
+    return "", False
 
 
 def _section_rank(note: int, section: str) -> int:
@@ -560,13 +671,17 @@ def _synthetic(name: str, group: str) -> LedgerBalance:
     return LedgerBalance(name=name, group=group, debit_paise=0, credit_paise=0)
 
 
-def _tally(rows, overrides) -> tuple[dict, dict]:
-    """``(line code -> paise, line code -> [(row, paise)])`` for one year."""
+def _tally(rows, overrides, unit: int = 100) -> tuple[dict, dict]:
+    """``(line code -> paise, line code -> [(row, paise)])`` for one year.
+
+    Each ledger's contribution is rounded to ``unit`` *here*, before anything is added, so a line, its note, the profit and
+    the totals are all sums of the same rounded figures and cannot drift apart.
+    """
     totals: dict[str, int] = {}
     parts: dict[str, list] = {}
     for row in rows:
         code = _place(row, overrides.get(row.ledger_id, ""))
-        paise = _signed(LINES[code], row.net_paise)
+        paise = _unit(_signed(LINES[code], row.net_paise), unit)
         totals[code] = totals.get(code, 0) + paise
         parts.setdefault(code, []).append((row, paise))
     return totals, parts
@@ -577,16 +692,20 @@ def build(client, financial_year: int) -> Statements:
     overrides = dict(
         LedgerAccount.objects.filter(firm_id=client.firm_id, client=client).exclude(nce_line="").values_list("pk", "nce_line")
     )
+    pins = dict(LedgerAccount.objects.filter(firm_id=client.firm_id, client=client).exclude(nce_section="").values_list("pk", "nce_section"))
     cur_rows, footer = _balances(client, financial_year)
     prev_rows, prev_footer = _balances(client, financial_year - 1)
-    cur, cur_parts = _tally(cur_rows, overrides)
-    prev, prev_parts = _tally(prev_rows, overrides)
     settings = read_settings(client)
+    unit, unit_label = UNITS[settings["rounding"]]
+    entity_type = settings["entity_type"]
+    capital_title = CAPITAL_TITLE[entity_type]
+    cur, cur_parts = _tally(cur_rows, overrides, unit)
+    prev, prev_parts = _tally(prev_rows, overrides, unit)
 
     # Closing stock the person entered, where the stock ledgers do not carry it. It raises Inventories, lowers the cost of
     # goods sold by the year's change, and the whole of it sits in Reserves, so the sheet still balances.
-    gap_c, gap_p = _stock_gap(cur_rows, settings, financial_year), _stock_gap(prev_rows, settings, financial_year - 1)
-    gap_pp = _stock_gap(_balances(client, financial_year - 2)[0], settings, financial_year - 2) if settings["years"].get(str(financial_year - 2), {}).get("closing_stock_paise") is not None else 0
+    gap_c, gap_p = _unit(_stock_gap(cur_rows, settings, financial_year), unit), _unit(_stock_gap(prev_rows, settings, financial_year - 1), unit)
+    gap_pp = _unit(_stock_gap(_balances(client, financial_year - 2)[0], settings, financial_year - 2), unit) if settings["years"].get(str(financial_year - 2), {}).get("closing_stock_paise") is not None else 0
     for totals, parts, gap, change in ((cur, cur_parts, gap_c, gap_c - gap_p), (prev, prev_parts, gap_p, gap_p - gap_pp)):
         if gap:
             totals["CA.STOCK"] = totals.get("CA.STOCK", 0) + gap
@@ -635,12 +754,16 @@ def build(client, financial_year: int) -> Statements:
     liab_p = owners_p + s(prev, nc_liab) + s(prev, c_liab)
     assets_c = s(cur, nca) + s(cur, ca)
     assets_p = s(prev, nca) + s(prev, ca)
+    # Rounding every ledger can leave the two sides a few units apart; the gap is shown as one line, never buried.
+    rnd_c, rnd_p = (assets_c - liab_c, assets_p - liab_p) if unit != 100 else (0, 0)
+    owners_c, owners_p, liab_c, liab_p = owners_c + rnd_c, owners_p + rnd_p, liab_c + rnd_c, liab_p + rnd_p
 
     bs = [
         L("h.I", "I. OWNERS' FUNDS AND LIABILITIES", kind="heading"),
         L("h.1", "(1) Owners' Funds", level=1, kind="heading"),
-        line("EQ.CAP", level=2),
+        line("EQ.CAP", level=2, label=capital_title),
         L("EQ.RES", "Reserves and surplus", level=2, note=4, c=cur_res, p=prev_res),
+        *([L("EQ.RND", "Rounding difference", level=2, c=rnd_c, p=rnd_p)] if rnd_c or rnd_p else []),
         total("t.1", "Owners' Funds", owners_c, owners_p, 1),
         L("h.2", "(2) Non-current liabilities", level=1, kind="heading"),
         *[line(c, level=2) for c in nc_liab],
@@ -699,8 +822,9 @@ def build(client, financial_year: int) -> Statements:
         prev_map = {r.ledger_id or r.name: (r, p) for r, p in rows_by_year[1].get(code, [])}
         for key in {**cur_map, **prev_map}:
             row = (cur_map.get(key) or prev_map.get(key))[0]
+            section, guessed = _section(d.note, code, row, pins.get(row.ledger_id, ""))
             notes.setdefault(d.note, []).append(
-                NoteRow(row.name, row.ledger_id, cur_map.get(key, (None, 0))[1], prev_map.get(key, (None, 0))[1], _section(d.note, code, row))
+                NoteRow(row.name, row.ledger_id, cur_map.get(key, (None, 0))[1], prev_map.get(key, (None, 0))[1], section, guessed)
             )
 
     for code in LINES:
@@ -710,7 +834,8 @@ def build(client, financial_year: int) -> Statements:
         notes[4].append(NoteRow("Closing stock of earlier years, valued at the year end and not in the ledgers", None, gap_p, gap_pp))
     for number, rows in notes.items():
         rows.sort(key=lambda r: (_section_rank(number, r.section), r.section, r.label.lower()))
-    note_list = [Note(n, NOTE_TITLES[n], tuple(rows)) for n, rows in sorted(notes.items())]
+    choices = section_choices()
+    note_list = [Note(n, capital_title if n == 3 else NOTE_TITLES[n], tuple(rows), choices.get(n, ())) for n, rows in sorted(notes.items())]
 
     # --- a ledger that moved from one line to another between the two years
     regroupings = []
@@ -735,34 +860,123 @@ def build(client, financial_year: int) -> Statements:
     holds_stock = any(r.group == LedgerGroup.STOCK and r.net_paise for r in cur_rows)
     if (holds_stock or cur.get("PL.COGS")) and settings["years"].get(str(financial_year), {}).get("closing_stock_paise") is None:
         warnings.append("Closing stock for this year is not entered, so inventories are shown as the stock ledgers carry them.")
-    if capital and abs(capital.difference_paise) > 100:
+    if capital and abs(capital.difference_paise) > max(100, unit):
         warnings.append("The partners' closing capital does not agree with the owners' funds on the balance sheet. Check Note 3.")
     if not settings["about"].strip() or not settings["policies"].strip():
         warnings.append("Notes 1 and 2 (about the entity and accounting policies) are not written yet.")
 
-    unit, unit_label = UNITS[settings["rounding"]]
-    balanced = liab_c == assets_c
+    balanced = liab_c == assets_c if unit == 100 else sum(r.net_paise for r in cur_rows) == 0
     if unit != 100:
-        def rounded(row: StatementRow) -> StatementRow:
-            if row.kind == "heading":
-                return row
-            return replace(
-                row,
-                current_paise=None if row.current_paise is None else _unit(row.current_paise, unit),
-                previous_paise=None if row.previous_paise is None else _unit(row.previous_paise, unit),
-            )
-
-        bs, pl = [rounded(r) for r in bs], [rounded(r) for r in pl]
-        note_list = [
-            Note(n.number, n.title, tuple(replace(r, current_paise=_unit(r.current_paise, unit), previous_paise=_unit(r.previous_paise, unit)) for r in n.rows))
-            for n in note_list
-        ]
         if capital:
             def r_partner(p: PartnerRow) -> PartnerRow:
                 return replace(p, **{f: _unit(getattr(p, f), unit) for f in ("opening_paise", "introduced_paise", "remuneration_paise", "interest_paise", "withdrawals_paise", "profit_share_paise")})
 
-            capital = CapitalTable(tuple(map(r_partner, capital.rows)), tuple(map(r_partner, capital.previous)), _unit(owners_c, unit))
-        warnings.append(f"Figures are rounded to {unit_label.removeprefix('Rs. in ')}; totals are of the unrounded amounts and can differ from the sum of the lines by one unit.")
+            capital = CapitalTable(tuple(map(r_partner, capital.rows)), tuple(map(r_partner, capital.previous)), owners_c)
+        warnings.append(f"Figures are in {unit_label.removeprefix('Rs. in ')}. Each ledger is rounded before adding up, and what is left over is shown as the Rounding difference.")
+
+    # --- tables that belong to a note
+    cols = (f"31 March {financial_year + 1}", f"31 March {financial_year}")
+    end_c, end_p = datetime.date(financial_year + 1, 3, 31), datetime.date(financial_year, 3, 31)
+    schedules: list[Schedule] = []
+
+    def S(label, c, p, kind="line"):
+        return ScheduleRow(label, (c, p), kind)
+
+    def H(label):
+        return ScheduleRow(label, (None, None), "heading")
+
+    msme_ledgers = set(Party.objects.filter(firm_id=client.firm_id, client=client, msme=True, ledger__isnull=False).values_list("ledger_id", flat=True))
+
+    def payable(parts, msme):
+        return sum(p for r, p in parts.get("CL.PAY", []) if (r.ledger_id in msme_ledgers) == msme)
+
+    pay_c, pay_p = cur.get("CL.PAY", 0), prev.get("CL.PAY", 0)
+    if pay_c or pay_p:
+        schedules.append(
+            Schedule(
+                9,
+                "Trade payables by kind of supplier",
+                cols,
+                (
+                    S("(a) Total outstanding dues of micro, small and medium enterprises", payable(cur_parts, True), payable(prev_parts, True)),
+                    S("(b) Total outstanding dues of creditors other than micro, small and medium enterprises", payable(cur_parts, False), payable(prev_parts, False)),
+                    S("Total trade payables", pay_c, pay_p, "total"),
+                ),
+            )
+        )
+    year_now, year_before = settings["years"].get(str(financial_year), {}), settings["years"].get(str(financial_year - 1), {})
+
+    def entered(key):
+        return _unit(year_now.get(key, 0), unit), _unit(year_before.get(key, 0), unit)
+
+    msme_c, msme_p = payable(cur_parts, True), payable(prev_parts, True)
+    if msme_c or msme_p or any(any(entered(k)) for k in YEAR_AMOUNTS[1:]):
+        due = entered("msme_interest_due_paise")
+        schedules.append(
+            Schedule(
+                9,
+                "Dues to suppliers registered under the MSMED Act, on the information available to the entity",
+                cols,
+                (
+                    H("(a) Amount remaining unpaid to any supplier at the end of the year"),
+                    S("Principal", msme_c, msme_p),
+                    S("Interest", *due),
+                    S("Total", msme_c + due[0], msme_p + due[1], "total"),
+                    S("(b) Interest paid under section 16 of the Act, with payments made beyond the appointed day", *entered("msme_interest_paid_paise")),
+                    S("(c) Interest due and payable for the delay in payments made beyond the appointed day, without the interest under the Act", *entered("msme_delay_interest_paise")),
+                    S("(d) Interest accrued and remaining unpaid at the end of the year", *due),
+                    S("(e) Further interest remaining due and payable in the succeeding years", *entered("msme_further_interest_paise")),
+                ),
+            )
+        )
+
+    rec_c, rec_p = cur.get("CA.REC", 0), prev.get("CA.REC", 0)
+    if rec_c or rec_p:
+        def aged(parts, as_at, doubtful):
+            ids = [r.ledger_id for r, _ in parts.get("CA.REC", []) if r.ledger_id]
+            under, over = split_by_age(outstanding_bills(client, ids, as_at), as_at)
+            under, over = _unit(under, unit), _unit(over, unit)
+            doubtful = min(_unit(doubtful, unit), over)
+            return under, over - doubtful, doubtful
+
+        under_c, over_c, doubt_c = aged(cur_parts, end_c, year_now.get("receivables_doubtful_paise", 0))
+        under_p, over_p, doubt_p = aged(prev_parts, end_p, year_before.get("receivables_doubtful_paise", 0))
+        schedules.append(
+            Schedule(
+                16,
+                "Trade receivables by age, counted from the date each was due for receipt",
+                cols,
+                (
+                    H("Outstanding for a period less than 6 months from the date they are due for receipt"),
+                    S("(a) Secured, considered good", 0, 0),
+                    S("(b) Unsecured, considered good", under_c, under_p),
+                    S("(c) Doubtful", 0, 0),
+                    H("Outstanding for a period exceeding 6 months from the date they are due for receipt"),
+                    S("(a) Secured, considered good", 0, 0),
+                    S("(b) Unsecured, considered good", over_c, over_p),
+                    S("(c) Doubtful", doubt_c, doubt_p),
+                    H("Not set against a bill"),
+                    S("Receipts and credits on account, and balances with no bill behind them", rec_c - under_c - over_c - doubt_c, rec_p - under_p - over_p - doubt_p),
+                    S("Total trade receivables", rec_c, rec_p, "total"),
+                ),
+            )
+        )
+        warnings.append("Trade receivables are shown as unsecured; whether a debt is secured is not recorded. The allowance for doubtful debts, if booked, is in the provisions.")
+
+    # --- the size of the entity under the accounting standards, and what follows from it
+    turnover = prev.get("PL.REV", 0) if has_previous else cur.get("PL.REV", 0)
+    borrowings = cur.get("NCL.BORR", 0) + cur.get("CL.BORR", 0)
+    size_suggested, size_reason = suggest_size(turnover, borrowings, bank_or_insurer=settings["bank_or_insurer"], non_msme_group=settings["non_msme_group"])
+    size = settings["size"] or size_suggested
+    if size == "large":
+        warnings.append("A Large entity must also give a Cash Flow Statement. That statement is not built yet.")
+    if not entity_type:
+        warnings.append("Say whether this is a proprietorship, a partnership or another kind of entity (Statement details).")
+    if entity_type == "proprietor" and cur.get("PL.PREM"):
+        warnings.append("A proprietor's remuneration is not an expense of the business. Check the ledger shown as Partners' remuneration.")
+    guessed = sorted({r.label for n in note_list for r in n.rows if r.guessed})
+    if guessed:
+        warnings.append(f"{len(guessed)} ledger{'s' if len(guessed) != 1 else ''} sit under a catch-all sub-head by guess. Review them under the notes.")
 
     return Statements(
         balance_sheet=bs,
@@ -780,4 +994,11 @@ def build(client, financial_year: int) -> Statements:
         policies=settings["policies"],
         capital=capital,
         warnings=tuple(warnings),
+        schedules=tuple(schedules),
+        entity_type=entity_type,
+        size=size,
+        size_suggested=size_suggested,
+        size_reason=size_reason,
+        size_statement=SIZE_STATEMENT[size],
+        capital_title=capital_title,
     )

@@ -567,11 +567,13 @@ function PartyForm({ clientId, party, onClose }: { clientId: string; party: Part
   const [gstin, setGstin] = useState(party?.gstin ?? '')
   const [tds, setTds] = useState<string>(party?.tds_section ?? '')
   const [rcm, setRcm] = useState(party?.rcm_default ?? false)
+  const [msme, setMsme] = useState(party?.msme ?? false)
+  const [udyam, setUdyam] = useState(party?.udyam_no ?? '')
   const [active, setActive] = useState(party?.is_active ?? true)
   const [errors, setErrors] = useState<Record<string, string>>({})
 
   async function save() {
-    const body = { canonical_name: name.trim(), gstin: gstin.trim().toUpperCase(), tds_section: tds, rcm_default: rcm, is_active: active }
+    const body = { canonical_name: name.trim(), gstin: gstin.trim().toUpperCase(), tds_section: tds, rcm_default: rcm, msme, udyam_no: udyam.trim().toUpperCase(), is_active: active }
     try {
       if (party) await raw.patch(`${V1}/clients/${clientId}/parties/${party.id}/`, body)
       else await raw.post(`${V1}/clients/${clientId}/parties/`, body)
@@ -609,6 +611,14 @@ function PartyForm({ clientId, party, onClose }: { clientId: string; party: Part
           <div className="flex items-end pb-2">
             <Checkbox label="Reverse charge by default" checked={rcm} onChange={(e) => setRcm(e.target.checked)} />
           </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <div className="flex items-end pb-2">
+            <Checkbox label="Micro or small enterprise (MSMED Act)" checked={msme} onChange={(e) => setMsme(e.target.checked)} />
+          </div>
+          <Field label="Udyam number (optional)" hint="Like UDYAM-MH-12-0001234. Splits their dues out of Trade payables." error={errors.udyam_no}>
+            {(p) => <Input {...p} className="font-mono uppercase" maxLength={19} value={udyam} onChange={(e) => setUdyam(e.target.value)} />}
+          </Field>
         </div>
         {party && <Checkbox label="Active" checked={active} onChange={(e) => setActive(e.target.checked)} />}
         {errors.root && <p role="alert" className="text-sm text-destructive">{errors.root}</p>}

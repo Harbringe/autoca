@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { raw } from '@/api/client'
 import { FinancialStatements } from './FinancialStatements'
 
-vi.mock('@/api/client', () => ({ raw: { get: vi.fn(), post: vi.fn(), put: vi.fn() } }))
+vi.mock('@/api/client', () => ({ raw: { get: vi.fn(), post: vi.fn(), put: vi.fn(), patch: vi.fn() } }))
 vi.mock('@/session/session', () => ({ useSession: () => ({ me: { permissions: [] }, can: () => true }) }))
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),
@@ -21,7 +21,7 @@ const STATEMENTS = {
     { key: 't.L', label: 'TOTAL', kind: 'total', level: 0, note: null, current_paise: 1000000, previous_paise: 500000 },
   ],
   profit_and_loss: [{ key: 'PL.REV', label: 'Revenue from operations', kind: 'line', level: 0, note: 19, current_paise: -250000, previous_paise: 0 }],
-  notes: [{ number: 9, title: 'Trade payables', rows: [{ label: 'Ravi Traders', ledger: 'l1', current_paise: 1000000, previous_paise: 500000, section: '' }], total_current_paise: 1000000, total_previous_paise: 500000 }],
+  notes: [{ number: 9, title: 'Trade payables', rows: [{ label: 'Ravi Traders', ledger: 'l1', current_paise: 1000000, previous_paise: 500000, section: '', guessed: false }], choices: [], total_current_paise: 1000000, total_previous_paise: 500000 }],
   regroupings: [{ ledger: 'l2', name: 'Related Party', previous_line: 'CA.LOANS', current_line: 'CL.PAY', previous_paise: 800000, current_paise: -300000, text: '' }],
   footer,
   has_previous: true,
@@ -38,6 +38,23 @@ const STATEMENTS = {
     difference_paise: 0,
   },
   warnings: ['Closing stock for this year is not entered.'],
+  schedules: [
+    {
+      note: 9,
+      title: 'Trade payables by kind of supplier',
+      columns: ['31 March 2026', '31 March 2025'],
+      rows: [
+        { label: '(a) Total outstanding dues of micro, small and medium enterprises', values: [400000, 0], kind: 'line' },
+        { label: 'Total trade payables', values: [1000000, 500000], kind: 'total' },
+      ],
+    },
+  ],
+  entity_type: 'partnership',
+  size: 'msme',
+  size_suggested: 'msme',
+  size_reason: '',
+  size_statement: 'The entity is a Micro, Small and Medium Sized Entity (MSME).',
+  capital_title: "Partners' Capital Accounts",
 }
 
 function renderIt() {
@@ -64,7 +81,7 @@ describe('the ICAI-format statements', () => {
 
   it('takes each figure apart in its note, and lists a ledger that moved between lines', async () => {
     renderIt()
-    expect(await screen.findByRole('heading', { name: /Note 9 · Trade payables/ })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: 'Note 9 · Trade payables' })).toBeInTheDocument()
     expect(screen.getByText('Ravi Traders')).toBeInTheDocument()
     expect(screen.getByText('Regrouping of previous year figures')).toBeInTheDocument()
     expect(screen.getByText(/last year shown under Short term loans and advances/)).toBeInTheDocument()
@@ -74,7 +91,7 @@ describe('the ICAI-format statements', () => {
     renderIt()
     expect(await screen.findByText('A trading firm in Pune.')).toBeInTheDocument()
     expect(screen.getAllByText('Not written yet.')).toHaveLength(1) // Note 2
-    expect(screen.getByRole('heading', { name: /Note 3 · Owners’ Capital Account, partner by partner/ })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Note 3 · Partners' Capital Accounts, partner by partner/ })).toBeInTheDocument()
     const capital = screen.getByRole('heading', { name: /partner by partner/ }).closest('article')!
     expect(within(capital).getByText('Asha')).toBeInTheDocument()
     expect(within(capital).getAllByText('(1,500.00)').length).toBeGreaterThan(0)
@@ -89,6 +106,15 @@ describe('the ICAI-format statements', () => {
     await userEvent.click(screen.getByRole('button', { name: /Statement details/ }))
     expect(await screen.findByLabelText(/Closing stock at 31 March 2026/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Add a partner/ })).toBeInTheDocument()
+  })
+
+  it('shows the tables that belong to a note and the entity size under Note 2', async () => {
+    renderIt()
+    const table = await screen.findByRole('article', { name: 'Trade payables by kind of supplier' })
+    expect(within(table).getByText('(a) Total outstanding dues of micro, small and medium enterprises')).toBeInTheDocument()
+    expect(within(table).getByText('4,000.00')).toBeInTheDocument()
+    expect(screen.getByText('The entity is a Micro, Small and Medium Sized Entity (MSME).')).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /Note 3 · Partners' Capital Accounts, partner by partner/ })).toBeInTheDocument()
   })
 
   it('shows the figures in the unit they were rounded to', async () => {
@@ -116,9 +142,10 @@ describe('the ICAI-format statements', () => {
           number: 19,
           title: 'Revenue from operations',
           rows: [
-            { label: 'Sales', ledger: 'a', current_paise: 100, previous_paise: 0, section: 'Sale of products' },
-            { label: 'Consulting', ledger: 'b', current_paise: 50, previous_paise: 0, section: 'Sale of services' },
+            { label: 'Sales', ledger: 'a', current_paise: 100, previous_paise: 0, section: 'Sale of products', guessed: false },
+            { label: 'Consulting', ledger: 'b', current_paise: 50, previous_paise: 0, section: 'Sale of services', guessed: true },
           ],
+          choices: ['Sale of products', 'Sale of services', 'Other operating revenue'],
           total_current_paise: 150,
           total_previous_paise: 0,
         },
@@ -129,7 +156,11 @@ describe('the ICAI-format statements', () => {
         <FinancialStatements clientId="c1" fy={2025} />
       </QueryClientProvider>,
     )
-    expect(await screen.findByText('Sale of products')).toBeInTheDocument()
-    expect(screen.getByText('Sale of services')).toBeInTheDocument()
+    expect((await screen.findAllByText('Sale of products')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Sale of services').length).toBeGreaterThan(0)
+    // only the ledger that fell to a catch-all asks to be placed
+    expect(screen.getAllByRole('combobox', { name: /Sub-head for/ })).toHaveLength(1)
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Sub-head for Consulting' }), 'Other operating revenue')
+    expect(raw.patch).toHaveBeenCalledWith(expect.stringContaining('/ledgers/b/'), { nce_section: 'Other operating revenue' })
   })
 })

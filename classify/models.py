@@ -120,6 +120,9 @@ class LedgerAccount(UUIDModel, FirmScopedModel):
     #: Which line of the Balance Sheet or Statement of Profit and Loss (ICAI non-corporate format) this ledger is presented on,
     #: when the person has said. Blank leaves it to the group, the name and the sign of the balance each year (``ledger.nce``).
     nce_line = models.CharField(max_length=16, blank=True, default="", db_default="")
+    #: The sub-head of its note this ledger is listed under on the financial statements, when a person has said (Note 25:
+    #: "Rent"); blank to let the name decide. Ignored in a year whose note has no such sub-head.
+    nce_section = models.CharField(max_length=80, blank=True, default="", db_default="")
     status = models.CharField(max_length=16, choices=LedgerStatus.choices, default=LedgerStatus.ACTIVE)
     proposal_reason = models.TextField(blank=True, default="")
     tally_name = models.CharField(max_length=255, null=True, blank=True)
@@ -212,6 +215,10 @@ class Party(UUIDModel, FirmScopedModel):
     #: Reverse charge applies to this party by default. Learned once per client
     #: and then applied, rather than re-decided every month.
     rcm_default = models.BooleanField(default=False)
+    #: A micro or small enterprise under the MSMED Act, by its Udyam registration. Decides which line of Note 9 (Trade
+    #: payables) the party's balance falls on. Not the same thing as the client's own size under the accounting standards.
+    msme = models.BooleanField(default=False, db_default=False)
+    udyam_no = models.CharField(max_length=19, blank=True, default="", db_default="")
     #: TDS section that normally applies to payments to this party, if any.
     tds_section = models.CharField(max_length=16, blank=True, choices=TdsSection.CHOICES)
 

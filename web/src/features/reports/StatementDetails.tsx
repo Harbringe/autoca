@@ -11,7 +11,7 @@ import { statementSettings } from '@/api/queries/books'
 import { useInvalidateClient, V1 } from '@/api/queries/clients'
 import type { StatementSettings } from '@/api/types'
 import { Button } from '@/components/ui/button'
-import { Select, Textarea } from '@/components/ui/controls'
+import { Checkbox, Select, Textarea } from '@/components/ui/controls'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
@@ -37,6 +37,14 @@ interface PartnerDraft {
 }
 
 const rupees = (paise: number | null | undefined) => (paise === null || paise === undefined ? '' : (paise / 100).toFixed(2))
+const YEAR_FIELDS = [
+  ['receivables_doubtful_paise', 'Doubtful receivables (₹)', 'Of the receivables outstanding for over six months, the part you consider doubtful.'],
+  ['msme_interest_due_paise', 'MSMED Act interest unpaid (₹)', 'Interest remaining unpaid to micro and small suppliers at the year end.'],
+  ['msme_interest_paid_paise', 'MSMED Act interest paid (₹)', 'Interest paid under section 16, with payments made beyond the appointed day.'],
+  ['msme_delay_interest_paise', 'Interest on delayed payments (₹)', 'Due for the delay on payments made late, without the interest under the Act.'],
+  ['msme_further_interest_paise', 'Further interest due (₹)', 'Remaining due in the succeeding years until actually paid.'],
+] as const
+
 const blank = (): PartnerDraft => ({ name: '', share: '', opening: '', introduced: '', remuneration: '', interest: '', withdrawals: '' })
 
 /** Rupees typed -> paise: empty is `empty`, anything that is not an amount is undefined. */
@@ -83,6 +91,11 @@ function Form({ clientId, fy, onClose, initial }: { clientId: string; fy: number
   const [rounding, setRounding] = useState<string>(initial.rounding ?? 'rupees')
   const [stock, setStock] = useState(rupees(year?.closing_stock_paise))
   const [partners, setPartners] = useState<PartnerDraft[]>(draft(year?.partners))
+  const [entityType, setEntityType] = useState<string>(initial.entity_type ?? '')
+  const [size, setSize] = useState<string>(initial.size ?? '')
+  const [bank, setBank] = useState(!!initial.bank_or_insurer)
+  const [group, setGroup] = useState(!!initial.non_msme_group)
+  const [amounts, setAmounts] = useState<Record<string, string>>(() => Object.fromEntries(YEAR_FIELDS.map(([k]) => [k, rupees((year as Record<string, number | null | undefined> | undefined)?.[k] ?? null)])))
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -92,6 +105,12 @@ function Form({ clientId, fy, onClose, initial }: { clientId: string; fy: number
     setError(null)
     const closing = paise(stock, null)
     if (closing === undefined) return setError('The closing stock is not an amount.')
+    const extra: Record<string, number> = {}
+    for (const [k, label] of YEAR_FIELDS) {
+      const v = paise(amounts[k] ?? '', 0)
+      if (v === undefined || v === null) return setError(`${label}: not an amount.`)
+      extra[k] = v
+    }
     const rows = []
     for (const [i, r] of partners.entries()) {
       if (!r.name.trim()) continue
@@ -115,7 +134,11 @@ function Form({ clientId, fy, onClose, initial }: { clientId: string; fy: number
         about,
         policies,
         rounding,
-        years: { [String(fy)]: { closing_stock_paise: closing, partners: rows } },
+        entity_type: entityType,
+        size,
+        bank_or_insurer: bank,
+        non_msme_group: group,
+        years: { [String(fy)]: { closing_stock_paise: closing, partners: rows, ...extra } },
       })
       await invalidate()
       toast.success('Saved; the statements are updated')
@@ -129,6 +152,29 @@ function Form({ clientId, fy, onClose, initial }: { clientId: string; fy: number
 
   return (
     <div className="grid gap-4">
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Kind of entity" hint="Decides what Note 3 is called and how the capital is tabled.">
+          {(p) => (
+            <Select {...p} value={entityType} onChange={(e) => setEntityType(e.target.value)}>
+              <option value="">Not said yet</option>
+              <option value="proprietor">Proprietorship</option>
+              <option value="partnership">Partnership firm</option>
+              <option value="other">Other non-corporate (AOP, BOI, trust, society)</option>
+            </Select>
+          )}
+        </Field>
+        <Field label="Size under the accounting standards" hint="Follows the books (turnover up to ₹250 crore, borrowings up to ₹50 crore) unless you choose.">
+          {(p) => (
+            <Select {...p} value={size} onChange={(e) => setSize(e.target.value)}>
+              <option value="">Follow the books</option>
+              <option value="msme">Micro, Small and Medium sized (MSME)</option>
+              <option value="large">Large</option>
+            </Select>
+          )}
+        </Field>
+        <Checkbox label="The entity is a bank, financial institution or insurer" checked={bank} onChange={(e) => setBank(e.target.checked)} />
+        <Checkbox label="It is a holding or subsidiary of an entity that is not an MSME" checked={group} onChange={(e) => setGroup(e.target.checked)} />
+      </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Note 1 · Brief about the entity" hint="Nature of business, constitution, place.">
           {(p) => <Textarea {...p} rows={4} maxLength={8000} value={about} onChange={(e) => setAbout(e.target.value)} />}
@@ -151,6 +197,17 @@ function Form({ clientId, fy, onClose, initial }: { clientId: string; fy: number
           {(p) => <Input {...p} inputMode="decimal" value={stock} onChange={(e) => setStock(e.target.value)} />}
         </Field>
       </div>
+
+      <section aria-label="Figures for the year" className="grid gap-3">
+        <h3 className="text-sm font-semibold text-heading">Figures for FY {fyLabel(fy)} that the ledgers do not hold</h3>
+        <div className="grid gap-4 sm:grid-cols-2">
+          {YEAR_FIELDS.map(([k, label, hint]) => (
+            <Field key={k} label={label} hint={hint}>
+              {(p) => <Input {...p} inputMode="decimal" value={amounts[k] ?? ''} onChange={(e) => setAmounts((a) => ({ ...a, [k]: e.target.value }))} />}
+            </Field>
+          ))}
+        </div>
+      </section>
 
       <section aria-label="Partners" className="grid gap-2">
         <div className="flex flex-wrap items-center justify-between gap-2">

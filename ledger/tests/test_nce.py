@@ -68,18 +68,18 @@ from ledger.nce import _partners, _section, _unit, normalise_settings  # noqa: E
 
 
 def test_a_note_lists_each_ledger_under_its_sub_head():
-    assert _section(19, "PL.REV", row("Sales", LedgerGroup.SALES, -1)) == "Sale of products"
-    assert _section(19, "PL.REV", row("Consulting Fees", LedgerGroup.DIRECT_INCOME, -1)) == "Sale of services"
-    assert _section(19, "PL.REV", row("Export Incentive", LedgerGroup.SALES, -1)) == "Other operating revenue"
-    assert _section(25, "PL.EXP", row("Office Rent", LedgerGroup.INDIRECT_EXPENSE, 1)) == "Rent"
-    assert _section(25, "PL.EXP", row("Audit Fees", LedgerGroup.INDIRECT_EXPENSE, 1)) == "Payments to auditors"
-    assert _section(25, "PL.EXP", row("Sundry", LedgerGroup.INDIRECT_EXPENSE, 1)) == "Miscellaneous expenses"
-    assert _section(5, "NCL.BORR", row("Term Loan - HDFC Bank", LedgerGroup.LOAN, -1)) == "Long-term · Term loans from banks"
-    assert _section(5, "CL.BORR", row("Cash Credit - SBI", LedgerGroup.LOAN, -1)) == "Short-term · Loans repayable on demand"
-    assert _section(10, "CL.OTH", row("TDS Payable", LedgerGroup.DUTIES_AND_TAXES, -1)) == "TDS payable"
-    assert _section(17, "CA.CASH", row("Cash", LedgerGroup.CASH, 1)) == "Cash on hand"
-    assert _section(17, "CA.CASH", row("HDFC Current", LedgerGroup.BANK, 1)) == "Balances with banks"
-    assert _section(9, "CL.PAY", row("Ravi Traders", LedgerGroup.CREDITOR, -1)) == ""
+    assert _section(19, "PL.REV", row("Sales", LedgerGroup.SALES, -1))[0] == "Sale of products"
+    assert _section(19, "PL.REV", row("Consulting Fees", LedgerGroup.DIRECT_INCOME, -1))[0] == "Sale of services"
+    assert _section(19, "PL.REV", row("Export Incentive", LedgerGroup.SALES, -1))[0] == "Other operating revenue"
+    assert _section(25, "PL.EXP", row("Office Rent", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Rent"
+    assert _section(25, "PL.EXP", row("Audit Fees", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Payments to auditors"
+    assert _section(25, "PL.EXP", row("Sundry", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Miscellaneous expenses"
+    assert _section(5, "NCL.BORR", row("Term Loan - HDFC Bank", LedgerGroup.LOAN, -1))[0] == "Long-term · Term loans from banks"
+    assert _section(5, "CL.BORR", row("Cash Credit - SBI", LedgerGroup.LOAN, -1))[0] == "Short-term · Loans repayable on demand"
+    assert _section(10, "CL.OTH", row("TDS Payable", LedgerGroup.DUTIES_AND_TAXES, -1))[0] == "TDS payable"
+    assert _section(17, "CA.CASH", row("Cash", LedgerGroup.CASH, 1))[0] == "Cash on hand"
+    assert _section(17, "CA.CASH", row("HDFC Current", LedgerGroup.BANK, 1))[0] == "Balances with banks"
+    assert _section(9, "CL.PAY", row("Ravi Traders", LedgerGroup.CREDITOR, -1))[0] == ""
 
 
 def test_rounding_goes_to_the_nearest_unit_away_from_zero_at_the_half():
@@ -103,3 +103,46 @@ def test_a_profit_is_split_to_the_paisa_with_the_leftover_going_to_the_first_par
     settings = normalise_settings({"years": {"2025": {"partners": [{"name": "A", "share_bp": 3333}, {"name": "B", "share_bp": 3333}, {"name": "C", "share_bp": 3334}]}}})
     rows = _partners(settings, 2025, 100, {})
     assert sum(r.profit_share_paise for r in rows) == 100
+
+
+import datetime  # noqa: E402
+
+from ledger.nce import _tally, suggest_size  # noqa: E402
+from ledger.nce_ageing import add_months, is_over_six_months, split_by_age  # noqa: E402
+
+
+def test_size_follows_the_icai_criteria_and_the_two_answers_only_a_person_can_give():
+    assert suggest_size(100 * 10_000_000 * 100, 10 * 10_000_000 * 100)[0] == "msme"
+    assert suggest_size(251 * 10_000_000 * 100, 0)[0] == "large"
+    assert suggest_size(0, 51 * 10_000_000 * 100)[0] == "large"
+    assert suggest_size(0, 0, bank_or_insurer=True)[0] == "large"
+    assert suggest_size(0, 0, non_msme_group=True)[0] == "large"
+
+
+def test_six_months_are_counted_from_the_due_date_or_failing_that_the_bill_date():
+    day = datetime.date
+    assert add_months(day(2025, 8, 31), 6) == day(2026, 2, 28)
+    assert is_over_six_months(day(2025, 9, 30), day(2025, 9, 1), day(2026, 3, 31)) is True
+    assert is_over_six_months(day(2025, 10, 1), day(2025, 9, 1), day(2026, 3, 31)) is False
+    assert is_over_six_months(None, day(2025, 9, 30), day(2026, 3, 31)) is True  # no due date: the bill's own date
+    under, over = split_by_age([(None, day(2025, 4, 1), 300), (day(2026, 2, 1), day(2026, 1, 1), 200), (None, day(2025, 4, 2), 0)], day(2026, 3, 31))
+    assert (under, over) == (200, 300)
+
+
+def test_every_ledger_is_rounded_before_anything_is_added():
+    rows = [row("A", LedgerGroup.SALES, -149_00), row("B", LedgerGroup.SALES, -149_00), row("C", LedgerGroup.SALES, -149_00)]
+    totals, parts = _tally(rows, {}, unit=10_000)  # hundreds
+    assert totals["PL.REV"] == 3 * 100_00  # each 149 became 100, not 447 -> 400
+    assert [p for _, p in parts["PL.REV"]] == [100_00] * 3
+
+
+def test_a_ledger_pinned_to_a_sub_head_goes_there_and_a_catch_all_is_a_guess():
+    from ledger.nce import _section
+
+    sundry = row("Sundry", LedgerGroup.INDIRECT_EXPENSE, 1)
+    assert _section(25, "PL.EXP", sundry) == ("Miscellaneous expenses", True)
+    assert _section(25, "PL.EXP", sundry, pinned="Rent") == ("Rent", False)
+    assert _section(25, "PL.EXP", sundry, pinned="Not a sub-head") == ("Miscellaneous expenses", True)
+    assert _section(25, "PL.EXP", row("Office Rent", LedgerGroup.INDIRECT_EXPENSE, 1)) == ("Rent", False)
+    loan = row("Friend", LedgerGroup.LOAN, -1)
+    assert _section(5, "NCL.BORR", loan, pinned="Loans and advances from related parties") == ("Long-term · Loans and advances from related parties", False)

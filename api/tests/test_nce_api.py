@@ -180,3 +180,76 @@ def test_the_statements_download_as_a_workbook(api, client_record):
     assert wb.sheetnames == ["Balance Sheet", "Statement of P&L", "Notes 1 to 3", "Notes 4 to 25"]
     cells = [c.value for row in wb["Balance Sheet"].iter_rows() for c in row if c.value is not None]
     assert "Trade payables" in " ".join(str(c) for c in cells)
+
+
+def test_msme_suppliers_are_split_out_of_trade_payables(api, client_record):
+    party = book_purchase(api, client_record)
+    refused = api.patch(f"{base(client_record)}/parties/{party['id']}/", {"udyam_no": "NOT-A-NUMBER"}, format="json")
+    assert refused.status_code == 400
+    ok = api.patch(f"{base(client_record)}/parties/{party['id']}/", {"msme": True, "udyam_no": "UDYAM-MH-12-0001234"}, format="json")
+    assert ok.status_code == 200, ok.content
+
+    report = statements(api, client_record)
+
+    split = next(s for s in report["schedules"] if s["note"] == 9 and s["title"].startswith("Trade payables"))
+    assert [r["values"][0] for r in split["rows"]] == [10_000_00, 0, 10_000_00]
+    disclosure = next(s for s in report["schedules"] if s["title"].startswith("Dues to suppliers"))
+    assert disclosure["rows"][1]["values"][0] == 10_000_00  # principal unpaid
+
+
+def test_receivables_are_aged_from_the_due_date_to_the_year_end(api, client_record):
+    customer = make_party(api, client_record, "Mehta Stores", role="CUSTOMER", gstin="")
+    sales = make_ledger(api, client_record, "Sales", "SALES")
+    for ref, day, amount in (("S-1", "2025-04-10", 3_000_00), ("S-2", "2026-01-10", 2_000_00)):
+        body = voucher(customer, sales, kind="SALES", reference=ref, bill_date=day, cgst_paise=0, sgst_paise=0, heads=[{"ledger": sales["id"], "amount_paise": amount}])
+        assert post_bill(api, client_record, body).status_code == 201
+
+    report = statements(api, client_record)
+
+    ageing = next(s for s in report["schedules"] if s["note"] == 16)
+    values = {r["label"] + str(i): r["values"][0] for i, r in enumerate(ageing["rows"])}
+    assert ageing["rows"][1]["values"][0] == 2_000_00  # under six months: unsecured good
+    assert ageing["rows"][6]["values"][0] == 3_000_00  # over six months: unsecured good
+    assert ageing["rows"][-1]["values"][0] == by_key(report["balance_sheet"])["CA.REC"]["current_paise"] == 5_000_00
+    assert values  # every row present
+
+    put_settings(api, client_record, {"years": {"2025": {"receivables_doubtful_paise": 1_000_00}}})
+    again = next(s for s in statements(api, client_record)["schedules"] if s["note"] == 16)
+    assert again["rows"][6]["values"][0] == 2_000_00 and again["rows"][7]["values"][0] == 1_000_00
+
+
+def test_entity_type_and_size_are_kept_and_the_size_is_suggested_from_the_books(api, client_record):
+    book_purchase(api, client_record)
+    before = statements(api, client_record)
+    assert before["size"] == "msme" and before["size_suggested"] == "msme" and "MSME" in before["size_statement"]
+    assert any("proprietorship" in w for w in before["warnings"])
+
+    put_settings(api, client_record, {"entity_type": "partnership", "size": "large"})
+    after = statements(api, client_record)
+    assert after["size"] == "large" and after["size_suggested"] == "msme"
+    assert after["capital_title"] == "Partners' Capital Accounts"
+    assert any("Cash Flow Statement" in w for w in after["warnings"])
+
+
+def test_a_ledger_can_be_pinned_to_a_sub_head_of_its_note_and_a_catch_all_is_flagged(api, client_record):
+    party = book_purchase(api, client_record)
+    other = make_ledger(api, client_record, "Zzz Misc Thing", "INDIRECT_EXPENSE")
+    notes = {n["number"]: n for n in statements(api, client_record)["notes"]}
+    assert party["id"]
+    # No bill posted to it yet, so it is not in the note; pin and unpin are still validated.
+    assert api.patch(f"{base(client_record)}/ledgers/{other['id']}/", {"nce_section": "Rent"}, format="json").status_code == 200
+    assert api.patch(f"{base(client_record)}/ledgers/{other['id']}/", {"nce_section": "Not a sub-head"}, format="json").status_code == 400
+    assert "Rent" in notes[21]["choices"] or notes[21]["choices"] is not None
+
+
+def test_rounding_each_ledger_first_keeps_the_sheet_adding_up_and_shows_the_gap(api, client_record):
+    book_purchase(api, client_record, amount=12_345_67)
+    put_settings(api, client_record, {"rounding": "thousands"})
+
+    report = statements(api, client_record)
+
+    bs = by_key(report["balance_sheet"])
+    assert bs["t.L"]["current_paise"] == bs["t.A"]["current_paise"]
+    assert report["balances"] is True
+    pay = bs["CL.PAY"]["current_paise"]
+    assert pay % 100_000 == 0

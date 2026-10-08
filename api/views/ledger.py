@@ -469,7 +469,7 @@ class StatementSettingsView(viewsets.GenericViewSet):
         description=(
             "Notes 1 and 2, the units the statements are rounded to, and for each financial year the closing stock and the "
             "partners with their shares and movements (Note 3). Years not sent are kept as they are; a year that is sent "
-            "replaces that year's stock and partners. Requires `ledger.manage`."
+            "replaces everything entered for that year. Requires `ledger.manage`."
         ),
         request=StatementSettingsSerializer,
         responses=StatementSettingsSerializer,
@@ -479,11 +479,11 @@ class StatementSettingsView(viewsets.GenericViewSet):
         body = StatementSettingsSerializer(data=request.data)
         body.is_valid(raise_exception=True)
         current = nce.read_settings(client)
-        for key in ("about", "policies", "rounding"):
+        for key in ("about", "policies", "rounding", "entity_type", "size", "bank_or_insurer", "non_msme_group"):
             if key in body.validated_data:
                 current[key] = body.validated_data[key]
         for fy, year in body.validated_data.get("years", {}).items():
-            current["years"][fy] = {"closing_stock_paise": year.get("closing_stock_paise"), "partners": year.get("partners", [])}
+            current["years"][fy] = {**year, "partners": year.get("partners", [])}
         client.nce_settings = nce.normalise_settings(current)
         client.save(update_fields=["nce_settings"])
         return Response(StatementSettingsSerializer(nce.read_settings(client)).data)

@@ -43,7 +43,7 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
         model = LedgerAccount
         fields = [
             "id", "name", "group", "is_bank_or_cash", "is_active",
-            "status", "proposal_reason", "row_count", "created_at", "nce_line",
+            "status", "proposal_reason", "row_count", "created_at", "nce_line", "nce_section",
         ]
         read_only_fields = ["id", "is_bank_or_cash", "status", "proposal_reason", "row_count", "created_at"]
         extra_kwargs = {
@@ -61,6 +61,13 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
 
         if value and value not in LINES:
             raise serializers.ValidationError("That is not a line of the Balance Sheet or the Statement of Profit and Loss.")
+        return value
+
+    def validate_nce_section(self, value: str) -> str:
+        from ledger.nce import all_section_choices
+
+        if value and value not in all_section_choices():
+            raise serializers.ValidationError("That is not a sub-head of any note.")
         return value
 
     def validate_name(self, value: str) -> str:
@@ -146,6 +153,8 @@ class PartySerializer(serializers.ModelSerializer):
             "gstin",
             "rcm_default",
             "tds_section",
+            "msme",
+            "udyam_no",
             "is_active",
             "created_at",
         ]
@@ -172,6 +181,17 @@ class PartySerializer(serializers.ModelSerializer):
             if existing is not None:
                 raise serializers.ValidationError(f'This client already has a party called "{existing.canonical_name}".')
         return value
+
+    def validate_udyam_no(self, value):
+        value = (value or "").strip().upper()
+        if value and not re.fullmatch(r"UDYAM-[A-Z]{2}-\d{2}-\d{7}", value):
+            raise serializers.ValidationError("A Udyam number looks like UDYAM-MH-12-0001234.")
+        return value
+
+    def validate(self, attrs):
+        if attrs.get("udyam_no") and not attrs.get("msme", getattr(self.instance, "msme", False)):
+            attrs["msme"] = True  # a registration number is the claim itself
+        return attrs
 
     def validate_gstin(self, value):
         value = (value or "").strip().upper()

@@ -3630,7 +3630,7 @@ paths:
       description: Notes 1 and 2, the units the statements are rounded to, and for
         each financial year the closing stock and the partners with their shares and
         movements (Note 3). Years not sent are kept as they are; a year that is sent
-        replaces that year's stock and partners. Requires `ledger.manage`.
+        replaces everything entered for that year. Requires `ledger.manage`.
       summary: Change the statement settings
       parameters:
       - in: path
@@ -8782,6 +8782,14 @@ components:
           type: boolean
       required:
       - name
+    EntityTypeEnum:
+      enum:
+      - proprietor
+      - partnership
+      - other
+      type: string
+      description: "* `` - \n* `proprietor` - proprietor\n* `partnership` - partnership\n\
+        * `other` - other"
     EntryChange:
       type: object
       properties:
@@ -9826,6 +9834,9 @@ components:
         nce_line:
           type: string
           maxLength: 16
+        nce_section:
+          type: string
+          maxLength: 80
       required:
       - created_at
       - id
@@ -9851,6 +9862,9 @@ components:
         nce_line:
           type: string
           maxLength: 16
+        nce_section:
+          type: string
+          maxLength: 80
       required:
       - name
     LedgerAccountStatusEnum:
@@ -10835,6 +10849,11 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/NoteRow'
+        choices:
+          type: array
+          items:
+            type: string
+          description: The sub-heads a ledger in this note can be pinned to.
         total_current_paise:
           type: integer
           maximum: 1000000000000000000
@@ -10850,6 +10869,7 @@ components:
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
       required:
+      - choices
       - number
       - rows
       - title
@@ -10890,8 +10910,13 @@ components:
           type: string
           description: The sub-head of the note this row is listed under; blank where
             the note has none.
+        guessed:
+          type: boolean
+          description: The sub-head is a catch-all the name fell through to; a person
+            should look.
       required:
       - current_paise
+      - guessed
       - label
       - ledger
       - previous_paise
@@ -12220,6 +12245,11 @@ components:
           oneOf:
           - $ref: '#/components/schemas/TdsSectionEnum'
           - $ref: '#/components/schemas/BlankEnum'
+        msme:
+          type: boolean
+        udyam_no:
+          type: string
+          maxLength: 19
         is_active:
           type: boolean
         created_at:
@@ -12275,6 +12305,11 @@ components:
           oneOf:
           - $ref: '#/components/schemas/TdsSectionEnum'
           - $ref: '#/components/schemas/BlankEnum'
+        msme:
+          type: boolean
+        udyam_no:
+          type: string
+          maxLength: 19
         is_active:
           type: boolean
       required:
@@ -12518,6 +12553,9 @@ components:
         nce_line:
           type: string
           maxLength: 16
+        nce_section:
+          type: string
+          maxLength: 80
     PatchedMemberUpdateRequest:
       type: object
       properties:
@@ -12553,6 +12591,11 @@ components:
           oneOf:
           - $ref: '#/components/schemas/TdsSectionEnum'
           - $ref: '#/components/schemas/BlankEnum'
+        msme:
+          type: boolean
+        udyam_no:
+          type: string
+          maxLength: 19
         is_active:
           type: boolean
     PaymentHint:
@@ -14319,6 +14362,20 @@ components:
           type: string
           default: ''
           maxLength: 1000
+    SizeEnum:
+      enum:
+      - msme
+      - large
+      type: string
+      description: "* `` - \n* `msme` - msme\n* `large` - large"
+    SizeSuggestedEnum:
+      enum:
+      - msme
+      - large
+      type: string
+      description: |-
+        * `msme` - msme
+        * `large` - large
     SnapshotAttention:
       type: object
       properties:
@@ -14530,6 +14587,58 @@ components:
         * `line` - line
         * `subtotal` - subtotal
         * `total` - total
+    StatementSchedule:
+      type: object
+      properties:
+        note:
+          type: integer
+        title:
+          type: string
+        columns:
+          type: array
+          items:
+            type: string
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatementScheduleRow'
+      required:
+      - columns
+      - note
+      - rows
+      - title
+    StatementScheduleRow:
+      type: object
+      properties:
+        label:
+          type: string
+        values:
+          type: array
+          items:
+            type: integer
+            maximum: 1000000000000000000
+            minimum: -1000000000000000000
+            format: int64
+            nullable: true
+            description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+              a decimal.
+          description: One figure per column; null for a heading.
+        kind:
+          $ref: '#/components/schemas/StatementScheduleRowKindEnum'
+      required:
+      - kind
+      - label
+      - values
+    StatementScheduleRowKindEnum:
+      enum:
+      - line
+      - heading
+      - total
+      type: string
+      description: |-
+        * `line` - line
+        * `heading` - heading
+        * `total` - total
     StatementSettings:
       type: object
       description: What the statements need that no ledger holds. Years not sent are
@@ -14545,6 +14654,26 @@ components:
           maxLength: 8000
         rounding:
           $ref: '#/components/schemas/RoundingEnum'
+        entity_type:
+          description: "Proprietorship, partnership or another kind of non-corporate\
+            \ entity.\n\n* `` - \n* `proprietor` - proprietor\n* `partnership` - partnership\n\
+            * `other` - other"
+          oneOf:
+          - $ref: '#/components/schemas/EntityTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        size:
+          description: "Blank follows the suggestion from the books.\n\n* `` - \n\
+            * `msme` - msme\n* `large` - large"
+          oneOf:
+          - $ref: '#/components/schemas/SizeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        bank_or_insurer:
+          type: boolean
+          description: The entity is a bank, financial institution or insurance company.
+        non_msme_group:
+          type: boolean
+          description: The entity is a holding or subsidiary of an entity that is
+            not an MSME.
         years:
           type: object
           additionalProperties:
@@ -14565,6 +14694,26 @@ components:
           maxLength: 8000
         rounding:
           $ref: '#/components/schemas/RoundingEnum'
+        entity_type:
+          description: "Proprietorship, partnership or another kind of non-corporate\
+            \ entity.\n\n* `` - \n* `proprietor` - proprietor\n* `partnership` - partnership\n\
+            * `other` - other"
+          oneOf:
+          - $ref: '#/components/schemas/EntityTypeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        size:
+          description: "Blank follows the suggestion from the books.\n\n* `` - \n\
+            * `msme` - msme\n* `large` - large"
+          oneOf:
+          - $ref: '#/components/schemas/SizeEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        bank_or_insurer:
+          type: boolean
+          description: The entity is a bank, financial institution or insurance company.
+        non_msme_group:
+          type: boolean
+          description: The entity is a holding or subsidiary of an entity that is
+            not an MSME.
         years:
           type: object
           additionalProperties:
@@ -14751,17 +14900,53 @@ components:
           items:
             type: string
           description: What to settle before the statements go out.
+        schedules:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatementSchedule'
+          description: 'Tables that belong to a note: payables by kind of supplier,
+            receivables by age, the asset block.'
+        entity_type:
+          type: string
+          description: proprietor, partnership or other; blank until said.
+        size:
+          allOf:
+          - $ref: '#/components/schemas/SizeEnum'
+          description: |-
+            The entity's size under the accounting standards: the person's choice, else the suggestion.
+
+            * `msme` - msme
+            * `large` - large
+        size_suggested:
+          $ref: '#/components/schemas/SizeSuggestedEnum'
+        size_reason:
+          type: string
+          description: Why the books suggest that size.
+        size_statement:
+          type: string
+          description: The disclosure that goes with the size, drafted for Note 2.
+        capital_title:
+          type: string
+          description: What Note 3 and the capital line are called for this kind of
+            entity.
       required:
       - about
       - balance_sheet
       - balances
       - capital
+      - capital_title
+      - entity_type
       - footer
       - has_previous
       - notes
       - policies
       - profit_and_loss
       - regroupings
+      - schedules
+      - size
+      - size_reason
+      - size_statement
+      - size_suggested
       - suspense_paise
       - unit_label
       - unit_paise
@@ -16079,6 +16264,39 @@ components:
           minimum: 0
           format: int64
           nullable: true
+        receivables_doubtful_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Of the receivables outstanding for over six months, the part
+            that is doubtful.
+        msme_interest_due_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Interest remaining unpaid to MSMED Act suppliers.
+        msme_interest_paid_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Interest paid under section 16, with payments made beyond the
+            appointed day.
+        msme_delay_interest_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Interest due for the delay on payments made late, without the
+            interest under the Act.
+        msme_further_interest_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Further interest remaining due in the succeeding years.
         partners:
           type: array
           items:
@@ -16092,6 +16310,39 @@ components:
           minimum: 0
           format: int64
           nullable: true
+        receivables_doubtful_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Of the receivables outstanding for over six months, the part
+            that is doubtful.
+        msme_interest_due_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Interest remaining unpaid to MSMED Act suppliers.
+        msme_interest_paid_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Interest paid under section 16, with payments made beyond the
+            appointed day.
+        msme_delay_interest_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Interest due for the delay on payments made late, without the
+            interest under the Act.
+        msme_further_interest_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Further interest remaining due in the succeeding years.
         partners:
           type: array
           items:

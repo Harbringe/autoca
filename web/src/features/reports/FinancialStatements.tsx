@@ -10,11 +10,15 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { AlertTriangle, Download, Settings2 } from 'lucide-react'
 import { Fragment, useState } from 'react'
+import { toast } from 'sonner'
+import { raw } from '@/api/client'
+import { messageOf } from '@/api/errors'
 import { financialStatements } from '@/api/queries/books'
-import { V1 } from '@/api/queries/clients'
-import type { StatementRow } from '@/api/types'
+import { useInvalidateClient, V1 } from '@/api/queries/clients'
+import type { StatementRow, Statements } from '@/api/types'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Button } from '@/components/ui/button'
+import { Select } from '@/components/ui/controls'
 import { Spinner } from '@/components/ui/spinner'
 import { formatPaise, fyLabel } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -86,10 +90,50 @@ function StatementTable({ title, rows, current, previous, hasPrevious, unit }: {
   )
 }
 
+function ScheduleTable({ schedule, unit }: { schedule: Statements['schedules'][number]; unit: number }) {
+  return (
+    <article className="overflow-x-auto rounded-lg border bg-card p-4 print:break-inside-avoid" aria-label={schedule.title}>
+      <h3 className="mb-2 text-sm font-semibold text-heading">
+        Note {schedule.note} · {schedule.title}
+      </h3>
+      <table className="w-full text-sm">
+        <thead className="border-b text-left text-xs text-muted-foreground">
+          <tr>
+            <th scope="col" className="py-1 font-medium">Particulars</th>
+            {schedule.columns.map((c) => (
+              <th key={c} scope="col" className="num w-36 px-2 py-1 text-right font-medium">{c}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {schedule.rows.map((r, i) => (
+            <tr key={i} className={cn('border-b border-dashed', r.kind === 'total' && 'border-b-2 border-solid font-semibold')}>
+              <td className={cn('py-1.5', r.kind === 'heading' && 'pt-3 font-semibold text-heading')}>{r.label}</td>
+              {r.values.map((v, j) => (
+                <td key={j} className="num px-2 text-right">{r.kind === 'heading' ? '' : figure(v, unit)}</td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </article>
+  )
+}
+
 export function FinancialStatements({ clientId, fy }: { clientId: string; fy: number }) {
   const q = useQuery(financialStatements(clientId, fy))
   const { can } = useSession()
   const [editing, setEditing] = useState(false)
+  const invalidate = useInvalidateClient(clientId)
+  async function pin(ledger: string, section: string) {
+    try {
+      await raw.patch(`${V1}/clients/${clientId}/ledgers/${ledger}/`, { nce_section: section })
+      await invalidate()
+      toast.success('Placed')
+    } catch (e) {
+      toast.error(messageOf(e))
+    }
+  }
   if (q.isPending) return <Spinner label="Preparing the statements…" />
   if (q.error) return <ErrorState error={q.error} retry={() => void q.refetch()} />
   const s = q.data
@@ -186,10 +230,11 @@ export function FinancialStatements({ clientId, fy }: { clientId: string; fy: nu
         <article id="note-2" className="scroll-mt-20 rounded-lg border bg-card p-4 print:break-inside-avoid">
           <h3 className="mb-2 text-sm font-semibold text-heading">Note 2 · Significant accounting policies</h3>
           <p className="whitespace-pre-line text-sm">{s.policies || <span className="text-muted-foreground">Not written yet.</span>}</p>
+          <p className="mt-2 text-sm text-muted-foreground">{s.size_statement}</p>
         </article>
         {s.capital && (
           <article id="capital-table" className="scroll-mt-20 overflow-x-auto rounded-lg border bg-card p-4 print:break-inside-avoid">
-            <h3 className="mb-2 text-sm font-semibold text-heading">Note 3 · Owners’ Capital Account, partner by partner</h3>
+            <h3 className="mb-2 text-sm font-semibold text-heading">Note 3 · {s.capital_title}, partner by partner</h3>
             <table className="w-full min-w-[48rem] text-sm">
               <thead className="border-b text-left text-xs text-muted-foreground">
                 <tr>
@@ -232,7 +277,8 @@ export function FinancialStatements({ clientId, fy }: { clientId: string; fy: nu
           </article>
         )}
         {s.notes.map((note) => (
-          <article key={note.number} id={`note-${note.number}`} className="scroll-mt-20 rounded-lg border bg-card p-4 print:break-inside-avoid">
+          <Fragment key={note.number}>
+          <article id={`note-${note.number}`} className="scroll-mt-20 rounded-lg border bg-card p-4 print:break-inside-avoid">
             <h3 className="mb-2 text-sm font-semibold text-heading">
               Note {note.number} · {note.title}
             </h3>
@@ -261,6 +307,19 @@ export function FinancialStatements({ clientId, fy }: { clientId: string; fy: nu
                         ) : (
                           row.label
                         )}
+                        {row.guessed && row.ledger && can('ledger.manage') && (
+                          <Select
+                            aria-label={`Sub-head for ${row.label}`}
+                            className="ml-2 inline-block h-7 w-auto py-0 text-xs no-print"
+                            value=""
+                            onChange={(e) => e.target.value && void pin(row.ledger as string, e.target.value)}
+                          >
+                            <option value="">Placed by guess · choose</option>
+                            {note.choices.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </Select>
+                        )}
                       </td>
                       <td className="num px-2 text-right">{figure(row.current_paise, unit)}</td>
                       <td className="num pl-2 text-right text-muted-foreground">{s.has_previous ? figure(row.previous_paise, unit) : ''}</td>
@@ -277,6 +336,10 @@ export function FinancialStatements({ clientId, fy }: { clientId: string; fy: nu
               </tfoot>
             </table>
           </article>
+          {s.schedules.filter((sc) => sc.note === note.number).map((sc) => (
+            <ScheduleTable key={sc.title} schedule={sc} unit={unit} />
+          ))}
+          </Fragment>
         ))}
       </section>
     </div>

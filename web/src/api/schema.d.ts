@@ -1642,7 +1642,7 @@ export interface paths {
         get: operations["clients_reports_financial_statements_settings_retrieve"];
         /**
          * Change the statement settings
-         * @description Notes 1 and 2, the units the statements are rounded to, and for each financial year the closing stock and the partners with their shares and movements (Note 3). Years not sent are kept as they are; a year that is sent replaces that year's stock and partners. Requires `ledger.manage`.
+         * @description Notes 1 and 2, the units the statements are rounded to, and for each financial year the closing stock and the partners with their shares and movements (Note 3). Years not sent are kept as they are; a year that is sent replaces everything entered for that year. Requires `ledger.manage`.
          */
         put: operations["clients_reports_financial_statements_settings_update"];
         post?: never;
@@ -4125,6 +4125,14 @@ export interface components {
             name: string;
             is_active?: boolean;
         };
+        /**
+         * @description * `` -
+         *     * `proprietor` - proprietor
+         *     * `partnership` - partnership
+         *     * `other` - other
+         * @enum {string}
+         */
+        EntityTypeEnum: "proprietor" | "partnership" | "other";
         EntryChange: {
             /** Format: uuid */
             readonly id: string;
@@ -4586,6 +4594,7 @@ export interface components {
             /** Format: date-time */
             readonly created_at: string;
             nce_line?: string;
+            nce_section?: string;
         };
         LedgerAccountRequest: {
             /** @description The ledger's name in this client's books. Unique per client, ignoring case and spacing: "Advance Tax" and "Advance tax" would split a year across two ledgers, so the second is refused. */
@@ -4593,6 +4602,7 @@ export interface components {
             group?: components["schemas"]["LedgerGroupEnum"];
             is_active?: boolean;
             nce_line?: string;
+            nce_section?: string;
         };
         /**
          * @description * `ACTIVE` - In use
@@ -5050,6 +5060,8 @@ export interface components {
             number: number;
             title: string;
             rows: components["schemas"]["NoteRow"][];
+            /** @description The sub-heads a ledger in this note can be pinned to. */
+            choices: string[];
             /**
              * Format: int64
              * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
@@ -5084,6 +5096,8 @@ export interface components {
             previous_paise: number;
             /** @description The sub-head of the note this row is listed under; blank where the note has none. */
             section: string;
+            /** @description The sub-head is a catch-all the name fell through to; a person should look. */
+            guessed: boolean;
         };
         /** @enum {unknown} */
         NullEnum: null;
@@ -5822,6 +5836,8 @@ export interface components {
             gstin?: string;
             rcm_default?: boolean;
             tds_section?: components["schemas"]["TdsSectionEnum"] | components["schemas"]["BlankEnum"];
+            msme?: boolean;
+            udyam_no?: string;
             is_active?: boolean;
             /** Format: date-time */
             readonly created_at: string;
@@ -5843,6 +5859,8 @@ export interface components {
             gstin?: string;
             rcm_default?: boolean;
             tds_section?: components["schemas"]["TdsSectionEnum"] | components["schemas"]["BlankEnum"];
+            msme?: boolean;
+            udyam_no?: string;
             is_active?: boolean;
         };
         /**
@@ -5969,6 +5987,7 @@ export interface components {
             group?: components["schemas"]["LedgerGroupEnum"];
             is_active?: boolean;
             nce_line?: string;
+            nce_section?: string;
         };
         PatchedMemberUpdateRequest: {
             role?: components["schemas"]["Role170Enum"];
@@ -5986,6 +6005,8 @@ export interface components {
             gstin?: string;
             rcm_default?: boolean;
             tds_section?: components["schemas"]["TdsSectionEnum"] | components["schemas"]["BlankEnum"];
+            msme?: boolean;
+            udyam_no?: string;
             is_active?: boolean;
         };
         PaymentHint: {
@@ -6882,6 +6903,19 @@ export interface components {
             /** @default  */
             note: string;
         };
+        /**
+         * @description * `` -
+         *     * `msme` - msme
+         *     * `large` - large
+         * @enum {string}
+         */
+        SizeEnum: "msme" | "large";
+        /**
+         * @description * `msme` - msme
+         *     * `large` - large
+         * @enum {string}
+         */
+        SizeSuggestedEnum: "msme" | "large";
         SnapshotAttention: {
             open_items: number;
             blocking_unexplained: number;
@@ -6974,6 +7008,25 @@ export interface components {
          * @enum {string}
          */
         StatementRowKindEnum: "heading" | "line" | "subtotal" | "total";
+        StatementSchedule: {
+            note: number;
+            title: string;
+            columns: string[];
+            rows: components["schemas"]["StatementScheduleRow"][];
+        };
+        StatementScheduleRow: {
+            label: string;
+            /** @description One figure per column; null for a heading. */
+            values: (number | null)[];
+            kind: components["schemas"]["StatementScheduleRowKindEnum"];
+        };
+        /**
+         * @description * `line` - line
+         *     * `heading` - heading
+         *     * `total` - total
+         * @enum {string}
+         */
+        StatementScheduleRowKindEnum: "line" | "heading" | "total";
         /** @description What the statements need that no ledger holds. Years not sent are left as they are. */
         StatementSettings: {
             /** @description Note 1: a brief about the entity. */
@@ -6981,6 +7034,27 @@ export interface components {
             /** @description Note 2: significant accounting policies. */
             policies?: string;
             rounding?: components["schemas"]["RoundingEnum"];
+            /**
+             * @description Proprietorship, partnership or another kind of non-corporate entity.
+             *
+             *     * `` -
+             *     * `proprietor` - proprietor
+             *     * `partnership` - partnership
+             *     * `other` - other
+             */
+            entity_type?: components["schemas"]["EntityTypeEnum"] | components["schemas"]["BlankEnum"];
+            /**
+             * @description Blank follows the suggestion from the books.
+             *
+             *     * `` -
+             *     * `msme` - msme
+             *     * `large` - large
+             */
+            size?: components["schemas"]["SizeEnum"] | components["schemas"]["BlankEnum"];
+            /** @description The entity is a bank, financial institution or insurance company. */
+            bank_or_insurer?: boolean;
+            /** @description The entity is a holding or subsidiary of an entity that is not an MSME. */
+            non_msme_group?: boolean;
             /** @description By starting year of the financial year, e.g. '2025'. */
             years?: {
                 [key: string]: components["schemas"]["YearSettings"];
@@ -6993,6 +7067,27 @@ export interface components {
             /** @description Note 2: significant accounting policies. */
             policies?: string;
             rounding?: components["schemas"]["RoundingEnum"];
+            /**
+             * @description Proprietorship, partnership or another kind of non-corporate entity.
+             *
+             *     * `` -
+             *     * `proprietor` - proprietor
+             *     * `partnership` - partnership
+             *     * `other` - other
+             */
+            entity_type?: components["schemas"]["EntityTypeEnum"] | components["schemas"]["BlankEnum"];
+            /**
+             * @description Blank follows the suggestion from the books.
+             *
+             *     * `` -
+             *     * `msme` - msme
+             *     * `large` - large
+             */
+            size?: components["schemas"]["SizeEnum"] | components["schemas"]["BlankEnum"];
+            /** @description The entity is a bank, financial institution or insurance company. */
+            bank_or_insurer?: boolean;
+            /** @description The entity is a holding or subsidiary of an entity that is not an MSME. */
+            non_msme_group?: boolean;
             /** @description By starting year of the financial year, e.g. '2025'. */
             years?: {
                 [key: string]: components["schemas"]["YearSettingsRequest"];
@@ -7083,6 +7178,24 @@ export interface components {
             capital: components["schemas"]["CapitalTable"] | null;
             /** @description What to settle before the statements go out. */
             warnings: string[];
+            /** @description Tables that belong to a note: payables by kind of supplier, receivables by age, the asset block. */
+            schedules: components["schemas"]["StatementSchedule"][];
+            /** @description proprietor, partnership or other; blank until said. */
+            entity_type: string;
+            /**
+             * @description The entity's size under the accounting standards: the person's choice, else the suggestion.
+             *
+             *     * `msme` - msme
+             *     * `large` - large
+             */
+            size: components["schemas"]["SizeEnum"];
+            size_suggested: components["schemas"]["SizeSuggestedEnum"];
+            /** @description Why the books suggest that size. */
+            size_reason: string;
+            /** @description The disclosure that goes with the size, drafted for Note 2. */
+            size_statement: string;
+            /** @description What Note 3 and the capital line are called for this kind of entity. */
+            capital_title: string;
         };
         /**
          * @description * `PREVIEW` - Previewed, not applied
@@ -7788,11 +7901,61 @@ export interface components {
         YearSettings: {
             /** Format: int64 */
             closing_stock_paise?: number | null;
+            /**
+             * Format: int64
+             * @description Of the receivables outstanding for over six months, the part that is doubtful.
+             */
+            receivables_doubtful_paise?: number;
+            /**
+             * Format: int64
+             * @description Interest remaining unpaid to MSMED Act suppliers.
+             */
+            msme_interest_due_paise?: number;
+            /**
+             * Format: int64
+             * @description Interest paid under section 16, with payments made beyond the appointed day.
+             */
+            msme_interest_paid_paise?: number;
+            /**
+             * Format: int64
+             * @description Interest due for the delay on payments made late, without the interest under the Act.
+             */
+            msme_delay_interest_paise?: number;
+            /**
+             * Format: int64
+             * @description Further interest remaining due in the succeeding years.
+             */
+            msme_further_interest_paise?: number;
             partners?: components["schemas"]["PartnerInput"][];
         };
         YearSettingsRequest: {
             /** Format: int64 */
             closing_stock_paise?: number | null;
+            /**
+             * Format: int64
+             * @description Of the receivables outstanding for over six months, the part that is doubtful.
+             */
+            receivables_doubtful_paise?: number;
+            /**
+             * Format: int64
+             * @description Interest remaining unpaid to MSMED Act suppliers.
+             */
+            msme_interest_due_paise?: number;
+            /**
+             * Format: int64
+             * @description Interest paid under section 16, with payments made beyond the appointed day.
+             */
+            msme_interest_paid_paise?: number;
+            /**
+             * Format: int64
+             * @description Interest due for the delay on payments made late, without the interest under the Act.
+             */
+            msme_delay_interest_paise?: number;
+            /**
+             * Format: int64
+             * @description Further interest remaining due in the succeeding years.
+             */
+            msme_further_interest_paise?: number;
             partners?: components["schemas"]["PartnerInputRequest"][];
         };
     };

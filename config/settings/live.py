@@ -21,6 +21,10 @@ INTEGRATIONS = {  # noqa: F405
 }
 VISION_READING = False
 
+# The project's own .env may define DATABASE_OWNER_URL for some other database (it did: the old hosted one). Here there is one
+# database, the live one through the tunnel, so the owner alias is the same connection as the default and nothing else.
+DATABASES["owner"] = {**DATABASES["default"], "TEST": {"MIRROR": "default"}}  # noqa: F405
+
 ALLOWED_COMMANDS = {"runserver", "check", "showmigrations", "diffsettings", "shell"}
 
 _command = sys.argv[1] if len(sys.argv) > 1 and not sys.argv[1].startswith("-") else None

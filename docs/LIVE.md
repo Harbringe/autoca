@@ -50,7 +50,8 @@ your PC                                   the server (EC2)
 4. **Tell the script which server.** Set `AUTOCA_INSTANCE_ID` to the instance id (a Windows user variable is enough). It is not kept in the code.
 5. **Fill in `.env.live`.** Copy `deploy/live.env.example` to `.env.live` (git ignores it). Take the values from the server with a
    Session Manager shell, never by pasting them into a chat or an email:
-   - `DATABASE_URL`: the `DATABASE_URL` line of `.env.prod`, with the host and port changed to `localhost:5433`.
+   - `DATABASE_URL`: the `DATABASE_URL` line of `.env.prod`, with the host and port changed to `127.0.0.1:5433`. Write `127.0.0.1`, not `localhost`: `localhost` can resolve to IPv6 first,
+     where the tunnel does not listen, and the server then hangs without an error.
    - `KMS_LOCAL_MASTER_KEY` and `BLIND_INDEX_KEY`: the same lines of `.env.prod`.
 
    **These two keys decrypt every client's names, GSTINs and bank account numbers. Having them on this PC is the real cost of

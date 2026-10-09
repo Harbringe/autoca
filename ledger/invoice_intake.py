@@ -297,29 +297,60 @@ def matching_bill(reading: InvoiceReading) -> Bill | None:
     )
 
 
-def payment_candidates(reading: InvoiceReading, limit: int = 5) -> list[dict]:
-    """Bank rows that look like the payment for this invoice: the suggested party, the invoice's total, the right direction.
+#: How sure a suggested payment is, strongest first. Shown beside the invoice so a person knows what the match rests on.
+EVIDENCE_ORDER = ("party", "name", "amount")
 
-    So the invoice is not an island: when a payment of exactly that amount to (or from) that party is already in the books,
-    it is shown beside the invoice. If it was posted to a head such as Sales or an expense, booking the invoice would count
-    the same cost or revenue twice, and the payment can then be moved onto the party's account (see the To fix list).
-    Only a suggestion: it is never linked on its own.
+
+def payment_candidates(reading: InvoiceReading, limit: int = 5) -> list[dict]:
+    """Bank rows that look like the payment for this invoice, with what the match rests on.
+
+    So the invoice is not an island: a payment of exactly the invoice total, in the right direction and within a sensible
+    window of the invoice date, is shown beside it whether or not anyone has placed the row yet, reviewed it, or posted it.
+    ``evidence`` says why it is offered: ``party`` (the row is already on this invoice's party), ``name`` (the party's name or
+    a confirmed spelling is in the narration) or ``amount`` (only the amount and date agree, so check it). If it was posted
+    to a head such as Sales or an expense, booking the invoice would count the same cost or revenue twice, and the payment
+    can then be moved onto the party's account (see the To fix list). Only a suggestion: it is never linked on its own.
     """
+    import datetime
+
     from banking.models import StatementTransaction
+    from ledger import matching
     from ledger.models import JournalEntry
 
-    party = suggested_party(reading)
-    total = fields_of(reading).get("total_paise")
-    if party is None or not total or not reading.kind:
+    fields = fields_of(reading)
+    total = fields.get("total_paise")
+    if not total or not reading.kind:
         return []
+    party = suggested_party(reading)
+    column = "debit_paise" if reading.kind == BillKind.PURCHASE else "credit_paise"
     rows = StatementTransaction.objects.filter(
-        firm_id=reading.firm_id, bank_account__client=reading.client, classification__party=party
-    ).filter(debit_paise=total) if reading.kind == BillKind.PURCHASE else StatementTransaction.objects.filter(
-        firm_id=reading.firm_id, bank_account__client=reading.client, classification__party=party, credit_paise=total
+        firm_id=reading.firm_id, bank_account__client=reading.client, **{column: total}
     )
+    try:
+        invoiced = datetime.date.fromisoformat(fields.get("invoice_date") or "")
+    except ValueError:
+        invoiced = None
+    if invoiced:
+        rows = rows.filter(
+            value_date__gte=invoiced - datetime.timedelta(days=matching.DAYS_BEFORE),
+            value_date__lte=invoiced + datetime.timedelta(days=matching.DAYS_AFTER),
+        )
+    if party is not None:
+        names = matching._names_of(party)
+    else:
+        counterparty = fields.get("supplier_name") if reading.kind == BillKind.PURCHASE else fields.get("buyer_name")
+        names = [n for n in [matching._squash(counterparty or "")] if len(n) >= 4]
+
     found = []
-    for txn in rows.select_related("classification__ledger").order_by("value_date")[:limit]:
-        ledger = txn.classification.ledger
+    for txn in rows.select_related("classification__ledger").order_by("value_date")[:40]:
+        classification = getattr(txn, "classification", None)
+        if party is not None and classification is not None and classification.party_id == party.pk:
+            evidence = "party"
+        elif names and matching._says(txn.narration, names):
+            evidence = "name"
+        else:
+            evidence = "amount"
+        ledger = classification.ledger if classification else None
         entry = JournalEntry.objects.filter(firm_id=reading.firm_id, source_transaction=txn).first()
         found.append(
             {
@@ -328,9 +359,11 @@ def payment_candidates(reading: InvoiceReading, limit: int = 5) -> list[dict]:
                 "posted_to": ledger.name if (ledger and entry) else None,
                 "on_party_account": bool(ledger and ledger.is_party_account),
                 "entry": entry.pk if entry else None,
+                "evidence": evidence,
             }
         )
-    return found
+    found.sort(key=lambda hint: (EVIDENCE_ORDER.index(hint["evidence"]), hint["date"]))
+    return found[:limit]
 
 
 def _open_reading(reading: InvoiceReading) -> None:

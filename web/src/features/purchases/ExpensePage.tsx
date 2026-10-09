@@ -118,7 +118,11 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
     ...(read && reading && !reading.proved ? reading.checks.filter((c) => !c.ok).map((c) => c.detail) : []),
     ...((read?.unsure ?? []).length ? [`The reader was not sure of: ${read!.unsure.join(', ')}. Check against the page.`] : []),
     ...(bill && !bill.has_document ? ['No invoice file is attached to this bill.'] : []),
-    ...(reading?.payments ?? []).map((p) => `Looks already paid: ${formatDate(p.date)} · ${p.narration || 'a bank row'}.`),
+    ...(reading?.payments ?? []).map((p) =>
+      p.evidence === 'amount'
+        ? `A bank row of exactly this amount may be its payment (the payee is not confirmed, so check): ${formatDate(p.date)} · ${p.narration || 'a bank row'}.`
+        : `Looks already paid: ${formatDate(p.date)} · ${p.narration || 'a bank row'}.`,
+    ),
   ].filter(Boolean)
   const status = bill ? (bill.open_paise <= 0 ? 'Settled' : 'Booked') : as === 'new' ? 'Not booked' : reading?.status === 'DISCARDED' ? 'Set aside' : 'Needs you'
   const settled = (bill?.allocations.length ?? 0) > 0

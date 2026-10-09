@@ -203,6 +203,8 @@ class BillViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.RetrieveModel
                         billing.allocate(line, amount_paise=amount, bill=fresh)
                 except billing.BillingError:
                     billing.allocate(line, amount_paise=amount)
+        # The revised amount may now be exactly a payment that was waiting.
+        invoice_intake.settle_payment(fresh)
         return Response(BillDetailSerializer(self.get_queryset().get(pk=fresh.pk)).data)
 
     @extend_schema(

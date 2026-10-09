@@ -160,6 +160,10 @@ class PaymentHintSerializer(serializers.Serializer):
     posted_to = serializers.CharField(allow_null=True, help_text="The head it was posted to, or null while it waits in Review.")
     on_party_account = serializers.BooleanField()
     entry = serializers.UUIDField(allow_null=True)
+    evidence = serializers.ChoiceField(
+        choices=["party", "name", "amount"],
+        help_text="What the match rests on: the row is on this party, the party's name is in the narration, or only the amount and date agree.",
+    )
 
 
 class InvoiceReadingSerializer(serializers.Serializer):

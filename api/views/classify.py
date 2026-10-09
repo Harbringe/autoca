@@ -82,7 +82,7 @@ from core.fy import financial_year, fy_bounds
 from core.jobs import run_job
 from core.models import Client
 from core.rbac import has_permission
-from ledger import billing, openings
+from ledger import billing, matching, openings
 from ledger import settlement as settling
 from ledger.learning import learn_from_decision
 from ledger.partyreports import party_statement
@@ -233,6 +233,14 @@ class PartyViewSet(ClientScopedMixin, FirmScopedViewSet):
         "DELETE": "party.manage",
     }
 
+    def perform_create(self, serializer):
+        super().perform_create(serializer)
+        matching.rematch(self.client)  # a new party may be the evidence an unpaid bill was waiting for
+
+    def perform_update(self, serializer):
+        super().perform_update(serializer)
+        matching.rematch(self.client)  # a changed name, GSTIN or TDS section can do the same
+
     @extend_schema(
         summary="Counterparties in the statements that look like parties",
         description=(
@@ -265,6 +273,7 @@ class PartyViewSet(ClientScopedMixin, FirmScopedViewSet):
         payload = CreatePartiesSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         made = party_discovery.create_parties(self.client, payload.validated_data["parties"])
+        matching.rematch(self.client)
         return Response({"created": len(made)}, status=status.HTTP_201_CREATED)
 
     @extend_schema(
@@ -642,6 +651,8 @@ class ClassificationViewSet(
             Party, pk=payload.validated_data["party"], firm_id=request.firm.pk, client=client
         )
         confirm_party_decision(classification, party, user=request.user)
+        # The spelling is remembered now, so a bill that waited for exactly this evidence may be certain.
+        matching.rematch(client)
         classification.refresh_from_db()
         return Response(ClassificationSerializer(classification).data)
 
@@ -701,6 +712,9 @@ class ClassificationViewSet(
         )
         after = unresolved_for(client).count()
         also_placed = max(before - after - 1, 0)
+        # A row given a party can make an invoice's payment certain.
+        if party is not None:
+            matching.rematch(client)
         activity.record(
             firm_id=request.firm.pk,
             user=request.user,

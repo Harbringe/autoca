@@ -4164,6 +4164,13 @@ export interface components {
          * @enum {string}
          */
         EntryKindEnum: "BANK" | "VOUCHER" | "JOURNAL";
+        /**
+         * @description * `party` - party
+         *     * `name` - name
+         *     * `amount` - amount
+         * @enum {string}
+         */
+        EvidenceEnum: "party" | "name" | "amount";
         ExplainRequest: {
             item_key: string;
             /** @description Why this can stand, in a few words. */
@@ -6020,6 +6027,14 @@ export interface components {
             on_party_account: boolean;
             /** Format: uuid */
             entry: string | null;
+            /**
+             * @description What the match rests on: the row is on this party, the party's name is in the narration, or only the amount and date agree.
+             *
+             *     * `party` - party
+             *     * `name` - name
+             *     * `amount` - amount
+             */
+            evidence: components["schemas"]["EvidenceEnum"];
         };
         PayrollLine: {
             /** Format: uuid */

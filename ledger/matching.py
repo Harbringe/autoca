@@ -22,9 +22,10 @@ person settles it (``ledger.settlement``), and a payment already posted to some 
 from __future__ import annotations
 
 import datetime
+import logging
 import re
 
-from django.db import transaction
+from django.db import DatabaseError, transaction
 from django.db.models import BigIntegerField, F, Sum, Value
 from django.db.models.functions import Coalesce
 
@@ -32,6 +33,8 @@ from banking.models import StatementTransaction
 from classify.models import ClassificationMethod, PartyAlias
 from ledger import approval, billing
 from ledger.models import Bill, BillKind
+
+logger = logging.getLogger("autoca.matching")
 
 #: A payment may precede its invoice (an advance) by this long, and follow it by this long.
 DAYS_BEFORE = 30
@@ -144,6 +147,21 @@ def match_client(client) -> int:
         if _settle(bill, *rows[0]):
             settled += 1
     return settled
+
+
+def rematch(client) -> int:
+    """Look again for certain pairs after something a person did may have made one: a spelling confirmed, a row's party set,
+    a party created or changed, a bill revised.
+
+    Best effort and silent: it runs after the person's own action has succeeded, so whatever goes wrong here is logged and
+    left, never turned into a failure of that action. Returns how many pairs were settled.
+    """
+    try:
+        with transaction.atomic():
+            return match_client(client)
+    except (DatabaseError, billing.BillingError, approval.NotApprovableError):
+        logger.warning("re-matching bills and bank rows for client %s failed; left for the next run", client.pk, exc_info=True)
+        return 0
 
 
 def match_bill(bill: Bill) -> bool:

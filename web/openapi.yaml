@@ -8863,6 +8863,16 @@ components:
         * `BANK` - Posted from a bank statement row
         * `VOUCHER` - A purchase, sales or note voucher
         * `JOURNAL` - A journal voucher
+    EvidenceEnum:
+      enum:
+      - party
+      - name
+      - amount
+      type: string
+      description: |-
+        * `party` - party
+        * `name` - name
+        * `amount` - amount
     ExplainRequest:
       type: object
       properties:
@@ -12622,9 +12632,19 @@ components:
           type: string
           format: uuid
           nullable: true
+        evidence:
+          allOf:
+          - $ref: '#/components/schemas/EvidenceEnum'
+          description: |-
+            What the match rests on: the row is on this party, the party's name is in the narration, or only the amount and date agree.
+
+            * `party` - party
+            * `name` - name
+            * `amount` - amount
       required:
       - date
       - entry
+      - evidence
       - narration
       - on_party_account
       - posted_to

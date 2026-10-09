@@ -142,6 +142,12 @@ def _payload_of(parsed, kind: str) -> dict:
         "currency": parsed.currency,
         "expense_hint": parsed.expense_hint,
         "items": parsed.items,
+        "tcs_paise": parsed.tcs_paise,
+        "other_charges_paise": parsed.other_charges_paise,
+        "discount_paise": parsed.discount_paise,
+        "details": parsed.details,
+        "rejected": parsed.rejected,
+        "as_read": parsed.as_read,
     }
 
 

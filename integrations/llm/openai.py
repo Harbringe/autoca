@@ -43,6 +43,7 @@ class OpenAILLMAdapter(GroqLLMAdapter):
         temperature: float | None = None,
         token_param: str = "max_completion_tokens",  # noqa: S107 -- a request field name, not a secret
         image_detail: str = "high",
+        strict_schema: bool = False,
         **_ignored,
     ):
         if not api_key:
@@ -59,8 +60,11 @@ class OpenAILLMAdapter(GroqLLMAdapter):
         self.temperature = temperature
         self.token_param = token_param
         self.image_detail = image_detail
+        #: Ask the provider to enforce a JSON schema (every key present, right types) where the caller supplies one.
+        #: Off until a real call has shown the model accepts it: LLM_STRICT_SCHEMA=1.
+        self.strict_schema = bool(strict_schema)
 
-    def _request(self, system: str, user, max_tokens: int, shared: str | None = None) -> dict:
+    def _request(self, system: str, user, max_tokens: int, shared: str | None = None, schema: dict | None = None) -> dict:
         # Reference material that is the same from call to call goes in its own message, ahead of what changes.
         # The provider caches a prompt up to a message boundary, so the second and later calls for a client pay
         # a fraction for it.
@@ -74,12 +78,14 @@ class OpenAILLMAdapter(GroqLLMAdapter):
             "response_format": {"type": "json_object"},
             "messages": messages,
         }
+        if schema is not None and self.strict_schema:
+            body["response_format"] = {"type": "json_schema", "json_schema": {"name": "reading", "strict": True, "schema": schema}}
         if self.temperature is not None:
             body["temperature"] = self.temperature
         return body
 
     def complete_json_with_images(
-        self, system: str, user: str, images: list[bytes], *, max_tokens: int = 4096
+        self, system: str, user: str, images: list[bytes], *, max_tokens: int = 4096, schema: dict | None = None
     ) -> LLMResponse:
         parts: list[dict] = [{"type": "text", "text": user}]
         for image in images:
@@ -93,4 +99,4 @@ class OpenAILLMAdapter(GroqLLMAdapter):
                     },
                 }
             )
-        return self._complete(system, parts, max_tokens)
+        return self._complete(system, parts, max_tokens, None, schema)

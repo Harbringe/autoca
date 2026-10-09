@@ -25,7 +25,7 @@ class _Fake(LLMAdapter):
             raise self.error
         return LLMResponse(text=self.reply, model="m", input_tokens=10, output_tokens=5)
 
-    def complete_json_with_images(self, system, user, images, *, max_tokens=4096):
+    def complete_json_with_images(self, system, user, images, *, max_tokens=4096, schema=None):
         return self.complete_json(system, user, max_tokens=max_tokens)
 
 

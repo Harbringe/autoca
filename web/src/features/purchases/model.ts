@@ -42,6 +42,8 @@ function readingAlerts(r: InvoiceReading): string[] {
   else if (r.attention) alerts.push(r.attention)
   if (r.read && !r.proved) alerts.push(...FAILED_CHECKS(r))
   if ((r.read?.unsure ?? []).length) alerts.push(`The reader was not sure of: ${r.read!.unsure.join(', ')}.`)
+  const rejected = r.read?.rejected ?? []
+  if (rejected.length) alerts.push(`The reader saw values it could not use: ${rejected.map((x) => x.field.replaceAll('_', ' ')).join(', ')}.`)
   return [...new Set(alerts.filter(Boolean))]
 }
 

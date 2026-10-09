@@ -531,6 +531,8 @@ INTEGRATION_OPTIONS = {
         # OpenAI only: some current models accept just their default temperature, so it is sent only when set.
         "temperature": float(env("LLM_TEMPERATURE")) if env("LLM_TEMPERATURE") else None,
         "token_param": env("LLM_TOKEN_PARAM", "max_completion_tokens"),
+        # Enforce the JSON schema a caller supplies (OpenAI only). Set only after a real call showed the model takes it.
+        "strict_schema": env_bool("LLM_STRICT_SCHEMA", False),
         # How closely page images are read (low, high, original, auto). Dense tables may read better at "original".
         "image_detail": env("LLM_IMAGE_DETAIL", "high"),
     },

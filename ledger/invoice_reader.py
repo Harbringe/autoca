@@ -69,8 +69,22 @@ class Reading:
     currency: str = ""
     #: A few words for what the invoice is for ("Food and beverages", "Office rent"), to suggest a ledger.
     expense_hint: str = ""
-    #: The invoice's lines: description, HSN/SAC, quantity, unit, rate and amount (paise), GST rate (percent).
+    #: The invoice's lines: description, HSN/SAC, quantity, unit, rate and amount (paise), GST rate (percent), and the line's
+    #: discount and tax amounts when printed.
     items: list[dict] = field(default_factory=list)
+    #: Charges outside the taxable value that make up the total: tax collected at source, freight and other charges. They
+    #: join the arithmetic proof; a text read leaves them at zero.
+    tcs_paise: int = 0
+    other_charges_paise: int = 0
+    #: The invoice's total discount, for the form; not part of the proof (the taxable value is already net of it).
+    discount_paise: int | None = None
+    #: Everything else a scan states that has no field of its own: document type, IRN, e-way bill, PO number, bank details, ...
+    details: dict[str, str] = field(default_factory=dict)
+    #: Values the model gave that failed their check and were therefore left out of the fields above, so they are not lost:
+    #: ``{"field", "value", "why"}`` each. A person sees them beside the empty field.
+    rejected: list[dict] = field(default_factory=list)
+    #: The model's reply as it came (bounded), kept with the reading so a wrong field can be traced to what was said.
+    as_read: dict = field(default_factory=dict)
     checks: list[Check] = field(default_factory=list)
 
     @property
@@ -153,8 +167,15 @@ def reading_from_fields(fields: dict, *, today: datetime.date | None = None) -> 
         buyer_name=" ".join(str(fields.get("buyer_name") or "").split())[:120],
     )
 
+    rejected: list[dict] = []
+
+    def reject(key: str, value, why: str) -> None:
+        rejected.append({"field": key, "value": str(value)[:120], "why": why})
+
     def valid(key: str) -> str:
         candidate = re.sub(r"\s+", "", str(fields.get(key) or "")).upper()
+        if candidate and not is_valid_gstin(candidate):
+            reject(key, candidate, "is not a valid GSTIN (its check character fails)")
         return candidate if is_valid_gstin(candidate) else ""
 
     supplier, buyer = valid("supplier_gstin"), valid("buyer_gstin")
@@ -166,6 +187,8 @@ def reading_from_fields(fields: dict, *, today: datetime.date | None = None) -> 
         reading.invoice_date = datetime.date.fromisoformat(printed_date)
     except ValueError:
         reading.invoice_date = _parse_date(printed_date)
+    if printed_date and reading.invoice_date is None:
+        reject("invoice_date", printed_date, "is not a date that could be understood")
     doubtful = fields.get("unsure")
     reading.unsure = [str(k) for k in doubtful if isinstance(k, str)][:12] if isinstance(doubtful, list) else []
     reading.taxable_paise = money("taxable")
@@ -183,7 +206,9 @@ def reading_from_fields(fields: dict, *, today: datetime.date | None = None) -> 
     try:
         reading.due_date = datetime.date.fromisoformat(due) if due else None
     except ValueError:
-        reading.due_date = None
+        reading.due_date = _parse_date(due)
+        if reading.due_date is None:
+            reject("due_date", due, "is not a date that could be understood")
     reading.supplier_address = text("supplier_address", 300)
     reading.buyer_address = text("buyer_address", 300)
     reading.place_of_supply = text("place_of_supply", 60)
@@ -191,16 +216,115 @@ def reading_from_fields(fields: dict, *, today: datetime.date | None = None) -> 
     reading.expense_hint = text("expense_category", 80)
     pan = re.sub(r"\s+", "", str(fields.get("supplier_pan") or "")).upper()
     reading.supplier_pan = pan if re.fullmatch(r"[A-Z]{5}\d{4}[A-Z]", pan) else ""
+    if pan and not reading.supplier_pan:
+        reject("supplier_pan", pan, "is not shaped like a PAN")
     mode = re.sub(r"[\s-]+", "_", str(fields.get("payment_mode") or "").strip().lower())
     reading.payment_mode = mode if mode in PAYMENT_MODES else ""
+    if mode and not reading.payment_mode:
+        reject("payment_mode", mode, "is not one of: " + ", ".join(PAYMENT_MODES))
     currency = str(fields.get("currency") or "").strip().upper()
     reading.currency = currency if re.fullmatch(r"[A-Z]{3}", currency) else ""
+    if currency and not reading.currency:
+        reject("currency", currency, "is not a three-letter currency code")
     reading.items = _items(fields.get("items"))
+    reading.tcs_paise = money("tcs") or 0
+    reading.other_charges_paise = (money("freight") or 0) + (money("other_charges") or 0)
+    reading.discount_paise = money("discount")
+    reading.details = _details(fields, reject)
+    reading.rejected = rejected
+    reading.as_read = _as_read(fields)
     reading.checks = _checks(reading, today)
     return reading
 
 
 PAYMENT_MODES = ("cash", "card", "upi", "bank_transfer", "cheque", "credit")
+DOCUMENT_TYPES = ("tax_invoice", "bill_of_supply", "credit_note", "debit_note", "receipt", "proforma", "delivery_challan", "other")
+
+#: What a scan can state that the form has no field for, with the longest value kept for each.
+_DETAIL_TEXT = {
+    "irn": 70, "ack_no": 30, "eway_bill_no": 20, "vehicle_no": 20, "po_number": 60, "ship_to_name": 120, "ship_to_address": 300,
+    "supplier_email": 80, "supplier_phone": 30, "bank_name": 80, "bank_account_no": 30, "amount_in_words": 200, "notes": 300,
+}
+
+
+def _details(fields: dict, reject) -> dict[str, str]:
+    """The scan's other facts, each cleaned and bounded; a value that fails its check goes to ``reject``, not away."""
+    out: dict[str, str] = {}
+    for key, limit in _DETAIL_TEXT.items():
+        value = " ".join(str(fields.get(key) or "").split())[:limit]
+        if value:
+            out[key] = value
+    kind = re.sub(r"[\s-]+", "_", str(fields.get("document_type") or "").strip().lower())
+    if kind:
+        if kind in DOCUMENT_TYPES:
+            out["document_type"] = kind
+        else:
+            reject("document_type", kind, "is not one of: " + ", ".join(DOCUMENT_TYPES))
+    for key in ("ack_date", "po_date"):
+        raw = str(fields.get(key) or "").strip()
+        if raw:
+            try:
+                out[key] = datetime.date.fromisoformat(raw).isoformat()
+            except ValueError:
+                parsed = _parse_date(raw)
+                if parsed:
+                    out[key] = parsed.isoformat()
+                else:
+                    reject(key, raw, "is not a date that could be understood")
+    pan = re.sub(r"\s+", "", str(fields.get("buyer_pan") or "")).upper()
+    if pan:
+        if re.fullmatch(r"[A-Z]{5}\d{4}[A-Z]", pan):
+            out["buyer_pan"] = pan
+        else:
+            reject("buyer_pan", pan, "is not shaped like a PAN")
+    ifsc = re.sub(r"\s+", "", str(fields.get("bank_ifsc") or "")).upper()
+    if ifsc:
+        if re.fullmatch(r"[A-Z]{4}0[A-Z0-9]{6}", ifsc):
+            out["bank_ifsc"] = ifsc
+        else:
+            reject("bank_ifsc", ifsc, "is not shaped like an IFSC code")
+    rc = fields.get("reverse_charge")
+    if isinstance(rc, bool):
+        out["reverse_charge"] = "yes" if rc else "no"
+    elif isinstance(rc, str) and rc.strip().lower() in ("yes", "no", "y", "n", "true", "false"):
+        out["reverse_charge"] = "yes" if rc.strip().lower() in ("yes", "y", "true") else "no"
+    return out
+
+
+_AS_READ_LIMIT = 20_000
+
+
+def _bounded(value, depth: int = 0):
+    """The model's reply cut down to something safe to store: strings shortened, lists and keys capped, depth limited."""
+    if depth > 3:
+        return None
+    if isinstance(value, bool) or value is None or isinstance(value, int | float):
+        return value
+    if isinstance(value, str):
+        return value[:300]
+    if isinstance(value, list):
+        return [_bounded(v, depth + 1) for v in value[:100]]
+    if isinstance(value, dict):
+        return {str(k)[:60]: _bounded(v, depth + 1) for k, v in list(value.items())[:80]}
+    return str(value)[:100]
+
+
+def _as_read(fields: dict) -> dict:
+    bounded = _bounded(fields)
+    return bounded if len(repr(bounded)) <= _AS_READ_LIMIT else {"note": "reply too large to keep", "keys": sorted(map(str, fields))[:80]}
+
+
+def _quantity(value):
+    """A quantity as a number: a JSON number as is, or the number inside text such as "2 pcs" or "2,000"."""
+    if isinstance(value, str):
+        match = re.search(r"\d[\d,]*(?:\.\d+)?", value)
+        if not match:
+            return None
+        try:
+            return float(match.group(0).replace(",", ""))
+        except ValueError:
+            return None
+    return value
 
 
 def _items(raw) -> list[dict]:
@@ -214,7 +338,7 @@ def _items(raw) -> list[dict]:
         description = " ".join(str(entry.get("description") or "").split())[:200]
         if not description:
             continue
-        quantity = entry.get("quantity")
+        quantity = _quantity(entry.get("quantity"))
         rate_pct = entry.get("gst_rate")
         sac = re.sub(r"\D", "", str(entry.get("hsn_sac") or ""))[:8]
         out.append(
@@ -226,6 +350,11 @@ def _items(raw) -> list[dict]:
                 "rate_paise": _money_value(entry.get("rate")),
                 "amount_paise": _money_value(entry.get("amount")),
                 "gst_rate": float(rate_pct) if isinstance(rate_pct, int | float) and not isinstance(rate_pct, bool) and 0 <= rate_pct <= 100 else None,
+                "discount_paise": _money_value(entry.get("discount")),
+                "cgst_paise": _money_value(entry.get("cgst")),
+                "sgst_paise": _money_value(entry.get("sgst")),
+                "igst_paise": _money_value(entry.get("igst")),
+                "total_paise": _money_value(entry.get("total")),
             }
         )
     return out
@@ -361,7 +490,10 @@ def _choose_amounts(reading: Reading, candidates: dict[str, list[int]]) -> None:
 
 
 def _ties(taxable: int, total: int, values: dict[str, int]) -> bool:
-    return taxable + values["cgst"] + values["sgst"] + values["igst"] + values["cess"] + values["round_off"] == total
+    return (
+        taxable + values["cgst"] + values["sgst"] + values["igst"] + values["cess"] + values["round_off"]
+        + values.get("tcs", 0) + values.get("other", 0) == total
+    )
 
 
 def _split_ok(values: dict[str, int]) -> bool:
@@ -386,6 +518,7 @@ def _checks(reading: Reading, today: datetime.date) -> list[Check]:
         values = {
             "cgst": reading.cgst_paise, "sgst": reading.sgst_paise, "igst": reading.igst_paise,
             "cess": reading.cess_paise, "round_off": reading.round_off_paise,
+            "tcs": reading.tcs_paise, "other": reading.other_charges_paise,
         }
         tied = _ties(reading.taxable_paise, reading.total_paise, values)
         if tied:
@@ -393,7 +526,8 @@ def _checks(reading: Reading, today: datetime.date) -> list[Check]:
         else:
             gap = (
                 reading.taxable_paise + reading.cgst_paise + reading.sgst_paise + reading.igst_paise
-                + reading.cess_paise + reading.round_off_paise - reading.total_paise
+                + reading.cess_paise + reading.round_off_paise + reading.tcs_paise + reading.other_charges_paise
+                - reading.total_paise
             )
             detail = (
                 f"Taxable value plus tax and round-off is {abs(gap) / 100:,.2f} {'more' if gap > 0 else 'less'} than the total."

@@ -13366,6 +13366,42 @@ components:
           items:
             $ref: '#/components/schemas/ReadItem'
           description: The invoice's lines, when the model read them.
+        tcs_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Tax collected at source, when printed.
+        other_charges_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Freight and other charges outside the taxable value.
+        discount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: The invoice's total discount, when printed.
+        details:
+          type: object
+          additionalProperties:
+            type: string
+          description: 'Other facts printed on the document: document_type, irn, ack_no,
+            ack_date, eway_bill_no, vehicle_no, po_number, po_date, ship_to_name,
+            ship_to_address, supplier_email, supplier_phone, buyer_pan, bank_name,
+            bank_account_no, bank_ifsc, amount_in_words, notes, reverse_charge. Only
+            those that were found.'
+        rejected:
+          type: array
+          items:
+            $ref: '#/components/schemas/RejectedValue'
+          description: Values the model gave that failed their check and so were left
+            out of the fields, with why.
+        as_read:
+          description: The model's reply as it came (bounded), to trace a wrong field.
         unsure:
           type: array
           items:
@@ -13373,12 +13409,15 @@ components:
           description: Fields the reader said it could not read clearly (a scan),
             to check against the page.
       required:
+      - as_read
       - buyer_address
       - buyer_name
       - cess_paise
       - cgst_paise
       - counterparty_gstin
       - currency
+      - details
+      - discount_paise
       - due_date
       - expense_hint
       - gstins
@@ -13386,15 +13425,18 @@ components:
       - invoice_date
       - invoice_no
       - items
+      - other_charges_paise
       - payment_mode
       - payment_terms
       - place_of_supply
+      - rejected
       - round_off_paise
       - sgst_paise
       - supplier_address
       - supplier_name
       - supplier_pan
       - taxable_paise
+      - tcs_paise
       - total_display
       - total_paise
       - unsure
@@ -13429,13 +13471,57 @@ components:
           format: double
           nullable: true
           description: Percent.
+        discount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        cgst_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        sgst_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        igst_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        total_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: The line total, when printed.
       required:
       - amount_paise
+      - cgst_paise
       - description
+      - discount_paise
       - gst_rate
       - hsn_sac
+      - igst_paise
       - quantity
       - rate_paise
+      - sgst_paise
+      - total_paise
       - unit
     RecategorizeRequest:
       type: object
@@ -13526,6 +13612,22 @@ components:
       - previous_line
       - previous_paise
       - text
+    RejectedValue:
+      type: object
+      properties:
+        field:
+          type: string
+          description: Which field the model gave a value for.
+        value:
+          type: string
+          description: What the model said.
+        why:
+          type: string
+          description: Why it was not used.
+      required:
+      - field
+      - value
+      - why
     RemainderEnum:
       enum:
       - ON_ACCOUNT

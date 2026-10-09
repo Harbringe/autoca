@@ -85,6 +85,17 @@ class ReadItemSerializer(serializers.Serializer):
     rate_paise = PaiseField(allow_null=True)
     amount_paise = PaiseField(allow_null=True, help_text="The line's taxable amount.")
     gst_rate = serializers.FloatField(allow_null=True, help_text="Percent.")
+    discount_paise = PaiseField(allow_null=True)
+    cgst_paise = PaiseField(allow_null=True)
+    sgst_paise = PaiseField(allow_null=True)
+    igst_paise = PaiseField(allow_null=True)
+    total_paise = PaiseField(allow_null=True, help_text="The line total, when printed.")
+
+
+class RejectedValueSerializer(serializers.Serializer):
+    field = serializers.CharField(help_text="Which field the model gave a value for.")
+    value = serializers.CharField(help_text="What the model said.")
+    why = serializers.CharField(help_text="Why it was not used.")
 
 
 class ReadFieldsSerializer(serializers.Serializer):
@@ -114,6 +125,19 @@ class ReadFieldsSerializer(serializers.Serializer):
     currency = serializers.CharField(allow_blank=True)
     expense_hint = serializers.CharField(allow_blank=True, help_text="A few words for what it was for, to suggest a ledger.")
     items = ReadItemSerializer(many=True, help_text="The invoice's lines, when the model read them.")
+    tcs_paise = PaiseField(help_text="Tax collected at source, when printed.")
+    other_charges_paise = PaiseField(help_text="Freight and other charges outside the taxable value.")
+    discount_paise = PaiseField(allow_null=True, help_text="The invoice's total discount, when printed.")
+    details = serializers.DictField(
+        child=serializers.CharField(),
+        help_text="Other facts printed on the document: document_type, irn, ack_no, ack_date, eway_bill_no, vehicle_no, po_number, "
+        "po_date, ship_to_name, ship_to_address, supplier_email, supplier_phone, buyer_pan, bank_name, bank_account_no, bank_ifsc, "
+        "amount_in_words, notes, reverse_charge. Only those that were found.",
+    )
+    rejected = RejectedValueSerializer(
+        many=True, help_text="Values the model gave that failed their check and so were left out of the fields, with why."
+    )
+    as_read = serializers.JSONField(help_text="The model's reply as it came (bounded), to trace a wrong field.")
     unsure = serializers.ListField(
         child=serializers.CharField(), help_text="Fields the reader said it could not read clearly (a scan), to check against the page."
     )
@@ -205,6 +229,12 @@ def reading_payload(reading: InvoiceReading, fields: dict, party, matching, paym
                 "currency": fields.get("currency", ""),
                 "expense_hint": fields.get("expense_hint", ""),
                 "items": fields.get("items", []),
+                "tcs_paise": fields.get("tcs_paise", 0),
+                "other_charges_paise": fields.get("other_charges_paise", 0),
+                "discount_paise": fields.get("discount_paise"),
+                "details": fields.get("details", {}),
+                "rejected": fields.get("rejected", []),
+                "as_read": fields.get("as_read", {}),
                 "unsure": fields.get("unsure", []),
             }
             if fields

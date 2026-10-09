@@ -23,7 +23,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { LedgerPicker, usableLedgers } from '@/features/review/LedgerPicker'
-import { formatDate, parseDate, parseRupees } from '@/lib/format'
+import { formatDate, formatPaise, parseDate, parseRupees } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import {
   isPurchaseSide,
@@ -57,6 +57,27 @@ export interface ReceiptFacts {
   currency: string
   category: string
   unsure: string[]
+  /** Other facts printed on the document (type, IRN, e-way bill, PO number, bank details, ...), only those found. */
+  details?: Record<string, string>
+  /** Values the reader saw but could not use, with why, so a blank field is not a mystery. */
+  rejected?: { field: string; value: string; why: string }[]
+  tcsPaise?: number
+  otherChargesPaise?: number
+  discountPaise?: number | null
+}
+
+const DETAIL_LABELS: [string, string][] = [
+  ['document_type', 'Document'], ['irn', 'IRN'], ['ack_no', 'Ack no.'], ['ack_date', 'Ack date'], ['eway_bill_no', 'E-way bill'],
+  ['vehicle_no', 'Vehicle'], ['po_number', 'PO number'], ['po_date', 'PO date'], ['ship_to_name', 'Ship to'],
+  ['ship_to_address', 'Ship-to address'], ['supplier_email', 'Email'], ['supplier_phone', 'Phone'], ['buyer_pan', 'Buyer PAN'],
+  ['bank_name', 'Bank'], ['bank_account_no', 'Account no.'], ['bank_ifsc', 'IFSC'], ['reverse_charge', 'Reverse charge'],
+  ['amount_in_words', 'In words'], ['notes', 'Notes'],
+]
+
+const FIELD_NAMES: Record<string, string> = {
+  supplier_gstin: 'Supplier GSTIN', buyer_gstin: 'Buyer GSTIN', supplier_pan: 'Supplier PAN', buyer_pan: 'Buyer PAN',
+  invoice_date: 'Invoice date', due_date: 'Due date', payment_mode: 'Payment mode', currency: 'Currency',
+  document_type: 'Document type', ack_date: 'Ack date', po_date: 'PO date', bank_ifsc: 'IFSC',
 }
 
 const PAYMENT_MODE: Record<string, string> = { cash: 'Cash', card: 'Card', upi: 'UPI', bank_transfer: 'Bank transfer', cheque: 'Cheque', credit: 'On credit (not yet paid)' }
@@ -576,10 +597,15 @@ function ReceiptFactsCard({ facts }: { facts: ReceiptFacts }) {
     ['Paid by', PAYMENT_MODE[facts.paymentMode] ?? ''],
     ['Payment terms', facts.terms],
     ['Looks like', facts.category],
+    ...DETAIL_LABELS.map(([key, label]): [string, string] => [label, (facts.details ?? {})[key] ?? '']),
+    ['TCS', facts.tcsPaise ? formatPaise(facts.tcsPaise) : ''],
+    ['Freight and other charges', facts.otherChargesPaise ? formatPaise(facts.otherChargesPaise) : ''],
+    ['Discount', facts.discountPaise ? formatPaise(facts.discountPaise) : ''],
   ]
   const shown = rows.filter(([, v]) => v)
   const foreign = facts.currency && facts.currency !== 'INR'
-  if (shown.length === 0 && !foreign) return null
+  const rejected = facts.rejected ?? []
+  if (shown.length === 0 && !foreign && rejected.length === 0) return null
   return (
     <section aria-label="Read from the receipt" className="grid gap-2 rounded-md border border-accent-edge bg-accent p-3 text-sm">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Read from the receipt</h3>
@@ -592,6 +618,15 @@ function ReceiptFactsCard({ facts }: { facts: ReceiptFacts }) {
         ))}
       </dl>
       {foreign && <p className="text-warning">The receipt is in {facts.currency}. Vouchers are booked in rupees: enter the rupee amounts.</p>}
+      {rejected.length > 0 && (
+        <ul className="grid gap-1 text-warning">
+          {rejected.map((r) => (
+            <li key={`${r.field}-${r.value}`}>
+              {FIELD_NAMES[r.field] ?? r.field.replaceAll('_', ' ')}: the reader saw “{r.value}”, which {r.why}. It was left out; check the receipt.
+            </li>
+          ))}
+        </ul>
+      )}
     </section>
   )
 }

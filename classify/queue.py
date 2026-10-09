@@ -36,10 +36,11 @@ from django.db import DatabaseError, transaction
 from django.db.models import F, Q
 from django.utils import timezone
 
-from classify.llm import _apply, _ask_splitting, _Chart, _context_for
+from classify.llm import _applied_view, _apply, _ask_splitting, _Chart, _context_for
 from classify.models import LedgerAccount, ModelState, Party, PartyAlias, TransactionClassification
 from classify.pseudonymise import Pseudonymiser
 from core.db.session import firm_context
+from integrations import debug_archive
 from integrations.llm.base import LLMError, LLMRateLimited
 from integrations.registry import get_llm
 
@@ -214,19 +215,26 @@ def process_next_batch(client, *, max_rows: int | None = None) -> BatchOutcome:
         return BatchOutcome(0, 0, 0, 0, "idle", None, "", "Nothing is waiting for the assistant.")
 
     # No transaction is open here, and no lock is held.
-    replies, failure = {}, None
-    try:
-        replies = _ask_splitting(
-            llm.without_waiting(), claim.rows, claim.chart, claim.pseudonymiser, claim.context
-        )
-    except LLMError as exc:
-        failure = exc
-        logger.warning("model tier unavailable for client %s: %s", client.pk, exc)
+    with debug_archive.trace("classify", client=client, name=f"{claim.account_ledger_name}-{len(claim.rows)}-rows") as archive:
+        replies, failure = {}, None
+        try:
+            replies = _ask_splitting(
+                llm.without_waiting(), claim.rows, claim.chart, claim.pseudonymiser, claim.context
+            )
+        except LLMError as exc:
+            failure = exc
+            logger.warning("model tier unavailable for client %s: %s", client.pk, exc)
 
-    with firm_context(firm_id):
-        if failure is not None:
-            return _release_after_failure(client, claim, failure)
-        return _apply_batch(client, claim, replies)
+        with firm_context(firm_id):
+            if failure is not None:
+                return _release_after_failure(client, claim, failure)
+            outcome = _apply_batch(client, claim, replies)
+            if debug_archive.enabled():
+                fresh = list(
+                    TransactionClassification.objects.filter(pk__in=[row.pk for row in claim.rows]).select_related("ledger")
+                )
+                archive.json("applied.json", _applied_view(fresh, replies))
+            return outcome
 
 
 def _claim(client, size: int) -> _Claim:

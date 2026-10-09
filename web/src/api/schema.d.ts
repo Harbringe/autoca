@@ -6358,6 +6358,29 @@ export interface components {
             expense_hint: string;
             /** @description The invoice's lines, when the model read them. */
             items: components["schemas"]["ReadItem"][];
+            /**
+             * Format: int64
+             * @description Tax collected at source, when printed.
+             */
+            tcs_paise: number;
+            /**
+             * Format: int64
+             * @description Freight and other charges outside the taxable value.
+             */
+            other_charges_paise: number;
+            /**
+             * Format: int64
+             * @description The invoice's total discount, when printed.
+             */
+            discount_paise: number | null;
+            /** @description Other facts printed on the document: document_type, irn, ack_no, ack_date, eway_bill_no, vehicle_no, po_number, po_date, ship_to_name, ship_to_address, supplier_email, supplier_phone, buyer_pan, bank_name, bank_account_no, bank_ifsc, amount_in_words, notes, reverse_charge. Only those that were found. */
+            details: {
+                [key: string]: string;
+            };
+            /** @description Values the model gave that failed their check and so were left out of the fields, with why. */
+            rejected: components["schemas"]["RejectedValue"][];
+            /** @description The model's reply as it came (bounded), to trace a wrong field. */
+            as_read: unknown;
             /** @description Fields the reader said it could not read clearly (a scan), to check against the page. */
             unsure: string[];
         };
@@ -6381,6 +6404,31 @@ export interface components {
              * @description Percent.
              */
             gst_rate: number | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            discount_paise: number | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            cgst_paise: number | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            sgst_paise: number | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            igst_paise: number | null;
+            /**
+             * Format: int64
+             * @description The line total, when printed.
+             */
+            total_paise: number | null;
         };
         RecategorizeRequest: {
             /** Format: uuid */
@@ -6424,6 +6472,14 @@ export interface components {
             current_paise: number;
             /** @description The disclosure, drafted: where it was shown, where it is shown now, and why. */
             text: string;
+        };
+        RejectedValue: {
+            /** @description Which field the model gave a value for. */
+            field: string;
+            /** @description What the model said. */
+            value: string;
+            /** @description Why it was not used. */
+            why: string;
         };
         /**
          * @description * `ON_ACCOUNT` - Held on account

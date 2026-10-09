@@ -54,6 +54,8 @@ class LLMResponse:
     output_tokens: int = 0
     #: Input tokens the provider served from its prompt cache (billed at a fraction). 0 when it does not say.
     cached_tokens: int = 0
+    #: Why the provider stopped ("stop", "length", ...). Empty when it does not say.
+    finish_reason: str = ""
 
 
 class LLMAdapter(abc.ABC):
@@ -74,7 +76,7 @@ class LLMAdapter(abc.ABC):
         """
 
     def complete_json_with_images(
-        self, system: str, user: str, images: list[bytes], *, max_tokens: int = 4096
+        self, system: str, user: str, images: list[bytes], *, max_tokens: int = 4096, schema: dict | None = None
     ) -> LLMResponse:
         """As :meth:`complete_json`, with page images (PNG bytes) beside the text.
 

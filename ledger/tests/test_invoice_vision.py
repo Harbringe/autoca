@@ -26,7 +26,7 @@ class Llm:
     def __init__(self, reply):
         self.reply = reply
 
-    def complete_json_with_images(self, system, user, images, *, max_tokens):
+    def complete_json_with_images(self, system, user, images, *, max_tokens, schema=None):
         if isinstance(self.reply, Exception):
             raise self.reply
         return LLMResponse(text=json.dumps(self.reply), model="m")
@@ -109,7 +109,8 @@ def test_the_rest_of_the_form_is_read_cleaned_and_bounded():
     assert reading.due_date == datetime.date(2025, 9, 11)
     assert reading.payment_mode == "bank_transfer" and reading.currency == "INR"
     assert reading.expense_hint == "Food and beverages"
-    assert reading.items[0] == {"description": "Biryani", "hsn_sac": "9963", "quantity": "2", "unit": "plate", "rate_paise": 25050, "amount_paise": 50100, "gst_rate": 5.0}
+    assert reading.items[0] == {"description": "Biryani", "hsn_sac": "9963", "quantity": "2", "unit": "plate", "rate_paise": 25050, "amount_paise": 50100, "gst_rate": 5.0,
+                                "discount_paise": None, "cgst_paise": None, "sgst_paise": None, "igst_paise": None, "total_paise": None}
     assert len(reading.items) == 2  # the blank and the non-object are dropped
     assert reading.items[1]["quantity"] == "" and reading.items[1]["gst_rate"] is None and reading.items[1]["rate_paise"] == 10000
 
@@ -117,3 +118,68 @@ def test_the_rest_of_the_form_is_read_cleaned_and_bounded():
 def test_what_cannot_be_trusted_is_left_empty():
     reading = reading_from_fields({**GOOD, "supplier_pan": "nope", "payment_mode": "barter", "currency": "rupees", "due_date": "soon", "items": "none"})
     assert (reading.supplier_pan, reading.payment_mode, reading.currency, reading.due_date, reading.items) == ("", "", "", None, [])
+
+
+def test_a_value_that_fails_its_check_is_kept_as_rejected_not_lost():
+    reading = reading_from_fields({**GOOD, "supplier_gstin": "27AAAAA0000A1Z9", "supplier_pan": "nope", "due_date": "soon", "document_type": "memo"})
+    fields = {r["field"] for r in reading.rejected}
+    assert {"supplier_gstin", "supplier_pan", "due_date", "document_type"} <= fields
+    gstin = next(r for r in reading.rejected if r["field"] == "supplier_gstin")
+    assert gstin["value"] == "27AAAAA0000A1Z9" and "check character" in gstin["why"]
+
+
+def test_the_other_facts_on_the_document_are_kept_cleaned():
+    reading = reading_from_fields(
+        {
+            **GOOD,
+            "document_type": "Tax Invoice", "irn": " abc123 ", "eway_bill_no": "1234 5678 9012", "po_number": "PO-77",
+            "ack_date": "2025-09-02", "buyer_pan": "aabcr1234f", "bank_ifsc": "hdfc0001234", "bank_account_no": "5010 0012",
+            "reverse_charge": False, "notes": "Goods once sold are not returnable.",
+        }
+    )
+    d = reading.details
+    assert d["document_type"] == "tax_invoice" and d["irn"] == "abc123" and d["po_number"] == "PO-77"
+    assert d["ack_date"] == "2025-09-02" and d["buyer_pan"] == "AABCR1234F" and d["bank_ifsc"] == "HDFC0001234"
+    assert d["reverse_charge"] == "no" and d["eway_bill_no"] == "1234 5678 9012"
+
+
+def test_the_whole_reply_is_kept_bounded_so_a_wrong_field_can_be_traced():
+    reading = reading_from_fields({**GOOD, "something_new": "x" * 1000, "supplier_name": "Acme"})
+    assert reading.as_read["supplier_name"] == "Acme"
+    assert len(reading.as_read["something_new"]) == 300
+
+
+def test_tcs_and_freight_are_part_of_the_proof():
+    reading = reading_from_fields({**GOOD, "tcs": 100, "freight": 50, "total": "11,950.00"})
+    assert reading.tcs_paise == 10000 and reading.other_charges_paise == 5000
+    assert reading.proved
+    assert not reading_from_fields({**GOOD, "tcs": 100}).proved  # the total does not include it
+
+
+def test_a_quantity_printed_as_text_keeps_its_number():
+    reading = reading_from_fields({**GOOD, "items": [{"description": "Rice", "quantity": "2,000 kg", "amount": 10}, {"description": "Oil", "quantity": "many"}]})
+    assert reading.items[0]["quantity"] == "2000.0"
+    assert reading.items[1]["quantity"] == ""
+
+
+def test_the_schema_names_every_key_the_prompt_asks_for_and_requires_all_of_them():
+    schema = invoice_vision.INVOICE_SCHEMA
+    assert set(schema["required"]) == set(schema["properties"])
+    for key in schema["properties"]:
+        assert f'"{key}"' in invoice_vision.INSTRUCTION or key in ("unsure", "items"), key
+    for key in ("supplier_name", "taxable", "tcs", "irn", "po_number", "bank_ifsc", "reverse_charge"):
+        assert key in schema["properties"]
+    item = schema["properties"]["items"]["items"]
+    assert set(item["required"]) == set(item["properties"]) and item["additionalProperties"] is False
+
+
+def test_the_schema_is_sent_with_the_pages():
+    sent = {}
+
+    class Spy:
+        def complete_json_with_images(self, system, user, images, *, max_tokens=4096, schema=None):
+            sent["schema"] = schema
+            return type("R", (), {"text": json.dumps(GOOD), "model": "m", "input_tokens": 0, "output_tokens": 0, "cached_tokens": 0})()
+
+    invoice_vision.read_scanned_invoice(b"x", 1, Spy(), page_images=[b"p"])
+    assert sent["schema"] is invoice_vision.INVOICE_SCHEMA

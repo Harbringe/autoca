@@ -45,12 +45,65 @@ INSTRUCTION = (
     "plain digits with a decimal point, no quotes, no currency symbol, no commas, no brackets. A negative amount has a "
     "leading minus, for example a round-off printed as (-)0.16 or -0.16 is -0.16, and one printed as 0.40 is 0.4. Use null "
     "for a tax that is not charged.\n"
+    "Further amounts, each a JSON number or null: \"discount\" (the invoice's total discount), \"tcs\" (tax collected at source), "
+    "\"freight\" and \"other_charges\" (packing, loading, handling, anything charged outside the taxable value that is part of the "
+    "total). If the page shows the total, it must equal taxable + tax + tcs + freight + other_charges + round_off; copy each as "
+    "printed and never adjust one to make it so.\n"
+    "Other facts, copied as printed, empty string if absent: \"document_type\" as exactly one of \"tax_invoice\", "
+    "\"bill_of_supply\", \"credit_note\", \"debit_note\", \"receipt\", \"proforma\", \"delivery_challan\", \"other\"; "
+    "\"irn\" (the e-invoice reference number), \"ack_no\", \"ack_date\" (YYYY-MM-DD), \"eway_bill_no\", \"vehicle_no\", "
+    "\"po_number\" and \"po_date\" (YYYY-MM-DD) of the customer's order, \"ship_to_name\" and \"ship_to_address\" when "
+    "different from the buyer, \"supplier_email\", \"supplier_phone\", \"buyer_pan\", \"bank_name\", \"bank_account_no\" "
+    "and \"bank_ifsc\" (the supplier's bank details printed for payment), \"amount_in_words\" (the total in words, as "
+    "printed), \"notes\" (terms, declaration or remarks, one line). \"reverse_charge\": true or false as the page says, null if it "
+    "does not.\n"
     "\"items\": the invoice's lines, in order, each an object with \"description\", \"hsn_sac\" (digits, or empty), "
     "\"quantity\" (a number), \"unit\", \"rate\" (price per unit, a number), \"amount\" (the line's taxable amount, a "
-    "number) and \"gst_rate\" (the GST percentage on the line, a number, or null). An empty list if there are no lines.\n"
+    "number), \"gst_rate\" (the GST percentage on the line, a number, or null), and when printed per line \"discount\", "
+    "\"cgst\", \"sgst\", \"igst\" (amounts) and \"total\" (the line total), each a number or null. An empty list if there are "
+    "no lines.\n"
     "Doubt: \"unsure\" is a list of the key names above that you could not read clearly or had to guess; an empty list if "
     "you are sure of everything."
 )
+
+
+def _nullable(kind: str) -> dict:
+    return {"type": [kind, "null"]}
+
+
+_TEXT_KEYS = (
+    "supplier_name", "supplier_gstin", "supplier_pan", "supplier_address", "buyer_name", "buyer_gstin", "buyer_address",
+    "invoice_no", "place_of_supply", "payment_terms", "invoice_date", "due_date", "payment_mode", "currency", "expense_category",
+    "document_type", "irn", "ack_no", "ack_date", "eway_bill_no", "vehicle_no", "po_number", "po_date", "ship_to_name",
+    "ship_to_address", "supplier_email", "supplier_phone", "buyer_pan", "bank_name", "bank_account_no", "bank_ifsc",
+    "amount_in_words", "notes",
+)
+_AMOUNT_KEYS = ("taxable", "cgst", "sgst", "igst", "cess", "round_off", "total", "discount", "tcs", "freight", "other_charges")
+_ITEM_TEXT = ("description", "hsn_sac", "unit")
+_ITEM_NUMBERS = ("quantity", "rate", "amount", "gst_rate", "discount", "cgst", "sgst", "igst", "total")
+
+#: What a complete reply looks like: every key present, with its type. Sent to the provider so it can enforce the shape
+#: (``LLM_STRICT_SCHEMA``); the reader above still checks every value whatever the provider did.
+INVOICE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        **{k: _nullable("string") for k in _TEXT_KEYS},
+        **{k: _nullable("number") for k in _AMOUNT_KEYS},
+        "reverse_charge": _nullable("boolean"),
+        "unsure": {"type": "array", "items": {"type": "string"}},
+        "items": {
+            "type": "array",
+            "items": {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {**{k: _nullable("string") for k in _ITEM_TEXT}, **{k: _nullable("number") for k in _ITEM_NUMBERS}},
+                "required": [*_ITEM_TEXT, *_ITEM_NUMBERS],
+            },
+        },
+    },
+    "required": [*_TEXT_KEYS, *_AMOUNT_KEYS, "reverse_charge", "unsure", "items"],
+}
 
 
 class InvoiceVisionError(ValueError):
@@ -68,7 +121,7 @@ def read_scanned_invoice(data: bytes, page_count: int, llm, *, client=None, page
     pages = page_images if page_images is not None else render_pages(data)
     started = time.monotonic()
     try:
-        reply = llm.complete_json_with_images(SYSTEM, INSTRUCTION, pages, max_tokens=4096)
+        reply = llm.complete_json_with_images(SYSTEM, INSTRUCTION, pages, max_tokens=8192, schema=INVOICE_SCHEMA)
     except LLMUnavailable as exc:
         raise InvoiceVisionError("The model that reads scans is not set up. Set the model in the server settings.") from exc
     except LLMRateLimited as exc:

@@ -458,6 +458,24 @@ _SPLIT_ANYWAY = ("request_too_large",)
 
 
 def _ask_splitting(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]:
+    """Ask about a batch; ask once more about any row the model left out of its answer.
+
+    A model that returns a well-formed reply can still skip rows. Those would otherwise sit unplaced with nothing to say
+    why, so they are asked about again (a smaller batch usually answers). Rows still missing after that are left for a
+    person and say so in their rationale (see ``_apply``).
+    """
+    replies = _ask_halving(llm, batch, chart, pseudonymiser, context)
+    missing = [row for row in batch if str(row.pk) not in replies]
+    if missing:
+        logger.info("model left %d of %d rows unanswered; asking about them again", len(missing), len(batch))
+        try:
+            replies = {**replies, **_ask_halving(llm, missing, chart, pseudonymiser, context)}
+        except LLMError as exc:
+            logger.info("second ask for %d unanswered rows failed: %s", len(missing), exc)
+    return replies
+
+
+def _ask_halving(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]:
     """Ask about a batch; if the reply is cut off, ask about each half instead."""
     try:
         return _ask(llm, batch, chart, pseudonymiser, context)
@@ -475,9 +493,9 @@ def _ask_splitting(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]
             raise
         logger.info("model reply unusable for %d rows (%s); splitting the batch", len(batch), exc)
         middle = len(batch) // 2
-        first = _ask_splitting(llm, batch[:middle], chart, pseudonymiser, context)
+        first = _ask_halving(llm, batch[:middle], chart, pseudonymiser, context)
         try:
-            second = _ask_splitting(llm, batch[middle:], chart, pseudonymiser, context)
+            second = _ask_halving(llm, batch[middle:], chart, pseudonymiser, context)
         except LLMRateLimited:
             # The first half is already answered; the rest is left unplaced rather than lost with it.
             second = {}
@@ -663,6 +681,9 @@ def _apply(batch, replies, chart, pseudonymiser) -> tuple[int, int, int]:
     for classification in batch:
         item = replies.get(str(classification.pk))
         if not item:
+            if classification.method == ClassificationMethod.UNRESOLVED and not classification.rationale:
+                classification.rationale = "The model did not answer for this row."
+                classification.save(update_fields=["rationale"])
             continue
         rationale = _readable(str(item.get("rationale") or ""), pseudonymiser)[:500]
         narration = _book_narration(str(item.get("narration") or ""), pseudonymiser)
@@ -673,6 +694,9 @@ def _apply(batch, replies, chart, pseudonymiser) -> tuple[int, int, int]:
         # A standard name in ``ledger`` is a new ledger the model mis-filed; see
         # ``_Chart.standard_spec``. Its own ``new_ledger`` still wins.
         proposal = item.get("new_ledger") or chart.standard_spec(named)
+        if ledger is None and named and not proposal:
+            # Said so, instead of the vaguer "no usable signal" below: a name that is in no chart is the model's error.
+            rationale = (f'The model named a ledger that is not in the chart ("{named[:80]}"). ' + rationale).strip()[:500]
         if ledger is None and proposal and confidence >= REVIEW_ADVISED:
             if classification.method == ClassificationMethod.RULE:
                 # A rule placed this row in a ledger that is in use; a new

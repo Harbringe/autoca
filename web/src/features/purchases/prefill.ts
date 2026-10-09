@@ -15,6 +15,11 @@ const factsOf = (read: Read): ReceiptFacts => ({
   currency: read.currency,
   category: read.expense_hint,
   unsure: read.unsure ?? [],
+  details: read.details ?? {},
+  rejected: read.rejected ?? [],
+  tcsPaise: read.tcs_paise ?? 0,
+  otherChargesPaise: read.other_charges_paise ?? 0,
+  discountPaise: read.discount_paise ?? null,
 })
 
 /** What the receipt adds beyond the voucher's own fields: the due date, its lines, and the facts shown beside the form. */

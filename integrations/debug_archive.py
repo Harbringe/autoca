@@ -186,9 +186,11 @@ class ArchivingLLM(LLMAdapter):
         request = {"system": system, "shared": extra.get("shared"), "user": user, "max_tokens": max_tokens}
         return self._call(lambda: self._inner.complete_json(system, user, max_tokens=max_tokens, **extra), request)
 
-    def complete_json_with_images(self, system, user, images, *, max_tokens=4096):
-        request = {"system": system, "user": user, "max_tokens": max_tokens, "page_images": len(images)}
-        return self._call(lambda: self._inner.complete_json_with_images(system, user, images, max_tokens=max_tokens), request)
+    def complete_json_with_images(self, system, user, images, *, max_tokens=4096, schema=None):
+        request = {"system": system, "user": user, "max_tokens": max_tokens, "page_images": len(images), "schema": schema}
+        return self._call(
+            lambda: self._inner.complete_json_with_images(system, user, images, max_tokens=max_tokens, schema=schema), request
+        )
 
     def _call(self, ask, request: dict) -> LLMResponse:
         active = _current.get()
@@ -224,6 +226,7 @@ class ArchivingLLM(LLMAdapter):
                 "cached_tokens": response.cached_tokens,
                 "seconds": round(time.monotonic() - started, 2),
                 "reply_parses_as_json": parsed is not None,
+                "finish_reason": response.finish_reason,
             },
         )
         if ad_hoc:

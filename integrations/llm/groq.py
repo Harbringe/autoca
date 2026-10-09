@@ -116,7 +116,7 @@ class GroqLLMAdapter(LLMAdapter):
     #: What the provider is called in errors.
     LABEL = "Groq"
 
-    def _request(self, system: str, user, max_tokens: int, shared: str | None = None) -> dict:
+    def _request(self, system: str, user, max_tokens: int, shared: str | None = None, schema: dict | None = None) -> dict:
         """The chat-completions body. ``user`` is text, or a list of content parts (text and images)."""
         return {
             "model": self.model,
@@ -130,17 +130,20 @@ class GroqLLMAdapter(LLMAdapter):
         }
 
     def complete_json(
-        self, system: str, user: str, *, max_tokens: int = 2048, shared: str | None = None
+        self, system: str, user: str, *, max_tokens: int = 2048, shared: str | None = None, schema: dict | None = None
     ) -> LLMResponse:
-        return self._complete(system, user, max_tokens, shared)
+        return self._complete(system, user, max_tokens, shared, schema)
 
-    def _complete(self, system: str, user, max_tokens: int, shared: str | None = None) -> LLMResponse:
-        body = json.dumps(self._request(system, user, max_tokens, shared)).encode()
+    def _complete(
+        self, system: str, user, max_tokens: int, shared: str | None = None, schema: dict | None = None
+    ) -> LLMResponse:
+        body = json.dumps(self._request(system, user, max_tokens, shared, schema)).encode()
 
         payload = self._post(body)
 
         try:
             text = payload["choices"][0]["message"]["content"]
+            finish = str(payload["choices"][0].get("finish_reason") or "")
             usage = payload.get("usage") or {}
         except (KeyError, IndexError, TypeError) as exc:
             raise LLMError(f"{self.LABEL} returned a reply with no message in it.") from exc
@@ -148,7 +151,8 @@ class GroqLLMAdapter(LLMAdapter):
         try:
             json.loads(text)
         except (TypeError, ValueError) as exc:
-            raise LLMError(f"{self.LABEL} returned a reply that is not JSON.") from exc
+            cut = " (it was cut off at the output limit)" if finish == "length" else ""
+            raise LLMError(f"{self.LABEL} returned a reply that is not JSON{cut}.") from exc
 
         return LLMResponse(
             text=text,
@@ -156,6 +160,7 @@ class GroqLLMAdapter(LLMAdapter):
             input_tokens=int(usage.get("prompt_tokens") or 0),
             output_tokens=int(usage.get("completion_tokens") or 0),
             cached_tokens=int((usage.get("prompt_tokens_details") or {}).get("cached_tokens") or 0),
+            finish_reason=finish,
         )
 
     # -- transport -------------------------------------------------------------

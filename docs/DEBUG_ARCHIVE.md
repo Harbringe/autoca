@@ -58,6 +58,8 @@ aws s3 cp s3://<DEBUG_BUCKET>/dev/2026-10-10/<client>/invoice/<time>-<doc>/ . --
 
 ## Safeguards in the code
 
+- Every object is written encrypted (S3's own encryption, or the KMS key in `DEBUG_ARCHIVE_KMS_KEY_ID`; with a KMS key, your user and the
+  server role also need `kms:GenerateDataKey` / `kms:Decrypt` on it).
 - Off unless both `DEBUG_ARCHIVE_ENABLED` and `DEBUG_ARCHIVE_BUCKET` are set.
 - Writes happen in a background thread and any failure is logged without content; an upload or a classification never fails
   because the archive could not be written.

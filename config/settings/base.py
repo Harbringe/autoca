@@ -552,6 +552,8 @@ DEBUG_ARCHIVE_ENABLED = env_bool("DEBUG_ARCHIVE_ENABLED", False)
 DEBUG_ARCHIVE_BUCKET = env("DEBUG_ARCHIVE_BUCKET", "")
 DEBUG_ARCHIVE_REGION = env("DEBUG_ARCHIVE_REGION", "ap-south-1")
 DEBUG_ARCHIVE_PREFIX = env("DEBUG_ARCHIVE_PREFIX", "dev")
+# Optional: a KMS key id to encrypt the archive with; blank uses S3's own encryption. Every object is encrypted either way.
+DEBUG_ARCHIVE_KMS_KEY_ID = env("DEBUG_ARCHIVE_KMS_KEY_ID", "")
 
 # What a model call costs, for the platform owner's usage page (usage/). US dollars per million tokens: ``input`` is
 # ordinary input, ``cached`` is input the provider served from its cache, ``output`` is what the model wrote. A model

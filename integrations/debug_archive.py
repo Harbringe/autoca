@@ -48,6 +48,7 @@ def enabled() -> bool:
 
 
 def _put(key: str, data: bytes, content_type: str) -> None:
+    """Write one object, always encrypted at rest: with the KMS key named in ``DEBUG_ARCHIVE_KMS_KEY_ID`` if set, else S3's own."""
     global _sink
     if _sink is None:
         from .storage.s3 import S3StorageAdapter
@@ -56,7 +57,9 @@ def _put(key: str, data: bytes, content_type: str) -> None:
             bucket=settings.DEBUG_ARCHIVE_BUCKET,
             region=getattr(settings, "DEBUG_ARCHIVE_REGION", "") or "ap-south-1",
         )
-    _sink.put(key, data, content_type=content_type)
+    kms_key = getattr(settings, "DEBUG_ARCHIVE_KMS_KEY_ID", "")
+    encryption = {"ServerSideEncryption": "aws:kms", "SSEKMSKeyId": kms_key} if kms_key else {"ServerSideEncryption": "AES256"}
+    _sink.client.put_object(Bucket=_sink.bucket, Key=key, Body=data, ContentType=content_type, **encryption)
 
 
 def _slug(text: str, limit: int = 40) -> str:

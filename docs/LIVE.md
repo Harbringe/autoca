@@ -69,11 +69,15 @@ cd web; npm run dev         # window 3: http://localhost:5173, sign in with your
 ## What stops you hurting yourself
 
 - With these settings only `runserver`, `check`, `showmigrations`, `diffsettings` and `shell` run. `migrate`, `test`,
-  `loaddata`, `flush` and the background assistant are refused (`config/settings/live.py`).
+  `loaddata` and `flush` are refused (the assistant only with its flag, below) (`config/settings/live.py`).
 - Running the tests in a window started with `run-live.ps1` is refused as well, because the suite creates and drops a database
   on whatever server it is pointed at.
 - Your local code can be ahead of the live database. A field added on `dev` that is not migrated on the server fails with a
   database error on the page that uses it. That is expected until the change is deployed.
-- Whatever is in the project's own `.env` (it may hold a real model key), the live settings use a stub in place of the model and a
-  storage adapter that refuses every read and write. Live rows are never sent to a model from this PC, and no file is written
-  that the server's bucket does not have. Pages that need a file show an error here; open them on the live site.
+- The model, the bucket and the assistant are OFF unless `.env.live` sets `LIVE_ALLOW_MODEL=1`, `LIVE_ALLOW_STORAGE=1`,
+  `LIVE_ALLOW_ASSISTANT=1`. Off means a stub model and a storage adapter that refuses, whatever the project's own `.env` holds.
+  **On is real**: files are written to and deleted from the live bucket (using your own AWS login, which then needs
+  `s3:GetObject`, `s3:PutObject`, `s3:DeleteObject` on that bucket and nothing else), and real rows go to the model provider.
+  Each one also needs the server's own settings in `.env.live` (`LLM_BACKEND` and key; `STORAGE_BACKEND`, `STORAGE_BUCKET`,
+  `STORAGE_REGION`); a flag with its settings missing refuses to start. Remove the S3 permission when you stop using it.
+- `migrate` stays refused whatever the flags say: the deploy changes the schema, never a PC.

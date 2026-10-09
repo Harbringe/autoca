@@ -105,7 +105,7 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
   if (all.error) return <ErrorState error={all.error} retry={() => void all.refetch()} />
   if (entries.error) return <ErrorState error={entries.error} retry={() => void entries.refetch()} />
 
-  const proposed = all.data.filter((l) => l.status === 'PROPOSED')
+  const proposed = all.data.filter((l) => l.status === 'PROPOSED' || l.awaiting_look)
   const active = all.data.filter((l) => l.status === 'ACTIVE' && (showInactive || l.is_active))
   const mayDecide = can('journal.approve') && !!client.data?.can_sign_off
   const manage = can('ledger.manage')
@@ -152,19 +152,19 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
       {proposed.length > 0 && (
         <Card className="grid gap-3 border-info/40 p-4">
           <div className="flex items-center gap-2 font-medium">
-            <Bot className="size-4 text-info" aria-hidden /> Ledgers the assistant proposed ({proposed.length})
+            <Bot className="size-4 text-info" aria-hidden /> Ledgers the assistant added ({proposed.length})
           </div>
           <p className="text-sm text-muted-foreground">
             {mayDecide
-              ? 'Accept each with the exact name it has in Tally, merge it into a ledger that already exists, or reject it. Rows suggested into it wait until you decide.'
+              ? 'Keep each with the exact name it has in Tally, or merge it into a ledger that already exists. Ledgers the assistant added are live already, so rows may be in them; a merge moves those rows across.'
               : 'A senior CA who leads this client decides these.'}
           </p>
           <DataTable
-            caption="Ledgers the assistant proposed"
+            caption="Ledgers the assistant added"
             rows={proposed}
             rowKey={(l) => l.id}
             columns={[
-              { key: 'name', header: 'Proposed name', cell: (l) => <span className="font-medium text-heading">{l.name}</span> },
+              { key: 'name', header: 'Name', cell: (l) => <span className="font-medium text-heading">{l.name}</span> },
               { key: 'group', header: 'Group', priority: 2, cell: (l) => GROUP_LABEL[l.group ?? ''] ?? l.group },
               { key: 'why', header: 'Why', priority: 3, className: 'max-w-md truncate text-muted-foreground', cell: (l) => l.proposal_reason },
               { key: 'rows', header: 'Rows', align: 'right', cell: (l) => l.row_count },
@@ -425,7 +425,7 @@ export function ProposalDecision({ clientId, proposal, existing, onClose }: { cl
       if (mode === 'merge') await raw.post(`${base}/merge/`, { into })
       if (mode === 'reject') await raw.post(`${base}/reject/`)
       await invalidate()
-      toast.success(mode === 'accept' ? 'Ledger accepted' : mode === 'merge' ? 'Merged; its rows moved across' : 'Rejected; its rows are back in Review')
+      toast.success(mode === 'accept' ? 'Ledger kept' : mode === 'merge' ? 'Merged; its rows moved across' : 'Rejected; its rows are back in Review')
       onClose()
     } catch (e) {
       setError(messageOf(e))
@@ -438,18 +438,18 @@ export function ProposalDecision({ clientId, proposal, existing, onClose }: { cl
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent aria-describedby={undefined}>
         <DialogHeader>
-          <DialogTitle>Proposed ledger: {proposal.name}</DialogTitle>
+          <DialogTitle>New ledger from the assistant: {proposal.name}</DialogTitle>
           <DialogDescription>{proposal.proposal_reason || 'Proposed by the assistant.'}</DialogDescription>
         </DialogHeader>
         <div className="grid gap-2">
-          {(['accept', 'merge', 'reject'] as const).map((m) => (
+          {(['accept', 'merge', 'reject'] as const).filter((m) => m !== 'reject' || proposal.status === 'PROPOSED').map((m) => (
             <label key={m} className={cn('flex cursor-pointer gap-2 rounded-md border p-3 text-sm', mode === m && 'border-primary bg-hover')}>
               <input type="radio" name="decision" checked={mode === m} onChange={() => setMode(m)} className="mt-0.5" />
               <span>
-                <span className="font-medium">{m === 'accept' ? 'Accept' : m === 'merge' ? 'Merge into an existing ledger' : 'Reject'}</span>
+                <span className="font-medium">{m === 'accept' ? 'Keep' : m === 'merge' ? 'Merge into an existing ledger' : 'Reject'}</span>
                 <span className="block text-muted-foreground">
                   {m === 'accept'
-                    ? 'Add it to the chart, with the exact name used in Tally.'
+                    ? 'Keep it in the chart, with the exact name used in Tally.'
                     : m === 'merge'
                       ? 'The client already has a ledger for this. Its rows move there.'
                       : `Not needed. ${plural(proposal.row_count, 'row')} suggested into it go back to Review.`}
@@ -488,7 +488,7 @@ export function ProposalDecision({ clientId, proposal, existing, onClose }: { cl
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
           <Button variant={mode === 'reject' ? 'destructive' : 'primary'} onClick={() => void go()} disabled={busy || (mode === 'merge' && !into) || (mode === 'accept' && name.trim().length < 2)}>
-            {mode === 'accept' ? 'Accept' : mode === 'merge' ? 'Merge' : 'Reject'}
+            {mode === 'accept' ? 'Keep' : mode === 'merge' ? 'Merge' : 'Reject'}
           </Button>
         </DialogFooter>
       </DialogContent>

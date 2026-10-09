@@ -38,14 +38,18 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
     row_count = serializers.IntegerField(
         read_only=True, default=0, help_text="Classifications currently placed in this ledger."
     )
+    awaiting_look = serializers.BooleanField(
+        read_only=True,
+        help_text="The assistant added this ledger and it is live, but no CA has yet kept, renamed or merged it. Rows may already be in it.",
+    )
 
     class Meta:
         model = LedgerAccount
         fields = [
             "id", "name", "group", "is_bank_or_cash", "is_active",
-            "status", "proposal_reason", "row_count", "created_at", "nce_line", "nce_section",
+            "status", "proposal_reason", "awaiting_look", "row_count", "created_at", "nce_line", "nce_section",
         ]
-        read_only_fields = ["id", "is_bank_or_cash", "status", "proposal_reason", "row_count", "created_at"]
+        read_only_fields = ["id", "is_bank_or_cash", "status", "proposal_reason", "awaiting_look", "row_count", "created_at"]
         extra_kwargs = {
             "name": {
                 "help_text": (

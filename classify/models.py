@@ -101,6 +101,11 @@ class LedgerStatus(models.TextChoices):
     REJECTED = "REJECTED", "Rejected by a CA"
 
 
+#: Put in front of ``proposal_reason`` once a CA has looked at a ledger the assistant added. The ledger stays live either way;
+#: until the mark is there it shows as "added by the assistant, awaiting a look" on the Review and Masters screens.
+REVIEWED_MARK = "✓ "
+
+
 class LedgerAccount(UUIDModel, FirmScopedModel):
     """A ledger in the client's books.
 
@@ -149,6 +154,16 @@ class LedgerAccount(UUIDModel, FirmScopedModel):
     @property
     def is_proposed(self) -> bool:
         return self.status == LedgerStatus.PROPOSED
+
+    @property
+    def awaiting_look(self) -> bool:
+        """A ledger the assistant created that is live, and that no CA has yet kept, renamed or merged away."""
+        return self.status == LedgerStatus.ACTIVE and bool(self.proposal_reason) and not self.proposal_reason.startswith(REVIEWED_MARK)
+
+    def mark_reviewed(self) -> None:
+        """A CA has kept (or renamed) this ledger the assistant added. Recorded in the reason, so it needs no schema change."""
+        if self.proposal_reason and not self.proposal_reason.startswith(REVIEWED_MARK):
+            self.proposal_reason = (REVIEWED_MARK + self.proposal_reason)[:500]
 
     @property
     def is_party_account(self) -> bool:

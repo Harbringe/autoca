@@ -9822,6 +9822,11 @@ components:
         proposal_reason:
           type: string
           readOnly: true
+        awaiting_look:
+          type: boolean
+          readOnly: true
+          description: The assistant added this ledger and it is live, but no CA has
+            yet kept, renamed or merged it. Rows may already be in it.
         row_count:
           type: integer
           readOnly: true
@@ -9838,6 +9843,7 @@ components:
           type: string
           maxLength: 80
       required:
+      - awaiting_look
       - created_at
       - id
       - is_bank_or_cash

@@ -129,7 +129,8 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
   // A row on a party's account is never ticked or posted in bulk: a person says which bills it settles, one row at a time.
   const postable = (r: Classification) => !!r.ledger && !r.is_posted && !r.on_party_account
   const tickedRows = rows.filter((r) => ticked.has(r.id) && postable(r))
-  const proposed = (ledgers.data ?? []).filter((l) => l.status === 'PROPOSED')
+  // Ledgers the assistant added: still waiting for a CA (PROPOSED), or live already but not yet looked at.
+  const proposed = (ledgers.data ?? []).filter((l) => l.status === 'PROPOSED' || l.awaiting_look)
   const proposedIds = new Set(proposed.map((l) => l.id))
 
   const suggest = useMutation({
@@ -221,12 +222,12 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
         <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-info/30 bg-info-bg px-4 py-2.5 text-sm">
           <span>
             <Bot className="mr-1.5 inline size-4 text-info" aria-hidden />
-            The assistant has proposed {plural(proposed.length, 'new ledger')} ({proposed.slice(0, 3).map((l) => l.name).join(', ')}
-            {proposed.length > 3 ? '…' : ''}). Rows can go in them once a senior CA accepts them.
+            The assistant added {plural(proposed.length, 'new ledger')} ({proposed.slice(0, 3).map((l) => l.name).join(', ')}
+            {proposed.length > 3 ? '…' : ''}). Check each name: keep it, rename it to match Tally, or merge it into a ledger the client already has.
           </span>
           <Button asChild size="sm" variant="outline">
             <Link to="/clients/$clientId/masters" params={{ clientId }} search={{ tab: 'ledgers' }}>
-              Review proposals
+              Look at them
             </Link>
           </Button>
         </div>
@@ -385,7 +386,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
                             </span>
                           )}
                           {proposedIds.has(r.ledger ?? '') && (
-                            <span className="shrink-0 rounded-sm bg-info-bg px-1 text-[11px] font-medium text-info" title="A new ledger the assistant proposed. A senior CA accepts it before rows can go in.">
+                            <span className="shrink-0 rounded-sm bg-info-bg px-1 text-[11px] font-medium text-info" title="A new ledger the assistant added. A senior CA keeps it, renames it or merges it into an existing one.">
                               New
                             </span>
                           )}
@@ -550,7 +551,7 @@ function Decision({
   const queryClient = useQueryClient()
   const ledgerInput = useRef<HTMLInputElement>(null)
   const suggested = ledgers.some((l) => l.id === row.ledger) ? row.ledger : null
-  const proposal = allLedgers.find((l) => l.id === row.ledger && l.status === 'PROPOSED') ?? null
+  const proposal = allLedgers.find((l) => l.id === row.ledger && (l.status === 'PROPOSED' || l.awaiting_look)) ?? null
   const [deciding, setDeciding] = useState(false)
   const [newParty, setNewParty] = useState<{ name: string; gstin: string; error: string | null; busy: boolean } | null>(null)
 

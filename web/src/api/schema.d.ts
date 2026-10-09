@@ -4586,6 +4586,8 @@ export interface components {
             is_active?: boolean;
             readonly status: components["schemas"]["LedgerAccountStatusEnum"];
             readonly proposal_reason: string;
+            /** @description The assistant added this ledger and it is live, but no CA has yet kept, renamed or merged it. Rows may already be in it. */
+            readonly awaiting_look: boolean;
             /**
              * @description Classifications currently placed in this ledger.
              * @default 0

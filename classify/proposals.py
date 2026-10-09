@@ -113,7 +113,7 @@ def resolve_proposal(
 @db_transaction.atomic
 def accept(ledger: LedgerAccount, *, name: str | None = None, group: str | None = None) -> LedgerAccount:
     """A CA agrees the client needs this ledger, optionally fixing its name to the client's own spelling."""
-    _require_proposed(ledger)
+    _require_decidable(ledger)
     if name is not None:
         name = clean_name(name)
         if len(name) < 2:
@@ -130,7 +130,8 @@ def accept(ledger: LedgerAccount, *, name: str | None = None, group: str | None 
         ledger.group = group
     ledger.status = LedgerStatus.ACTIVE
     ledger.is_active = True
-    ledger.save(update_fields=["name", "group", "status", "is_active"])
+    ledger.mark_reviewed()
+    ledger.save(update_fields=["name", "group", "status", "is_active", "proposal_reason"])
     return ledger
 
 
@@ -181,4 +182,10 @@ def reject(ledger: LedgerAccount) -> int:
 
 def _require_proposed(ledger: LedgerAccount) -> None:
     if ledger.status != LedgerStatus.PROPOSED:
+        raise ProposalError(f"{ledger.name!r} is not a proposal awaiting a decision.")
+
+
+def _require_decidable(ledger: LedgerAccount) -> None:
+    """A CA may keep a ledger that is still PROPOSED, or one the assistant added live that nobody has yet looked at."""
+    if ledger.status != LedgerStatus.PROPOSED and not ledger.awaiting_look:
         raise ProposalError(f"{ledger.name!r} is not a proposal awaiting a decision.")

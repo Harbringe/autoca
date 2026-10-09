@@ -228,7 +228,11 @@ def test_entity_type_and_size_are_kept_and_the_size_is_suggested_from_the_books(
     after = statements(api, client_record)
     assert after["size"] == "large" and after["size_suggested"] == "msme"
     assert after["capital_title"] == "Partners' Capital Accounts"
-    assert any("Cash Flow Statement" in w for w in after["warnings"])
+    # A Large entity gets the Cash Flow Statement itself, and it ties to the cash and bank balance on the balance sheet.
+    flow = {r["key"]: r for r in after["cash_flow"]}
+    assert flow["A.net"]["label"].startswith("Net cash flow from operating") and flow["N.close"]["kind"] == "total"
+    assert flow["N.close"]["current_paise"] == by_key(after["balance_sheet"])["CA.CASH"]["current_paise"]
+    assert "N.diff" not in flow
 
 
 def test_a_ledger_can_be_pinned_to_a_sub_head_of_its_note_and_a_catch_all_is_flagged(api, client_record):

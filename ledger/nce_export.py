@@ -1,6 +1,6 @@
 """The financial statements as an Excel workbook, laid out the way the ICAI format sets them out.
 
-Sheets: Balance Sheet, Statement of P&L, Notes 1 to 3 (about the entity, policies, the partner-wise capital table) and
+Sheets: Balance Sheet, Statement of P&L, Cash Flow Statement (a Large entity only), Notes 1 to 3 (about the entity, policies, the partner-wise capital table) and
 Notes 4 to 25 with each note's sub-heads. Figures are in the unit the client chose (rupees, lakhs, ...), already rounded by
 ``ledger.nce``; every text that came from a person or a ledger name goes through ``_safe_cell`` so a name beginning with
 ``=`` cannot become a formula.
@@ -82,6 +82,8 @@ def workbook(client, financial_year: int, s: Statements) -> bytes:
 
     statement("Balance Sheet", f"Balance Sheet as at {end}", s.balance_sheet, first=True)
     statement("Statement of P&L", f"Statement of Profit and Loss for the year ended {end}", s.profit_and_loss)
+    if s.size == "large":
+        statement("Cash Flow Statement", f"Cash Flow Statement for the year ended {end}", s.cash_flow)
 
     ws = sheet("Notes 1 to 3", f"Notes forming part of the Financial Statements for the year ended {end}", [8, 34, 14, 18, 18, 18, 18, 18, 18, 18])
     ws.append([])

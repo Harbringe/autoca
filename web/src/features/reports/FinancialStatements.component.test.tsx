@@ -55,6 +55,12 @@ const STATEMENTS = {
   size_reason: '',
   size_statement: 'The entity is a Micro, Small and Medium Sized Entity (MSME).',
   capital_title: "Partners' Capital Accounts",
+  cash_flow: [
+    { key: 'A', label: 'A. Cash flow from operating activities', kind: 'heading', level: 0, note: null, current_paise: null, previous_paise: null },
+    { key: 'A.pbt', label: 'Net profit before tax', kind: 'line', level: 2, note: null, current_paise: 1200000, previous_paise: 800000 },
+    { key: 'A.net', label: 'Net cash flow from operating activities (A)', kind: 'total', level: 0, note: null, current_paise: 1000000, previous_paise: -250000 },
+    { key: 'N.diff', label: 'Difference the books do not explain', kind: 'line', level: 1, note: null, current_paise: 5000, previous_paise: 0 },
+  ],
 }
 
 function renderIt() {
@@ -65,6 +71,28 @@ function renderIt() {
     </QueryClientProvider>,
   )
 }
+
+describe('the Cash Flow Statement', () => {
+  it('is shown for a Large entity, with brackets for cash going out and any difference visible', async () => {
+    vi.mocked(raw.get).mockResolvedValue({ ...STATEMENTS, size: 'large' })
+    render(
+      <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
+        <FinancialStatements clientId="c1" fy={2025} />
+      </QueryClientProvider>,
+    )
+    const cf = await screen.findByRole('table', { name: 'Cash Flow Statement' })
+    expect(within(cf).getByText('A. Cash flow from operating activities')).toBeInTheDocument()
+    expect(within(cf).getByText('(2,500.00)')).toBeInTheDocument()
+    expect(within(cf).getByText('Difference the books do not explain')).toBeInTheDocument()
+  })
+
+  it('is left out for an MSME, which is exempt, and says why', async () => {
+    renderIt()
+    await screen.findByRole('table', { name: 'Balance Sheet' })
+    expect(screen.queryByRole('table', { name: 'Cash Flow Statement' })).not.toBeInTheDocument()
+    expect(screen.getByText(/required only of a Large entity/)).toBeInTheDocument()
+  })
+})
 
 describe('the ICAI-format statements', () => {
   it('shows the current and previous year, a note number on each line, and brackets for a negative', async () => {

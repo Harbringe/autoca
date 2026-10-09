@@ -102,6 +102,10 @@ class StatementsSerializer(serializers.Serializer):
     size_reason = serializers.CharField(help_text="Why the books suggest that size.")
     size_statement = serializers.CharField(help_text="The disclosure that goes with the size, drafted for Note 2.")
     capital_title = serializers.CharField(help_text="What Note 3 and the capital line are called for this kind of entity.")
+    cash_flow = StatementRowSerializer(
+        many=True,
+        help_text="The Cash Flow Statement (indirect method) with the year before. Required for a Large entity; an MSME is exempt and may leave it out.",
+    )
 
 
 class PartnerInputSerializer(serializers.Serializer):

@@ -16,12 +16,13 @@ from __future__ import annotations
 
 import datetime
 import re
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from classify.models import LedgerAccount, LedgerGroup, Party
 from core.money import format_inr
 from ledger import nce_assets
 from ledger.nce_ageing import outstanding_bills, split_by_age
+from ledger.nce_cashflow import cash_flow
 from ledger.reports import OPENING_DIFFERENCE, PROFIT_BROUGHT_FORWARD, LedgerBalance, _balances
 
 # ---------------------------------------------------------------------------
@@ -314,6 +315,8 @@ class Statements:
     #: The disclosure that goes with the size, drafted for Note 2.
     size_statement: str = ""
     capital_title: str = "Owners' Capital Account"
+    #: The Cash Flow Statement (indirect method). A Large entity must give it; an MSME is exempt but may.
+    cash_flow: list[StatementRow] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -423,6 +426,8 @@ def normalise_settings(raw) -> dict:
 # ---------------------------------------------------------------------------
 
 _I = re.IGNORECASE
+#: Income that belongs under investing activities in the cash flow, not operating.
+_INTEREST_INCOME = re.compile(r"interest|dividend", re.IGNORECASE)
 _RELATED = r"director|partner|proprietor|relative|related|promoter|family"
 _BANKISH = r"bank|hdfc|sbi|icici|axis|kotak|pnb|canara|idfc|yes bank|bob\b|union bank"
 
@@ -760,6 +765,52 @@ def build(client, financial_year: int) -> Statements:
     rnd_c, rnd_p = (assets_c - liab_c, assets_p - liab_p) if unit != 100 else (0, 0)
     owners_c, owners_p, liab_c, liab_p = owners_c + rnd_c, owners_p + rnd_p, liab_c + rnd_c, liab_p + rnd_p
 
+    # --- the Cash Flow Statement: this year from the two year-end positions, last year from the one before that
+    def interest_of(parts) -> int:
+        return sum(p for r, p in parts.get("PL.OTH", []) if _INTEREST_INCOME.search(r.name))
+
+    if prev_rows:
+        pp_rows, _ = _balances(client, financial_year - 2)
+        pp, _pp_parts = _tally(pp_rows, overrides, unit)
+        stock_years = settings["years"]
+        gap_ppp = (
+            _unit(_stock_gap(_balances(client, financial_year - 3)[0], settings, financial_year - 3), unit)
+            if stock_years.get(str(financial_year - 3), {}).get("closing_stock_paise") is not None
+            else 0
+        )
+        if gap_pp:
+            pp["CA.STOCK"] = pp.get("CA.STOCK", 0) + gap_pp
+        if gap_pp - gap_ppp:
+            pp["PL.COGS"] = pp.get("PL.COGS", 0) - (gap_pp - gap_ppp)
+        pp_p = profit(pp)
+        owners_pp = v(pp, "EQ.CAP") + v(pp, "EQ.RES", pp_p["net"] + gap_ppp)
+    else:
+        pp, pp_p, owners_pp = {}, profit({}), 0
+    cf_args = {"show_difference": False}
+    cf_cur = cash_flow(
+        cur, prev, profit_before_tax=cur_p["after_prem"], net_profit=cur_p["net"], interest_income=interest_of(cur_parts),
+        owners_funds_cur=owners_c, owners_funds_prev=owners_p, **cf_args,
+    )
+    cf_prev = cash_flow(
+        prev, pp, profit_before_tax=prev_p["after_prem"], net_profit=prev_p["net"], interest_income=interest_of(prev_parts),
+        owners_funds_cur=owners_p, owners_funds_prev=owners_pp, **cf_args,
+    )
+    if cf_cur.unexplained_paise or cf_prev.unexplained_paise:
+        cf_args["show_difference"] = True
+        cf_cur = cash_flow(
+            cur, prev, profit_before_tax=cur_p["after_prem"], net_profit=cur_p["net"], interest_income=interest_of(cur_parts),
+            owners_funds_cur=owners_c, owners_funds_prev=owners_p, **cf_args,
+        )
+        cf_prev = cash_flow(
+            prev, pp, profit_before_tax=prev_p["after_prem"], net_profit=prev_p["net"], interest_income=interest_of(prev_parts),
+            owners_funds_cur=owners_p, owners_funds_prev=owners_pp, **cf_args,
+        )
+    before = {r.key: r.paise for r in cf_prev.rows}
+    cash_rows = [
+        StatementRow(r.key, r.label, r.kind, r.level, None, None if r.kind == "heading" else r.paise, None if r.kind == "heading" else before.get(r.key, 0))
+        for r in cf_cur.rows
+    ]
+
     bs = [
         L("h.I", "I. OWNERS' FUNDS AND LIABILITIES", kind="heading"),
         L("h.1", "(1) Owners' Funds", level=1, kind="heading"),
@@ -1026,8 +1077,11 @@ def build(client, financial_year: int) -> Statements:
     borrowings = cur.get("NCL.BORR", 0) + cur.get("CL.BORR", 0)
     size_suggested, size_reason = suggest_size(turnover, borrowings, bank_or_insurer=settings["bank_or_insurer"], non_msme_group=settings["non_msme_group"])
     size = settings["size"] or size_suggested
-    if size == "large":
-        warnings.append("A Large entity must also give a Cash Flow Statement. That statement is not built yet.")
+    if size == "large" and abs(cf_cur.unexplained_paise) > max(100, unit):
+        warnings.append(
+            f"The Cash Flow Statement has a difference of {format_inr(abs(cf_cur.unexplained_paise))} that the books do not explain. "
+            "Usually a ledger is on the wrong line (for example a loan under Other liabilities), or deferred tax is out of step."
+        )
     if not entity_type:
         warnings.append("Say whether this is a proprietorship, a partnership or another kind of entity (Statement details).")
     if entity_type == "proprietor" and cur.get("PL.PREM"):
@@ -1059,4 +1113,5 @@ def build(client, financial_year: int) -> Statements:
         size_reason=size_reason,
         size_statement=SIZE_STATEMENT[size],
         capital_title=capital_title,
+        cash_flow=cash_rows,
     )

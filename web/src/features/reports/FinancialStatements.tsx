@@ -202,6 +202,17 @@ export function FinancialStatements({ clientId, fy }: { clientId: string; fy: nu
         <StatementTable title="Statement of Profit and Loss" rows={s.profit_and_loss} current={end} previous={prevEnd} hasPrevious={s.has_previous} unit={s.unit_paise} />
       </ReportFrame>
 
+      {s.size === 'large' ? (
+        <ReportFrame clientId={clientId} title="Cash Flow Statement" footer={s.footer} period={`for the year ended ${end}`}>
+          <p className="mb-2 text-xs text-muted-foreground">(Amount in {s.unit_label})</p>
+          <StatementTable title="Cash Flow Statement" rows={s.cash_flow} current={end} previous={prevEnd} hasPrevious={s.has_previous} unit={s.unit_paise} />
+        </ReportFrame>
+      ) : (
+        <p className="text-sm text-muted-foreground print:hidden">
+          A Cash Flow Statement is required only of a Large entity. This entity is treated as an MSME; if that is wrong, change the size under Statement details.
+        </p>
+      )}
+
       {s.regroupings.length > 0 && (
         <section aria-label="Regrouping" className="rounded-lg border border-accent-edge bg-accent p-4 text-sm print:break-inside-avoid">
           <h2 className="mb-1 font-semibold text-heading">Regrouping of previous year figures</h2>

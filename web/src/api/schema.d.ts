@@ -7305,6 +7305,8 @@ export interface components {
             size_statement: string;
             /** @description What Note 3 and the capital line are called for this kind of entity. */
             capital_title: string;
+            /** @description The Cash Flow Statement (indirect method) with the year before. Required for a Large entity; an MSME is exempt and may leave it out. */
+            cash_flow: components["schemas"]["StatementRow"][];
         };
         /**
          * @description * `PREVIEW` - Previewed, not applied

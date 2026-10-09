@@ -15137,12 +15137,19 @@ components:
           type: string
           description: What Note 3 and the capital line are called for this kind of
             entity.
+        cash_flow:
+          type: array
+          items:
+            $ref: '#/components/schemas/StatementRow'
+          description: The Cash Flow Statement (indirect method) with the year before.
+            Required for a Large entity; an MSME is exempt and may leave it out.
       required:
       - about
       - balance_sheet
       - balances
       - capital
       - capital_title
+      - cash_flow
       - entity_type
       - footer
       - has_previous

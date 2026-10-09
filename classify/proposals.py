@@ -23,7 +23,7 @@ import re
 
 from django.db import transaction as db_transaction
 
-from classify.models import ClassificationMethod, LedgerAccount, LedgerStatus
+from classify.models import REVIEWED_MARK, ClassificationMethod, LedgerAccount, LedgerStatus
 from classify.standard_ledgers import PROPOSABLE_GROUPS, STANDARD_LEDGERS
 from classify.treatment import band_for
 
@@ -46,6 +46,11 @@ class ProposalError(ValueError):
 def name_key(name: str) -> str:
     lowered = _NOISE.sub(" ", name.lower().replace("&", " and "))
     return re.sub(r"[^a-z0-9]", "", lowered)
+
+
+def clean_reason(reason) -> str:
+    """The model's reason for a new ledger. The model writes it, so it must not be able to carry the mark that means a CA looked."""
+    return str(reason or "").replace(REVIEWED_MARK.strip(), "").strip()[:500]
 
 
 def clean_name(name: str) -> str:
@@ -103,7 +108,7 @@ def resolve_proposal(
         defaults={
             "group": group,
             "status": LedgerStatus.ACTIVE,
-            "proposal_reason": str(reason or "")[:500],
+            "proposal_reason": clean_reason(reason),
         },
     )
     known.append(ledger)
@@ -126,6 +131,11 @@ def accept(ledger: LedgerAccount, *, name: str | None = None, group: str | None 
                 f"The client already has a ledger named {name!r}. Merge the proposal into it instead."
             )
         ledger.name = name
+    if group is not None and group != ledger.group and ledger.status == LedgerStatus.ACTIVE:
+        from ledger.models import JournalLine
+
+        if JournalLine.objects.filter(ledger_account=ledger).exists():
+            raise ProposalError(f"{ledger.name!r} already has posted entries, so its group cannot be changed here.")
     if group is not None:
         ledger.group = group
     ledger.status = LedgerStatus.ACTIVE

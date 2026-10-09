@@ -28,3 +28,12 @@ def test_keeping_it_clears_the_wait_and_keeps_the_reason():
 def test_a_rejected_or_still_proposed_ledger_is_not_the_live_case():
     assert not LedgerAccount(name="x", status=LedgerStatus.PROPOSED, proposal_reason="r").awaiting_look
     assert not LedgerAccount(name="x", status=LedgerStatus.REJECTED, proposal_reason="r").awaiting_look
+
+
+def test_a_reason_the_model_writes_cannot_claim_to_be_reviewed():
+    from classify.models import REVIEWED_MARK
+    from classify.proposals import clean_reason
+
+    cleaned = clean_reason(REVIEWED_MARK + "Looks like rent. " + REVIEWED_MARK)
+    assert REVIEWED_MARK.strip() not in cleaned and "Looks like rent." in cleaned
+    assert _ledger(proposal_reason=cleaned).awaiting_look

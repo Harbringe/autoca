@@ -52,6 +52,7 @@ from classify.models import ClassificationMethod, LedgerAccount, Party, PartyAli
 from classify.pseudonymise import Pseudonymiser
 from classify.treatment import REVIEW_ADVISED, TdsSection, Treatment, band_for
 from core.masking import mask_text
+from integrations import debug_archive
 from integrations.llm.base import LLMError, LLMRateLimited
 from integrations.registry import get_llm
 from usage.recorder import record
@@ -305,21 +306,24 @@ def _suggest(client, classifications, *, batch_size, replace: bool) -> SuggestRe
         )
         for start in range(0, len(account_rows), size):
             batch = account_rows[start : start + size]
-            context = _context_for(client, batch, pseudonymiser)
-            try:
-                replies = _ask_splitting(llm, batch, chart, pseudonymiser, context)
-            except LLMError as exc:
-                logger.warning("model tier unavailable for client %s: %s", client.pk, exc)
-                return SuggestResult(
-                    considered=len(rows),
-                    suggested=suggested,
-                    declined=declined,
-                    failed=True,
-                    error=str(exc),
-                    confirmed=confirmed,
-                    proposed=chart.proposed,
-                )
-            placed, passed, agreed = _apply(batch, replies, chart, pseudonymiser)
+            with debug_archive.trace("classify", client=client, name=f"{account.ledger_name}-rows-{start + 1}") as archive:
+                context = _context_for(client, batch, pseudonymiser)
+                try:
+                    replies = _ask_splitting(llm, batch, chart, pseudonymiser, context)
+                except LLMError as exc:
+                    logger.warning("model tier unavailable for client %s: %s", client.pk, exc)
+                    return SuggestResult(
+                        considered=len(rows),
+                        suggested=suggested,
+                        declined=declined,
+                        failed=True,
+                        error=str(exc),
+                        confirmed=confirmed,
+                        proposed=chart.proposed,
+                    )
+                placed, passed, agreed = _apply(batch, replies, chart, pseudonymiser)
+                if debug_archive.enabled():
+                    archive.json("applied.json", _applied_view(batch, replies))
             suggested += placed
             declined += passed
             confirmed += agreed
@@ -603,7 +607,54 @@ def _ask(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]:
                 replies[key] = item
     except (KeyError, TypeError, ValueError, AttributeError) as exc:
         raise LLMError("The model's reply did not have the agreed shape.") from exc
+    if debug_archive.enabled():
+        debug_archive.current().json("shape.json", _shape_of(keys, items, replies))
     return {str(row.pk): item for key, item in replies.items() for row in twins[key]}
+
+
+#: The fields the prompt asks for in every suggestion. Used only to describe, in the debug archive, which ones a reply left out.
+_EXPECTED_FIELDS = (
+    "key", "ledger", "new_ledger", "narration", "question", "party_alias", "party_guess", "rcm", "tds_section", "confidence", "rationale",
+)
+
+
+def _shape_of(keys, items, replies) -> dict:
+    """For the debug archive: which rows the model answered, which it skipped, and which fields each answer left out."""
+    answered = set(replies)
+    return {
+        "asked": sorted(keys),
+        "answered": sorted(answered),
+        "skipped_by_model": sorted(set(keys) - answered),
+        "keys_not_asked": sorted({str(i.get("key", "")) for i in items if isinstance(i, dict)} - set(keys)),
+        "duplicate_keys": sorted({k for k in answered if sum(1 for i in items if isinstance(i, dict) and str(i.get("key", "")) == k) > 1}),
+        "fields_missing_per_answer": {k: [f for f in _EXPECTED_FIELDS if f not in v] for k, v in replies.items() if any(f not in v for f in _EXPECTED_FIELDS)},
+    }
+
+
+def _applied_view(batch, replies) -> list[dict]:
+    """For the debug archive: for every row in the batch, what the model said and what ended up stored."""
+    out = []
+    for c in batch:
+        item = replies.get(str(c.pk))
+        out.append(
+            {
+                "classification_id": str(c.pk),
+                "model_answered": item is not None,
+                "model_said": item,
+                "stored": {
+                    "ledger": c.ledger.name if c.ledger_id and c.ledger else None,
+                    "method": str(c.method),
+                    "confidence": c.confidence,
+                    "needs_review": c.needs_review,
+                    "book_narration": c.book_narration,
+                    "open_question": c.open_question,
+                    "rationale": c.rationale,
+                    "tds_section": c.tds_section,
+                    "rcm": c.rcm,
+                },
+            }
+        )
+    return out
 
 
 def _apply(batch, replies, chart, pseudonymiser) -> tuple[int, int, int]:

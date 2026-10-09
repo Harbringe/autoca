@@ -545,6 +545,14 @@ LLM_BATCH_SIZE = int(env("LLM_BATCH_SIZE", "25"))
 # Whatever it reads must still pass the same running-balance proof as any other statement, or it is refused.
 VISION_READING = env_bool("VISION_READING", False)
 
+# A short-lived archive of what was read and what the model replied, for debugging (integrations/debug_archive.py,
+# docs/DEBUG_ARCHIVE.md). OFF unless both the flag and a bucket are set. It holds client data, so the bucket is its own, expires by a
+# lifecycle rule, and the server may only write to it.
+DEBUG_ARCHIVE_ENABLED = env_bool("DEBUG_ARCHIVE_ENABLED", False)
+DEBUG_ARCHIVE_BUCKET = env("DEBUG_ARCHIVE_BUCKET", "")
+DEBUG_ARCHIVE_REGION = env("DEBUG_ARCHIVE_REGION", "ap-south-1")
+DEBUG_ARCHIVE_PREFIX = env("DEBUG_ARCHIVE_PREFIX", "dev")
+
 # What a model call costs, for the platform owner's usage page (usage/). US dollars per million tokens: ``input`` is
 # ordinary input, ``cached`` is input the provider served from its cache, ``output`` is what the model wrote. A model
 # not listed is recorded as "unpriced" rather than free. Prices are the provider's published list prices; change them here

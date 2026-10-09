@@ -14,8 +14,8 @@ import sys
 
 from django.core.exceptions import ImproperlyConfigured
 
-from .dev import *  # noqa: F401,F403
 from .base import env, env_bool
+from .dev import *  # noqa: F401,F403
 
 # The project's own .env may define DATABASE_OWNER_URL for some other database (it did: the old hosted one). Here there is one
 # database, the live one through the tunnel, so the owner alias is the same connection as the default and nothing else.

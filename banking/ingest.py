@@ -32,7 +32,7 @@ from banking.parsers.base import StatementParseError
 from core.models import Client
 from core.money import format_inr
 from documents.models import Document, DocumentKind, DocumentStatus, PipelineTier
-from integrations import files
+from integrations import debug_archive, files
 from integrations.registry import get_llm, get_storage
 
 
@@ -108,15 +108,32 @@ def ingest_statement(
     document = loaded.document
     tier = PipelineTier.TEXT_LAYER
     scanned = scan.needs_vision(document)
-    if scanned and scan.enabled():
-        # A page with no text cannot be read as text. The page images are read by the model instead, and what comes
-        # back must prove out against the statement's own balances like any other read.
-        parsed = scan.read_statement(data, document, get_llm(), client=client, page_images=loaded.images)
-        parser = _ScanReader
-        tier = PipelineTier.VISION
-    else:
-        parser = detect_parser(document, layout) if layout else detect_parser(document)
-        parsed = parser.parse(document)
+    with debug_archive.trace("statement", client=client, name=filename or "statement") as archive:
+        archive.text("extracted.txt", document.text)
+        if scanned and scan.enabled():
+            # A page with no text cannot be read as text. The page images are read by the model instead, and what comes
+            # back must prove out against the statement's own balances like any other read.
+            parsed = scan.read_statement(data, document, get_llm(), client=client, page_images=loaded.images)
+            parser = _ScanReader
+            tier = PipelineTier.VISION
+        else:
+            parser = detect_parser(document, layout) if layout else detect_parser(document)
+            parsed = parser.parse(document)
+        if debug_archive.enabled():
+            archive.json(
+                "outcome.json",
+                {
+                    "reader": parser.__name__ if hasattr(parser, "__name__") else type(parser).__name__,
+                    "tier": str(tier),
+                    "bank_code": parsed.bank_code,
+                    "period": [str(parsed.period_start), str(parsed.period_end)],
+                    "opening_balance_paise": parsed.opening_balance_paise,
+                    "closing_balance_paise": parsed.closing_balance_paise,
+                    "rows": len(parsed.transactions),
+                    "stated_total_debit_paise": parsed.stated_total_debit_paise,
+                    "stated_total_credit_paise": parsed.stated_total_credit_paise,
+                },
+            )
 
     account = _account_for(client, parsed)
     _check_continuity(account, parsed, allow_gap=allow_gap)

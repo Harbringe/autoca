@@ -5,8 +5,9 @@ Every figure goes through the same proof as a text read (``invoice_reader.readin
 the GSTINs must pass their check character, the number and date must be there. A reading that does not prove is still
 shown, with what failed, and is never booked by the system on its own.
 
-Used only when the firm has switched ``VISION_READING`` on, because page images cannot be masked. Nothing is stored: the
-images exist in memory for the length of the call.
+Used only when the firm has switched ``VISION_READING`` on, because page images cannot be masked. The images are never stored: they
+exist in memory for the length of the call. (The reply and the extracted text are filed only when the developer's debug archive is
+on: integrations/debug_archive.py.)
 """
 
 from __future__ import annotations

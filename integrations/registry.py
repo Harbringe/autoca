@@ -106,4 +106,6 @@ def get_kms() -> KMSAdapter:
 
 
 def get_llm() -> LLMAdapter:
-    return get_adapter("llm")
+    from . import debug_archive
+
+    return debug_archive.wrap(get_adapter("llm"))

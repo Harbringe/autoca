@@ -28,7 +28,7 @@ from core.crypto import blind_index, decrypt_text_for_firm, encrypt_for_firm
 from core.identity import invoice_key, normalise_gstin
 from core.rbac import require_permission
 from documents.models import Document, DocumentKind, DocumentStatus, PipelineTier
-from integrations import files
+from integrations import debug_archive, files
 from integrations.pdf.base import PdfExtractionError
 from integrations.registry import get_llm, get_storage
 from ledger import invoice_vision
@@ -170,36 +170,51 @@ def read_upload(*, client, data: bytes, filename: str, kind: str = "", uploaded_
     if pdf.page_count > MAX_INVOICE_PAGES:
         raise IntakeError(f"This file has {pdf.page_count} pages; an invoice has a few. Check it is the right file.")
 
-    parsed = None
-    unreadable = ""
-    tier = PipelineTier.TEXT_LAYER
-    if invoice_vision.enabled():
-        # With reading by the model switched on, every file is read from its pages, so the whole form fills in (address,
-        # due date, lines, how it was paid). A file with a text layer falls back to the plain reader if that fails.
-        try:
-            parsed = invoice_vision.read_scanned_invoice(
-                data, pdf.page_count, get_llm(), client=client, page_images=loaded.images
+    with debug_archive.trace("invoice", client=client, name=filename) as archive:
+        archive.text("extracted.txt", pdf.text)
+        parsed = None
+        unreadable = ""
+        tier = PipelineTier.TEXT_LAYER
+        if invoice_vision.enabled():
+            # With reading by the model switched on, every file is read from its pages, so the whole form fills in (address,
+            # due date, lines, how it was paid). A file with a text layer falls back to the plain reader if that fails.
+            try:
+                parsed = invoice_vision.read_scanned_invoice(
+                    data, pdf.page_count, get_llm(), client=client, page_images=loaded.images
+                )
+                tier = PipelineTier.VISION
+            except invoice_vision.InvoiceVisionError as exc:
+                if pdf.has_text_layer:
+                    parsed = read_invoice(pdf.text)
+                else:
+                    unreadable = str(exc)
+        elif pdf.has_text_layer:
+            parsed = read_invoice(pdf.text)
+        else:
+            unreadable = (
+                "This looks like a scan or a photo, and reading scans is not switched on. "
+                "Key the invoice in by hand; the file stays attached."
             )
-            tier = PipelineTier.VISION
-        except invoice_vision.InvoiceVisionError as exc:
-            if pdf.has_text_layer:
-                parsed = read_invoice(pdf.text)
-            else:
-                unreadable = str(exc)
-    elif pdf.has_text_layer:
-        parsed = read_invoice(pdf.text)
-    else:
-        unreadable = (
-            "This looks like a scan or a photo, and reading scans is not switched on. "
-            "Key the invoice in by hand; the file stays attached."
-        )
 
-    attention = ""
-    chosen = kind
-    if parsed is not None and not kind:
-        chosen, attention = detect_kind(client, parsed)
-    if parsed is not None and chosen:
-        parsed.supplier_gstin, parsed.buyer_gstin = _roles(client, parsed.gstins, parsed.supplier_gstin, parsed.buyer_gstin, chosen)
+        attention = ""
+        chosen = kind
+        if parsed is not None and not kind:
+            chosen, attention = detect_kind(client, parsed)
+        if parsed is not None and chosen:
+            parsed.supplier_gstin, parsed.buyer_gstin = _roles(client, parsed.gstins, parsed.supplier_gstin, parsed.buyer_gstin, chosen)
+        if debug_archive.enabled():
+            archive.json(
+                "outcome.json",
+                {
+                    "tier": str(tier),
+                    "kind": chosen,
+                    "attention": attention,
+                    "unreadable": unreadable,
+                    "proved": parsed.proved if parsed is not None else None,
+                    "checks": [asdict(c) for c in parsed.checks] if parsed is not None else [],
+                    "kept": _payload_of(parsed, chosen) if parsed is not None else None,
+                },
+            )
 
     storage = get_storage()
     key = storage.tenant_key(client.firm_id, "clients", str(client.id), "invoices", f"{digest}.{loaded.extension}")

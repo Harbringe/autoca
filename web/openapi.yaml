@@ -3666,6 +3666,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/StatementSettings'
           description: ''
+  /api/v1/clients/{client_id}/reports/inventory/:
+    get:
+      operationId: clients_reports_inventory_retrieve
+      description: Inwards, outwards and closing stock for each item, month by month,
+        with the earlier years as the opening. Taken from the lines of the invoices
+        behind the booked purchases (stock in) and sales (stock out), valued at weighted
+        average cost. Purchases and sales with no invoice lines are counted and named
+        as left out.
+      summary: 'Inventory: stock by item and month'
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: 'Financial year by its starting year: 2025 means FY2025-26.'
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Inventory'
+          description: ''
   /api/v1/clients/{client_id}/reports/profit-and-loss/:
     get:
       operationId: clients_reports_profit_and_loss_retrieve
@@ -9244,6 +9276,139 @@ components:
         * `on_track` - on_track
         * `at_risk` - at_risk
         * `overdue` - overdue
+    Inventory:
+      type: object
+      properties:
+        footer:
+          $ref: '#/components/schemas/ReportFooter'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryItem'
+        bills_counted:
+          type: integer
+          description: Purchases and sales whose invoice lines are in this report.
+        bills_left_out:
+          type: integer
+          description: Purchases and sales this year with no invoice lines, so no
+            stock movement.
+        left_out_examples:
+          type: array
+          items:
+            type: string
+        lines_without_value:
+          type: integer
+          description: 'Lines with a quantity but no amount: they move stock and carry
+            no value.'
+      required:
+      - bills_counted
+      - bills_left_out
+      - footer
+      - items
+      - left_out_examples
+      - lines_without_value
+    InventoryItem:
+      type: object
+      properties:
+        name:
+          type: string
+        unit:
+          type: string
+        opening_qty:
+          type: string
+        opening_value_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        closing_qty:
+          type: string
+        closing_value_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        in_qty:
+          type: string
+          description: Over the year.
+        in_value_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        out_qty:
+          type: string
+        out_value_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        months:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryMonth'
+      required:
+      - closing_qty
+      - closing_value_paise
+      - in_qty
+      - in_value_paise
+      - months
+      - name
+      - opening_qty
+      - opening_value_paise
+      - out_qty
+      - out_value_paise
+      - unit
+    InventoryMonth:
+      type: object
+      properties:
+        month:
+          type: string
+          description: YYYY-MM.
+        in_qty:
+          type: string
+        in_value_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        out_qty:
+          type: string
+        out_value_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        closing_qty:
+          type: string
+          description: Negative when more was sold than was bought.
+        closing_value_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - closing_qty
+      - closing_value_paise
+      - in_qty
+      - in_value_paise
+      - month
+      - out_qty
+      - out_value_paise
     InviteCreated:
       type: object
       properties:

@@ -50,8 +50,11 @@ export function LedgerPicker({
   const matches = useMemo(() => {
     const q = text.trim().toLowerCase()
     const hits = q ? ledgers.filter((l) => l.name.toLowerCase().includes(q)) : ledgers
-    // Names that start with what was typed come first, as in Tally's list.
+    // With nothing typed the list reads as the chart of accounts: by account group, then name. Once something is typed,
+    // names that start with it come first, as in Tally's list.
+    const groupOf = (l: LedgerAccount) => GROUP_LABEL[l.group ?? ''] ?? l.group ?? ''
     return [...hits].sort((a, b) => {
+      if (!q) return groupOf(a).localeCompare(groupOf(b)) || a.name.localeCompare(b.name)
       const as = a.name.toLowerCase().startsWith(q) ? 0 : 1
       const bs = b.name.toLowerCase().startsWith(q) ? 0 : 1
       return as - bs || a.name.localeCompare(b.name)
@@ -166,22 +169,33 @@ export function LedgerPicker({
           role="listbox"
           className="absolute top-full z-40 mt-1 max-h-64 w-full overflow-y-auto rounded-md border bg-popover p-1 shadow-md"
         >
-          {matches.map((l, i) => (
-            <li
-              key={l.id}
-              role="option"
-              aria-selected={i === active}
-              onMouseDown={(e) => {
-                e.preventDefault()
-                pick(i)
-              }}
-              onMouseEnter={() => setActive(i)}
-              className={cn('flex cursor-default justify-between gap-3 rounded-sm px-2 py-1.5 text-sm', i === active && 'bg-hover')}
-            >
-              <span className="truncate">{l.name}</span>
-              <span className="shrink-0 text-xs text-muted-foreground">{GROUP_LABEL[l.group ?? ''] ?? l.group}</span>
-            </li>
-          ))}
+          {matches.map((l, i) => {
+            const group = GROUP_LABEL[l.group ?? ''] ?? l.group ?? ''
+            const previous = i > 0 ? (GROUP_LABEL[matches[i - 1]!.group ?? ''] ?? matches[i - 1]!.group ?? '') : null
+            const heading = !text.trim() && group !== previous
+            return (
+              <li key={l.id} role="presentation" className="contents">
+                {heading && (
+                  <div role="presentation" className="sticky top-0 bg-popover px-2 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                    {group}
+                  </div>
+                )}
+                <div
+                  role="option"
+                  aria-selected={i === active}
+                  onMouseDown={(e) => {
+                    e.preventDefault()
+                    pick(i)
+                  }}
+                  onMouseEnter={() => setActive(i)}
+                  className={cn('flex cursor-default justify-between gap-3 rounded-sm px-2 py-1.5 text-sm', i === active && 'bg-hover')}
+                >
+                  <span className="truncate">{l.name}</span>
+                  {text.trim() && <span className="shrink-0 text-xs text-muted-foreground">{group}</span>}
+                </div>
+              </li>
+            )
+          })}
           {offerCreate && (
             <li
               role="option"

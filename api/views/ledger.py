@@ -17,6 +17,7 @@ from rest_framework.response import Response
 from api.pagination import DefaultPagination
 from api.permissions import CanApprove, HasFirmPermission
 from api.serializers.classify import ApproveSerializer
+from api.serializers.inventory import InventorySerializer, inventory_payload
 from api.serializers.ledger import (
     BalanceCheckSerializer,
     BalanceSheetSerializer,
@@ -405,6 +406,26 @@ class ReportView(viewsets.GenericViewSet):
     def profit_and_loss(self, request, client_id=None):
         client, year = self._client_and_year(request, client_id)
         return Response(ProfitAndLossSerializer(profit_and_loss(client, year)).data)
+
+    @extend_schema(
+        summary="Inventory: stock by item and month",
+        description=(
+            "Inwards, outwards and closing stock for each item, month by month, with the earlier years as the opening. Taken "
+            "from the lines of the invoices behind the booked purchases (stock in) and sales (stock out), valued at weighted "
+            "average cost. Purchases and sales with no invoice lines are counted and named as left out."
+        ),
+        parameters=[FY_PARAM],
+        responses=InventorySerializer,
+    )
+    @action(detail=False, methods=["get"], url_path="inventory")
+    def inventory(self, request, client_id=None):
+        from ledger import inventory as stock
+        from ledger.reports import _footer
+
+        client, year = self._client_and_year(request, client_id)
+        report = stock.build(client, year)
+        footer = _footer(client, year, datetime.date(year, 4, 1), datetime.date(year + 1, 3, 31))
+        return Response(InventorySerializer(inventory_payload(report, footer)).data)
 
     @extend_schema(
         summary="Balance sheet", parameters=[FY_PARAM], responses=BalanceSheetSerializer

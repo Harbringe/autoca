@@ -12,6 +12,7 @@ import type {
   BalanceSheet,
   Classification,
   EntryChange,
+  InventoryReportData,
   JournalEntry,
   LedgerAccount,
   LedgerRow,
@@ -88,6 +89,12 @@ export const statementRows = (clientId: string, statementId: string) =>
   queryOptions({
     queryKey: clientKeys.part(clientId, 'statements', statementId, 'rows'),
     queryFn: () => allPages<StatementTransaction>(`${V1}/clients/${clientId}/statements/${statementId}/transactions/`),
+  })
+
+export const inventoryReport = (clientId: string, fy: number) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'reports', 'inventory', fy),
+    queryFn: () => raw.get<InventoryReportData>(`${V1}/clients/${clientId}/reports/inventory/`, { fy }),
   })
 
 export const trialBalance = (clientId: string, fy: number) =>

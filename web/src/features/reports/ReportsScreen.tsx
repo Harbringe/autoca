@@ -26,6 +26,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { asAt, closingLine, formatDate, formatDrCr, formatPaise, fyLabel, parseDate, sideTotal } from '@/lib/format'
 import { useFy } from '@/features/shell/useFy'
 import { FinancialStatements } from './FinancialStatements'
+import { InventoryReport } from './InventoryReport'
 import { OutstandingReport } from './OutstandingReport'
 import { isProvisional, OpeningLink, ReportFrame, useUnconfirmedOpenings } from './ReportFrame'
 import { cn } from '@/lib/utils'
@@ -48,6 +49,7 @@ export function ReportsScreen({ clientId, report }: { clientId: string; report: 
       {report === 'bs' && <BalanceSheetReport clientId={clientId} fy={fy} />}
       {(report === 'payables' || report === 'receivables') && <OutstandingReport clientId={clientId} side={report} />}
       {report === 'nce' && <FinancialStatements clientId={clientId} fy={fy} />}
+      {report === 'inventory' && <InventoryReport clientId={clientId} fy={fy} />}
       {report === 'recon' && <Reconciliation clientId={clientId} />}
     </div>
   )

@@ -1652,6 +1652,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/reports/inventory/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Inventory: stock by item and month
+         * @description Inwards, outwards and closing stock for each item, month by month, with the earlier years as the opening. Taken from the lines of the invoices behind the booked purchases (stock in) and sales (stock out), valued at weighted average cost. Purchases and sales with no invoice lines are counted and named as left out.
+         */
+        get: operations["clients_reports_inventory_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/reports/profit-and-loss/": {
         parameters: {
             query?: never;
@@ -4333,6 +4353,70 @@ export interface components {
          * @enum {string}
          */
         HealthEnum: "on_track" | "at_risk" | "overdue";
+        Inventory: {
+            footer: components["schemas"]["ReportFooter"];
+            items: components["schemas"]["InventoryItem"][];
+            /** @description Purchases and sales whose invoice lines are in this report. */
+            bills_counted: number;
+            /** @description Purchases and sales this year with no invoice lines, so no stock movement. */
+            bills_left_out: number;
+            left_out_examples: string[];
+            /** @description Lines with a quantity but no amount: they move stock and carry no value. */
+            lines_without_value: number;
+        };
+        InventoryItem: {
+            name: string;
+            unit: string;
+            opening_qty: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            opening_value_paise: number;
+            closing_qty: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            closing_value_paise: number;
+            /** @description Over the year. */
+            in_qty: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            in_value_paise: number;
+            out_qty: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            out_value_paise: number;
+            months: components["schemas"]["InventoryMonth"][];
+        };
+        InventoryMonth: {
+            /** @description YYYY-MM. */
+            month: string;
+            in_qty: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            in_value_paise: number;
+            out_qty: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            out_value_paise: number;
+            /** @description Negative when more was sold than was bought. */
+            closing_qty: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            closing_value_paise: number;
+        };
         InviteCreated: {
             /** Format: uuid */
             id: string;
@@ -10888,6 +10972,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatementSettings"];
+                };
+            };
+        };
+    };
+    clients_reports_inventory_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Financial year by its starting year: 2025 means FY2025-26. */
+                fy?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Inventory"];
                 };
             };
         };

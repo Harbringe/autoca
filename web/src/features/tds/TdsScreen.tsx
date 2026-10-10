@@ -35,18 +35,19 @@ function currentFy() {
 function ReturnData({ clientId }: { clientId: string }) {
   const [fy, setFy] = useState(currentFy())
   const [quarter, setQuarter] = useState(1)
+  const [form, setForm] = useState<'return' | 'salary-return'>('return')
   const pack = useQuery({
-    queryKey: ['tds-return', clientId, fy, quarter],
+    queryKey: ['tds-return', clientId, form, fy, quarter],
     queryFn: () =>
       raw.get<{
         due: string; deducted_paise: number; deposited_paise: number; interest_paise: number; fee_paise: number
-        warnings: string[]; deductees: unknown[]; challans: unknown[]
-      }>(`${V1}/clients/${clientId}/tds/return/`, { fy, quarter }),
+        warnings: string[]; deductees?: unknown[]; employees?: unknown[]; challans: unknown[]
+      }>(`${V1}/clients/${clientId}/tds/${form}/`, { fy, quarter }),
   })
   async function download() {
     try {
-      const { blob, filename } = await raw.blob(`${V1}/clients/${clientId}/tds/return/export/`, { fy, quarter })
-      await saveFile(filename ?? `tds-26Q-FY${fy}-Q${quarter}.xlsx`, blob)
+      const { blob, filename } = await raw.blob(`${V1}/clients/${clientId}/tds/${form}/export/`, { fy, quarter })
+      await saveFile(filename ?? `tds-${form === 'return' ? '26Q' : '24Q'}-FY${fy}-Q${quarter}.xlsx`, blob)
     } catch (e) {
       toast.error(messageOf(e))
     }
@@ -54,8 +55,15 @@ function ReturnData({ clientId }: { clientId: string }) {
   const rupees = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
   return (
     <section className="grid gap-2" aria-labelledby="tds-return">
-      <h2 id="tds-return" className="text-[15px] font-semibold text-heading">Quarterly return data (Form 26Q)</h2>
+      <h2 id="tds-return" className="text-[15px] font-semibold text-heading">Quarterly return data (Form 26Q and 24Q)</h2>
       <div className="flex flex-wrap items-center gap-2 text-sm">
+        <label className="flex items-center gap-1.5">
+          Return
+          <select className="h-9 rounded-md border bg-background px-2" value={form} onChange={(e) => setForm(e.target.value as typeof form)}>
+            <option value="return">26Q (other than salary)</option>
+            <option value="salary-return">24Q (salary)</option>
+          </select>
+        </label>
         <label className="flex items-center gap-1.5">
           Financial year
           <select className="h-9 rounded-md border bg-background px-2" value={fy} onChange={(e) => setFy(Number(e.target.value))}>
@@ -77,7 +85,7 @@ function ReturnData({ clientId }: { clientId: string }) {
       ) : (
         <div className="grid gap-2 rounded-lg border bg-card p-3 text-sm">
           <p>
-            {pack.data.deductees.length} deduction{pack.data.deductees.length === 1 ? '' : 's'}, {rupees(pack.data.deducted_paise)} deducted,{' '}
+            {(pack.data.deductees ?? pack.data.employees ?? []).length} {form === 'return' ? 'deduction' : 'employee'}{(pack.data.deductees ?? pack.data.employees ?? []).length === 1 ? '' : 's'}, {rupees(pack.data.deducted_paise)} deducted,{' '}
             {rupees(pack.data.deposited_paise)} deposited. Return due {formatDate(pack.data.due)}.
           </p>
           {pack.data.interest_paise + pack.data.fee_paise > 0 && (

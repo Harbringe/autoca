@@ -2204,6 +2204,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/tds/salary-return/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The data a quarter's salary TDS return (Form 24Q) is filed from
+         * @description Employees with gross and TDS under section 192, the challans, and late deposits. Read from payroll runs; nothing is filed.
+         */
+        get: operations["clients_tds_salary_return_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/tds/salary-return/export/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The quarter's salary TDS return data as an Excel file
+         * @description The challans recorded for a client's TDS deposits.
+         */
+        get: operations["clients_tds_salary_return_export_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/tds/summary/": {
         parameters: {
             query?: never;
@@ -7229,6 +7269,48 @@ export interface components {
              */
             other_deduction_paise: number;
         };
+        SalaryReturn: {
+            financial_year: number;
+            quarter: number;
+            /** Format: date */
+            due: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            deducted_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            deposited_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            interest_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            fee_paise: number;
+            warnings: string[];
+            employees: components["schemas"]["SalaryRow"][];
+            challans: components["schemas"]["ReturnChallan"][];
+        };
+        SalaryRow: {
+            employee: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            gross_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            tds_paise: number;
+        };
         SayKindRequest: {
             kind: components["schemas"]["KindA27Enum"];
         };
@@ -12179,6 +12261,58 @@ export interface operations {
         };
     };
     clients_tds_return_export_retrieve: {
+        parameters: {
+            query?: {
+                /** @description The calendar year the financial year starts in (2025 for 2025-26). */
+                fy?: number;
+                /** @description 1 is April to June. */
+                quarter?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
+                };
+            };
+        };
+    };
+    clients_tds_salary_return_retrieve: {
+        parameters: {
+            query?: {
+                /** @description The calendar year the financial year starts in (2025 for 2025-26). */
+                fy?: number;
+                /** @description 1 is April to June. */
+                quarter?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SalaryReturn"];
+                };
+            };
+        };
+    };
+    clients_tds_salary_return_export_retrieve: {
         parameters: {
             query?: {
                 /** @description The calendar year the financial year starts in (2025 for 2025-26). */

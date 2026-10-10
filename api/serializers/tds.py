@@ -129,3 +129,32 @@ def return_payload(pack) -> dict:
         ],
         "challans": pack.challans,
     }
+
+
+class SalaryRowSerializer(serializers.Serializer):
+    employee = serializers.CharField()
+    gross_paise = PaiseField()
+    tds_paise = PaiseField()
+
+
+class SalaryReturnSerializer(serializers.Serializer):
+    financial_year = serializers.IntegerField()
+    quarter = serializers.IntegerField()
+    due = serializers.DateField()
+    deducted_paise = PaiseField()
+    deposited_paise = PaiseField()
+    interest_paise = PaiseField()
+    fee_paise = PaiseField()
+    warnings = serializers.ListField(child=serializers.CharField())
+    employees = SalaryRowSerializer(many=True)
+    challans = ReturnChallanSerializer(many=True)
+
+
+def salary_return_payload(pack) -> dict:
+    return {
+        "financial_year": pack.financial_year, "quarter": pack.quarter, "due": pack.due,
+        "deducted_paise": pack.deducted_paise, "deposited_paise": pack.deposited_paise,
+        "interest_paise": pack.interest_paise, "fee_paise": pack.fee_paise, "warnings": pack.warnings,
+        "employees": [{"employee": r.employee, "gross_paise": r.gross_paise, "tds_paise": r.tds_paise} for r in pack.rows],
+        "challans": pack.challans,
+    }

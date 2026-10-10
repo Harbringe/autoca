@@ -4892,6 +4892,74 @@ paths:
                 type: string
                 format: binary
           description: ''
+  /api/v1/clients/{client_id}/tds/salary-return/:
+    get:
+      operationId: clients_tds_salary_return_retrieve
+      description: Employees with gross and TDS under section 192, the challans, and
+        late deposits. Read from payroll runs; nothing is filed.
+      summary: The data a quarter's salary TDS return (Form 24Q) is filed from
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: The calendar year the financial year starts in (2025 for 2025-26).
+      - in: query
+        name: quarter
+        schema:
+          type: integer
+        description: 1 is April to June.
+      tags:
+      - tds
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SalaryReturn'
+          description: ''
+  /api/v1/clients/{client_id}/tds/salary-return/export/:
+    get:
+      operationId: clients_tds_salary_return_export_retrieve
+      description: The challans recorded for a client's TDS deposits.
+      summary: The quarter's salary TDS return data as an Excel file
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: The calendar year the financial year starts in (2025 for 2025-26).
+      - in: query
+        name: quarter
+        schema:
+          type: integer
+        description: 1 is April to June.
+      tags:
+      - tds
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+          description: ''
   /api/v1/clients/{client_id}/tds/summary/:
     get:
       operationId: clients_tds_summary_retrieve
@@ -14991,6 +15059,90 @@ components:
       required:
       - employee
       - gross_paise
+    SalaryReturn:
+      type: object
+      properties:
+        financial_year:
+          type: integer
+        quarter:
+          type: integer
+        due:
+          type: string
+          format: date
+        deducted_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        deposited_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        interest_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        fee_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        warnings:
+          type: array
+          items:
+            type: string
+        employees:
+          type: array
+          items:
+            $ref: '#/components/schemas/SalaryRow'
+        challans:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReturnChallan'
+      required:
+      - challans
+      - deducted_paise
+      - deposited_paise
+      - due
+      - employees
+      - fee_paise
+      - financial_year
+      - interest_paise
+      - quarter
+      - warnings
+    SalaryRow:
+      type: object
+      properties:
+        employee:
+          type: string
+        gross_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        tds_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - employee
+      - gross_paise
+      - tds_paise
     SayKindRequest:
       type: object
       properties:

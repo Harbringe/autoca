@@ -16,13 +16,15 @@ from api.permissions import CanApprove, HasFirmPermission
 from api.serializers.tds import (
     ChallanCreateSerializer,
     ChallanSerializer,
+    SalaryReturnSerializer,
     TdsReturnSerializer,
     TdsSummarySerializer,
     return_payload,
+    salary_return_payload,
     summary_payload,
 )
 from api.views.base import ClientScopedMixin
-from ledger import tds, tds_return
+from ledger import tds, tds_return, tds_salary_return
 from ledger.models import JournalEntry, TdsChallan
 
 
@@ -72,6 +74,38 @@ class TdsChallanViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.CreateM
     @action(detail=False, methods=["get"], url_path="return", pagination_class=None)
     def tds_return(self, request, client_id=None):
         return Response(TdsReturnSerializer(return_payload(self._pack(request))).data)
+
+    def _salary_pack(self, request):
+        try:
+            year, quarter = int(request.query_params["fy"]), int(request.query_params["quarter"])
+        except (KeyError, ValueError):
+            raise serializers.ValidationError({"detail": "Give fy (the year the financial year starts) and quarter (1 to 4)."}) from None
+        return tds_salary_return.build(self.client, year, quarter)
+
+    @extend_schema(
+        summary="The data a quarter's salary TDS return (Form 24Q) is filed from",
+        description="Employees with gross and TDS under section 192, the challans, and late deposits. Read from payroll runs; nothing is filed.",
+        parameters=_PARAMS,
+        responses={200: SalaryReturnSerializer},
+    )
+    @action(detail=False, methods=["get"], url_path="salary-return", pagination_class=None)
+    def salary_return(self, request, client_id=None):
+        return Response(SalaryReturnSerializer(salary_return_payload(self._salary_pack(request))).data)
+
+    @extend_schema(
+        summary="The quarter's salary TDS return data as an Excel file",
+        parameters=_PARAMS,
+        responses={(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"): bytes},
+    )
+    @action(detail=False, methods=["get"], url_path="salary-return/export", pagination_class=None)
+    def salary_return_export(self, request, client_id=None):
+        pack = self._salary_pack(request)
+        response = HttpResponse(
+            tds_salary_return.workbook(self.client, pack),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="tds-24Q-FY{pack.financial_year}-Q{pack.quarter}.xlsx"'
+        return response
 
     @extend_schema(
         summary="The quarter's TDS return data as an Excel file",

@@ -179,3 +179,14 @@ def test_item_wise_booking_that_does_not_add_up_is_refused_and_books_nothing(api
     assert response.status_code == 422
     with firm_context(client_record.firm_id):
         assert not JournalEntry.objects.filter(client=client_record).exists()
+
+
+def test_the_salary_return_pack_is_empty_without_payroll_and_wants_its_parameters(api, client_record):
+    url = f"{base(client_record)}/tds/salary-return/"
+
+    empty = api.get(url, {"fy": 2025, "quarter": 2})
+    export = api.get(f"{url}export/", {"fy": 2025, "quarter": 2})
+
+    assert empty.status_code == 200 and empty.json()["employees"] == [] and empty.json()["due"] == "2025-10-31"
+    assert export.status_code == 200 and export.content[:2] == b"PK"
+    assert api.get(url).status_code == 400

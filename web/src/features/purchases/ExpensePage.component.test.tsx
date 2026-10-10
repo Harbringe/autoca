@@ -117,7 +117,7 @@ describe('one purchase or sale on its own page', () => {
   it('lists the printed lines and offers one ledger line per item when they add up', async () => {
     renderIt()
     await userEvent.click(await screen.findByRole('tab', { name: 'Itemizations (2)' }))
-    const lines = screen.getByRole('table', { name: 'Lines as printed on the invoice' })
+    const lines = screen.getByRole('list', { name: 'Lines as printed on the invoice' })
     expect(within(lines).getByDisplayValue('Biryani')).toBeInTheDocument()
     expect(within(lines).getAllByDisplayValue('9963')).toHaveLength(2)
 
@@ -141,6 +141,16 @@ describe('one purchase or sale on its own page', () => {
     expect(screen.getByLabelText('Quantity of line 1')).toHaveValue('6')
     await userEvent.click(screen.getByRole('button', { name: 'Usually 60' }))
     expect(screen.getByLabelText('Quantity of line 1')).toHaveValue('60')
+  })
+
+  it('offers to read the lines again when none were read, and asks the server to', async () => {
+    const empty = { ...READING, read: { ...READ, items: [] } } as unknown as InvoiceReading
+    renderIt({}, [empty])
+    await userEvent.click(await screen.findByRole('tab', { name: /Itemizations/ }))
+    expect(screen.getByText(/No lines were read from this invoice/)).toBeInTheDocument()
+    vi.mocked(raw.post).mockResolvedValue(READING)
+    await userEvent.click(screen.getByRole('button', { name: 'Read the lines again' }))
+    expect(raw.post).toHaveBeenCalledWith(expect.stringContaining('/reread/'), {})
   })
 
   it('hides and shows the receipt viewer', async () => {

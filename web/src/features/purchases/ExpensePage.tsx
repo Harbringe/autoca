@@ -12,7 +12,16 @@ import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { messageOf } from '@/api/errors'
 import { ledgers as ledgersQuery } from '@/api/queries/books'
-import { bill as billQuery, bills as billsQuery, invoiceReadings, useDecideInvoice, useDeleteInvoice, useRemoveBill, useUploadInvoice } from '@/api/queries/bills'
+import {
+  bill as billQuery,
+  bills as billsQuery,
+  invoiceReadings,
+  useDecideInvoice,
+  useDeleteInvoice,
+  useRemoveBill,
+  useRereadInvoice,
+  useUploadInvoice,
+} from '@/api/queries/bills'
 import { clientDetail, V1 } from '@/api/queries/clients'
 import { Confirm } from '@/components/ca/Confirm'
 import { Money } from '@/components/ca/Money'
@@ -50,6 +59,7 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
   const [viewer, setViewer] = useState(true)
   const [alerts, setAlerts] = useState(false)
   const [deleting, setDeleting] = useState(false)
+  const reread = useRereadInvoice(clientId)
   const [statement, setStatement] = useState(false)
   const [uploadingName, setUploadingName] = useState<string | null>(null)
   const [over, setOver] = useState(false)
@@ -142,6 +152,16 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
     }
   }
 
+  async function readAgain() {
+    if (!reading) return
+    try {
+      await reread.mutateAsync({ id: reading.id })
+      toast.success('Read again')
+    } catch (e) {
+      toast.error(messageOf(e))
+    }
+  }
+
   async function remove() {
     if (reading) await deleteInvoice.mutateAsync({ id: reading.id, withBill: !!reading.bill, releasePayments: true })
     else if (billId) await removeBill.mutateAsync({ id: billId, note: 'Removed from its page', releasePayments: true })
@@ -195,6 +215,9 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
                   </DropdownMenuItem>
                 )}
                 {bill && <DropdownMenuItem onSelect={() => setStatement(true)}>Statement of account</DropdownMenuItem>}
+                {reading?.status === 'OPEN' && mayPost && !bill && (
+                  <DropdownMenuItem disabled={reread.isPending} onSelect={() => void readAgain()}>Read the file again</DropdownMenuItem>
+                )}
                 {reading?.status === 'OPEN' && mayPost && <DropdownMenuItem onSelect={() => void act('discard')}>Set aside</DropdownMenuItem>}
                 {(reading || bill) && (
                   <DropdownMenuItem disabled={!mayPost || (!!bill && bill.is_locked)} onSelect={() => setDeleting(true)}>
@@ -228,6 +251,8 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
                 clientId={clientId}
                 layout="page"
                 formId={formId}
+                onReadAgain={reading?.status === 'OPEN' && mayPost && !bill ? () => void readAgain() : undefined}
+                readingAgain={reread.isPending}
                 prefill={prefill ?? undefined}
                 initialKind={wantedKind}
                 onClose={listPath}

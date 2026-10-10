@@ -150,6 +150,26 @@ class InvoiceReadingViewSet(
         invoice_intake.say_kind(reading, payload.validated_data["kind"], membership=request.membership)
         return Response(InvoiceReadingSerializer(self._payload(self.get_queryset().get(pk=reading.pk))).data)
 
+    @extend_schema(
+        summary="Read this invoice again",
+        description=(
+            "Reads the stored file again with the current reader, for an invoice that was read before the reader improved "
+            "(no lines, no seller or buyer) or that could not be read at the time. Only an invoice nobody has booked. The "
+            "kind a person gave is kept; if the result is certain it is booked as an upload would be. Needs `journal.approve`."
+        ),
+        request=None,
+        responses={200: InvoiceReadingSerializer},
+    )
+    @action(detail=True, methods=["post"], url_path="reread", permission_classes=[CanApprove])
+    def reread(self, request, client_id=None, pk=None):
+        reading = self.get_object()
+        # A person who named the kind is booking it themselves; only an invoice left to the system may be booked by it.
+        left_to_the_system = not reading.kind
+        reading = invoice_intake.reread(reading, membership=request.membership)
+        if left_to_the_system:
+            reading = invoice_intake.try_auto_book(reading, membership=request.membership)
+        return Response(InvoiceReadingSerializer(self._payload(self.get_queryset().get(pk=reading.pk))).data)
+
     @extend_schema(summary="Set this invoice aside", request=None, responses={200: InvoiceReadingSerializer})
     @action(detail=True, methods=["post"], url_path="discard", permission_classes=[CanApprove])
     def discard(self, request, client_id=None, pk=None):

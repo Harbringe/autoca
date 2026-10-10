@@ -148,6 +148,8 @@ export function VoucherForm({
   prefill,
   layout = 'dialog',
   formId,
+  onReadAgain,
+  readingAgain,
 }: {
   clientId: string
   /** Called after it is booked, and by Cancel. */
@@ -156,6 +158,9 @@ export function VoucherForm({
   prefill?: VoucherPrefill
   /** ``page``: tabs for Details and Itemizations, and no buttons of its own (the page's Save button submits it by ``formId``). */
   layout?: 'dialog' | 'page'
+  /** Offered where no lines were read: read the stored file again with the current reader. */
+  onReadAgain?: () => void
+  readingAgain?: boolean
   formId?: string
 }) {
   const parties = useQuery(partiesQuery(clientId))
@@ -396,77 +401,90 @@ export function VoucherForm({
       {layout === 'page' && tab === 'items' && (
         <section aria-label="Itemizations" className="grid gap-3">
           {items.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No lines were read from this invoice. The whole taxable value goes to the ledger on the Details tab; add more lines there to split it.</p>
+            <div className="grid justify-items-start gap-2 rounded-md border border-dashed p-4 text-sm">
+              <p className="text-muted-foreground">
+                No lines were read from this invoice. The whole taxable value goes to the ledger on the Details tab; add more lines there to split it.
+              </p>
+              {onReadAgain && (
+                <>
+                  <Button type="button" variant="outline" size="sm" onClick={onReadAgain} disabled={readingAgain}>
+                    {readingAgain ? 'Reading…' : 'Read the lines again'}
+                  </Button>
+                  <p className="text-xs text-muted-foreground">Reads the stored file again with the current reader. Nothing you have typed on this page is kept.</p>
+                </>
+              )}
+            </div>
           ) : (
             <>
-              <div className="overflow-x-auto">
-                <table className="w-full min-w-[34rem] text-sm">
-                  <caption className="sr-only">Lines as printed on the invoice</caption>
-                  <thead className="border-b text-left text-xs text-muted-foreground">
-                    <tr>
-                      {['Description', 'HSN/SAC', 'Qty', 'Rate (₹)', 'Amount (₹)', 'GST %'].map((h, i) => (
-                        <th key={h} scope="col" className={cn('px-1 py-1 font-medium', i >= 2 && 'text-right')}>{h}</th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {items.map((i, n) => (
-                      <tr key={n} className="border-b border-dashed align-top">
-                        <td className="min-w-[14rem] px-1 py-1.5">
-                          <Input
-                            aria-label={`Description of line ${n + 1}`}
-                            value={i.description}
-                            onChange={(e) => editLine(n, { description: e.target.value })}
-                          />
-                          {i.remembered && i.read_description && i.read_description !== i.description && (
-                            <div className="mt-0.5 text-[11px] text-muted-foreground" title={i.read_description}>Remembered wording; the invoice printed “{i.read_description.slice(0, 48)}{i.read_description.length > 48 ? '…' : ''}”</div>
-                          )}
-                        </td>
-                        <td className="px-1 py-1.5">
-                          <Input aria-label={`HSN/SAC of line ${n + 1}`} className="w-24" value={i.hsn_sac} onChange={(e) => editLine(n, { hsn_sac: e.target.value })} />
-                        </td>
-                        <td className="px-1 py-1.5">
-                          <div className="flex gap-1">
-                            <Input aria-label={`Quantity of line ${n + 1}`} inputMode="decimal" className="num w-20 text-right" value={i.quantity} onChange={(e) => editLine(n, { quantity: e.target.value })} />
-                            <Input aria-label={`Unit of line ${n + 1}`} className="w-16" value={i.unit} onChange={(e) => editLine(n, { unit: e.target.value })} />
+              <ol aria-label="Lines as printed on the invoice" className="grid gap-3">
+                {items.map((i, n) => (
+                  <li key={n} className="grid gap-2 rounded-md border bg-card p-3">
+                    <div className="flex items-start gap-2">
+                      <span className="mt-2 w-5 shrink-0 text-center text-xs font-medium text-muted-foreground" aria-hidden>{n + 1}</span>
+                      <div className="min-w-0 flex-1">
+                        <Input
+                          aria-label={`Description of line ${n + 1}`}
+                          value={i.description}
+                          onChange={(e) => editLine(n, { description: e.target.value })}
+                        />
+                        {i.remembered && i.read_description && i.read_description !== i.description && (
+                          <div className="mt-0.5 text-[11px] text-muted-foreground" title={i.read_description}>
+                            Remembered wording; the invoice printed “{i.read_description.slice(0, 48)}{i.read_description.length > 48 ? '…' : ''}”
                           </div>
-                          {i.usual_quantity && i.usual_quantity !== i.quantity && (
-                            <button type="button" className="mt-0.5 text-[11px] text-primary underline" onClick={() => editLine(n, { quantity: i.usual_quantity ?? '' })}>
-                              Usually {i.usual_quantity}
-                            </button>
-                          )}
-                        </td>
-                        <td className="px-1 py-1.5">
-                          <Input
-                            aria-label={`Rate of line ${n + 1}`}
-                            inputMode="decimal"
-                            className="num w-24 text-right"
-                            defaultValue={i.rate_paise != null ? (i.rate_paise / 100).toFixed(2) : ''}
-                            onBlur={(e) => {
-                              const paise = e.target.value.trim() ? parseRupees(e.target.value) : null
-                              editLine(n, { rate_paise: paise })
-                            }}
-                          />
-                        </td>
-                        <td className="px-1 py-1.5">
-                          <Input
-                            aria-label={`Amount of line ${n + 1}`}
-                            inputMode="decimal"
-                            className="num w-28 text-right"
-                            defaultValue={i.amount_paise != null ? (i.amount_paise / 100).toFixed(2) : ''}
-                            onBlur={(e) => {
-                              const paise = e.target.value.trim() ? parseRupees(e.target.value) : null
-                              editLine(n, { amount_paise: paise })
-                            }}
-                          />
-                        </td>
-                        <td className="num px-1 py-2 text-right" title={i.gst_rate_derived ? 'Worked out from the tax amounts; not printed on the line' : undefined}>
+                        )}
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 pl-7 sm:grid-cols-6">
+                      <label className="grid gap-0.5 text-[11px] text-muted-foreground">
+                        HSN/SAC
+                        <Input aria-label={`HSN/SAC of line ${n + 1}`} value={i.hsn_sac} onChange={(e) => editLine(n, { hsn_sac: e.target.value })} />
+                      </label>
+                      <label className="grid gap-0.5 text-[11px] text-muted-foreground">
+                        Quantity
+                        <Input aria-label={`Quantity of line ${n + 1}`} inputMode="decimal" className="num text-right" value={i.quantity} onChange={(e) => editLine(n, { quantity: e.target.value })} />
+                        {i.usual_quantity && i.usual_quantity !== i.quantity && (
+                          <button type="button" className="text-left text-[11px] text-primary underline" onClick={() => editLine(n, { quantity: i.usual_quantity ?? '' })}>
+                            Usually {i.usual_quantity}
+                          </button>
+                        )}
+                      </label>
+                      <label className="grid gap-0.5 text-[11px] text-muted-foreground">
+                        Unit
+                        <Input aria-label={`Unit of line ${n + 1}`} value={i.unit} onChange={(e) => editLine(n, { unit: e.target.value })} />
+                      </label>
+                      <label className="grid gap-0.5 text-[11px] text-muted-foreground">
+                        Rate (₹)
+                        <Input
+                          aria-label={`Rate of line ${n + 1}`}
+                          inputMode="decimal"
+                          className="num text-right"
+                          defaultValue={i.rate_paise != null ? (i.rate_paise / 100).toFixed(2) : ''}
+                          onBlur={(e) => editLine(n, { rate_paise: e.target.value.trim() ? parseRupees(e.target.value) : null })}
+                        />
+                      </label>
+                      <label className="grid gap-0.5 text-[11px] text-muted-foreground">
+                        Amount (₹)
+                        <Input
+                          aria-label={`Amount of line ${n + 1}`}
+                          inputMode="decimal"
+                          className="num text-right"
+                          defaultValue={i.amount_paise != null ? (i.amount_paise / 100).toFixed(2) : ''}
+                          onBlur={(e) => editLine(n, { amount_paise: e.target.value.trim() ? parseRupees(e.target.value) : null })}
+                        />
+                      </label>
+                      <div className="grid gap-0.5 text-[11px] text-muted-foreground" title={i.gst_rate_derived ? 'Worked out from the tax amounts; not printed on the line' : undefined}>
+                        GST %
+                        <div className="num flex h-10 items-center justify-end px-1 text-sm text-foreground">
                           {i.gst_rate != null ? `${i.gst_rate}${i.gst_rate_derived ? '*' : ''}` : '—'}
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                        </div>
+                      </div>
+                    </div>
+                  </li>
+                ))}
+              </ol>
+              <div className="flex justify-between border-t pt-2 text-sm font-medium">
+                <span>Lines total</span>
+                <span className="num">₹{(itemsSum / 100).toFixed(2)}</span>
               </div>
               {itemsTie ? (
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent-edge bg-accent p-2 text-sm">

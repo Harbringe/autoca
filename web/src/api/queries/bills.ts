@@ -176,6 +176,15 @@ export function useDeleteInvoice(clientId: string) {
   })
 }
 
+/** Read an unbooked invoice again from its stored file with the current reader. */
+export function useRereadInvoice(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: ({ id }: { id: string }) => raw.post<InvoiceReading>(`${V1}/clients/${clientId}/invoices/${id}/reread/`, {}),
+    onSuccess: invalidate,
+  })
+}
+
 export function useDecideInvoice(clientId: string) {
   const invalidate = useInvalidateClient(clientId)
   return useMutation({

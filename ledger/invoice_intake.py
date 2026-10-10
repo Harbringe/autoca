@@ -223,6 +223,94 @@ def _payload_of(parsed, kind: str, suggestion: dict | None = None) -> dict:
     }
 
 
+def _parse_file(client, data: bytes, loaded, pdf):
+    """Read a loaded file into a draft: ``(parsed or None, why it could not be read, which tier read it)``."""
+    parsed = None
+    unreadable = ""
+    tier = PipelineTier.TEXT_LAYER
+    if invoice_vision.enabled():
+        # With reading by the model switched on, every file is read from its pages, so the whole form fills in (address,
+        # due date, lines, how it was paid). A file with a text layer falls back to the plain reader if that fails.
+        try:
+            parsed = invoice_vision.read_scanned_invoice(data, pdf.page_count, get_llm(), client=client, page_images=loaded.images)
+            tier = PipelineTier.VISION
+        except invoice_vision.InvoiceVisionError as exc:
+            if pdf.has_text_layer:
+                parsed = read_invoice(pdf.text)
+            else:
+                unreadable = str(exc)
+    elif pdf.has_text_layer:
+        parsed = read_invoice(pdf.text)
+    else:
+        unreadable = (
+            "This looks like a scan or a photo, and reading scans is not switched on. "
+            "Key the invoice in by hand; the file stays attached."
+        )
+    return parsed, unreadable, tier
+
+
+def reread(reading: InvoiceReading, *, membership) -> InvoiceReading:
+    """Read an open invoice again from its stored file.
+
+    For a reading made before the reader improved (no lines, no seller or buyer detail), or one the model could not read at
+    the time. Only an invoice nobody has booked: a booked bill is changed as a bill. What a person already decided (the
+    kind they gave) is kept; everything read is replaced by the new reading.
+    """
+    require_permission(membership, "journal.approve")
+    require_posting_rights(membership, reading.client)
+    _open_reading(reading)
+    if reading.bill_id is not None:
+        raise IntakeError("This invoice is already booked. Change the bill instead.")
+    document = reading.document
+    if not document.storage_key:
+        raise IntakeError("The stored file could not be found, so it cannot be read again. Upload it again.")
+    client = reading.client
+    try:
+        data = get_storage().get(document.storage_key)
+        loaded = files.load(data, document.original_filename)
+    except PdfExtractionError as exc:
+        raise IntakeError(f"This file could not be opened: {exc}") from exc
+    except Exception as exc:  # the file store being unreachable is not a reason to lose the reading
+        raise IntakeError("The stored file could not be opened just now. Try again in a moment.") from exc
+
+    with debug_archive.trace("invoice-reread", client=client, name=document.original_filename or "invoice") as archive:
+        archive.text("extracted.txt", loaded.document.text)
+        parsed, unreadable, tier = _parse_file(client, data, loaded, loaded.document)
+        if parsed is None:
+            reading.unreadable_reason = unreadable
+            reading.attention = unreadable[:255]
+            reading.save(update_fields=["unreadable_reason", "attention"])
+            return reading
+        kind = reading.kind
+        attention = ""
+        suggestion: dict = {}
+        if not kind:
+            kind, attention = detect_kind(client, parsed)
+            if not kind:
+                suggestion = suggest_kind(client, parsed)
+        if kind:
+            parsed.supplier_gstin, parsed.buyer_gstin = _roles(client, parsed.gstins, parsed.supplier_gstin, parsed.buyer_gstin, kind)
+        if parsed.items:
+            parsed.items = _remembered_lines(client, parsed, kind or suggestion.get("kind", ""))
+        if debug_archive.enabled():
+            archive.json("kept.json", _payload_of(parsed, kind, suggestion))
+
+    issuer = parsed.supplier_gstin or (parsed.gstins[0] if parsed.gstins else "")
+    reading.kind = kind
+    reading.proved = parsed.proved
+    reading.checks = [asdict(c) for c in parsed.checks]
+    reading.payload_enc = encrypt_for_firm(json.dumps(_payload_of(parsed, kind, suggestion)), client.firm_id, PAYLOAD_PURPOSE)
+    reading.invoice_key = _key_for(client, issuer, parsed.invoice_no)
+    reading.unreadable_reason = ""
+    reading.attention = attention[:255]
+    reading.save(update_fields=["kind", "proved", "checks", "payload_enc", "invoice_key", "unreadable_reason", "attention"])
+    document.pipeline_tier = tier
+    document.status = DocumentStatus.PARSED
+    document.failure_reason = ""
+    document.save(update_fields=["pipeline_tier", "status", "failure_reason"])
+    return reading
+
+
 def read_upload(*, client, data: bytes, filename: str, kind: str = "", uploaded_by) -> tuple[InvoiceReading, bool]:
     """Register the file and read it. Returns the reading and whether this file is new.
 
@@ -250,29 +338,7 @@ def read_upload(*, client, data: bytes, filename: str, kind: str = "", uploaded_
 
     with debug_archive.trace("invoice", client=client, name=filename) as archive:
         archive.text("extracted.txt", pdf.text)
-        parsed = None
-        unreadable = ""
-        tier = PipelineTier.TEXT_LAYER
-        if invoice_vision.enabled():
-            # With reading by the model switched on, every file is read from its pages, so the whole form fills in (address,
-            # due date, lines, how it was paid). A file with a text layer falls back to the plain reader if that fails.
-            try:
-                parsed = invoice_vision.read_scanned_invoice(
-                    data, pdf.page_count, get_llm(), client=client, page_images=loaded.images
-                )
-                tier = PipelineTier.VISION
-            except invoice_vision.InvoiceVisionError as exc:
-                if pdf.has_text_layer:
-                    parsed = read_invoice(pdf.text)
-                else:
-                    unreadable = str(exc)
-        elif pdf.has_text_layer:
-            parsed = read_invoice(pdf.text)
-        else:
-            unreadable = (
-                "This looks like a scan or a photo, and reading scans is not switched on. "
-                "Key the invoice in by hand; the file stays attached."
-            )
+        parsed, unreadable, tier = _parse_file(client, data, loaded, pdf)
 
         attention = ""
         chosen = kind

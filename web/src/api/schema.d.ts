@@ -1170,6 +1170,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/invoices/{id}/reread/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read this invoice again
+         * @description Reads the stored file again with the current reader, for an invoice that was read before the reader improved (no lines, no seller or buyer) or that could not be read at the time. Only an invoice nobody has booked. The kind a person gave is kept; if the result is certain it is booked as an upload would be. Needs `journal.approve`.
+         */
+        post: operations["clients_invoices_reread_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/invoices/upload/": {
         parameters: {
             query?: never;
@@ -10151,6 +10171,28 @@ export interface operations {
                 "application/x-www-form-urlencoded": components["schemas"]["SayKindRequest"];
             };
         };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InvoiceReading"];
+                };
+            };
+        };
+    };
+    clients_invoices_reread_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
         responses: {
             200: {
                 headers: {

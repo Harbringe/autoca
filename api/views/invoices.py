@@ -162,6 +162,8 @@ class InvoiceReadingViewSet(
     )
     @action(detail=True, methods=["post"], url_path="reread", permission_classes=[CanApprove])
     def reread(self, request, client_id=None, pk=None):
+        # Reading again calls the model like an upload does, so it counts against the same allowance.
+        enforce(request, self, "upload")
         reading = self.get_object()
         # A person who named the kind is booking it themselves; only an invoice left to the system may be booked by it.
         left_to_the_system = not reading.kind

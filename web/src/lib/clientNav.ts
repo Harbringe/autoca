@@ -61,14 +61,15 @@ export const CLIENT_TABS: Record<string, ClientTab[]> = {
   bookkeeping: [
     { screen: 'bookkeeping', label: 'Books summary', permission: 'report.view' },
     { screen: 'bills', label: 'Purchases & Sales', permission: 'report.view' },
-    { screen: 'tds', label: 'TDS', permission: 'report.view' },
-    { screen: 'payroll', label: 'Payroll', permission: 'report.view' },
-    { screen: 'assets', label: 'Assets', permission: 'report.view' },
     { screen: 'daybook', label: 'Day Book', permission: 'journal.view' },
     { screen: 'open-items', label: 'To fix', permission: 'report.view' },
     { screen: 'ledgers', label: 'Ledgers', permission: 'report.view' },
     { screen: 'masters', label: 'Parties & rules', permission: 'report.view' },
     { screen: 'books', label: 'Sign-off', permission: 'report.view' },
+    // Not every client has these every month, so they sit under "More" once the row is full.
+    { screen: 'tds', label: 'TDS', permission: 'report.view' },
+    { screen: 'payroll', label: 'Payroll', permission: 'report.view' },
+    { screen: 'assets', label: 'Assets', permission: 'report.view' },
   ],
 }
 

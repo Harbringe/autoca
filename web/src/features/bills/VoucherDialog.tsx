@@ -222,6 +222,7 @@ export function VoucherForm({
   const [rcm, setRcm] = useState(false)
   const [narration, setNarration] = useState(prefill?.narration ?? '')
   const [paidFrom, setPaidFrom] = useState('')
+  const [itemwise, setItemwise] = useState(false)
   const [ownGstin, setOwnGstin] = useState(prefill?.ownGstin ?? '')
   const [matchedNote, setMatchedNote] = useState('')
   const clientQuery = useQuery(clientDetail(clientId))
@@ -396,6 +397,7 @@ export function VoucherForm({
           gst_rate: i.gst_rate ?? null,
         })),
       document: prefill?.document ?? null,
+      itemwise: itemwise && items.some((i) => i.description.trim()),
       paid_from: !prefill?.reviseBill && paidFrom && (kind === 'PURCHASE' || kind === 'SALES') ? paidFrom : null,
     }
     setSaving(true)
@@ -775,6 +777,11 @@ export function VoucherForm({
           <Field label="Narration" hint="Worked out from the invoice; change it, or clear it for a standard one.">
             {(props) => <Input {...props} value={narration} onChange={(e) => setNarration(e.target.value)} />}
           </Field>
+          <Checkbox
+            label="Post each item to its own ledger and keep it as a stock item"
+            checked={itemwise}
+            onChange={(e) => setItemwise(e.target.checked)}
+          />
           {!prefill?.reviseBill && (kind === 'PURCHASE' || kind === 'SALES') && (
             <Field label={kind === 'SALES' ? 'Received into' : 'Paid from'} hint="For a cash bill: it is booked as settled, with its payment. Leave empty to pay later from a bank statement.">
               {(props) => (

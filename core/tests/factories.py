@@ -60,6 +60,7 @@ from ledger.models import (
     PayrollLine,
     PayrollRun,
     StockEntry,
+    StockItem,
     TdsChallan,
     VoucherSequence,
     VoucherType,
@@ -441,6 +442,11 @@ def _stock_entry(firm, **kw):
     )
 
 
+def _stock_item(firm, **kw):
+    client = kw.get("client") or _client(firm)
+    return StockItem.objects.create(firm=firm, client=client, name="Widget", unit="pcs")
+
+
 def _tds_challan(firm, **kw):
     client = kw.get("client") or _client(firm)
     entry = JournalEntry.objects.create(
@@ -551,6 +557,7 @@ FACTORIES = {
     FixedAsset: _fixed_asset,
     DepreciationPosting: _depreciation_posting,
     StockEntry: _stock_entry,
+    StockItem: _stock_item,
     TdsChallan: _tds_challan,
     Employee: _employee,
     PayrollRun: _payroll_run,

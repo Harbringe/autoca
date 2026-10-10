@@ -138,6 +138,12 @@ class BillViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.RetrieveModel
         if missing:
             raise serializers.ValidationError({"heads": f"Not ledgers of this client: {', '.join(missing)}."})
         heads = [(found[head["ledger"]], head["amount_paise"]) for head in data["heads"]]
+        if data.get("itemwise"):
+            from ledger import item_ledgers
+
+            heads = item_ledgers.heads_from_items(
+                client, data["kind"], data.get("items") or [], sum(amount for _, amount in heads)
+            )
 
         document = None
         if data["document"] is not None:

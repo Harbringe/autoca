@@ -148,6 +148,13 @@ class BillCreateSerializer(serializers.Serializer):
         help_text="The client's own GSTIN this belongs to, so it lands in the right return.",
     )
     document = serializers.UUIDField(required=False, allow_null=True, default=None, help_text="An uploaded invoice file.")
+    itemwise = serializers.BooleanField(
+        required=False, default=False,
+        help_text=(
+            "Post each invoice line to a purchase or sales ledger of its own and keep each product as a stock item. "
+            "Needs every line to carry an amount and the lines to add up to the taxable value."
+        ),
+    )
     items = ConfirmedLineSerializer(
         many=True, required=False, default=list, max_length=100,
         help_text="The invoice's lines as the person left them. Kept with the invoice, to fill the party's next invoice.",

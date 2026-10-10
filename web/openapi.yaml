@@ -7568,6 +7568,12 @@ components:
           format: uuid
           nullable: true
           description: An uploaded invoice file.
+        itemwise:
+          type: boolean
+          default: false
+          description: Post each invoice line to a purchase or sales ledger of its
+            own and keep each product as a stock item. Needs every line to carry an
+            amount and the lines to add up to the taxable value.
         items:
           type: array
           items:

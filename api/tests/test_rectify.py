@@ -149,3 +149,33 @@ def test_paying_from_an_account_that_is_not_cash_or_bank_is_refused_and_books_no
     assert response.status_code == 422
     with firm_context(client_record.firm_id):
         assert not JournalEntry.objects.filter(client=client_record).exists()
+
+
+def test_item_wise_booking_posts_each_line_to_its_own_ledger_and_keeps_the_items(api, client_record, ravi, purchases):
+    body = voucher(ravi, purchases, bill_date="2025-05-10")
+    total = sum(h["amount_paise"] for h in body["heads"])
+    half = total // 2
+    body["itemwise"] = True
+    body["items"] = [
+        {"description": "PORTLAND CEMENT 50KG", "unit": "bag", "amount_paise": half},
+        {"description": "Steel Rods", "unit": "kg", "amount_paise": total - half},
+    ]
+
+    response = api.post(f"{base(client_record)}/bills/", body, format="json")
+
+    assert response.status_code == 201, response.content
+    names = {line["ledger_name"] for line in api.get(f"{V1}/journal-entries/{response.json()['entry']}/").json()["lines"]}
+    item_ledgers = {n for n in names if n.startswith("Purchases - ")}
+    assert len(item_ledgers) == 2 and any("Steel" in n for n in item_ledgers) and any("Cement" in n for n in item_ledgers)
+
+
+def test_item_wise_booking_that_does_not_add_up_is_refused_and_books_nothing(api, client_record, ravi, purchases):
+    body = voucher(ravi, purchases, bill_date="2025-05-10")
+    body["itemwise"] = True
+    body["items"] = [{"description": "Cement", "amount_paise": 1}]
+
+    response = api.post(f"{base(client_record)}/bills/", body, format="json")
+
+    assert response.status_code == 422
+    with firm_context(client_record.firm_id):
+        assert not JournalEntry.objects.filter(client=client_record).exists()

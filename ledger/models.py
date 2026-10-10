@@ -708,6 +708,29 @@ class FixedAsset(UUIDModel, FirmScopedModel):
         return f"{self.name} ({format_inr(self.cost_paise)})"
 
 
+class StockItem(UUIDModel, FirmScopedModel):
+    """One product the client buys or sells: its master record, with the purchase and sales ledgers kept for it.
+
+    Created from the lines of a booked invoice when item-wise booking is chosen. A line is matched to an existing item by the
+    words that identify the product (``ledger.item_memory``), so batch codes and counts do not make a new item each time.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="stock_items")
+    name = models.CharField(max_length=200)
+    unit = models.CharField(max_length=16, blank=True, default="", db_default="")
+    hsn_sac = models.CharField(max_length=8, blank=True, default="", db_default="")
+    purchase_ledger = models.ForeignKey(LedgerAccount, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    sales_ledger = models.ForeignKey(LedgerAccount, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
+    class Meta:
+        db_table = "ledger_stock_item"
+        ordering = ["name"]
+        constraints = [models.UniqueConstraint(fields=["firm", "client", "name"], name="uniq_stock_item_name")]
+
+    def __str__(self) -> str:
+        return self.name
+
+
 class StockEntryKind(models.TextChoices):
     OPENING = "OPENING", "Opening stock"
     ADJUSTMENT = "ADJUSTMENT", "Stock adjustment"

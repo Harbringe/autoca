@@ -3628,6 +3628,11 @@ export interface components {
              * @description An uploaded invoice file.
              */
             document?: string | null;
+            /**
+             * @description Post each invoice line to a purchase or sales ledger of its own and keep each product as a stock item. Needs every line to carry an amount and the lines to add up to the taxable value.
+             * @default false
+             */
+            itemwise: boolean;
             /** @description The invoice's lines as the person left them. Kept with the invoice, to fill the party's next invoice. */
             items?: components["schemas"]["ConfirmedLineRequest"][];
         };

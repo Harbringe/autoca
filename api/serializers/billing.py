@@ -135,6 +135,13 @@ class BillCreateSerializer(serializers.Serializer):
         required=False, default=False,
         help_text="Reverse charge: the client, not the supplier, owes the GST. Purchases only.",
     )
+    paid_from = serializers.UUIDField(
+        required=False, allow_null=True, default=None,
+        help_text=(
+            "A cash ledger, or a bank ledger with no uploaded statements: the bill is paid in full when booked and the payment "
+            "voucher is booked with it. Purchases and sales only; ignored when a bill is revised."
+        ),
+    )
     narration = serializers.CharField(required=False, allow_blank=True, default="", max_length=500)
     own_gstin = serializers.CharField(
         required=False, allow_blank=True, default="",

@@ -7547,6 +7547,13 @@ components:
           default: false
           description: 'Reverse charge: the client, not the supplier, owes the GST.
             Purchases only.'
+        paid_from:
+          type: string
+          format: uuid
+          nullable: true
+          description: 'A cash ledger, or a bank ledger with no uploaded statements:
+            the bill is paid in full when booked and the payment voucher is booked
+            with it. Purchases and sales only; ignored when a bill is revised.'
         narration:
           type: string
           default: ''

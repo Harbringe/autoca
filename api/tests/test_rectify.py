@@ -121,3 +121,31 @@ def test_opening_stock_and_a_count_adjustment_show_in_the_inventory_report(api, 
     (item,) = report["items"]
     assert item["name"] == "Widget" and str(item["closing_qty"]).startswith("96")
     assert refused.status_code == 400
+
+
+def test_a_cash_purchase_is_booked_with_its_payment_and_settled(api, client_record, ravi, purchases):
+    cash = make_ledger(api, client_record, "Cash in Hand", "CASH")
+    body = voucher(ravi, purchases, bill_date="2025-05-10")
+    body["paid_from"] = cash["id"]
+
+    response = api.post(f"{base(client_record)}/bills/", body, format="json")
+
+    assert response.status_code == 201, response.content
+    bill = response.json()
+    assert bill["open_paise"] == 0, bill
+    with firm_context(client_record.firm_id):
+        payments = JournalEntry.objects.filter(client=client_record, voucher_type="Payment")
+        assert payments.count() == 1
+        lines = sorted((line.ledger_account.name, line.direction, line.amount_paise) for line in payments.get().lines.all())
+        assert ("Cash in Hand", "CR", bill["total_paise"]) in lines
+
+
+def test_paying_from_an_account_that_is_not_cash_or_bank_is_refused_and_books_nothing(api, client_record, ravi, purchases, repairs):
+    body = voucher(ravi, purchases, bill_date="2025-05-10")
+    body["paid_from"] = repairs["id"]
+
+    response = api.post(f"{base(client_record)}/bills/", body, format="json")
+
+    assert response.status_code == 422
+    with firm_context(client_record.firm_id):
+        assert not JournalEntry.objects.filter(client=client_record).exists()

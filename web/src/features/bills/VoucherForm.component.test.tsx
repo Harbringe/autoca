@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { bills as billsQuery } from '@/api/queries/bills'
@@ -135,7 +135,8 @@ describe('Booking a voucher', () => {
     await screen.findByLabelText('Supplier')
     // The ledger picker lists what can hold an invoice's value; the bank account is not among them.
     await userEvent.click(screen.getAllByRole('combobox').find((el) => el.getAttribute('aria-label')?.startsWith('Ledger')) ?? screen.getAllByRole('combobox')[1]!)
-    expect(screen.queryByText('Axis Bank A/c 9999')).not.toBeInTheDocument()
+    // (It is offered, on purpose, under "Paid from": that is where the money came out of.)
+    expect(screen.queryAllByText('Axis Bank A/c 9999').filter((el) => el.tagName !== 'OPTION')).toHaveLength(0)
   })
 
   it('asks for what is missing instead of sending an empty voucher', async () => {

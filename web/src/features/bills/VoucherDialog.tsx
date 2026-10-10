@@ -221,6 +221,7 @@ export function VoucherForm({
   const [tdsSection, setTdsSection] = useState('')
   const [rcm, setRcm] = useState(false)
   const [narration, setNarration] = useState(prefill?.narration ?? '')
+  const [paidFrom, setPaidFrom] = useState('')
   const [ownGstin, setOwnGstin] = useState(prefill?.ownGstin ?? '')
   const [matchedNote, setMatchedNote] = useState('')
   const clientQuery = useQuery(clientDetail(clientId))
@@ -395,6 +396,7 @@ export function VoucherForm({
           gst_rate: i.gst_rate ?? null,
         })),
       document: prefill?.document ?? null,
+      paid_from: !prefill?.reviseBill && paidFrom && (kind === 'PURCHASE' || kind === 'SALES') ? paidFrom : null,
     }
     setSaving(true)
     try {
@@ -773,6 +775,18 @@ export function VoucherForm({
           <Field label="Narration" hint="Worked out from the invoice; change it, or clear it for a standard one.">
             {(props) => <Input {...props} value={narration} onChange={(e) => setNarration(e.target.value)} />}
           </Field>
+          {!prefill?.reviseBill && (kind === 'PURCHASE' || kind === 'SALES') && (
+            <Field label={kind === 'SALES' ? 'Received into' : 'Paid from'} hint="For a cash bill: it is booked as settled, with its payment. Leave empty to pay later from a bank statement.">
+              {(props) => (
+                <Select {...props} value={paidFrom} onChange={(e) => setPaidFrom(e.target.value)}>
+                  <option value="">Not paid yet</option>
+                  {(ledgers.data ?? []).filter((l) => l.group === 'CASH' || l.group === 'BANK').map((l) => (
+                    <option key={l.id} value={l.id}>{l.name}</option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+          )}
         </div>
       </details>
       </div>

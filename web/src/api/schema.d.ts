@@ -3611,6 +3611,11 @@ export interface components {
              * @default false
              */
             rcm: boolean;
+            /**
+             * Format: uuid
+             * @description A cash ledger, or a bank ledger with no uploaded statements: the bill is paid in full when booked and the payment voucher is booked with it. Purchases and sales only; ignored when a bill is revised.
+             */
+            paid_from?: string | null;
             /** @default  */
             narration: string;
             /**

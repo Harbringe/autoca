@@ -24,7 +24,7 @@ from api.serializers.billing import (
 from api.views.base import ClientScopedMixin
 from classify.models import LedgerAccount, Party
 from documents.models import Document
-from ledger import billing, editing, invoice_intake
+from ledger import billing, editing, invoice_intake, pay_now
 from ledger.billing import BillInput
 from ledger.models import Bill, BillKind, InvoiceReading
 
@@ -115,7 +115,12 @@ class BillViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.RetrieveModel
     def create(self, request, *args, **kwargs):
         payload = BillCreateSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
-        bill = self._book(request, payload.validated_data)
+        paid_from = payload.validated_data.get("paid_from")
+        with transaction.atomic():
+            bill = self._book(request, payload.validated_data)
+            if paid_from is not None:
+                source = get_object_or_404(LedgerAccount, pk=paid_from, firm_id=request.firm.pk, client=self.client)
+                pay_now.pay_now(bill, source, membership=request.membership)
         # A payment already on the party's account for exactly this amount is its payment: not left as an island.
         invoice_intake.settle_payment(bill)
         return Response(BillDetailSerializer(self.get_queryset().get(pk=bill.pk)).data, status=status.HTTP_201_CREATED)

@@ -1,4 +1,4 @@
-import type { ComponentProps } from 'react'
+import type { ComponentProps, ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 export function Select({ className, ...props }: ComponentProps<'select'>) {
@@ -25,7 +25,7 @@ export function Textarea({ className, ...props }: ComponentProps<'textarea'>) {
   )
 }
 
-export function Checkbox({ label, className, ...props }: ComponentProps<'input'> & { label?: string }) {
+export function Checkbox({ label, className, ...props }: ComponentProps<'input'> & { label?: ReactNode }) {
   const box = <input type="checkbox" className={cn('size-4 accent-[var(--primary)]', !label && className)} {...props} />
   if (!label) return box
   return (

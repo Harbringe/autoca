@@ -29,6 +29,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { formatDate, fyLabel, plural } from '@/lib/format'
 import { NCE_LINES } from '@/lib/nce'
 import { summariseRows, whyNoEntries } from '@/lib/ledgerRows'
+import { TidyNames, proposals } from './TidyNames'
 import { useFy } from '@/features/shell/useFy'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
@@ -502,6 +503,7 @@ function Parties({ clientId }: { clientId: string }) {
   const { can } = useSession()
   const list = useQuery(partiesQuery(clientId))
   const [editing, setEditing] = useState<Party | 'new' | null>(null)
+  const [tidying, setTidying] = useState(false)
   const [text, setText] = useState('')
 
   if (list.isPending) return <Spinner />
@@ -514,11 +516,17 @@ function Parties({ clientId }: { clientId: string }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Input aria-label="Search parties" placeholder="Search by name or GSTIN" className="max-w-xs" value={text} onChange={(e) => setText(e.target.value)} />
         {can('party.manage') && (
-          <Button onClick={() => setEditing('new')}>
-            <Plus /> New party
-          </Button>
+          <div className="flex gap-2">
+            {proposals(list.data).length > 0 && (
+              <Button variant="outline" onClick={() => setTidying(true)}>Tidy names ({proposals(list.data).length})</Button>
+            )}
+            <Button onClick={() => setEditing('new')}>
+              <Plus /> New party
+            </Button>
+          </div>
         )}
       </div>
+      {tidying && <TidyNames clientId={clientId} parties={list.data} onClose={() => setTidying(false)} />}
       {list.data.length === 0 ? (
         <EmptyState title="No parties yet">Parties are the people and businesses the client pays or is paid by. They are added as you confirm payees in Review.</EmptyState>
       ) : (

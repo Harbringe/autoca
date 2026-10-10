@@ -6,14 +6,14 @@
 // preview can only ever be early, never different.
 
 import { useQuery } from '@tanstack/react-query'
-import { Plus, X } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { ArrowDown, ArrowRight, Plus, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
 import { ledgers as ledgersQuery, parties as partiesQuery } from '@/api/queries/books'
 import { usePostBill, useReviseBill } from '@/api/queries/bills'
-import { useInvalidateClient, V1 } from '@/api/queries/clients'
+import { clientDetail, useInvalidateClient, V1 } from '@/api/queries/clients'
 import type { BillCreateRequest, InvoiceReading, Party } from '@/api/types'
 import { Money } from '@/components/ca/Money'
 import { Button } from '@/components/ui/button'
@@ -24,7 +24,7 @@ import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { LedgerPicker, usableLedgers } from '@/features/review/LedgerPicker'
 import { formatDate, formatPaise, parseDate, parseRupees } from '@/lib/format'
-import { normaliseName } from '@/lib/names'
+import { normaliseName, sameBusiness } from '@/lib/names'
 import { cn } from '@/lib/utils'
 import {
   isPurchaseSide,
@@ -108,6 +108,10 @@ export interface VoucherPrefill {
   kind: VoucherKind
   /** Neither the GSTINs nor the names say whether this is a purchase or a sale: the person must choose. */
   kindUnsure?: boolean
+  /** The GSTIN printed on the client's own side of the invoice, to start the form with. */
+  ownGstin?: string
+  /** A narration worked out from what was read; the person may change it. */
+  narration?: string
   partyId?: string
   newParty?: { name: string; gstin: string }
   reference: string
@@ -197,8 +201,10 @@ export function VoucherForm({
   const [tds, setTds] = useState('')
   const [tdsSection, setTdsSection] = useState('')
   const [rcm, setRcm] = useState(false)
-  const [narration, setNarration] = useState('')
-  const [ownGstin, setOwnGstin] = useState('')
+  const [narration, setNarration] = useState(prefill?.narration ?? '')
+  const [ownGstin, setOwnGstin] = useState(prefill?.ownGstin ?? '')
+  const [matchedNote, setMatchedNote] = useState('')
+  const clientQuery = useQuery(clientDetail(clientId))
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [newParty, setNewParty] = useState<{ name: string; gstin: string } | null>(prefill?.newParty ?? null)
   const [saving, setSaving] = useState(false)
@@ -381,6 +387,87 @@ export function VoucherForm({
 
   const partyLabel = purchaseSide ? 'Supplier' : 'Customer'
 
+  // One side of the invoice is the client; the other is the party. A purchase reads From (the supplier) To (the client); a sale
+  // reads From (the client) To (the customer).
+  const counterFacts = purchaseSide ? prefill?.facts?.seller : prefill?.facts?.buyer
+  const ownFacts = purchaseSide ? prefill?.facts?.buyer : prefill?.facts?.seller
+  const clientName = normaliseName(clientQuery.data?.name ?? '')
+  const counterpartyCard = (
+    <fieldset className="grid min-w-0 gap-2 rounded-md border bg-card p-3">
+      <legend className="px-1 text-xs font-medium text-muted-foreground">{purchaseSide ? 'From · seller' : 'To · buyer'}</legend>
+      <Field label={partyLabel} error={errors.party}>
+        {(props) => (
+          <Select
+            {...props}
+            value={newParty ? NEW_PARTY : partyId}
+            onChange={(e) => {
+              setMatchedNote('')
+              if (e.target.value === NEW_PARTY) {
+                setNewParty({ name: counterFacts?.name ? normaliseName(counterFacts.name) : '', gstin: counterFacts?.gstin ?? '' })
+                setPartyId('')
+              } else {
+                setNewParty(null)
+                setPartyId(e.target.value)
+              }
+            }}
+          >
+            <option value="">Choose…</option>
+            {suitable.map((p) => (
+              <option key={p.id} value={p.id}>{normaliseName(p.canonical_name)}</option>
+            ))}
+            <option value={NEW_PARTY}>+ Add a new {partyLabel.toLowerCase()}…</option>
+          </Select>
+        )}
+      </Field>
+      {matchedNote && <p className="text-xs text-success">{matchedNote}</p>}
+      {newParty && (
+        <div className="grid gap-2 rounded-md border border-dashed p-2">
+          <Field label="Name" error={errors.newPartyName}>
+            {(props) => <Input {...props} autoFocus value={newParty.name} onChange={(e) => setNewParty({ ...newParty, name: e.target.value })} />}
+          </Field>
+          <Field label="GSTIN (blank if unregistered)" error={errors.newPartyGstin} mask="gstin">
+            {(props, m) => <Input {...props} {...m} value={newParty.gstin} onChange={(e) => setNewParty({ ...newParty, gstin: e.target.value })} />}
+          </Field>
+          <div className="flex justify-end gap-2">
+            <Button type="button" variant="ghost" size="sm" onClick={() => setNewParty(null)}>Cancel</Button>
+            <Button type="button" size="sm" disabled={!newParty.name.trim()} onClick={() => void createParty()}>
+              Add {partyLabel.toLowerCase()}
+            </Button>
+          </div>
+        </div>
+      )}
+      <PrintedLines label="Printed on the invoice" party={counterFacts} />
+    </fieldset>
+  )
+  const ownCard = (
+    <fieldset className="grid min-w-0 gap-2 rounded-md border bg-card p-3">
+      <legend className="px-1 text-xs font-medium text-muted-foreground">{purchaseSide ? 'To · buyer' : 'From · seller'}</legend>
+      <div className="font-medium text-heading">{clientName || 'This client'}</div>
+      <Field label="GSTIN on this invoice" hint="Filled from the invoice; only needed if the client has more than one" error={errors.own_gstin} mask="gstin">
+        {(props, m) => <Input {...props} {...m} value={ownGstin} onChange={(e) => setOwnGstin(e.target.value)} />}
+      </Field>
+      {ownFacts?.name && clientName && !sameBusiness(ownFacts.name, clientName) && (
+        <p className="text-xs text-muted-foreground">Printed as “{normaliseName(ownFacts.name)}”</p>
+      )}
+      <PrintedLines label="Printed on the invoice" party={ownFacts ? { ...ownFacts, name: '', gstin: '' } : undefined} />
+    </fieldset>
+  )
+
+  // A new party named on the invoice that the client already has under the same business name is that party: select it
+  // instead of offering to add a second one. Once, when the parties arrive; after that the person is in charge.
+  const autoMatched = useRef(false)
+  useEffect(() => {
+    if (autoMatched.current || !parties.data || partyId || !newParty?.name.trim()) return
+    autoMatched.current = true
+    const wanted = normaliseName(newParty.name).toLowerCase()
+    const hits = suitable.filter((p) => normaliseName(p.canonical_name).toLowerCase() === wanted || sameBusiness(p.canonical_name, newParty.name))
+    if (hits.length === 1) {
+      setPartyId(hits[0]!.id)
+      setNewParty(null)
+      setMatchedNote(`Matched to ${normaliseName(hits[0]!.canonical_name)}, already on file.`)
+    }
+  }, [parties.data, suitable, partyId, newParty])
+
   return (
     <form
       id={formId}
@@ -513,69 +600,44 @@ export function VoucherForm({
 
       <div className={layout === 'page' && tab !== 'details' ? 'hidden' : 'grid gap-4'}>
       {prefill?.facts && <ReceiptFactsCard facts={prefill.facts} />}
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Voucher type" error={errors.kind}>
-          {(props) => (
-            <Select {...props} value={kindChosen ? kind : ''} onChange={(e) => changeKind(e.target.value as VoucherKind)}>
-              {!kindChosen && <option value="" disabled>Choose purchase or sale…</option>}
-              {VOUCHER_KINDS.map((k) => (
-                <option key={k.value} value={k.value}>{k.label}</option>
-              ))}
-            </Select>
+      <div className="@container grid gap-4">
+        <section aria-label="From and to" className="grid gap-2 @lg:grid-cols-[1fr_auto_1fr] @lg:items-start">
+          {purchaseSide ? (
+            <>
+              {counterpartyCard}
+              <Connector />
+              {ownCard}
+            </>
+          ) : (
+            <>
+              {ownCard}
+              <Connector />
+              {counterpartyCard}
+            </>
           )}
-        </Field>
-        <Field label="Invoice number" error={errors.reference} hint="As printed on the document">
-          {(props) => <Input {...props} autoComplete="off" title="The same number from the same party is refused as a duplicate." value={reference} onChange={(e) => setReference(e.target.value)} />}
-        </Field>
+        </section>
 
-        <Field label={partyLabel} error={errors.party}>
-          {(props) => (
-            <Select
-              {...props}
-              value={newParty ? NEW_PARTY : partyId}
-              onChange={(e) => {
-                if (e.target.value === NEW_PARTY) {
-                  setNewParty({ name: '', gstin: '' })
-                  setPartyId('')
-                } else {
-                  setNewParty(null)
-                  setPartyId(e.target.value)
-                }
-              }}
-            >
-              <option value="">Choose…</option>
-              {suitable.map((p) => (
-                <option key={p.id} value={p.id}>{normaliseName(p.canonical_name)}</option>
-              ))}
-              <option value={NEW_PARTY}>+ Add a new {partyLabel.toLowerCase()}…</option>
-            </Select>
-          )}
-        </Field>
-        <Field label="Invoice date" error={errors.bill_date}>
-          {(props) => <DateInput {...props} value={billDate} onChange={(e) => setBillDate(e.target.value)} />}
-        </Field>
-
-        {newParty && (
-          <fieldset className="grid gap-3 rounded-md border border-input bg-card p-3 sm:col-span-2">
-            <legend className="px-1 text-[13px] font-medium">New {partyLabel.toLowerCase()}</legend>
-            <Field label="Name" error={errors.newPartyName}>
-              {(props) => <Input {...props} autoFocus value={newParty.name} onChange={(e) => setNewParty({ ...newParty, name: e.target.value })} />}
-            </Field>
-            <Field label="GSTIN (blank if unregistered)" error={errors.newPartyGstin} mask="gstin">
-              {(props, m) => <Input {...props} {...m} value={newParty.gstin} onChange={(e) => setNewParty({ ...newParty, gstin: e.target.value })} />}
-            </Field>
-            <div className="flex justify-end gap-2">
-              <Button type="button" variant="ghost" size="sm" onClick={() => setNewParty(null)}>Cancel</Button>
-              <Button type="button" size="sm" disabled={!newParty.name.trim()} onClick={() => void createParty()}>
-                Add {partyLabel.toLowerCase()}
-              </Button>
-            </div>
-          </fieldset>
-        )}
-
-        <Field label="Due date (optional)" error={errors.due_date}>
-          {(props) => <DateInput {...props} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />}
-        </Field>
+        <div className="grid gap-4 @sm:grid-cols-2">
+          <Field label="Voucher type" error={errors.kind}>
+            {(props) => (
+              <Select {...props} value={kindChosen ? kind : ''} onChange={(e) => changeKind(e.target.value as VoucherKind)}>
+                {!kindChosen && <option value="" disabled>Choose purchase or sale…</option>}
+                {VOUCHER_KINDS.map((k) => (
+                  <option key={k.value} value={k.value}>{k.label}</option>
+                ))}
+              </Select>
+            )}
+          </Field>
+          <Field label="Invoice number" error={errors.reference} hint="As printed on the document">
+            {(props) => <Input {...props} autoComplete="off" title="The same number from the same party is refused as a duplicate." value={reference} onChange={(e) => setReference(e.target.value)} />}
+          </Field>
+          <Field label="Invoice date" error={errors.bill_date}>
+            {(props) => <DateInput {...props} value={billDate} onChange={(e) => setBillDate(e.target.value)} />}
+          </Field>
+          <Field label="Due date (optional)" error={errors.due_date}>
+            {(props) => <DateInput {...props} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />}
+          </Field>
+        </div>
       </div>
 
       <fieldset className="grid gap-3">
@@ -676,11 +738,8 @@ export function VoucherForm({
       <details className="rounded-md border border-input px-3 py-2 text-sm">
         <summary className="cursor-pointer font-medium">More details (optional)</summary>
         <div className="mt-3 grid gap-3">
-          <Field label="Narration" hint="Leave blank for a standard one.">
+          <Field label="Narration" hint="Worked out from the invoice; change it, or clear it for a standard one.">
             {(props) => <Input {...props} value={narration} onChange={(e) => setNarration(e.target.value)} />}
-          </Field>
-          <Field label="Your GSTIN for this invoice" hint="Only needed if the client has more than one." error={errors.own_gstin} mask="gstin">
-            {(props, m) => <Input {...props} {...m} value={ownGstin} onChange={(e) => setOwnGstin(e.target.value)} />}
           </Field>
         </div>
       </details>
@@ -716,16 +775,23 @@ export function VoucherForm({
 }
 
 /** What was read off the receipt beyond the voucher's own fields, so the person sees all of it. */
-function PartyBlock({ title, party }: { title: string; party?: PartyFacts }) {
+function PrintedLines({ label, party }: { label: string; party?: PartyFacts }) {
   if (!party || !(party.name || party.gstin || party.address)) return null
   return (
-    <div className="grid gap-0.5">
-      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
-      {party.name && <div className="font-medium text-heading">{normaliseName(party.name)}</div>}
+    <div className="grid gap-0.5 text-xs text-muted-foreground" aria-label={label}>
+      {party.name && <div>{normaliseName(party.name)}</div>}
       {party.gstin && <div className="num">GSTIN {party.gstin}</div>}
-      {party.pan && <div className="num">PAN {party.pan}</div>}
-      {party.address && <div className="text-muted-foreground">{party.address}</div>}
+      {party.address && <div>{party.address}</div>}
     </div>
+  )
+}
+
+function Connector() {
+  return (
+    <>
+      <ArrowRight className="hidden size-5 self-center text-muted-foreground @lg:block" aria-hidden />
+      <ArrowDown className="mx-auto size-4 text-muted-foreground @lg:hidden" aria-hidden />
+    </>
   )
 }
 
@@ -745,17 +811,10 @@ function ReceiptFactsCard({ facts }: { facts: ReceiptFacts }) {
   const shown = rows.filter(([, v]) => v)
   const foreign = facts.currency && facts.currency !== 'INR'
   const rejected = facts.rejected ?? []
-  const parties = [facts.seller, facts.buyer].some((p) => p && (p.name || p.gstin || p.address))
-  if (shown.length === 0 && !foreign && rejected.length === 0 && !parties && !facts.kindReason) return null
+  if (shown.length === 0 && !foreign && rejected.length === 0 && !facts.kindReason && !facts.ownGstinGuess) return null
   return (
     <section aria-label="Read from the receipt" className="grid gap-2 rounded-md border border-accent-edge bg-accent p-3 text-sm">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Read from the receipt</h3>
-      {parties && (
-        <div className="grid gap-3 sm:grid-cols-2">
-          <PartyBlock title="Seller (issued the invoice)" party={facts.seller} />
-          <PartyBlock title="Buyer (billed)" party={facts.buyer} />
-        </div>
-      )}
       {facts.kindReason && <p className="text-info">{facts.kindReason} Check the voucher type below.</p>}
       {facts.ownGstinGuess && (
         <p className="text-muted-foreground">

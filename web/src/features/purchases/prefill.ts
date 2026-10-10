@@ -32,6 +32,18 @@ function extrasOf(read: Read | null | undefined): Pick<VoucherPrefill, 'dueDate'
   return read ? { dueDate: read.due_date, items: read.items ?? [], facts: factsOf(read) } : {}
 }
 
+/** A voucher narration from what was read, the way a CA writes it: what, to or from whom, against which invoice. */
+export function narrationFrom(read: Read, purchase: boolean, counterparty: string): string {
+  const things = (read.items ?? [])
+    .map((i) => normaliseName(i.description).slice(0, 40))
+    .filter(Boolean)
+    .slice(0, 3)
+  const what = things.length ? things.join(', ') : (read.expense_hint || (purchase ? 'goods and services' : 'goods sold'))
+  const who = counterparty ? `${purchase ? 'from' : 'to'} ${counterparty}` : ''
+  const invoice = read.invoice_no ? `vide invoice ${read.invoice_no}` : ''
+  return [`Being ${purchase ? 'purchase' : 'sale'} of ${what}`, who, invoice].filter(Boolean).join(' ').slice(0, 200)
+}
+
 /** The form for an uploaded invoice that is not booked yet. ``headLedger`` is the ledger its taxable value goes to. */
 export function prefillFromReading(reading: InvoiceReading, headLedger?: string): VoucherPrefill | null {
   const read = reading.read
@@ -44,6 +56,9 @@ export function prefillFromReading(reading: InvoiceReading, headLedger?: string)
   return {
     kind: purchase ? 'PURCHASE' : 'SALES',
     kindUnsure: unsure,
+    // The GSTIN printed on the client's side of the invoice: the buyer's on a purchase, the issuer's on a sale.
+    ownGstin: (unsure ? read.own_gstin_guess : purchase ? read.buyer_gstin : read.supplier_gstin) || '',
+    narration: unsure ? '' : narrationFrom(read, purchase, normaliseName(counterparty)),
     partyId: reading.suggested_party?.id,
     newParty: reading.suggested_party || !counterparty ? undefined : { name: normaliseName(counterparty), gstin: read.counterparty_gstin || (purchase ? read.supplier_gstin : read.buyer_gstin) || '' },
     reference: read.invoice_no,

@@ -40,8 +40,10 @@ const READ = {
   due_date: null,
   supplier_address: 'Silver Stone, Handewadi, Pune',
   supplier_pan: '',
-  buyer_name: '',
-  buyer_address: '',
+  supplier_gstin: '27ABTPN5133F1ZF',
+  buyer_gstin: '27AAACB2230M1ZT',
+  buyer_name: 'Acme Traders',
+  buyer_address: 'Mondha, Loha',
   place_of_supply: 'Maharashtra',
   payment_mode: 'card',
   payment_terms: '',
@@ -103,8 +105,15 @@ describe('one purchase or sale on its own page', () => {
     expect(screen.getByDisplayValue('27-09-2026')).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Supplier' })).toHaveValue('p1')
     const facts = screen.getByRole('region', { name: 'Read from the receipt' })
-    expect(within(facts).getByText('Silver Stone, Handewadi, Pune')).toBeInTheDocument()
     expect(within(facts).getByText('Card')).toBeInTheDocument()
+    // The two sides of the invoice read From, To: the supplier's printed details and the client's own GSTIN, filled in.
+    const sides = screen.getByRole('region', { name: 'From and to' })
+    expect(within(sides).getByText('Silver Stone, Handewadi, Pune')).toBeInTheDocument()
+    expect(within(sides).getByText('From · seller')).toBeInTheDocument()
+    expect(within(sides).getByText('To · buyer')).toBeInTheDocument()
+    expect(within(sides).getByLabelText('GSTIN on this invoice')).toHaveValue('27AAACB2230M1ZT')
+    // The narration is worked out from the lines, the party and the invoice number.
+    expect(screen.getByLabelText('Narration')).toHaveValue('Being purchase of Biryani, Thali from Jubilant FoodWorks Limited vide invoice 80154/26/O4160')
     expect(await screen.findByAltText('Page 1 of 1 of the uploaded file')).toBeInTheDocument()
     expect(screen.getByText('lunch.jpeg')).toBeInTheDocument()
   })
@@ -156,6 +165,22 @@ describe('one purchase or sale on its own page', () => {
     // The form shows the new lines, not the empty ones it started with.
     expect(await screen.findByLabelText('Description of line 1')).toHaveValue('Biryani')
     expect(screen.queryByText(/No lines were read from this invoice/)).not.toBeInTheDocument()
+  })
+
+  it('selects the party already on file when the invoice names it in other words, instead of offering to add it again', async () => {
+    const unmatched = { ...READING, suggested_party: null, read: { ...READ, supplier_name: 'JUBILANT FOODWORKS LTD.' } } as unknown as InvoiceReading
+    renderIt({}, [unmatched])
+    expect(await screen.findByText(/Matched to Jubilant FoodWorks Limited, already on file/)).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Supplier' })).toHaveValue('p1')
+    expect(screen.queryByLabelText('GSTIN (blank if unregistered)')).not.toBeInTheDocument()
+  })
+
+  it('reads To, From the other way round on a sale', async () => {
+    const sale = { ...READING, kind: 'SALES', suggested_party: null, read: { ...READ, supplier_name: 'Acme Traders', buyer_name: 'New Customer Stores' } } as unknown as InvoiceReading
+    renderIt({}, [sale])
+    const sides = await screen.findByRole('region', { name: 'From and to' })
+    expect(within(sides).getByText('From · seller')).toBeInTheDocument()
+    expect(within(sides).getByRole('combobox', { name: 'Customer' })).toBeInTheDocument()
   })
 
   it('hides and shows the receipt viewer', async () => {

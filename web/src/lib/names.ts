@@ -25,3 +25,20 @@ export function normaliseName(text: string | null | undefined): string {
   const words = String(text ?? '').split(/\s+/).filter(Boolean)
   return words.map((w, i) => word(w, i === 0)).join(' ')
 }
+
+const FORM_WORDS = new Set(['pvt', 'private', 'ltd', 'limited', 'llp', 'co', 'company', 'corp', 'corporation', 'inc', 'the', 'and', 'm', 's', 'ms', 'mrs', 'mr', 'shri', 'shree', 'sri'])
+
+/** The words that say which business this is: lower case, no punctuation, none of the "Pvt Ltd" kind. */
+function tokens(text: string): Set<string> {
+  const words = String(text ?? '').toLowerCase().match(/[a-z0-9]+/g) ?? []
+  return new Set(words.filter((w) => !FORM_WORDS.has(w) && (w.length > 1 || /\d/.test(w))))
+}
+
+/** Whether two spellings name the same business: one's identifying words all appear in the other, and there are at least two. */
+export function sameBusiness(a: string, b: string): boolean {
+  const left = tokens(a)
+  const right = tokens(b)
+  if (left.size < 2 || right.size < 2) return false
+  const [small, large] = left.size <= right.size ? [left, right] : [right, left]
+  return [...small].every((w) => large.has(w))
+}

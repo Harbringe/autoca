@@ -200,7 +200,7 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
             </Button>
             {(openForm || bill) && mayPost && (
               <Button type="submit" form={formId}>
-                {bill ? 'Save changes' : wantedKind === 'SALES' ? 'Save sale' : wantedKind === 'PURCHASE' ? 'Save purchase' : 'Save'}
+                {bill ? 'Save changes' : !readingKind && as === 'reading' ? 'Save' : wantedKind === 'SALES' ? 'Save sale' : 'Save purchase'}
               </Button>
             )}
             <DropdownMenu>

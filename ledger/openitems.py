@@ -430,3 +430,33 @@ def total_held(client) -> int:
         ).aggregate(total=Sum("amount_paise"))["total"]
         or 0
     )
+
+
+@detector("client_gstin_missing", "The client's own GSTIN is not on record")
+def client_gstin_missing(client):
+    """Invoices are told apart as purchases or sales by the client's own GSTIN. With none on record every one of them waits.
+
+    Said once, as the cause, with the one thing that clears it, so a person does not read the same sentence on every file.
+    """
+    from gst.models import GstRegistration
+    from ledger.models import InvoiceReading, ReadingStatus
+
+    if GstRegistration.objects.filter(firm_id=client.firm_id, client=client, is_active=True).exists():
+        return
+    waiting = list(
+        InvoiceReading.objects.filter(firm_id=client.firm_id, client=client, status=ReadingStatus.OPEN, kind="")
+        .exclude(payload_enc__isnull=True)
+        .order_by("created_at")
+    )
+    if not waiting:
+        return
+    count = len(waiting)
+    yield OpenItem(
+        kind="client_gstin_missing",
+        client_id=client.pk,
+        summary=(
+            f"{count} uploaded invoice{'s' if count != 1 else ''} could not be told as a purchase or a sale, because this client's own "
+            "GSTIN is not on record. Add it under GST and they sort themselves."
+        ),
+        since=waiting[0].created_at.date(),
+    )

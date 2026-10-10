@@ -50,20 +50,18 @@ showed a wide-screen layout, not a laptop's. The receipt page and the purchases 
 | Buyer and seller | Both shown on every invoice, whichever kind it is; kind suggested from the printed names and the model's own judgement, and chosen by the person when neither says |
 | Review filters | Confidence chips and search on one line |
 
-## Walked through and left as they are
+## Walked through
 
-Looked at in the running app at 1366px and, for several, at 390px: Dashboard, Clients, Client overview, Statements, Review, Pipeline,
-Day Book, Ledgers, Purchases and Sales, Reports (trial balance), Documents, GST (empty). They share one structure (title, tab row,
-table or cards) and, apart from the repeated chips fixed above, do not contradict each other. At 390px the dashboard cards stack, the
-client list drops its secondary columns and wide report tables scroll sideways, which is how a ledger table should behave.
+Looked at in the running app at 1366px (several also at 390px): Dashboard, Clients, Client overview, Statements, Review, Pipeline,
+Day Book, Ledgers, Purchases and Sales, Reports, Documents, GST, Settings, Staff, Alerts, Parties and rules, TDS, Payroll, Assets and
+To fix. They share one structure (title, tab row, table or cards). Not opened: Sign-off, and Settings sub-tabs other than Team.
 
-## Not done, so it is not forgotten
-
-- **Settings, Staff, Alerts, Parties & rules, Sign-off, TDS, Payroll, Assets and To fix** were not opened in this pass.
-- **Client overview** repeats the left panel as three "Open" cards. Candidate: replace them with the client's next step.
-- **Dashboard** is dense. Candidate: one list with bars in place of the donut and its legend.
-- **Empty states** mostly say what is missing and not what to do next.
-- **Nothing here has been tried by someone doing a day's work.** The next real test is a day of uploads on one client.
+| Screen | Change |
+|---|---|
+| Client overview | The three "Open" cards that repeated the side menu are now "What needs you": entries to sort, entries to record, invoices waiting, items that do not tie out, each opening the exact screen; when nothing is waiting it says so and offers statements and reports |
+| Dashboard | The ring and its legend said the same thing twice; one bar per stage now, each opening those clients, the same bars the page already uses elsewhere |
+| To fix | The same sentence ("this client's own GSTIN is not on record") sat under every waiting invoice. It is now one item first in the list, naming the cause, with an "Add the GSTIN" button; the invoices stay listed |
+| Receipt facts | Sentence case heading; facts in the order a bookkeeper wants them with boilerplate (notes, amount in words) last; "tax_invoice" shown as "Tax invoice"; the button says only "Save" until the type is chosen; choosing the type fills the party from the matching side of the invoice (or matches one on file) |
 
 ## Rules to keep to
 

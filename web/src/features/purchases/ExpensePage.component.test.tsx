@@ -186,6 +186,33 @@ describe('one purchase or sale on its own page', () => {
     expect(await screen.findByText(/made out to “S.B.H Dryfruits”, not to Acme/)).toBeInTheDocument()
   })
 
+  it('says only Save while the type is not known, and fills the party from the invoice once it is chosen', async () => {
+    const unsure = {
+      ...READING,
+      kind: '',
+      suggested_party: null,
+      read: { ...READ, suggested_kind: '', supplier_name: 'Brand New Supplier', supplier_gstin: '27AAAAA0000A1Z5' },
+    } as unknown as InvoiceReading
+    renderIt({}, [unsure])
+    expect(await screen.findByRole('button', { name: 'Save' })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: 'Voucher type' })).toHaveValue('')
+    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Voucher type' }), 'PURCHASE')
+    // Not on file, so the new-supplier panel opens with what the invoice printed.
+    expect(await screen.findByDisplayValue('Brand New Supplier')).toBeInTheDocument()
+    expect(screen.getByDisplayValue('27AAAAA0000A1Z5')).toBeInTheDocument()
+  })
+
+  it('shows the document in words and keeps boilerplate behind the first few facts', async () => {
+    const wordy = {
+      ...READING,
+      read: { ...READ, details: { document_type: 'tax_invoice', notes: 'Goods once sold will not be taken back.', po_number: 'PO-9' } },
+    } as unknown as InvoiceReading
+    renderIt({}, [wordy])
+    const facts = await screen.findByRole('region', { name: 'Read from the receipt' })
+    expect(within(facts).getByText('Tax invoice')).toBeInTheDocument()
+    expect(within(facts).queryByText('tax_invoice')).not.toBeInTheDocument()
+  })
+
   it('reads To, From the other way round on a sale', async () => {
     const sale = { ...READING, kind: 'SALES', suggested_party: null, read: { ...READ, supplier_name: 'Acme Traders', buyer_name: 'New Customer Stores' } } as unknown as InvoiceReading
     renderIt({}, [sale])

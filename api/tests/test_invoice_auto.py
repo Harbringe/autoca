@@ -284,3 +284,23 @@ def test_a_booked_invoice_is_not_deleted_from_under_its_bill_unless_asked(api, c
     assert gone.status_code == 204
     assert api.get(f"{base(client_record)}/bills/{reading['bill']}/").status_code == 404
     assert api.get(f"{base(client_record)}/invoices/{reading['id']}/").status_code == 404
+
+
+def test_a_client_with_no_gstin_on_record_gets_one_item_for_the_cause(api, client_record):
+    upload(api, client_record, PURCHASE, name="a.pdf")
+    upload(api, client_record, SALE, name="b.pdf")
+
+    items = api.get(f"{base(client_record)}/open-items/").json()["items"]
+    causes = [i for i in items if i["kind"] == "client_gstin_missing"]
+
+    assert len(causes) == 1 and "2 uploaded invoices" in causes[0]["summary"]
+    assert causes[0]["link"] is None
+
+
+def test_the_cause_goes_once_the_gstin_is_on_record(api, client_record):
+    upload(api, client_record, PURCHASE, name="a.pdf")
+    register_own_gstin(client_record)
+
+    items = api.get(f"{base(client_record)}/open-items/").json()["items"]
+
+    assert not [i for i in items if i["kind"] == "client_gstin_missing"]

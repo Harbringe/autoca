@@ -1,46 +1,23 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { BookOpen, Building2, ChartNoAxesCombined, FileUp, Users } from 'lucide-react'
-import { bankAccounts, clientDetail } from '@/api/queries/clients'
+import { Building2, Users } from 'lucide-react'
+import { invoiceReadings, openItems } from '@/api/queries/bills'
+import { bankAccounts, clientDetail, reviewSummary } from '@/api/queries/clients'
 import { ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
-import { formatDate } from '@/lib/format'
+import { formatDate, plural } from '@/lib/format'
 import { useSession } from '@/session/session'
-
-const SHORTCUTS = [
-  {
-    to: '/clients/$clientId/bookkeeping',
-    title: 'Bookkeeping',
-    description: 'Continue this client’s books, review transactions, manage ledgers, and send books for sign-off.',
-    action: 'Open bookkeeping',
-    icon: BookOpen,
-  },
-  {
-    to: '/clients/$clientId/statements',
-    title: 'Bank statements',
-    description: 'Upload statements, manage bank accounts, and check statement coverage.',
-    action: 'Open statements',
-    icon: FileUp,
-  },
-  {
-    to: '/clients/$clientId/reports',
-    title: 'Reports',
-    description: 'View this client’s trial balance, profit and loss, balance sheet, and bank reconciliation.',
-    action: 'Open reports',
-    icon: ChartNoAxesCombined,
-  },
-] as const
 
 export function ClientProfileScreen({ clientId }: { clientId: string }) {
   const { can } = useSession()
   const client = useQuery(clientDetail(clientId))
   const accounts = useQuery({ ...bankAccounts(clientId), enabled: can('transaction.view') })
-  const shortcuts = SHORTCUTS.filter((item) => item.title === 'Bookkeeping'
-    ? can('transaction.view') || can('report.view')
-    : item.title === 'Bank statements' ? can('transaction.view') : can('report.view'))
+  const summary = useQuery({ ...reviewSummary(clientId), enabled: can('transaction.view') })
+  const fixes = useQuery({ ...openItems(clientId), enabled: can('journal.view') })
+  const readings = useQuery({ ...invoiceReadings(clientId), enabled: can('journal.view') })
 
   if (client.isPending) return <Spinner label="Loading client details…" />
   if (client.error) return <ErrorState error={client.error} retry={() => void client.refetch()} />
@@ -63,19 +40,63 @@ export function ClientProfileScreen({ clientId }: { clientId: string }) {
         {accounts.error && <ErrorState error={accounts.error} retry={() => void accounts.refetch()} />}
       </section>
 
-      <section aria-labelledby="workspaces-title" className="grid gap-3">
-        <div><h2 id="workspaces-title" className="text-[15px] font-semibold text-heading">Client workspaces</h2><p className="mt-1 text-sm text-muted-foreground">Choose the area you want to work in. Each opens the client’s own records.</p></div>
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {shortcuts.map(({ to, title, description, action, icon: Icon }) => (
-            <Card key={title} className="flex min-h-48 flex-col items-start p-5">
-              <span className="grid size-9 place-items-center rounded-lg bg-muted text-primary"><Icon className="size-4" /></span>
-              <h3 className="mt-4 text-sm font-semibold text-heading">{title}</h3>
-              <p className="mt-1 flex-1 text-[13px] leading-5 text-muted-foreground">{description}</p>
-              <Button asChild variant="outline" size="sm" className="mt-4"><Link to={to as never} params={{ clientId } as never}>{action}</Link></Button>
-            </Card>
-          ))}
-        </div>
+      <section aria-labelledby="next-title" className="grid gap-3">
+        <h2 id="next-title" className="text-[15px] font-semibold text-heading">What needs you</h2>
+        <Next
+          clientId={clientId}
+          loading={summary.isPending && can('transaction.view')}
+          rows={[
+            { n: summary.data?.unresolved ?? 0, text: (n) => `${plural(n, 'entry', 'entries')} to sort into accounts`, to: '/clients/$clientId/review', search: { stage: 'unresolved' } },
+            { n: summary.data?.pending_approval ?? 0, text: (n) => `${plural(n, 'sorted entry', 'sorted entries')} ready to record`, to: '/clients/$clientId/review', search: { stage: 'pending_approval' } },
+            { n: (readings.data ?? []).filter((r) => r.status === 'OPEN').length, text: (n) => `${plural(n, 'invoice')} waiting to be booked`, to: '/clients/$clientId/bills' },
+            { n: fixes.data?.count ?? 0, text: (n) => `${plural(n, 'item')} that do not tie out`, to: '/clients/$clientId/open-items' },
+          ]}
+        />
       </section>
     </div>
+  )
+}
+
+interface NextRow {
+  n: number
+  text: (n: number) => string
+  to: string
+  search?: Record<string, string>
+}
+
+/** The client's open work as a short list, each line the exact screen where it is done; or, when there is none, where to go. */
+function Next({ clientId, rows, loading }: { clientId: string; rows: NextRow[]; loading: boolean }) {
+  const waiting = rows.filter((r) => r.n > 0)
+  if (loading) return <Spinner label="Looking at what is waiting…" />
+  if (waiting.length === 0) {
+    return (
+      <Card className="flex flex-wrap items-center justify-between gap-3 p-4">
+        <p className="text-sm text-muted-foreground">Nothing is waiting on this client. Upload the next bank statement, or look at the reports.</p>
+        <div className="flex gap-2">
+          <Button asChild size="sm" variant="secondary">
+            <Link to="/clients/$clientId/statements" params={{ clientId }}>Bank statements</Link>
+          </Button>
+          <Button asChild size="sm" variant="secondary">
+            <Link to="/clients/$clientId/reports" params={{ clientId }} search={{ report: 'tb' }}>Reports</Link>
+          </Button>
+        </div>
+      </Card>
+    )
+  }
+  return (
+    <Card className="divide-y p-0">
+      {waiting.map((row) => (
+        <Link
+          key={row.text(row.n)}
+          to={row.to as never}
+          params={{ clientId } as never}
+          search={row.search as never}
+          className="flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-hover"
+        >
+          <span>{row.text(row.n)}</span>
+          <span className="font-medium text-link">Open</span>
+        </Link>
+      ))}
+    </Card>
   )
 }

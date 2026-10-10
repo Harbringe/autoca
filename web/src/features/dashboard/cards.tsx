@@ -3,50 +3,47 @@
 // same card is right for every layout. Figures are counts of clients and work, never a score for a person.
 
 import { useMemo } from 'react'
-import type { Portfolio, PortfolioClient, Stage } from '@/api/types'
+import type { Portfolio, PortfolioClient } from '@/api/types'
 import { ActionList } from '@/components/ca/ActionList'
 import { DashCard, type CardState } from '@/components/ca/DashCard'
-import { DonutLegend } from '@/components/charts/DonutLegend'
 import { RankedBars } from '@/components/charts/RankedBars'
 import { actionsFor, clientHealth, dueWithin, groupAttention } from '@/lib/dashboard'
 import { formatCompact, formatDate, formatPaise, plural } from '@/lib/format'
 import { STAGES, STAGE_LABEL } from '@/lib/overview'
-
-/** One colour per stage: the finished state in the main hue, "a person must look" in champagne, the rest stepped. */
-const STAGE_COLOR: Record<Stage, string> = {
-  no_statements: 'var(--chart-muted)',
-  needs_ledger: 'var(--chart-2)',
-  ready_to_post: 'var(--chart-seq-4)',
-  ready_for_review: 'var(--chart-seq-3)',
-  in_review: 'var(--chart-seq-2)',
-  signed_off: 'var(--chart-1)',
-}
 
 export interface CardProps {
   data: Portfolio | undefined
   state: CardState
 }
 
-/** "Where are my clients' books today?": the six stages as a ring and rows, each row opening those clients. */
+/** "Where are my clients' books today?": one bar per stage, each opening those clients. A ring and a legend said it twice. */
 export function BooksDonutCard({ data, state, title, empty }: CardProps & { title: string; empty: string }) {
   const rows = STAGES.map((stage) => ({
     key: stage,
     label: STAGE_LABEL[stage],
     count: data?.by_stage[stage] ?? 0,
-    color: STAGE_COLOR[stage],
-    to: '/clients',
-    search: { stage },
   }))
   const total = rows.reduce((n, r) => n + r.count, 0)
   const signed = data?.by_stage.signed_off ?? 0
   return (
-    <DashCard title={title} hint="Every client sits in one of these places." state={total === 0 && state === 'ready' ? 'empty' : state} empty={empty} skeleton="h-44">
-      <DonutLegend
-        rows={rows}
-        centerValue={total}
-        centerLabel={total === 1 ? 'client' : 'clients'}
-        summary={`${signed} of ${plural(total, 'client')} fully signed off. ${rows.filter((r) => r.count).map((r) => `${r.label}: ${r.count}`).join('. ')}.`}
-        caption="Clients by where their books are"
+    <DashCard
+      title={title}
+      hint={total ? `${signed} of ${plural(total, 'client')} fully signed off.` : 'Every client sits in one of these places.'}
+      state={total === 0 && state === 'ready' ? 'empty' : state}
+      empty={empty}
+      skeleton="h-44"
+    >
+      <RankedBars
+        max={total || 1}
+        rows={rows.map((r) => ({
+          key: r.key,
+          label: r.label,
+          value: r.count,
+          valueLabel: `${r.count} of ${total}`,
+          to: '/clients',
+          search: { stage: r.key },
+          tone: r.key === 'signed_off' ? 'primary' : 'accent',
+        }))}
       />
     </DashCard>
   )

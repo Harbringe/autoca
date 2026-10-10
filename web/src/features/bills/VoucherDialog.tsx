@@ -83,12 +83,19 @@ export interface ReceiptFacts {
 }
 
 const DETAIL_LABELS: [string, string][] = [
-  ['document_type', 'Document'], ['irn', 'IRN'], ['ack_no', 'Ack no.'], ['ack_date', 'Ack date'], ['eway_bill_no', 'E-way bill'],
-  ['vehicle_no', 'Vehicle'], ['po_number', 'PO number'], ['po_date', 'PO date'], ['ship_to_name', 'Ship to'],
-  ['ship_to_address', 'Ship-to address'], ['supplier_email', 'Email'], ['supplier_phone', 'Phone'], ['buyer_pan', 'Buyer PAN'],
-  ['bank_name', 'Bank'], ['bank_account_no', 'Account no.'], ['bank_ifsc', 'IFSC'], ['reverse_charge', 'Reverse charge'],
+  ['document_type', 'Document'], ['po_number', 'PO number'], ['po_date', 'PO date'], ['eway_bill_no', 'E-way bill'],
+  ['vehicle_no', 'Vehicle'], ['irn', 'IRN'], ['ack_no', 'Ack no.'], ['ack_date', 'Ack date'], ['ship_to_name', 'Ship to'],
+  ['ship_to_address', 'Ship-to address'], ['buyer_pan', 'Buyer PAN'], ['supplier_email', 'Seller email'], ['supplier_phone', 'Seller phone'],
+  ['bank_name', 'Seller bank'], ['bank_account_no', 'Account no.'], ['bank_ifsc', 'IFSC'], ['reverse_charge', 'Reverse charge'],
   ['amount_in_words', 'In words'], ['notes', 'Notes'],
 ]
+
+/** A fact as a person reads it: `tax_invoice` is "Tax invoice", `yes` is "Yes". */
+function factValue(key: string, value: string): string {
+  if (key === 'document_type') return value.charAt(0).toUpperCase() + value.slice(1).replaceAll('_', ' ')
+  if (key === 'reverse_charge') return value === 'yes' ? 'Yes' : 'No'
+  return value
+}
 
 const FIELD_NAMES: Record<string, string> = {
   supplier_gstin: 'Supplier GSTIN', buyer_gstin: 'Buyer GSTIN', supplier_pan: 'Supplier PAN', buyer_pan: 'Buyer PAN',
@@ -102,6 +109,18 @@ const FACTS_SHOWN = 4
 const PAYMENT_MODE: Record<string, string> = { cash: 'Cash', card: 'Card', upi: 'UPI', bank_transfer: 'Bank transfer', cheque: 'Cheque', credit: 'On credit (not yet paid)' }
 
 const NEW_PARTY = '__new__'
+
+/** The client's party this invoice names, if exactly one fits: the same GSTIN, else the same name, else the same business. */
+function findParty(parties: Party[], name: string, gstin: string): Party | undefined {
+  const wanted = normaliseName(name).toLowerCase()
+  const byGstin = gstin ? parties.filter((p) => (p.gstin ?? '').toUpperCase() === gstin.toUpperCase()) : []
+  if (byGstin.length === 1) return byGstin[0]
+  if (!wanted) return undefined
+  const byName = parties.filter((p) => normaliseName(p.canonical_name).toLowerCase() === wanted)
+  if (byName.length === 1) return byName[0]
+  const alike = parties.filter((p) => sameBusiness(p.canonical_name, name))
+  return alike.length === 1 ? alike[0] : undefined
+}
 
 /** What an uploaded invoice was read as, to start the form from. The person still confirms every field. */
 export interface VoucherPrefill {
@@ -262,7 +281,19 @@ export function VoucherForm({
     setTds('')
     setTdsSection('')
     setNewParty(null)
+    setMatchedNote('')
     setErrors({})
+    // The invoice says who is on its other side; now the type is known, start the party from that.
+    const facts = isPurchaseSide(next) ? prefill?.facts?.seller : prefill?.facts?.buyer
+    if (facts?.name || facts?.gstin) {
+      const found = findParty((parties.data ?? []).filter((p) => p.is_active && rolesFor(next).includes(p.role as string)), facts.name, facts.gstin)
+      if (found) {
+        setPartyId(found.id)
+        setMatchedNote(`Matched to ${normaliseName(found.canonical_name)}, already on file.`)
+      } else if (facts.name) {
+        setNewParty({ name: normaliseName(facts.name), gstin: facts.gstin })
+      }
+    }
   }
 
   /** The round off that brings taxable value plus tax to the nearest whole rupee (the way a printed invoice rounds). */
@@ -461,12 +492,11 @@ export function VoucherForm({
   useEffect(() => {
     if (autoMatched.current || !parties.data || partyId || !newParty?.name.trim()) return
     autoMatched.current = true
-    const wanted = normaliseName(newParty.name).toLowerCase()
-    const hits = suitable.filter((p) => normaliseName(p.canonical_name).toLowerCase() === wanted || sameBusiness(p.canonical_name, newParty.name))
-    if (hits.length === 1) {
-      setPartyId(hits[0]!.id)
+    const found = findParty(suitable, newParty.name, newParty.gstin)
+    if (found) {
+      setPartyId(found.id)
       setNewParty(null)
-      setMatchedNote(`Matched to ${normaliseName(hits[0]!.canonical_name)}, already on file.`)
+      setMatchedNote(`Matched to ${normaliseName(found.canonical_name)}, already on file.`)
     }
   }, [parties.data, suitable, partyId, newParty])
 
@@ -603,7 +633,7 @@ export function VoucherForm({
       <div className={layout === 'page' && tab !== 'details' ? 'hidden' : 'grid gap-4'}>
       {prefill?.facts && <ReceiptFactsCard facts={prefill.facts} />}
       <div className="@container grid gap-4">
-        <section aria-label="From and to" className="grid gap-2 @lg:grid-cols-[1fr_auto_1fr] @lg:items-start">
+        <section aria-label="From and to" className="grid gap-2 @lg:grid-cols-[1fr_auto_1fr] @lg:items-stretch">
           {purchaseSide ? (
             <>
               {counterpartyCard}
@@ -805,7 +835,7 @@ function ReceiptFactsCard({ facts }: { facts: ReceiptFacts }) {
     ['Paid by', PAYMENT_MODE[facts.paymentMode] ?? ''],
     ['Payment terms', facts.terms],
     ['Looks like', facts.category],
-    ...DETAIL_LABELS.map(([key, label]): [string, string] => [label, (facts.details ?? {})[key] ?? '']),
+    ...DETAIL_LABELS.map(([key, label]): [string, string] => [label, factValue(key, (facts.details ?? {})[key] ?? '')]),
     ['TCS', facts.tcsPaise ? formatPaise(facts.tcsPaise) : ''],
     ['Freight and other charges', facts.otherChargesPaise ? formatPaise(facts.otherChargesPaise) : ''],
     ['Discount', facts.discountPaise ? formatPaise(facts.discountPaise) : ''],
@@ -816,7 +846,7 @@ function ReceiptFactsCard({ facts }: { facts: ReceiptFacts }) {
   if (shown.length === 0 && !foreign && rejected.length === 0 && !facts.kindReason && !facts.ownGstinGuess) return null
   return (
     <section aria-label="Read from the receipt" className="grid gap-2 rounded-md border border-accent-edge bg-accent p-3 text-sm">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Read from the receipt</h3>
+      <h3 className="text-sm font-semibold text-heading">Read from the receipt</h3>
       {facts.kindReason && <p className="text-info">{facts.kindReason} Check the voucher type below.</p>}
       {facts.ownGstinGuess && (
         <p className="text-muted-foreground">

@@ -129,6 +129,13 @@ function Actions({
       </Button>
     )
   }
+  if (item.kind === 'client_gstin_missing') {
+    return (
+      <Button size="sm" asChild>
+        <Link to="/clients/$clientId/gst" params={{ clientId }}>Add the GSTIN</Link>
+      </Button>
+    )
+  }
   const link = item.link
   if (!link) return null
   if (link.type === 'bill') {

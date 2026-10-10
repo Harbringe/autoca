@@ -92,7 +92,9 @@ def test_a_bank_row_placed_on_the_cards_ledger_is_recognised_as_the_cards_paymen
     upload(api, client_record)
     with firm_context(client_record.firm_id):
         card = BankAccount.objects.get(client=client_record)
-        card_ledger = LedgerAccount.objects.get(client=client_record, name=card.ledger_name)
+        card_ledger, _ = LedgerAccount.objects.get_or_create(
+            firm_id=client_record.firm_id, client=client_record, name=card.ledger_name, defaults={"group": "CURRENT_LIABILITY"}
+        )
         other = LedgerAccount.objects.create(firm_id=client_record.firm_id, client=client_record, name="Rent", group="INDIRECT_EXPENSE")
         bank_side = SimpleNamespace(ledger=card_ledger, transaction=SimpleNamespace(bank_account=SimpleNamespace(client_id=client_record.pk)))
         elsewhere = SimpleNamespace(ledger=other, transaction=bank_side.transaction)

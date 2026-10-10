@@ -13,6 +13,7 @@ from banking.models import Statement
 from core.jobs import Job
 from documents.models import Document
 from integrations.registry import reset_adapter_cache
+from integrations.tests.minimal_pdf import minimal_pdf
 
 pytestmark = pytest.mark.django_db
 
@@ -35,7 +36,8 @@ def real_pdf_reader(settings, tmp_path):
 
 
 def locked_bytes() -> bytes:
-    writer = PdfWriter(clone_from=PdfReader(io.BytesIO(SAMPLE.read_bytes())))
+    source = SAMPLE.read_bytes() if SAMPLE.exists() else minimal_pdf()
+    writer = PdfWriter(clone_from=PdfReader(io.BytesIO(source)))
     writer.encrypt(SECRET)
     out = io.BytesIO()
     writer.write(out)
@@ -62,6 +64,7 @@ def test_a_wrong_password_is_refused_in_its_own_words_and_not_echoed(api, client
     assert "nope-nope" not in response.content.decode()
 
 
+@pytest.mark.skipif(not SAMPLE.exists(), reason="needs the local sample statement (kept out of the repository)")
 def test_the_right_password_reads_the_statement_and_the_file_is_kept_locked(api, client_record):
     data = locked_bytes()
     body = upload(api, client_record, data, password=SECRET).json()

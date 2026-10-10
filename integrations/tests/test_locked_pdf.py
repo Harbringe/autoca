@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import io
-import pathlib
 
 import pytest
 from pypdf import PdfReader, PdfWriter
@@ -11,13 +10,13 @@ from pypdf import PdfReader, PdfWriter
 from integrations import files
 from integrations.pdf.base import PdfPasswordIncorrect, PdfPasswordRequired
 from integrations.pdf.pdfplumber_text import PdfPlumberAdapter
+from integrations.tests.minimal_pdf import minimal_pdf
 
-SAMPLE = pathlib.Path(__file__).resolve().parents[2] / "web" / "qa" / "samples" / "qa-api-testco-2025-04.pdf"
 SECRET = "Sup3r-Secret-9137"
 
 
 def locked(password: str = SECRET) -> bytes:
-    writer = PdfWriter(clone_from=PdfReader(io.BytesIO(SAMPLE.read_bytes())))
+    writer = PdfWriter(clone_from=PdfReader(io.BytesIO(minimal_pdf())))
     writer.encrypt(password)
     out = io.BytesIO()
     writer.write(out)
@@ -37,7 +36,7 @@ def test_a_wrong_password_is_its_own_error_and_does_not_repeat_what_was_typed():
 
 
 def test_the_right_password_reads_the_same_text_as_the_unlocked_file():
-    plain = PdfPlumberAdapter().extract(SAMPLE.read_bytes())
+    plain = PdfPlumberAdapter().extract(minimal_pdf())
     opened = PdfPlumberAdapter().extract(locked(), SECRET)
     assert opened.page_count == plain.page_count and opened.text == plain.text and opened.has_text_layer
 
@@ -46,7 +45,7 @@ def test_the_page_count_of_a_locked_file_needs_the_password_too():
     adapter = PdfPlumberAdapter()
     with pytest.raises(PdfPasswordRequired):
         adapter.page_count(locked())
-    assert adapter.page_count(locked(), SECRET) == adapter.page_count(SAMPLE.read_bytes())
+    assert adapter.page_count(locked(), SECRET) == adapter.page_count(minimal_pdf())
 
 
 def test_the_loader_passes_the_password_through_and_leaves_the_bytes_locked():
@@ -61,7 +60,7 @@ def test_the_loader_passes_the_password_through_and_leaves_the_bytes_locked():
 
 
 def test_a_file_that_is_not_locked_ignores_a_password_that_was_typed_anyway():
-    assert PdfPlumberAdapter().extract(SAMPLE.read_bytes(), "unneeded").has_text_layer
+    assert PdfPlumberAdapter().extract(minimal_pdf(), "unneeded").has_text_layer
 
 
 def test_a_locked_scan_is_rendered_for_the_model_while_the_password_is_to_hand(monkeypatch):

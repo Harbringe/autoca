@@ -114,7 +114,7 @@ def test_opening_stock_and_a_count_adjustment_show_in_the_inventory_report(api, 
     opening = api.post(stock_url, {"kind": "OPENING", "entry_date": "2025-04-01", "name": "Widget", "unit": "pcs", "quantity": "100", "value_paise": 50_000_00}, format="json")
     loss = api.post(stock_url, {"kind": "ADJUSTMENT", "entry_date": "2025-06-30", "direction": "OUT", "name": "Widget", "unit": "pcs", "quantity": "4", "value_paise": 0, "note": "Damaged"}, format="json")
 
-    report = api.get(f"{base(client_record)}/inventory/", {"fy": 2025}).json()
+    report = api.get(f"{base(client_record)}/reports/inventory/", {"fy": 2025}).json()
     refused = api.post(stock_url, {"kind": "OPENING", "entry_date": "2025-04-01", "name": "Widget", "quantity": "0"}, format="json")
 
     assert opening.status_code == 201 and loss.status_code == 201, (opening.content, loss.content)

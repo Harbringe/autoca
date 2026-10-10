@@ -5,16 +5,11 @@
 // last line offers to create a ledger with what was typed, under a group the person chooses.
 
 import { useMemo, useRef, useState, type KeyboardEvent } from 'react'
-import { toast } from 'sonner'
-import { raw } from '@/api/client'
-import { messageOf } from '@/api/errors'
-import { useInvalidateClient, V1 } from '@/api/queries/clients'
-import { GROUP_LABEL, LEDGER_GROUPS, type LedgerAccount } from '@/api/types'
-import { Button } from '@/components/ui/button'
-import { Select } from '@/components/ui/controls'
+import { GROUP_LABEL, type LedgerAccount } from '@/api/types'
 import { Input } from '@/components/ui/input'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
+import { NewAccountDialog } from './NewAccountDialog'
 
 export function usableLedgers(all: LedgerAccount[] | undefined, excludeName?: string | null): LedgerAccount[] {
   return (all ?? []).filter((l) => l.status === 'ACTIVE' && l.is_active && l.name !== excludeName)
@@ -39,7 +34,6 @@ export function LedgerPicker({
   suggestedGroup?: string
 }) {
   const { can } = useSession()
-  const invalidate = useInvalidateClient(clientId)
   const chosen = ledgers.find((l) => l.id === value) ?? null
   const [text, setText] = useState('')
   const [active, setActive] = useState(0)
@@ -93,41 +87,22 @@ export function LedgerPicker({
     }
   }
 
-  async function create() {
-    if (!creating) return
-    try {
-      const made = await raw.post<LedgerAccount>(`${V1}/clients/${clientId}/ledgers/`, { name: creating.name, group: creating.group })
-      await invalidate()
-      onChange(made.id)
-      toast.success(`Ledger “${made.name}” created under ${GROUP_LABEL[made.group ?? ''] ?? made.group}`)
-      setCreating(null)
-      setText('')
-    } catch (e) {
-      toast.error(messageOf(e))
-    }
-  }
-
-  if (creating) {
-    return (
-      <div className="grid gap-2 rounded-md border bg-muted/40 p-3">
-        <div className="text-[13px] font-medium">New ledger</div>
-        <Input aria-label="New ledger name" value={creating.name} onChange={(e) => setCreating({ ...creating, name: e.target.value })} />
-        <Select aria-label="Group" value={creating.group} onChange={(e) => setCreating({ ...creating, group: e.target.value })}>
-          {LEDGER_GROUPS.filter(([g]) => g !== 'BANK' && g !== 'SUSPENSE').map(([g, l]) => (
-            <option key={g} value={g}>{l}</option>
-          ))}
-        </Select>
-        <p className="text-xs text-muted-foreground">The name must match the ledger in the client’s Tally company exactly.</p>
-        <div className="flex justify-end gap-2">
-          <Button size="sm" variant="ghost" onClick={() => setCreating(null)}>Cancel</Button>
-          <Button size="sm" onClick={() => void create()} disabled={creating.name.trim().length < 2}>Create and use</Button>
-        </div>
-      </div>
-    )
-  }
-
   return (
     <div className="relative grid gap-1.5">
+      {creating && (
+        <NewAccountDialog
+          clientId={clientId}
+          ledgers={ledgers}
+          initialName={creating.name}
+          initialGroup={creating.group}
+          onCreated={(made) => {
+            onChange(made.id)
+            setCreating(null)
+            setText('')
+          }}
+          onClose={() => setCreating(null)}
+        />
+      )}
       <div className="flex items-center justify-between gap-2">
         <label className="text-[13px] font-medium" htmlFor={`${clientId}-ledger`}>
           {label}

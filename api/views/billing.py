@@ -221,5 +221,10 @@ class BillViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.RetrieveModel
         bill = self.get_object()
         payload = RemoveBillSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
-        billing.remove_bill(bill, membership=request.membership, note=payload.validated_data["note"])
+        billing.remove_bill(
+            bill,
+            membership=request.membership,
+            note=payload.validated_data["note"],
+            release_payments=payload.validated_data["release_payments"],
+        )
         return Response(status=status.HTTP_204_NO_CONTENT)

@@ -73,8 +73,8 @@ export function useReviseBill(clientId: string) {
 export function useRemoveBill(clientId: string) {
   const invalidate = useInvalidateClient(clientId)
   return useMutation({
-    mutationFn: ({ id, note }: { id: string; note: string }) =>
-      raw.post<void>(`${V1}/clients/${clientId}/bills/${id}/remove/`, { note }),
+    mutationFn: ({ id, note, releasePayments }: { id: string; note: string; releasePayments?: boolean }) =>
+      raw.post<void>(`${V1}/clients/${clientId}/bills/${id}/remove/`, { note, release_payments: !!releasePayments }),
     onSuccess: invalidate,
   })
 }
@@ -168,8 +168,10 @@ export function useSayInvoiceKind(clientId: string) {
 export function useDeleteInvoice(clientId: string) {
   const invalidate = useInvalidateClient(clientId)
   return useMutation({
-    mutationFn: ({ id, withBill }: { id: string; withBill?: boolean }) =>
-      raw.delete<void>(`${V1}/clients/${clientId}/invoices/${id}/${withBill ? '?with_bill=true' : ''}`),
+    mutationFn: ({ id, withBill, releasePayments }: { id: string; withBill?: boolean; releasePayments?: boolean }) =>
+      raw.delete<void>(
+        `${V1}/clients/${clientId}/invoices/${id}/${withBill ? `?with_bill=true${releasePayments ? '&release_payments=true' : ''}` : ''}`,
+      ),
     onSuccess: invalidate,
   })
 }

@@ -106,8 +106,8 @@ export function PurchasesScreen({ clientId }: { clientId: string }) {
 
   async function confirmDelete() {
     for (const item of deleting ?? []) {
-      if (item.readingId) await deleteInvoice.mutateAsync({ id: item.readingId, withBill: !!item.billId })
-      else if (item.billId) await removeBill.mutateAsync({ id: item.billId, note: 'Removed from the list' })
+      if (item.readingId) await deleteInvoice.mutateAsync({ id: item.readingId, withBill: !!item.billId, releasePayments: true })
+      else if (item.billId) await removeBill.mutateAsync({ id: item.billId, note: 'Removed from the list', releasePayments: true })
     }
     toast.success('Deleted')
     setSelected(new Set())
@@ -394,7 +394,7 @@ export function PurchasesScreen({ clientId }: { clientId: string }) {
       >
         <p>
           Each uploaded file and what was read from it is deleted. Where a bill was booked from it, the bill and its voucher are taken out of the books too (what it
-          was is kept in the change log). This is refused if a payment is settled against a bill or the books are signed off.
+          was is kept in the change log). Payments settled against a bill are un-linked and stay on the party’s account. This is refused once the books are signed off.
         </p>
       </Confirm>
     </div>

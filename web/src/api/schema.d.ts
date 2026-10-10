@@ -6521,6 +6521,11 @@ export interface components {
         RemainderEnum: "ON_ACCOUNT" | "ADVANCE";
         RemoveBillRequest: {
             /**
+             * @description Also undo the payments settled against it (they stay on the party's account). Refused in signed-off books.
+             * @default false
+             */
+            release_payments: boolean;
+            /**
              * @description Why it is being removed. Kept in the change log.
              * @default
              */
@@ -9931,6 +9936,8 @@ export interface operations {
     clients_invoices_destroy: {
         parameters: {
             query?: {
+                /** @description With `with_bill`: also undo payments settled against the bill. */
+                release_payments?: boolean;
                 /** @description Also remove the bill booked from it. */
                 with_bill?: boolean;
             };

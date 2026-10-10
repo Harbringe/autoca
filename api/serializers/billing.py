@@ -143,6 +143,10 @@ class BillCreateSerializer(serializers.Serializer):
 
 
 class RemoveBillSerializer(serializers.Serializer):
+    release_payments = serializers.BooleanField(
+        required=False, default=False,
+        help_text="Also undo the payments settled against it (they stay on the party's account). Refused in signed-off books.",
+    )
     note = serializers.CharField(
         required=False, allow_blank=True, default="", max_length=500,
         help_text="Why it is being removed. Kept in the change log.",

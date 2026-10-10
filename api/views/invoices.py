@@ -120,13 +120,17 @@ class InvoiceReadingViewSet(
             "`with_bill=true`, which removes its bill and voucher first by the rules for removing a bill (nothing settled "
             "against it, books not signed off). Needs `journal.approve` on a client the caller may post to."
         ),
-        parameters=[OpenApiParameter("with_bill", bool, description="Also remove the bill booked from it.")],
+        parameters=[
+            OpenApiParameter("with_bill", bool, description="Also remove the bill booked from it."),
+            OpenApiParameter("release_payments", bool, description="With `with_bill`: also undo payments settled against the bill."),
+        ],
         responses={204: None},
     )
     def destroy(self, request, client_id=None, pk=None):
         reading = self.get_object()
         with_bill = request.query_params.get("with_bill", "").lower() in {"1", "true", "yes"}
-        invoice_intake.delete_reading(reading, membership=request.membership, with_bill=with_bill)
+        release = request.query_params.get("release_payments", "").lower() in {"1", "true", "yes"}
+        invoice_intake.delete_reading(reading, membership=request.membership, with_bill=with_bill, release_payments=release)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
     @extend_schema(

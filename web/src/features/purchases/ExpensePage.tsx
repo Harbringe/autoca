@@ -143,8 +143,8 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
   }
 
   async function remove() {
-    if (reading) await deleteInvoice.mutateAsync({ id: reading.id, withBill: !!reading.bill })
-    else if (billId) await removeBill.mutateAsync({ id: billId, note: 'Removed from its page' })
+    if (reading) await deleteInvoice.mutateAsync({ id: reading.id, withBill: !!reading.bill, releasePayments: true })
+    else if (billId) await removeBill.mutateAsync({ id: billId, note: 'Removed from its page', releasePayments: true })
     toast.success('Deleted')
     listPath()
   }
@@ -197,7 +197,7 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
                 {bill && <DropdownMenuItem onSelect={() => setStatement(true)}>Statement of account</DropdownMenuItem>}
                 {reading?.status === 'OPEN' && mayPost && <DropdownMenuItem onSelect={() => void act('discard')}>Set aside</DropdownMenuItem>}
                 {(reading || bill) && (
-                  <DropdownMenuItem disabled={!mayPost || (!!bill && (bill.is_locked || settled))} onSelect={() => setDeleting(true)}>
+                  <DropdownMenuItem disabled={!mayPost || (!!bill && bill.is_locked)} onSelect={() => setDeleting(true)}>
                     Delete
                   </DropdownMenuItem>
                 )}
@@ -258,7 +258,7 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
                 )}
               </div>
               {bill.is_locked && <p className="text-muted-foreground">In signed-off books: it can no longer be removed.</p>}
-              {settled && !bill.is_locked && <p className="text-muted-foreground">It has payments against it, so it cannot be removed. Record a debit or credit note to adjust it.</p>}
+              {settled && !bill.is_locked && <p className="text-muted-foreground">It has payments against it. Deleting it un-links them (they stay on the party’s account); saving changes keeps them.</p>}
             </section>
           )}
         </div>
@@ -355,7 +355,7 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
       >
         <p>
           {bill
-            ? 'The bill and its voucher are taken out of the books (what it was is kept in the change log), and the uploaded file is deleted. This is refused if a payment is settled against it or the books are signed off.'
+            ? `The bill and its voucher are taken out of the books (what it was is kept in the change log), and the uploaded file is deleted.${settled ? ' Payments settled against it are un-linked and stay on the party’s account.' : ''} This is refused once the books are signed off.`
             : 'The uploaded file and what was read from it are deleted for good.'}
         </p>
       </Confirm>

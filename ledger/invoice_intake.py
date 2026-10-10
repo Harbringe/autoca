@@ -639,7 +639,7 @@ def say_kind(reading: InvoiceReading, kind: str, *, membership) -> InvoiceReadin
 
 
 @transaction.atomic
-def delete_reading(reading: InvoiceReading, *, membership, with_bill: bool = False) -> None:
+def delete_reading(reading: InvoiceReading, *, membership, with_bill: bool = False, release_payments: bool = False) -> None:
     """Delete an uploaded invoice for good: the reading, the stored file, and (only if asked) the bill booked from it.
 
     An invoice nobody has booked, or set aside, simply goes. One that is booked is not deleted from under its bill: say
@@ -657,7 +657,9 @@ def delete_reading(reading: InvoiceReading, *, membership, with_bill: bool = Fal
             raise IntakeError(
                 f"This invoice is booked as {reading.bill.reference!r}. Delete it together with its bill, or remove the bill first."
             )
-        billing.remove_bill(reading.bill, membership=membership, note="The uploaded invoice was deleted.")
+        billing.remove_bill(
+            reading.bill, membership=membership, note="The uploaded invoice was deleted.", release_payments=release_payments
+        )
         reading.refresh_from_db()
     document = reading.document
     key = document.storage_key

@@ -485,17 +485,29 @@ def _reopen_reading(bill: Bill) -> None:
 
 
 @transaction.atomic
-def remove_bill(bill: Bill, *, membership, note: str = "") -> None:
-    """Take an unsigned, unsettled bill out of the books, with its voucher. The change log keeps what it was."""
+def remove_bill(bill: Bill, *, membership, note: str = "", release_payments: bool = False) -> None:
+    """Take an unsigned bill out of the books, with its voucher. The change log keeps what it was.
+
+    A bill with payments settled against it is refused unless ``release_payments`` is said: its allocations are then undone
+    (each payment stays on the party's account, unallocated, to be settled against something else), but only when every
+    payment is itself inside open books, so nothing signed off is touched.
+    """
     require_permission(membership, "journal.approve")
     require_posting_rights(membership, bill.client)
     bill = Bill.objects.select_for_update().get(pk=bill.pk)
 
-    if bill.allocations.exists():
-        raise BillingError(
-            f"{bill.reference!r} has payments or adjustments allocated to it. Remove those first, "
-            f"or record a debit or credit note instead."
-        )
+    allocations = list(bill.allocations.select_related("line__entry"))
+    if allocations:
+        if not release_payments:
+            raise BillingError(
+                f"{bill.reference!r} has payments or adjustments allocated to it. Release them as part of the delete, "
+                f"or record a debit or credit note instead."
+            )
+        for allocation in allocations:
+            if allocation.line_id is not None:
+                editing.require_editable(allocation.line.entry)
+        for allocation in allocations:
+            allocation.delete()
     _reopen_reading(bill)
     entry = bill.entry
     if entry is None:

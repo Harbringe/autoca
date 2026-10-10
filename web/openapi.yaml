@@ -2390,6 +2390,11 @@ paths:
           pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
         required: true
       - in: query
+        name: release_payments
+        schema:
+          type: boolean
+        description: 'With `with_bill`: also undo payments settled against the bill.'
+      - in: query
         name: with_bill
         schema:
           type: boolean
@@ -13693,6 +13698,11 @@ components:
     RemoveBillRequest:
       type: object
       properties:
+        release_payments:
+          type: boolean
+          default: false
+          description: Also undo the payments settled against it (they stay on the
+            party's account). Refused in signed-off books.
         note:
           type: string
           default: ''

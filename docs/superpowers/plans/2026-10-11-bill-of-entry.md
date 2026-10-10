@@ -1605,7 +1605,7 @@ git commit -m "Screens: enter a Bill of Entry from Purchases, see what is settle
 
 - [ ] **Step 1: Update the spec to match the plan**
 
-In the spec: change the default landed-cost ledger to the existing standard ledger "Purchases"; state that the key is port + number (financial year already in the uniqueness constraint) and the date is not part of it; replace the party-screen foreign hint with the `party_looks_foreign` open item; remove the "customs payment with no BoE" detector bullet and list it under "Deferred": an open item for a customs payment that no BoE explains, needing a way to recognise such payments by narration when no party is set.
+In the spec: change the default landed-cost ledger to the existing standard ledger "Purchases"; state that the key is port + number (financial year already in the uniqueness constraint) and the date is not part of it; replace the party-screen foreign hint with the `party_looks_foreign` open item; remove the "customs payment with no BoE" detector bullet and list it under "Deferred": an open item for a customs payment that no BoE explains, needing a way to recognise such payments by narration when no party is set. Also list under "Deferred": ITC timing from `icegate_ref_date` (it is stored and shown, but the reconciliation does not yet use it), and the exact-value match of the supplier invoice (`boe_without_invoice` compares the assessable value with a foreign purchase's taxable value; a part-shipment or a freight-inclusive invoice will not match and is left to a person).
 
 - [ ] **Step 2: Full local verification**
 

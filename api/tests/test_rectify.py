@@ -120,7 +120,7 @@ def test_opening_stock_and_a_count_adjustment_show_in_the_inventory_report(api, 
     assert opening.status_code == 201 and loss.status_code == 201, (opening.content, loss.content)
     (item,) = report["items"]
     assert item["name"] == "Widget" and str(item["closing_qty"]).startswith("96")
-    assert refused.status_code == 400
+    assert refused.status_code == 422
 
 
 def test_a_cash_purchase_is_booked_with_its_payment_and_settled(api, client_record, ravi, purchases):

@@ -26,8 +26,17 @@ if (-not (Get-Command session-manager-plugin -ErrorAction SilentlyContinue)) {
 }
 
 Write-Host "Opening the tunnel to the LIVE database on localhost:$LocalPort. Close this window to close it." -ForegroundColor Yellow
-aws ssm start-session `
-    --target $InstanceId `
-    --region $Region `
-    --document-name AWS-StartPortForwardingSession `
-    --parameters "portNumber=5432,localPortNumber=$LocalPort"
+# AWS ends a Session Manager session after 20 minutes without traffic, which would leave the app talking to a closed port.
+# So when it ends, open it again (Ctrl+C stops the loop; a failure to start twice in a row stops it too).
+$failures = 0
+while ($true) {
+    $started = Get-Date
+    aws ssm start-session `
+        --target $InstanceId `
+        --region $Region `
+        --document-name AWS-StartPortForwardingSession `
+        --parameters "portNumber=5432,localPortNumber=$LocalPort"
+    if (((Get-Date) - $started).TotalSeconds -lt 10) { $failures++ } else { $failures = 0 }
+    if ($failures -ge 2) { Write-Error "The tunnel would not stay open. Check your AWS sign-in and the instance id."; break }
+    Write-Host "The tunnel closed (idle timeout). Opening it again..." -ForegroundColor Yellow
+}

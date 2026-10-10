@@ -7,9 +7,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { toast } from 'sonner'
+import { raw } from '@/api/client'
 import { messageOf } from '@/api/errors'
 import { tdsSummary, useRecordChallan } from '@/api/queries/bills'
-import { clientDetail } from '@/api/queries/clients'
+import { clientDetail, V1 } from '@/api/queries/clients'
 import { Money } from '@/components/ca/Money'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
@@ -20,9 +21,80 @@ import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDate, fyLabel, parseDate } from '@/lib/format'
+import { saveFile } from '@/platform/download'
 import { useSession } from '@/session/session'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
+
+function currentFy() {
+  const now = new Date()
+  return now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1
+}
+
+/** The quarter's Form 26Q data: deductees, challans, and what is late or missing, with the Excel to file from. */
+function ReturnData({ clientId }: { clientId: string }) {
+  const [fy, setFy] = useState(currentFy())
+  const [quarter, setQuarter] = useState(1)
+  const pack = useQuery({
+    queryKey: ['tds-return', clientId, fy, quarter],
+    queryFn: () =>
+      raw.get<{
+        due: string; deducted_paise: number; deposited_paise: number; interest_paise: number; fee_paise: number
+        warnings: string[]; deductees: unknown[]; challans: unknown[]
+      }>(`${V1}/clients/${clientId}/tds/return/`, { fy, quarter }),
+  })
+  async function download() {
+    try {
+      const { blob, filename } = await raw.blob(`${V1}/clients/${clientId}/tds/return/export/`, { fy, quarter })
+      await saveFile(filename ?? `tds-26Q-FY${fy}-Q${quarter}.xlsx`, blob)
+    } catch (e) {
+      toast.error(messageOf(e))
+    }
+  }
+  const rupees = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
+  return (
+    <section className="grid gap-2" aria-labelledby="tds-return">
+      <h2 id="tds-return" className="text-[15px] font-semibold text-heading">Quarterly return data (Form 26Q)</h2>
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <label className="flex items-center gap-1.5">
+          Financial year
+          <select className="h-9 rounded-md border bg-background px-2" value={fy} onChange={(e) => setFy(Number(e.target.value))}>
+            {[currentFy(), currentFy() - 1, currentFy() - 2].map((y) => <option key={y} value={y}>{fyLabel(y)}</option>)}
+          </select>
+        </label>
+        <label className="flex items-center gap-1.5">
+          Quarter
+          <select className="h-9 rounded-md border bg-background px-2" value={quarter} onChange={(e) => setQuarter(Number(e.target.value))}>
+            {[1, 2, 3, 4].map((q) => <option key={q} value={q}>Q{q}</option>)}
+          </select>
+        </label>
+        <Button variant="outline" onClick={() => void download()} disabled={!pack.data}>Download Excel</Button>
+      </div>
+      {pack.isPending ? (
+        <Spinner label="Reading the quarter…" />
+      ) : pack.isError ? (
+        <ErrorState error={pack.error} retry={() => void pack.refetch()} />
+      ) : (
+        <div className="grid gap-2 rounded-lg border bg-card p-3 text-sm">
+          <p>
+            {pack.data.deductees.length} deduction{pack.data.deductees.length === 1 ? '' : 's'}, {rupees(pack.data.deducted_paise)} deducted,{' '}
+            {rupees(pack.data.deposited_paise)} deposited. Return due {formatDate(pack.data.due)}.
+          </p>
+          {pack.data.interest_paise + pack.data.fee_paise > 0 && (
+            <p className="text-warning">
+              At stake (estimate): interest {rupees(pack.data.interest_paise)}, late fee {rupees(pack.data.fee_paise)}.
+            </p>
+          )}
+          {pack.data.warnings.length > 0 && (
+            <ul className="grid list-disc gap-1 pl-5">
+              {pack.data.warnings.map((w) => <li key={w}>{w}</li>)}
+            </ul>
+          )}
+        </div>
+      )}
+    </section>
+  )
+}
 
 export function TdsScreen({ clientId }: { clientId: string }) {
   const { can } = useSession()
@@ -45,6 +117,7 @@ export function TdsScreen({ clientId }: { clientId: string }) {
 
   return (
     <div className="grid gap-4">
+      <ReturnData clientId={clientId} />
       {loose.length > 0 && (
         <section className="grid gap-2" aria-labelledby="tds-loose">
           <h2 id="tds-loose" className="text-[15px] font-semibold text-heading">Payments to the tax department with no challan</h2>

@@ -3,6 +3,7 @@
 
 import type { BillDetail, InvoiceReading } from '@/api/types'
 import type { ReceiptFacts, VoucherPrefill } from '@/features/bills/VoucherDialog'
+import { normaliseName } from '@/lib/names'
 
 type Read = NonNullable<InvoiceReading['read']>
 
@@ -44,7 +45,7 @@ export function prefillFromReading(reading: InvoiceReading, headLedger?: string)
     kind: purchase ? 'PURCHASE' : 'SALES',
     kindUnsure: unsure,
     partyId: reading.suggested_party?.id,
-    newParty: reading.suggested_party || !counterparty ? undefined : { name: counterparty, gstin: read.counterparty_gstin },
+    newParty: reading.suggested_party || !counterparty ? undefined : { name: normaliseName(counterparty), gstin: read.counterparty_gstin || (purchase ? read.supplier_gstin : read.buyer_gstin) || '' },
     reference: read.invoice_no,
     billDate: read.invoice_date,
     taxablePaise: read.taxable_paise,

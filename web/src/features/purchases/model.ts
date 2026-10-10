@@ -5,6 +5,7 @@
 // up so a person sees one list and the alerts that matter on each row.
 
 import type { Bill, InvoiceReading, LedgerAccount } from '@/api/types'
+import { normaliseName } from '@/lib/names'
 
 export type Tone = 'attention' | 'done' | 'neutral'
 
@@ -64,7 +65,7 @@ export function buildItems(readings: InvoiceReading[], bills: Bill[]): ListItem[
         as: 'reading',
         kind: bill.kind,
         date: bill.bill_date,
-        party: bill.party_name,
+        party: normaliseName(bill.party_name),
         detail: address,
         reference: bill.reference,
         paise: bill.total_paise,
@@ -84,9 +85,10 @@ export function buildItems(readings: InvoiceReading[], bills: Bill[]): ListItem[
     items.push({
       id: r.id,
       as: 'reading',
-      kind: r.kind,
+      kind: r.kind || r.read?.suggested_kind || '',
       date: r.read?.invoice_date ?? null,
-      party: r.read?.supplier_name || r.filename || 'Invoice',
+      // The other side of the client: the buyer on a sale, the supplier otherwise (when the kind is not known, the supplier).
+      party: normaliseName((r.kind || r.read?.suggested_kind) === 'SALES' ? r.read?.buyer_name || r.read?.supplier_name : r.read?.supplier_name) || r.filename || 'Invoice',
       detail: address,
       reference: r.read?.invoice_no ?? '',
       paise: r.read?.total_paise ?? null,
@@ -109,7 +111,7 @@ export function buildItems(readings: InvoiceReading[], bills: Bill[]): ListItem[
       as: 'bill',
       kind: b.kind,
       date: b.bill_date,
-      party: b.party_name,
+      party: normaliseName(b.party_name),
       detail: '',
       reference: b.reference,
       paise: b.total_paise,

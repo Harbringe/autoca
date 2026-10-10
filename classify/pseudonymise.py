@@ -36,7 +36,6 @@ given, which is validated against that list before anything is written.
 
 from __future__ import annotations
 
-import hashlib
 import re
 from dataclasses import dataclass, field
 
@@ -112,10 +111,25 @@ def amount_band(paise: int) -> str:
     return "over ₹10 lakh"
 
 
-def person_alias(name: str, firm_id) -> str:
-    """A stable pseudonym for a person, unique within a firm, meaningless outside."""
-    seed = f"{firm_id}|person|{normalise(name)}".encode()
-    return "P" + hashlib.sha256(seed).hexdigest()[:8].upper()
+def person_alias(name: str, firm_id, client_id=None) -> str:
+    """A stable pseudonym for a person: the same name gives the same token every time, for that client.
+
+    Keyed with the firm's blind-index key (the way account numbers and GSTINs are fingerprinted), so a list of common names cannot
+    be hashed and compared against the tokens a provider holds. Scoped to the client when one is given, so the same person who is a
+    payee of two clients is two unrelated tokens and the provider cannot join the two books. The model can still say "the same payee
+    as last time" within one client, which is all it needs.
+    """
+    from core.crypto import blind_index
+
+    scope = f"{client_id}|" if client_id else ""
+    return "P" + blind_index(f"{scope}{normalise(name)}", firm_id, "llm.person")[:8].upper()
+
+
+def ledger_alias(name: str, firm_id, client_id) -> str:
+    """The same for a ledger named after a person (a loan from them, their capital): a token the model can pick, never the name."""
+    from core.crypto import blind_index
+
+    return "L" + blind_index(f"{client_id}|{normalise(name)}", firm_id, "llm.ledger")[:8].upper()
 
 
 def looks_like_a_person(counterparty: str) -> bool:
@@ -212,7 +226,7 @@ class Pseudonymiser:
         if known:
             return known
         if looks_like_a_person(counterparty) or not self.share_business_names:
-            token = person_alias(counterparty, self.firm_id)
+            token = person_alias(counterparty, self.firm_id, getattr(self.client, "pk", None))
             self._people.setdefault(token, counterparty)
             return token
         return mask(counterparty).text

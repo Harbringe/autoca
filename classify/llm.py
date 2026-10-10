@@ -188,8 +188,13 @@ class _Chart:
             and not hasattr(ledger, "employee_record")
         ]
 
+    def shown(self, ledger) -> str:
+        """The name the model is given for this ledger: its own, or a token for one named after a person."""
+        return _shown_ledger_name(ledger.name, ledger.group, False, self.client)
+
     def by_name(self, name):
-        return next((ledger for ledger in self.usable if ledger.name == name), None)
+        """The ledger the model named, by the name it was shown. A token is turned back; a real name of a hidden ledger is not accepted."""
+        return next((ledger for ledger in self.usable if self.shown(ledger) == name), None)
 
     def standard_spec(self, name):
         """A conventional ledger name this client lacks, restated as a proposal.
@@ -349,9 +354,40 @@ PARTY_NAMED_GROUPS = ("DEBTOR", "CREDITOR")
 PARTY_ACCOUNT_LABEL = "a party's own account"
 
 
-def _shown_ledger_name(name, group, has_party) -> str:
-    """A ledger's name as the model may see it: a party's account is named after the party, so it is not shown."""
-    return PARTY_ACCOUNT_LABEL if has_party or group in PARTY_NAMED_GROUPS else name
+#: Groups whose ledgers are often named after a person ("Loan from Ramesh Kumar", "Meena Devi Capital"). Elsewhere a ledger name is
+#: a heading ("Rent", "Salaries"), and the person-or-business test, which errs towards "person", would hide every plain one.
+PERSONAL_LEDGER_GROUPS = ("LOAN", "CAPITAL")
+
+
+#: The words that make these ledgers what they are; what is left after them is who it is named after, if anyone.
+_LEDGER_FILLER = re.compile(
+    r"\b(loans?|from|to|of|capital|accounts?|a/c|ac|drawings?|current|unsecured|secured|deposit|term|long|short|personal|friends?|family|relative)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_personal_ledger(name, group) -> bool:
+    from classify.pseudonymise import looks_like_a_person
+
+    if group not in PERSONAL_LEDGER_GROUPS:
+        return False
+    rest = " ".join(_LEDGER_FILLER.sub(" ", name).replace("/", " ").split())
+    return bool(re.search(r"[A-Za-z]{2,}", rest)) and looks_like_a_person(rest)
+
+
+def _shown_ledger_name(name, group, has_party, client=None) -> str:
+    """A ledger's name as the model may see it.
+
+    A party's account is named after the party, so it is not shown at all. A loan or capital ledger named after a person is shown as
+    a token that is the same every time for this client; the reply is turned back into the ledger on our side (``_Chart.by_name``).
+    """
+    if has_party or group in PARTY_NAMED_GROUPS:
+        return PARTY_ACCOUNT_LABEL
+    if client is not None and _is_personal_ledger(name, group):
+        from classify.pseudonymise import ledger_alias
+
+        return ledger_alias(name, client.firm_id, client.pk)
+    return name
 
 
 def _context_for(client, batch, pseudonymiser) -> dict:
@@ -389,7 +425,7 @@ def _context_for(client, batch, pseudonymiser) -> dict:
         )
     )
     tally: Counter = Counter(
-        (party, _shown_ledger_name(name, group, party_id is not None or employee_id is not None))
+        (party, _shown_ledger_name(name, group, party_id is not None or employee_id is not None, client))
         for party, name, group, party_id, employee_id in decided
     )
     per_party: dict[str, list] = {}
@@ -427,6 +463,7 @@ def _context_for(client, batch, pseudonymiser) -> dict:
                         sibling.ledger.group,
                         sibling.ledger.is_party_account
                         or hasattr(sibling.ledger, "employee_record"),
+                        client,
                     )
                     if sibling.ledger
                     else None
@@ -569,7 +606,7 @@ def _ask(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]:
             else {}
         ),
         "ledgers": [
-            {"name": ledger.name, "group": ledger.get_group_display()} for ledger in usable
+            {"name": chart.shown(ledger), "group": ledger.get_group_display()} for ledger in usable
         ],
         "rejected_ledger_names": [
             ledger.name for ledger in chart.known if ledger.status == chart.status.REJECTED
@@ -797,7 +834,7 @@ def _apply(batch, replies, chart, pseudonymiser) -> tuple[int, int, int]:
     return placed, declined, confirmed
 
 
-_TOKEN = re.compile(r"\b[VP][0-9A-F]{8,10}\b", re.IGNORECASE)
+_TOKEN = re.compile(r"\b[VPL][0-9A-F]{8,10}\b", re.IGNORECASE)
 _PLACEHOLDER = re.compile(r"<[A-Z_]+>")
 
 

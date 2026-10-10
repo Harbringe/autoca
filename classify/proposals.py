@@ -36,7 +36,7 @@ _NOISE = re.compile(r"\b(a/?c|account|ledger|exp|expenses?|charges?|paid)\b")
 #: A ledger named after one would be a ledger named after a person -- the one
 #: kind the model is told never to open, and the one kind that, if it slipped
 #: through, would carry a pseudonym into the client's Tally.
-_ALIAS_TOKEN = re.compile(r"\b[PV][0-9A-F]{8,}\b", re.IGNORECASE)
+_ALIAS_TOKEN = re.compile(r"\b[PVL][0-9A-F]{8,}\b", re.IGNORECASE)
 
 
 class ProposalError(ValueError):

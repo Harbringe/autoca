@@ -26,6 +26,7 @@ from .base import (
     PdfPasswordIncorrect,
     PdfPasswordRequired,
     PdfTextAdapter,
+    lines_from_words,
     normalise_table,
 )
 
@@ -93,6 +94,9 @@ class PdfPlumberAdapter(PdfTextAdapter):
                         tables=tuple(
                             normalise_table(table)
                             for table in page.extract_tables(TABLE_SETTINGS)
+                        ),
+                        lines=lines_from_words(
+                            (w["text"], float(w["x0"]), float(w["x1"]), float(w["top"])) for w in page.extract_words()
                         ),
                     )
                     for number, page in enumerate(pdf.pages, start=1)

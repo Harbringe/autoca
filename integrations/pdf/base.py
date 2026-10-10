@@ -61,10 +61,56 @@ def normalise_table(rows) -> PdfTable:
 
 
 @dataclass(frozen=True)
+class PdfWord:
+    """One word and where it sits on the page, in points from the page's left edge."""
+
+    text: str
+    x0: float
+    x1: float
+
+    @property
+    def centre(self) -> float:
+        return (self.x0 + self.x1) / 2
+
+
+@dataclass(frozen=True)
+class PdfLine:
+    """The words that sit on one line of the page, left to right, and how far down it is (``top``, in points)."""
+
+    top: float
+    words: tuple[PdfWord, ...]
+
+    @property
+    def text(self) -> str:
+        return " ".join(w.text for w in self.words)
+
+
+#: Words whose tops differ by less than this are on the same line. Rows of a statement are 5 or more points apart.
+SAME_LINE_POINTS = 2.5
+
+
+def lines_from_words(words) -> tuple[PdfLine, ...]:
+    """Group ``[(text, x0, x1, top)]`` into lines, top to bottom. For a layout that has no ruled table to read cells from."""
+    ordered = sorted(words, key=lambda w: (w[3], w[1]))
+    lines: list[list] = []
+    for word in ordered:
+        if lines and abs(word[3] - lines[-1][0][3]) < SAME_LINE_POINTS:
+            lines[-1].append(word)
+        else:
+            lines.append([word])
+    return tuple(
+        PdfLine(top=min(w[3] for w in group), words=tuple(PdfWord(w[0], w[1], w[2]) for w in sorted(group, key=lambda w: w[1])))
+        for group in lines
+    )
+
+
+@dataclass(frozen=True)
 class PdfPage:
     page_number: int
     text: str = ""
     tables: tuple[PdfTable, ...] = ()
+    #: Where each word sits, for a statement whose rows are not a ruled table. Empty for a fixture or a source with no positions.
+    lines: tuple[PdfLine, ...] = ()
 
     @property
     def has_text(self) -> bool:

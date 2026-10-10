@@ -38,9 +38,10 @@ from .base import (
 from .bob import BankOfBarodaParser
 from .card import CardStatementParser
 from .generic import GenericStatementParser
+from .icici import IciciStatementParser
 
 #: Tried first, in order. Each must recognise only its own bank.
-DEDICATED_PARSERS: tuple[type[StatementParser], ...] = (AxisStatementParser, BankOfBarodaParser)
+DEDICATED_PARSERS: tuple[type[StatementParser], ...] = (AxisStatementParser, BankOfBarodaParser, IciciStatementParser)
 
 #: Tried when no dedicated parser claims the document.
 FALLBACK_PARSER: type[StatementParser] = GenericStatementParser

@@ -82,3 +82,7 @@ def test_a_locked_scan_is_rendered_for_the_model_while_the_password_is_to_hand(m
     writer.write(out)
     loaded = files.load(out.getvalue(), "scan.pdf", SECRET)
     assert loaded.images == [b"png"] and seen["password"] == SECRET
+    # Never more page images than the model would be given, however many pages a locked scan claims to have.
+    from django.conf import settings
+
+    assert seen["count"] == int(settings.VISION_MAX_PAGES) + 1

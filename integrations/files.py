@@ -136,9 +136,12 @@ def load(data: bytes, filename: str = "", password: str | None = None) -> Loaded
         if password and not document.has_text_layer:
             # A locked scan: its page images are made now, while the password is to hand, so the model reads these and nothing
             # later needs the password. They exist in memory for the length of the call.
+            # No more pages than the model will be given (plus one, so the caller's own page limit still sees "too many").
+            from django.conf import settings
+
             from banking.scan import render_pages
 
-            images = render_pages(data, password=password)
+            images = render_pages(data, password=password, count=int(settings.VISION_MAX_PAGES) + 1)
         return LoadedFile(PDF, document, images, extension, content_type)
     if kind == XLSX:
         return LoadedFile(XLSX, _read_xlsx(data), None, extension, content_type)

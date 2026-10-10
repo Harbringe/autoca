@@ -2,8 +2,10 @@ import { useQuery } from '@tanstack/react-query'
 import { raw } from '@/api/client'
 import type { Client, Page } from '@/api/types'
 import { useSession } from '@/session/session'
-import { useMemo } from 'react'
-import { ChevronDown, Download, FileText, Folder, FolderOpen } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { DocumentViewer } from './DocumentViewer'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { ChevronDown, Download, Eye, FileText, Folder, FolderOpen } from 'lucide-react'
 import { ErrorState, PageHeader } from '@/components/ca/Page'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -31,13 +33,14 @@ export interface FirmDocument {
 const categories: Record<string, string> = {
   BANK_STATEMENT: 'Bank statements', PURCHASE_INVOICE: 'Purchase invoices',
   SALES_INVOICE: 'Sales invoices', GSTR2B: 'GSTR-2B', REGISTER: 'Registers',
-  TALLY_EXPORT: 'Tally exports', OTHER: 'Other files',
+  TALLY_EXPORT: 'Tally exports', OTHER: 'Not yet sorted (invoices waiting to be told as purchase or sale, and other files)',
 }
 const bytes = (value: number) => value < 1024 * 1024 ? `${Math.max(1, Math.round(value / 1024))} KB` : `${(value / 1024 / 1024).toFixed(1)} MB`
 const date = (value: string) => formatDate(value)
 
 export function DocumentsScreen({ clientId }: { clientId?: string }) {
   const { me } = useSession()
+  const [viewing, setViewing] = useState<FirmDocument | null>(null)
   const clients = useQuery({ queryKey: ['documents', 'clients'], queryFn: () => raw.get<Page<Client>>(`${V1}/clients/`, { page_size: 500 }) })
   const documents = useQuery({ queryKey: ['documents', clientId ?? 'firm'], queryFn: () => raw.get<Page<FirmDocument>>(`${V1}/documents/`, { client: clientId, page_size: 500 }) })
   const grouped = useMemo(() => {
@@ -78,6 +81,7 @@ export function DocumentsScreen({ clientId }: { clientId?: string }) {
                       <FileText className="size-4 shrink-0 text-muted-foreground" />
                       <span className="min-w-0 flex-1 truncate text-sm font-medium text-heading" title={file.original_filename}>{file.original_filename || file.kind_display}</span>
                       <span className="text-xs text-muted-foreground">{file.status_display}</span><span className="text-xs text-muted-foreground">{bytes(file.byte_size)}</span><time className="text-xs text-muted-foreground">{date(file.created_at)}</time>
+                      <Button size="sm" variant="ghost" aria-label={`Preview ${file.original_filename}`} onClick={() => setViewing(file)}><Eye /></Button>
                       <Button asChild size="sm" variant="ghost" aria-label={`Download ${file.original_filename}`}><a href={`${V1}/documents/${file.id}/download/`}><Download /></a></Button>
                     </li>)}
                   </ul>
@@ -87,6 +91,14 @@ export function DocumentsScreen({ clientId }: { clientId?: string }) {
         })}
         {!visibleClients.length && <p className="p-8 text-center text-sm text-muted-foreground">No clients are available in your workspace.</p>}
       </Card>
+      {viewing && (
+        <Dialog open onOpenChange={(o) => !o && setViewing(null)}>
+          <DialogContent className="h-[90svh] max-w-4xl grid-rows-[auto_1fr]" aria-describedby={undefined}>
+            <DialogHeader><DialogTitle className="truncate">{viewing.original_filename || viewing.kind_display}</DialogTitle></DialogHeader>
+            <DocumentViewer documentId={viewing.id} />
+          </DialogContent>
+        </Dialog>
+      )}
     </div>
   )
 }

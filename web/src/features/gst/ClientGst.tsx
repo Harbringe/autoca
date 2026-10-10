@@ -168,7 +168,7 @@ function RunsAndRegistrations({ clientId }: { clientId: string }) {
 
 // --- add a GSTIN ------------------------------------------------------------
 
-function AddGstinDialog({ clientId, onClose }: { clientId: string; onClose: () => void }) {
+export function AddGstinDialog({ clientId, onClose }: { clientId: string; onClose: () => void }) {
   const { addRegistration } = useGstActions(clientId)
   const [gstin, setGstin] = useState('')
   const [type, setType] = useState<GstRegistration['registration_type']>('regular')

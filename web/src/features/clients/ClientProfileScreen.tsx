@@ -1,7 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
 import { Building2, Users } from 'lucide-react'
 import { invoiceReadings, openItems } from '@/api/queries/bills'
+import { gstRegistrations } from '@/api/queries/gst'
+import { AddGstinDialog } from '@/features/gst/ClientGst'
 import { bankAccounts, clientDetail, reviewSummary } from '@/api/queries/clients'
 import { ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
@@ -18,6 +21,8 @@ export function ClientProfileScreen({ clientId }: { clientId: string }) {
   const summary = useQuery({ ...reviewSummary(clientId), enabled: can('transaction.view') })
   const fixes = useQuery({ ...openItems(clientId), enabled: can('journal.view') })
   const readings = useQuery({ ...invoiceReadings(clientId), enabled: can('journal.view') })
+  const registrations = useQuery({ ...gstRegistrations(clientId), enabled: can('journal.view') })
+  const [addingGstin, setAddingGstin] = useState(false)
 
   if (client.isPending) return <Spinner label="Loading client details…" />
   if (client.error) return <ErrorState error={client.error} retry={() => void client.refetch()} />
@@ -30,13 +35,22 @@ export function ClientProfileScreen({ clientId }: { clientId: string }) {
           {(can('team.view') || can('client.update')) && <Button asChild variant="secondary" size="sm"><Link to="/clients/$clientId/team" params={{ clientId }}><Users /> Edit client settings and team</Link></Button>}
         </div>
         <Card className="p-5">
-          <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-4">
+          <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-5">
             <div><dt className="text-xs text-muted-foreground">Senior CA in charge</dt><dd className="mt-1 text-sm font-medium text-heading">{client.data.lead?.name ?? <Badge tone="attention">Not assigned</Badge>}</dd></div>
             <div><dt className="text-xs text-muted-foreground">Financial year starts</dt><dd className="num mt-1 text-sm font-medium text-heading">{formatDate(client.data.fy_start)}</dd></div>
+            <div>
+              <dt className="text-xs text-muted-foreground">GSTIN</dt>
+              <dd className="mt-1 grid gap-1 text-sm font-medium text-heading">
+                {(registrations.data ?? []).map((r) => <span key={r.id} className="num">{r.gstin}</span>)}
+                {registrations.data?.length === 0 && <Badge tone="attention">Not added</Badge>}
+                {can('journal.approve') && <Button size="sm" variant="ghost" className="justify-self-start px-0" onClick={() => setAddingGstin(true)}>{registrations.data?.length ? 'Add another' : 'Add GSTIN'}</Button>}
+              </dd>
+            </div>
             <div><dt className="text-xs text-muted-foreground">Bank accounts</dt><dd className="num mt-1 text-sm font-medium text-heading">{accounts.data?.count ?? '—'}</dd></div>
             <div><dt className="text-xs text-muted-foreground">Business profile</dt><dd className="mt-1 line-clamp-2 text-sm font-medium text-heading">{client.data.business_profile || 'Not added'}</dd></div>
           </dl>
         </Card>
+        {addingGstin && <AddGstinDialog clientId={clientId} onClose={() => setAddingGstin(false)} />}
         {accounts.error && <ErrorState error={accounts.error} retry={() => void accounts.refetch()} />}
       </section>
 

@@ -59,6 +59,7 @@ from ledger.models import (
     LedgerOpening,
     PayrollLine,
     PayrollRun,
+    StockEntry,
     TdsChallan,
     VoucherSequence,
     VoucherType,
@@ -432,6 +433,14 @@ def _depreciation_posting(firm, **kw):
     return DepreciationPosting.objects.create(firm=firm, client=client, financial_year=2025, entry=entry, total_paise=1000)
 
 
+def _stock_entry(firm, **kw):
+    client = kw.get("client") or _client(firm)
+    return StockEntry.objects.create(
+        firm=firm, client=client, kind="OPENING", entry_date=datetime.date(2025, 4, 1), direction="IN", name="Widget",
+        unit="pcs", quantity=10, value_paise=1000,
+    )
+
+
 def _tds_challan(firm, **kw):
     client = kw.get("client") or _client(firm)
     entry = JournalEntry.objects.create(
@@ -541,6 +550,7 @@ FACTORIES = {
     CloseAcknowledgement: _close_acknowledgement,
     FixedAsset: _fixed_asset,
     DepreciationPosting: _depreciation_posting,
+    StockEntry: _stock_entry,
     TdsChallan: _tds_challan,
     Employee: _employee,
     PayrollRun: _payroll_run,

@@ -143,18 +143,15 @@ export function PurchasesScreen({ clientId }: { clientId: string }) {
       }}
     >
       {fileInput}
-      <div className="no-print flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h2 className="text-lg font-semibold text-heading">Purchases &amp; Sales</h2>
-          <p className="text-sm text-muted-foreground">
-            FY {fyLabel(fy)} · owed to suppliers <Money paise={position.payables} /> · owed by customers <Money paise={position.receivables} />
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button variant="outline" onClick={() => setAlerts(true)} disabled={alertItems.length === 0}>
-            <TriangleAlert className="text-warning" /> View alerts{alertItems.length ? ` (${alertItems.length})` : ''}
-          </Button>
-        </div>
+      <div className="no-print flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+        <p className="text-sm text-muted-foreground">
+          Owed to suppliers <Money paise={position.payables} /> · owed by customers <Money paise={position.receivables} />
+        </p>
+        {alertItems.length > 0 && (
+          <button type="button" className="inline-flex items-center gap-1.5 text-sm font-medium text-link hover:underline" onClick={() => setAlerts(true)}>
+            <TriangleAlert className="size-4 text-warning" aria-hidden /> {alertItems.length} {alertItems.length === 1 ? 'row needs' : 'rows need'} a look
+          </button>
+        )}
       </div>
 
       {empty ? (
@@ -233,14 +230,23 @@ export function PurchasesScreen({ clientId }: { clientId: string }) {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              <Button variant="outline" disabled={pickedItems.length !== 1} onClick={() => pickedItems[0] && open(pickedItems[0])}>
-                Edit
-              </Button>
-              <Button variant="outline" disabled={!mayPost || pickedItems.length === 0} onClick={() => setDeleting(pickedItems)}>
-                Delete
-              </Button>
             </div>
           </div>
+
+          {pickedItems.length > 0 && (
+            <div role="region" aria-label="Selected rows" className="no-print flex flex-wrap items-center gap-2 rounded-md border border-accent-edge bg-accent px-3 py-1.5 text-sm">
+              <span className="font-medium">{pickedItems.length} selected</span>
+              <Button size="sm" variant="outline" disabled={pickedItems.length !== 1} onClick={() => pickedItems[0] && open(pickedItems[0])}>
+                Edit
+              </Button>
+              <Button size="sm" variant="outline" disabled={!mayPost} onClick={() => setDeleting(pickedItems)}>
+                Delete
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+                Clear
+              </Button>
+            </div>
+          )}
 
           <div className="overflow-x-auto rounded-lg border bg-card">
             <table className="w-full min-w-[56rem] text-sm">

@@ -73,7 +73,7 @@ describe('Purchases & Sales as a list of receipts', () => {
 
   it('lists the alerts, with the reason for each', async () => {
     renderIt()
-    await userEvent.click(await screen.findByRole('button', { name: /View alerts \(3\)/ }))
+    await userEvent.click(await screen.findByRole('button', { name: /3 rows need a look/ }))
     const dialog = await screen.findByRole('dialog', { name: 'Alerts' })
     expect(within(dialog).getByText('The client’s GSTIN is not on this file.')).toBeInTheDocument()
     expect(within(dialog).getAllByText('No invoice file is attached to this bill.')).toHaveLength(2)

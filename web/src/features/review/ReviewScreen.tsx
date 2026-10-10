@@ -233,36 +233,39 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
         </div>
       )}
 
-      {stage !== 'unresolved' && (
-        <div className="flex flex-wrap items-center gap-1.5 text-sm">
-          <span className="text-muted-foreground">Confidence:</span>
-          {['', 'HIGH', 'ADVISED', 'JUDGEMENT'].map((b) => (
-            <button
-              key={b || 'any'}
-              type="button"
-              onClick={() => setBand(b)}
-              className={cn('rounded-full border px-2.5 py-0.5', band === b ? 'border-primary bg-primary text-primary-foreground' : 'hover:bg-hover')}
-            >
-              {b ? BAND_LABEL[b]!.label : 'Any'}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {!queue.isPending && !queue.error && (queue.data?.length ?? 0) > 0 && (
-        <div className="relative max-w-sm">
-          <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-          <Input
-            id="review-search"
-            type="search"
-            aria-label="Search the queue by narration, payee, ledger or amount"
-            placeholder="Search narration, payee, ledger, amount"
-            className="pl-8"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-          />
-        </div>
-      )}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+        {stage !== 'unresolved' ? (
+          <div className="flex flex-wrap items-center gap-1.5 text-sm">
+            <span className="text-muted-foreground">Confidence:</span>
+            {['', 'HIGH', 'ADVISED', 'JUDGEMENT'].map((b) => (
+              <button
+                key={b || 'any'}
+                type="button"
+                onClick={() => setBand(b)}
+                className={cn('rounded-full border px-2.5 py-0.5', band === b ? 'border-primary bg-primary text-primary-foreground' : 'hover:bg-hover')}
+              >
+                {b ? BAND_LABEL[b]!.label : 'Any'}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <span />
+        )}
+        {!queue.isPending && !queue.error && (queue.data?.length ?? 0) > 0 && (
+          <div className="relative w-full max-w-sm">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+            <Input
+              id="review-search"
+              type="search"
+              aria-label="Search the queue by narration, payee, ledger or amount"
+              placeholder="Search narration, payee, ledger, amount"
+              className="pl-8"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+            />
+          </div>
+        )}
+      </div>
 
       {queue.isPending ? (
         <Spinner label="Loading the queue…" />

@@ -1,8 +1,9 @@
 // One client's screen: a header that says which screen it is and where the books stand.
 //
 // The client panel names the places; a place's closely related screens are the tab row under the heading,
-// and its alerts and "Upload bank statement" sit together at the right of the heading. "Upload bank statement" is on
-// every client page because it is where everything starts, and `u` does it too.
+// and its alerts and "Upload bank statement" sit together at the right of the heading. "Upload bank statement" is shown
+// where bank rows are the subject (the overview, the pipeline, statements, review and the books summary), not on every page: a
+// purchases or GST page has its own way of adding things. `u` does it from anywhere.
 
 import { useQuery } from '@tanstack/react-query'
 import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
@@ -26,6 +27,9 @@ import { REPORT_TABS } from '@/features/reports/tabs'
 import { useFy } from '@/features/shell/useFy'
 import { ModuleAlerts } from '@/features/alerts/AlertList'
 import { useSession } from '@/session/session'
+
+/** The client screens where uploading a bank statement is the natural next step. */
+const UPLOAD_SCREENS = new Set(['', 'pipeline', 'statements', 'review', 'bookkeeping'])
 
 export function Workspace({ clientId }: { clientId: string }) {
   return (
@@ -83,6 +87,10 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
   const title = clientScreenName(path) ?? client.data.name
   // Uploading is the point of the Statements screen; elsewhere it is a quiet second action.
   const upload_primary = screen === 'statements'
+  const showsUpload = UPLOAD_SCREENS.has(screen ?? '')
+  // One purchase or sale on its own page has its own back link and its own alerts; the section tabs and the module's
+  // alerts would only repeat them.
+  const onItemPage = /\/bills\/[^/]+/.test(path)
 
   return (
     <div className="grid gap-4 [&>*]:min-w-0">
@@ -105,8 +113,8 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          {can('client.view') && module !== 'alerts' && screen !== 'team' && <ModuleAlerts module={alertModule} clientId={clientId} />}
-          {can('document.upload') && module !== 'gst' && (
+          {can('client.view') && module !== 'alerts' && screen !== 'team' && !onItemPage && <ModuleAlerts module={alertModule} clientId={clientId} />}
+          {can('document.upload') && showsUpload && (
             <Button variant={upload_primary ? 'primary' : 'secondary'} onClick={upload.open} className="max-sm:px-3" aria-label="Upload bank statement">
               <Upload />
               <span className="max-sm:hidden">Upload bank statement</span>
@@ -116,7 +124,7 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
         </div>
       </header>
 
-      {tabs.length > 0 && <TabNav label={`${title} sections`} items={tabs} />}
+      {tabs.length > 0 && !onItemPage && <TabNav label={`${title} sections`} items={tabs} />}
 
       {explicit && latestYear !== undefined && !dataYears.includes(fy) && (
         <p className="no-print -mt-2 text-[13px] text-muted-foreground">

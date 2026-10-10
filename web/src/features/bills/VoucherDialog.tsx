@@ -485,75 +485,73 @@ export function VoucherForm({
 
       <div className={layout === 'page' && tab !== 'details' ? 'hidden' : 'grid gap-4'}>
       {prefill?.facts && <ReceiptFactsCard facts={prefill.facts} />}
-      <Field label="Voucher type" error={errors.kind}>
-        {(props) => (
-          <Select {...props} value={kindChosen ? kind : ''} onChange={(e) => changeKind(e.target.value as VoucherKind)}>
-            {!kindChosen && <option value="" disabled>Choose purchase or sale…</option>}
-            {VOUCHER_KINDS.map((k) => (
-              <option key={k.value} value={k.value}>{k.label}</option>
-            ))}
-          </Select>
-        )}
-      </Field>
-
       <div className="grid gap-4 sm:grid-cols-2">
-        <div className="grid gap-2">
-          <Field label={partyLabel} error={errors.party}>
-            {(props) => (
-              <Select
-                {...props}
-                value={newParty ? NEW_PARTY : partyId}
-                onChange={(e) => {
-                  if (e.target.value === NEW_PARTY) {
-                    setNewParty({ name: '', gstin: '' })
-                    setPartyId('')
-                  } else {
-                    setNewParty(null)
-                    setPartyId(e.target.value)
-                  }
-                }}
-              >
-                <option value="">Choose…</option>
-                {suitable.map((p) => (
-                  <option key={p.id} value={p.id}>{p.canonical_name}</option>
-                ))}
-                <option value={NEW_PARTY}>+ Add a new {partyLabel.toLowerCase()}…</option>
-              </Select>
-            )}
-          </Field>
-          {newParty && (
-            <fieldset className="grid gap-2 rounded-md border border-input bg-card p-3">
-              <Field label="Name" error={errors.newPartyName}>
-                {(props) => <Input {...props} autoFocus value={newParty.name} onChange={(e) => setNewParty({ ...newParty, name: e.target.value })} />}
-              </Field>
-              <Field label="GSTIN (leave blank if unregistered)" error={errors.newPartyGstin} mask="gstin">
-                {(props, m) => <Input {...props} {...m} value={newParty.gstin} onChange={(e) => setNewParty({ ...newParty, gstin: e.target.value })} />}
-              </Field>
-              <div className="flex justify-end gap-2">
-                <Button type="button" variant="ghost" size="sm" onClick={() => setNewParty(null)}>Cancel</Button>
-                <Button type="button" size="sm" disabled={!newParty.name.trim()} onClick={() => void createParty()}>
-                  Add {partyLabel.toLowerCase()}
-                </Button>
-              </div>
-            </fieldset>
+        <Field label="Voucher type" error={errors.kind}>
+          {(props) => (
+            <Select {...props} value={kindChosen ? kind : ''} onChange={(e) => changeKind(e.target.value as VoucherKind)}>
+              {!kindChosen && <option value="" disabled>Choose purchase or sale…</option>}
+              {VOUCHER_KINDS.map((k) => (
+                <option key={k.value} value={k.value}>{k.label}</option>
+              ))}
+            </Select>
           )}
-        </div>
-        <Field label="Invoice number" error={errors.reference} hint="As printed on the document. The same number from the same party is refused as a duplicate.">
-          {(props) => <Input {...props} autoComplete="off" value={reference} onChange={(e) => setReference(e.target.value)} />}
         </Field>
-      </div>
+        <Field label="Invoice number" error={errors.reference} hint="As printed on the document">
+          {(props) => <Input {...props} autoComplete="off" title="The same number from the same party is refused as a duplicate." value={reference} onChange={(e) => setReference(e.target.value)} />}
+        </Field>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label={partyLabel} error={errors.party}>
+          {(props) => (
+            <Select
+              {...props}
+              value={newParty ? NEW_PARTY : partyId}
+              onChange={(e) => {
+                if (e.target.value === NEW_PARTY) {
+                  setNewParty({ name: '', gstin: '' })
+                  setPartyId('')
+                } else {
+                  setNewParty(null)
+                  setPartyId(e.target.value)
+                }
+              }}
+            >
+              <option value="">Choose…</option>
+              {suitable.map((p) => (
+                <option key={p.id} value={p.id}>{normaliseName(p.canonical_name)}</option>
+              ))}
+              <option value={NEW_PARTY}>+ Add a new {partyLabel.toLowerCase()}…</option>
+            </Select>
+          )}
+        </Field>
         <Field label="Invoice date" error={errors.bill_date}>
           {(props) => <DateInput {...props} value={billDate} onChange={(e) => setBillDate(e.target.value)} />}
         </Field>
+
+        {newParty && (
+          <fieldset className="grid gap-3 rounded-md border border-input bg-card p-3 sm:col-span-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+            <legend className="px-1 text-[13px] font-medium">New {partyLabel.toLowerCase()}</legend>
+            <Field label="Name" error={errors.newPartyName}>
+              {(props) => <Input {...props} autoFocus value={newParty.name} onChange={(e) => setNewParty({ ...newParty, name: e.target.value })} />}
+            </Field>
+            <Field label="GSTIN (blank if unregistered)" error={errors.newPartyGstin} mask="gstin">
+              {(props, m) => <Input {...props} {...m} value={newParty.gstin} onChange={(e) => setNewParty({ ...newParty, gstin: e.target.value })} />}
+            </Field>
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="ghost" size="sm" onClick={() => setNewParty(null)}>Cancel</Button>
+              <Button type="button" size="sm" disabled={!newParty.name.trim()} onClick={() => void createParty()}>
+                Add {partyLabel.toLowerCase()}
+              </Button>
+            </div>
+          </fieldset>
+        )}
+
         <Field label="Due date (optional)" error={errors.due_date}>
           {(props) => <DateInput {...props} value={dueDate} onChange={(e) => setDueDate(e.target.value)} />}
         </Field>
       </div>
 
       <fieldset className="grid gap-3">
-        <legend className="mb-1 text-[13px] font-medium">What it is for (taxable value, before GST)</legend>
+        <legend className="mb-1 text-[13px] font-medium">What it is for <span className="font-normal text-muted-foreground">(before GST)</span></legend>
         {heads.map((head, index) => (
           <div key={head.key} className="grid items-start gap-2 sm:grid-cols-[1fr_11rem_auto]">
             <div>
@@ -610,19 +608,20 @@ export function VoucherForm({
             </Field>
           ))}
         </div>
-        <div className="grid gap-3 sm:grid-cols-3">
-          <Field label="Round off (₹, + or −)" hint="Positive if the invoice rounds up.">
-            {(props) => (
-              <div className="flex items-center gap-2">
-                <Input {...props} inputMode="decimal" className="text-right tabular-nums" value={roundOff} onChange={(e) => setRoundOff(e.target.value)} />
-                <Button type="button" variant="outline" size="sm" onClick={roundToRupee} disabled={unreadable || amounts.heads.every((h) => !h.paise)} title="Fill the round off that brings the invoice total to a whole rupee">
-                  Round off
-                </Button>
-              </div>
-            )}
-          </Field>
-          {canTds && (
-            <>
+        <Field label="Round off (₹, + or −)" hint="Positive if the invoice rounds up">
+          {(props) => (
+            <div className="flex items-center gap-2">
+              <Input {...props} inputMode="decimal" className="max-w-[10rem] text-right tabular-nums" value={roundOff} onChange={(e) => setRoundOff(e.target.value)} />
+              <Button type="button" variant="outline" size="sm" onClick={roundToRupee} disabled={unreadable || amounts.heads.every((h) => !h.paise)} title="Fill the round off that brings the invoice total to a whole rupee">
+                Round off
+              </Button>
+            </div>
+          )}
+        </Field>
+        {canTds && (
+          <details className="rounded-md border border-input px-3 py-2 text-sm" open={!!tds || !!tdsSection || rcm}>
+            <summary className="cursor-pointer font-medium">TDS and reverse charge</summary>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2">
               <Field label="TDS deducted (₹)" hint="Deducted when the bill is booked; the supplier is owed the net.">
                 {(props) => <Input {...props} inputMode="decimal" className="text-right tabular-nums" value={tds} onChange={(e) => setTds(e.target.value)} />}
               </Field>
@@ -636,11 +635,13 @@ export function VoucherForm({
                   </Select>
                 )}
               </Field>
-            </>
-          )}
-        </div>
-        {canRcm && (
-          <Checkbox label="Reverse charge: the GST is ours to pay, not the supplier’s" checked={rcm} onChange={(e) => setRcm(e.target.checked)} />
+              {canRcm && (
+                <div className="sm:col-span-2">
+                  <Checkbox label="Reverse charge: the GST is ours to pay, not the supplier’s" checked={rcm} onChange={(e) => setRcm(e.target.checked)} />
+                </div>
+              )}
+            </div>
+          </details>
         )}
       </fieldset>
 

@@ -86,7 +86,8 @@ def test_a_purchase_is_told_by_the_clients_gstin_as_buyer_and_booked(api, client
     bill = api.get(f"{base(client_record)}/bills/{reading['bill']}/").json()
     assert bill["kind"] == "PURCHASE" and bill["total_paise"] == 11_800_00 and bill["reference"] == "RT/900"
     parties = api.get(f"{base(client_record)}/parties/").json()["results"]
-    assert [p["canonical_name"] for p in parties] == ["RAVI TRADERS"]
+    # Names are written one way (core.names), whatever case the invoice printed.
+    assert [p["canonical_name"] for p in parties] == ["Ravi Traders"]
 
 
 def test_a_sale_is_told_by_the_clients_gstin_as_issuer(api, client_record):

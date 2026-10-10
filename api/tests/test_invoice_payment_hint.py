@@ -53,8 +53,12 @@ def test_a_payment_of_the_same_amount_to_that_party_is_shown_beside_the_invoice(
     reading = upload_invoice(api, client_record, settings).json()
 
     assert reading["proved"] is True
-    (hint,) = reading["payments"]
+    # The payment on the invoice's own party comes first and says why it is offered; rows that match on the amount alone may
+    # follow it, marked as such.
+    hint = reading["payments"][0]
+    assert hint["evidence"] == "party"
     assert hint["posted_to"] == "Office Expenses" and hint["entry"] == entry and hint["on_party_account"] is False
+    assert all(other["evidence"] != "party" for other in reading["payments"][1:])
 
 
 def test_no_hint_when_the_amount_differs(api, client_record, statement, settings):
@@ -69,4 +73,7 @@ def test_no_hint_when_the_amount_differs(api, client_record, statement, settings
 def test_no_hint_when_the_party_is_not_known(api, client_record, statement, settings):
     reading = upload_invoice(api, client_record, settings).json()
 
-    assert reading["suggested_party"] is None and reading["payments"] == []
+    # No party is known, so nothing is offered as that party's payment; a row of the same amount may be offered, and says it
+    # rests on the amount alone.
+    assert reading["suggested_party"] is None
+    assert all(hint["evidence"] == "amount" for hint in reading["payments"])

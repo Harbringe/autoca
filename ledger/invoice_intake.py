@@ -673,7 +673,18 @@ def _book(reading: InvoiceReading, membership) -> str:
                 round_off=fields.get("round_off_paise", 0),
             )
             post = billing.post_purchase if purchase else billing.post_sales
-            bill = post(client, party, [(head, fields["taxable_paise"])], data, membership=membership)
+            heads = [(head, fields["taxable_paise"])]
+            try:
+                # Each line to a ledger and a stock item of its own, when the lines add up to the taxable value exactly;
+                # otherwise the one general head, as before.
+                from ledger import item_ledgers
+
+                heads = item_ledgers.heads_from_items(
+                    client, reading.kind, list(fields.get("items") or []), fields["taxable_paise"]
+                )
+            except billing.BillingError:
+                pass
+            bill = post(client, party, heads, data, membership=membership)
             note_booked(document, bill, user=membership.user)
             InvoiceReading.objects.filter(pk=reading.pk).update(auto_booked=True, attention="")
     except (billing.BillingError, IntakeError, PermissionDenied) as exc:

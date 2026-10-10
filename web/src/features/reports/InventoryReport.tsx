@@ -6,6 +6,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle } from 'lucide-react'
 import { useState } from 'react'
+import { toast } from 'sonner'
+import { raw } from '@/api/client'
+import { messageOf } from '@/api/errors'
+import { useInvalidateClient, V1 } from '@/api/queries/clients'
+import { Confirm } from '@/components/ca/Confirm'
 import { inventoryReport } from '@/api/queries/books'
 import type { InventoryItem } from '@/api/types'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
@@ -38,9 +43,12 @@ export function InventoryReport({ clientId, fy }: { clientId: string; fy: number
   const query = useQuery(inventoryReport(clientId, fy))
   const [picked, setPicked] = useState('')
   const [recording, setRecording] = useState(false)
+  const [using, setUsing] = useState(false)
+  const invalidate = useInvalidateClient(clientId)
   if (query.isPending) return <Spinner label="Preparing the report…" />
   if (query.error) return <ErrorState error={query.error} retry={() => void query.refetch()} />
   const report = query.data
+  const closingValue = report.items.reduce((sum, i) => sum + Math.max(i.closing_value_paise, 0), 0)
   const shown = picked ? report.items.filter((i) => i.name === picked) : report.items
 
   return (
@@ -65,7 +73,26 @@ export function InventoryReport({ clientId, fy }: { clientId: string; fy: number
 
       <div className="no-print mb-3 flex justify-end">
         <Button variant="outline" size="sm" onClick={() => setRecording(true)}>Opening stock and adjustments</Button>
+        {closingValue > 0 && <Button variant="outline" size="sm" className="ml-2" onClick={() => setUsing(true)}>Use as closing stock</Button>}
       </div>
+      <Confirm
+        open={using}
+        onOpenChange={setUsing}
+        title="Use this as the year's closing stock?"
+        confirmLabel="Use it"
+        onConfirm={async () => {
+          try {
+            await raw.put(`${V1}/clients/${clientId}/reports/financial-statements/settings/`, { years: { [String(fy)]: { closing_stock_paise: closingValue } } })
+            await invalidate()
+            toast.success('Closing stock set for the financial statements')
+          } catch (e) {
+            toast.error(messageOf(e))
+          }
+        }}
+      >
+        The financial statements will carry closing stock of {formatPaise(closingValue)} for FY {fy}-{String(fy + 1).slice(2)}, taken from this register at
+        weighted-average cost. Items with a negative quantity are left out. You can change it later under the statement details.
+      </Confirm>
       {recording && <StockEntries clientId={clientId} fy={fy} onClose={() => setRecording(false)} />}
 
       {report.items.length === 0 ? (

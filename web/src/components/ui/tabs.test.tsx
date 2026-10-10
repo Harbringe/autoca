@@ -40,3 +40,35 @@ describe('TabNav with search tabs', () => {
     expect(screen.getByRole('link', { name: 'Profit & Loss' }).getAttribute('href')).toContain('fy=2024')
   })
 })
+
+// A long row keeps seven in the row and folds the rest under "More", which names the current one when you are on it.
+async function renderLong(url: string) {
+  const root = createRootRoute({ component: Outlet })
+  const names = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten']
+  const routes = names.map((name) =>
+    createRoute({
+      getParentRoute: () => root,
+      path: `/${name.toLowerCase()}`,
+      component: () => (
+        <TabNav label="Sections" maxVisible={7} items={names.map((n) => ({ to: `/${n.toLowerCase()}`, label: n, exact: true }))} />
+      ),
+    }),
+  )
+  const router = createRouter({ routeTree: root.addChildren(routes), history: createMemoryHistory({ initialEntries: [url] }) })
+  render(<RouterProvider router={router} />)
+  await screen.findByRole('navigation', { name: 'Sections' })
+}
+
+describe('TabNav with more tabs than fit', () => {
+  it('shows seven and puts the rest under More', async () => {
+    await renderLong('/one')
+    expect(screen.getAllByRole('link')).toHaveLength(7)
+    expect(screen.getByRole('button', { name: 'More' })).toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: 'Ten' })).not.toBeInTheDocument()
+  })
+  it('names the current tab on the More button when it is one of the folded ones', async () => {
+    await renderLong('/nine')
+    expect(screen.getByRole('button', { name: 'Nine' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument()
+  })
+})

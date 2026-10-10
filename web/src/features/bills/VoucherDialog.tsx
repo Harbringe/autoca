@@ -96,6 +96,9 @@ const FIELD_NAMES: Record<string, string> = {
   document_type: 'Document type', ack_date: 'Ack date', po_date: 'PO date', bank_ifsc: 'IFSC',
 }
 
+/** How many of the facts printed on a receipt are listed at once; the rest fold under one line. */
+const FACTS_SHOWN = 4
+
 const PAYMENT_MODE: Record<string, string> = { cash: 'Cash', card: 'Card', upi: 'UPI', bank_transfer: 'Bank transfer', cheque: 'Cheque', credit: 'On credit (not yet paid)' }
 
 const NEW_PARTY = '__new__'
@@ -150,6 +153,8 @@ export function VoucherForm({
   formId,
   onReadAgain,
   readingAgain,
+  tab: tabProp,
+  onTabChange,
 }: {
   clientId: string
   /** Called after it is booked, and by Cancel. */
@@ -161,6 +166,9 @@ export function VoucherForm({
   /** Offered where no lines were read: read the stored file again with the current reader. */
   onReadAgain?: () => void
   readingAgain?: boolean
+  /** Kept by the page, so reading the file again (which restarts the form) leaves the person on the tab they were on. */
+  tab?: 'details' | 'items'
+  onTabChange?: (tab: 'details' | 'items') => void
   formId?: string
 }) {
   const parties = useQuery(partiesQuery(clientId))
@@ -175,7 +183,9 @@ export function VoucherForm({
   const [reference, setReference] = useState(prefill?.reference ?? '')
   const [billDate, setBillDate] = useState(() => formatDate(prefill?.billDate ?? new Date().toISOString().slice(0, 10)))
   const [dueDate, setDueDate] = useState(prefill?.dueDate ? formatDate(prefill.dueDate) : '')
-  const [tab, setTab] = useState<'details' | 'items'>('details')
+  const [ownTab, setOwnTab] = useState<'details' | 'items'>('details')
+  const tab = tabProp ?? ownTab
+  const setTab = onTabChange ?? setOwnTab
   const [heads, setHeads] = useState<Head[]>(() => [{ ...blankHead(), ledger: prefill?.headLedger ?? null, amount: asRupees(prefill?.taxablePaise) }])
   const [tax, setTax] = useState({
     cgst: asRupees(prefill?.cgstPaise),
@@ -546,7 +556,7 @@ export function VoucherForm({
         </Field>
 
         {newParty && (
-          <fieldset className="grid gap-3 rounded-md border border-input bg-card p-3 sm:col-span-2 sm:grid-cols-[1fr_1fr_auto] sm:items-end">
+          <fieldset className="grid gap-3 rounded-md border border-input bg-card p-3 sm:col-span-2">
             <legend className="px-1 text-[13px] font-medium">New {partyLabel.toLowerCase()}</legend>
             <Field label="Name" error={errors.newPartyName}>
               {(props) => <Input {...props} autoFocus value={newParty.name} onChange={(e) => setNewParty({ ...newParty, name: e.target.value })} />}
@@ -752,14 +762,31 @@ function ReceiptFactsCard({ facts }: { facts: ReceiptFacts }) {
           The client’s side shows GSTIN <span className="num">{facts.ownGstinGuess}</span>. Add it under GST and every file is told apart exactly.
         </p>
       )}
-      <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
-        {shown.map(([label, value]) => (
-          <div key={label} className="contents">
-            <dt className="text-muted-foreground">{label}</dt>
-            <dd>{value}</dd>
-          </div>
-        ))}
-      </dl>
+      {shown.length > 0 && (
+        <>
+          <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+            {shown.slice(0, FACTS_SHOWN).map(([label, value]) => (
+              <div key={label} className="contents">
+                <dt className="text-muted-foreground">{label}</dt>
+                <dd className="min-w-0 break-words">{value}</dd>
+              </div>
+            ))}
+          </dl>
+          {shown.length > FACTS_SHOWN && (
+            <details className="text-sm">
+              <summary className="cursor-pointer font-medium text-link">{shown.length - FACTS_SHOWN} more details from the receipt</summary>
+              <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+                {shown.slice(FACTS_SHOWN).map(([label, value]) => (
+                  <div key={label} className="contents">
+                    <dt className="text-muted-foreground">{label}</dt>
+                    <dd className="min-w-0 break-words">{value}</dd>
+                  </div>
+                ))}
+              </dl>
+            </details>
+          )}
+        </>
+      )}
       {foreign && <p className="text-warning">The receipt is in {facts.currency}. Vouchers are booked in rupees: enter the rupee amounts.</p>}
       {rejected.length > 0 && (
         <ul className="grid gap-1 text-warning">

@@ -148,9 +148,14 @@ describe('one purchase or sale on its own page', () => {
     renderIt({}, [empty])
     await userEvent.click(await screen.findByRole('tab', { name: /Itemizations/ }))
     expect(screen.getByText(/No lines were read from this invoice/)).toBeInTheDocument()
+    // The server's answer has the lines now, and the list of readings is read again after it.
     vi.mocked(raw.post).mockResolvedValue(READING)
+    vi.mocked(raw.get).mockImplementation(async (path: string) => (path.includes('/invoices/') ? { results: [READING], next: null } : { pages: 1, filename: 'lunch.jpeg' }))
     await userEvent.click(screen.getByRole('button', { name: 'Read the lines again' }))
     expect(raw.post).toHaveBeenCalledWith(expect.stringContaining('/reread/'), {})
+    // The form shows the new lines, not the empty ones it started with.
+    expect(await screen.findByLabelText('Description of line 1')).toHaveValue('Biryani')
+    expect(screen.queryByText(/No lines were read from this invoice/)).not.toBeInTheDocument()
   })
 
   it('hides and shows the receipt viewer', async () => {

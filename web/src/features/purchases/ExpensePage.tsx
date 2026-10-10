@@ -60,6 +60,7 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
   const [alerts, setAlerts] = useState(false)
   const [deleting, setDeleting] = useState(false)
   const reread = useRereadInvoice(clientId)
+  const [formTab, setFormTab] = useState<'details' | 'items'>('details')
   const [statement, setStatement] = useState(false)
   const [uploadingName, setUploadingName] = useState<string | null>(null)
   const [over, setOver] = useState(false)
@@ -247,10 +248,13 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
                 </p>
               )}
               <VoucherForm
-                key={`${itemId}-${bill?.id ?? ''}-${headLedger ?? ''}-${read ? 'r' : ''}`}
+                // Reading the file again changes what the form starts from, so it starts afresh from the new reading.
+                key={`${itemId}-${bill?.id ?? ''}-${headLedger ?? ''}-${read ? 'r' : ''}-${read?.items?.length ?? 0}-${read?.invoice_no ?? ''}-${reading?.kind ?? ''}-${read?.suggested_kind ?? ''}`}
                 clientId={clientId}
                 layout="page"
                 formId={formId}
+                tab={formTab}
+                onTabChange={setFormTab}
                 onReadAgain={reading?.status === 'OPEN' && mayPost && !bill ? () => void readAgain() : undefined}
                 readingAgain={reread.isPending}
                 prefill={prefill ?? undefined}

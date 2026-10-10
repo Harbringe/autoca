@@ -57,6 +57,24 @@ describe('Purchases & Sales as a list of receipts', () => {
     expect(within(table).getByRole('img', { name: /Alert: The client’s GSTIN is not on this file/ })).toBeInTheDocument()
   })
 
+  it('is a list of cards, not a table, on a phone', async () => {
+    const original = window.matchMedia
+    window.matchMedia = ((query: string) => ({
+      matches: query.includes('max-width: 639px'),
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    })) as unknown as typeof window.matchMedia
+    try {
+      renderIt()
+      const list = await screen.findByRole('list', { name: 'Purchases and sales' })
+      expect(within(list).getAllByRole('listitem').length).toBeGreaterThan(0)
+      expect(screen.queryByRole('table')).not.toBeInTheDocument()
+    } finally {
+      window.matchMedia = original
+    }
+  })
+
   it('narrows to purchases or to sales', async () => {
     renderIt()
     await userEvent.click(await screen.findByRole('tab', { name: /Sales/ }))

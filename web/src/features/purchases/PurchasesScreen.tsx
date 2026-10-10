@@ -25,6 +25,7 @@ import { useFy } from '@/features/shell/useFy'
 import { ACCEPT, ACCEPTED_NAME } from '@/lib/fileTypes'
 import { financialYearOf, formatDate, formatPaise, fyLabel, plural } from '@/lib/format'
 import { isPurchaseSide, KIND_LABEL, openPositions, type VoucherKind } from '@/lib/vouchers'
+import { useMediaQuery } from '@/lib/useMediaQuery'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { buildItems, type ListItem } from './model'
@@ -48,6 +49,7 @@ export function PurchasesScreen({ clientId }: { clientId: string }) {
   const [text, setText] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [processing, setProcessing] = useState<string[]>([])
+  const phone = useMediaQuery('(max-width: 639px)')
   const [dragging, setDragging] = useState(false)
   const [alerts, setAlerts] = useState(false)
   const [deleting, setDeleting] = useState<ListItem[] | null>(null)
@@ -248,6 +250,42 @@ export function PurchasesScreen({ clientId }: { clientId: string }) {
             </div>
           )}
 
+          {phone ? (
+            <ul aria-label="Purchases and sales" className="grid gap-2">
+              {processing.map((name) => (
+                <li key={`p-${name}`} aria-busy="true" className="rounded-lg border bg-card p-3 text-center text-sm text-muted-foreground">
+                  Processing {name}
+                </li>
+              ))}
+              {shown.map((item) => (
+                <li key={item.id}>
+                  <button
+                    type="button"
+                    onClick={() => open(item)}
+                    className={cn('grid w-full gap-1 rounded-lg border bg-card p-3 text-left hover:bg-hover', selected.has(item.id) && 'bg-hover')}
+                  >
+                    <span className="flex items-start justify-between gap-3">
+                      <span className="min-w-0 font-medium text-heading">{item.party}</span>
+                      <span className="num shrink-0 font-medium">{item.paise != null ? formatPaise(item.paise) : '—'}</span>
+                    </span>
+                    <span className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+                      <span>{item.date ? formatDate(item.date) : '—'}</span>
+                      <span>{item.kind ? (KIND_LABEL[item.kind] ?? item.kind) : 'Not known'}</span>
+                      {item.reference && <span className="num">{item.reference}</span>}
+                    </span>
+                    <span className="flex items-center gap-2">
+                      <Badge tone={item.tone}>{item.status}</Badge>
+                      {item.alerts.length > 0 && (
+                        <span className="inline-flex items-center gap-1 text-xs text-warning">
+                          <TriangleAlert className="size-3.5" aria-hidden /> {item.alerts[0]}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          ) : (
           <div className="overflow-x-auto rounded-lg border bg-card">
             <table className="w-full min-w-[56rem] text-sm">
               <caption className="sr-only">Purchases and sales, FY {fyLabel(fy)}</caption>
@@ -358,6 +396,7 @@ export function PurchasesScreen({ clientId }: { clientId: string }) {
               )}
             </table>
           </div>
+          )}
           {aside.length > 0 && (
             <button type="button" className="no-print w-fit text-sm text-muted-foreground underline" onClick={() => setShowAside((v) => !v)}>
               {showAside ? 'Hide' : 'Show'} {plural(aside.length, 'receipt')} set aside

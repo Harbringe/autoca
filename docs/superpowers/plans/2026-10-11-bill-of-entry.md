@@ -31,9 +31,9 @@ Failure modes the spec implies that no single task's happy path covers. Each has
 2. **The same BoE keyed twice, or the same number at a different port:** the first is refused as a duplicate, the second is a different document [Task 3].
 3. **A BoE dated inside signed-off books:** refused in words, nothing written [Task 3].
 4. **Removing a BoE that has payments:** refused unless payments are released; removing it removes the side record too, never leaves an orphan or a `ProtectedError` [Task 3].
-5. **A BoE in the generic bill screens:** it must not be revisable as a purchase (that would silently drop the duty split), must show a readable label, and must count as a payable [Task 4, Task 8, Task 9].
+5. **A BoE in the generic bill screens:** it must not be revisable as a purchase (that would silently drop the duty split), must count as a payable, and must not appear in the Purchases list, where a click would open a voucher page that cannot save it [Task 4, Task 9].
 6. **GSTR-2B import row with no BoE booked, and a BoE booked with no 2B row yet:** the first stays "verify against the bill of entry"; the second must read "not on 2B yet", not "invalid GSTIN" [Task 5].
-7. **A purchase from a foreign-flagged party for goods with no BoE in the period:** one open item, naming the invoice; a services-only import must not be flagged [Task 6].
+7. **A foreign-flagged goods purchase with no BoE near it, and a BoE with no foreign purchase near it:** one open item each, naming the document; a reverse-charge (services) import must not be flagged; a BoE assessed at a different figure from the invoice (exchange rate, CIF against FOB) must not be flagged merely for the difference [Task 6].
 8. **A payment equal to the open BoE amount from a bank row whose narration says only "ICEGATE" or "CUSTOMS":** settles automatically only when exactly one bill fits [Task 4].
 
 ## File Structure
@@ -254,7 +254,7 @@ from __future__ import annotations
 import datetime
 
 import pytest
-from django.db import IntegrityError, transaction
+from django.db import DatabaseError, IntegrityError, transaction
 
 from core.db.session import firm_context
 from core.tests.factories import FACTORIES
@@ -276,16 +276,36 @@ def test_a_bill_of_entry_is_a_credit_bill_and_keeps_its_side_record(firm):
 
 def test_a_bill_of_entry_with_a_negative_duty_is_refused_by_the_database(firm):
     with firm_context(firm.pk):
-        record = FACTORIES[BillOfEntry](firm)
+        template = FACTORIES[BillOfEntry](firm)
+        other = Bill.objects.create(
+            firm=firm, client=template.client, party=template.bill.party, kind=BillKind.IMPORT_DUTY, direction="CR",
+            reference="BOE-NEG", bill_date=datetime.date(2025, 6, 11), booked_on=datetime.date(2025, 6, 11),
+            financial_year=2025, taxable_paise=1, total_paise=1, invoice_key="n" * 64,
+        )
         with pytest.raises(IntegrityError), transaction.atomic():
-            BillOfEntry.objects.filter(pk=record.pk).update(igst_paise=-1)
+            BillOfEntry.objects.create(
+                firm=firm, client=template.client, bill=other, port_code="INBOM4", boe_number="1",
+                boe_date=datetime.date(2025, 6, 11), assessable_paise=100, igst_paise=-1,
+            )
 
 
-def test_the_bill_kind_constraint_still_refuses_a_debit_import_bill(firm):
+def test_the_bill_kind_constraint_refuses_a_debit_import_bill(firm):
+    # Inserted, not updated: a bill row is never updated (its trigger refuses first), so only an insert reaches the constraint.
+    with firm_context(firm.pk):
+        template = FACTORIES[BillOfEntry](firm)
+        with pytest.raises(IntegrityError), transaction.atomic():
+            Bill.objects.create(
+                firm=firm, client=template.client, party=template.bill.party, kind=BillKind.IMPORT_DUTY, direction="DR",
+                reference="BOE-DR", bill_date=datetime.date(2025, 6, 11), booked_on=datetime.date(2025, 6, 11),
+                financial_year=2025, taxable_paise=1, total_paise=1, invoice_key="d" * 64,
+            )
+
+
+def test_a_bill_of_entry_record_is_never_edited(firm):
     with firm_context(firm.pk):
         record = FACTORIES[BillOfEntry](firm)
-        with pytest.raises(IntegrityError), transaction.atomic():
-            Bill.objects.filter(pk=record.bill_id).update(direction="DR")
+        with pytest.raises(DatabaseError), transaction.atomic():
+            BillOfEntry.objects.filter(pk=record.pk).update(igst_paise=record.igst_paise + 1)
 ```
 
 (`firm` is the fixture defined in the shared conftest that `api/tests/conftest.py` builds `client_record` from.)
@@ -373,11 +393,65 @@ Then rename and fix so the files are exactly:
 Create `ledger/migrations/0035_bill_of_entry_security.py`:
 
 ```python
-"""Row-level security for Bills of Entry."""
+"""Row-level security for Bills of Entry, and the rules the books keep for them in the database.
+
+A Bill of Entry's figures must agree with the bill beside it, so they are never edited (the bill is never edited either);
+the record is removed only with its bill, and not from signed-off books; and it belongs to the same client as its bill.
+"""
 
 from django.db import migrations
 
 from core.db.rls import ddl_tenant_context_operations, rls_operations
+
+GUARD = """
+CREATE OR REPLACE FUNCTION app.ledger_bill_of_entry_guard()
+RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE
+    locked_through date;
+    bill_day       date;
+    bill_client    uuid;
+BEGIN
+    IF TG_OP = 'UPDATE' THEN
+        IF ROW(NEW.client_id, NEW.bill_id, NEW.port_code, NEW.boe_number, NEW.boe_date, NEW.assessable_paise,
+               NEW.bcd_paise, NEW.sws_paise, NEW.igst_paise, NEW.cess_paise)
+           IS DISTINCT FROM
+           ROW(OLD.client_id, OLD.bill_id, OLD.port_code, OLD.boe_number, OLD.boe_date, OLD.assessable_paise,
+               OLD.bcd_paise, OLD.sws_paise, OLD.igst_paise, OLD.cess_paise) THEN
+            RAISE EXCEPTION 'a Bill of Entry is never edited'
+                USING ERRCODE = '42501',
+                      HINT = 'Remove it and enter it again, before the books are signed off.';
+        END IF;
+        RETURN NEW;
+    END IF;
+
+    IF TG_OP = 'DELETE' THEN
+        SELECT signed_off_through INTO locked_through FROM core_client WHERE id = OLD.client_id;
+        SELECT booked_on INTO bill_day FROM ledger_bill WHERE id = OLD.bill_id;
+        IF bill_day IS NOT NULL AND locked_through IS NOT NULL AND bill_day <= locked_through THEN
+            RAISE EXCEPTION 'this Bill of Entry is dated %, inside books signed off through %', bill_day, locked_through
+                USING ERRCODE = '42501';
+        END IF;
+        RETURN OLD;
+    END IF;
+
+    SELECT client_id INTO bill_client FROM ledger_bill WHERE id = NEW.bill_id;
+    IF bill_client IS DISTINCT FROM NEW.client_id THEN
+        RAISE EXCEPTION 'a Bill of Entry and its bill must belong to the same client' USING ERRCODE = '23514';
+    END IF;
+    RETURN NEW;
+END;
+$$;
+
+DROP TRIGGER IF EXISTS ledger_bill_of_entry_guard ON ledger_bill_of_entry;
+CREATE TRIGGER ledger_bill_of_entry_guard
+    BEFORE INSERT OR UPDATE OR DELETE ON ledger_bill_of_entry
+    FOR EACH ROW EXECUTE FUNCTION app.ledger_bill_of_entry_guard();
+"""
+
+DROP = """
+DROP TRIGGER IF EXISTS ledger_bill_of_entry_guard ON ledger_bill_of_entry;
+DROP FUNCTION IF EXISTS app.ledger_bill_of_entry_guard();
+"""
 
 
 class Migration(migrations.Migration):
@@ -386,9 +460,9 @@ class Migration(migrations.Migration):
     operations = [
         *ddl_tenant_context_operations(),
         *rls_operations("ledger_bill_of_entry"),
+        migrations.RunSQL(GUARD, reverse_sql=DROP),
     ]
 ```
-
 - [ ] **Step 5: Add the factory**
 
 In `core/tests/factories.py` add `BillOfEntry` to the `ledger.models` import and, near `_bill`:
@@ -945,6 +1019,29 @@ In the book loop, change the invalid-GSTIN guard to leave imports alone:
 
 (Keep the body of that `if` exactly as it is; only its condition changes.) Everything after — duplicate, claimed-elsewhere, differences, ITC, missing-in-2B — then applies to the import as to any invoice.
 
+Compare an import on its tax heads only. What GSTR-2B puts in an import's taxable value (assessable value, or assessable plus duty) is not something the books can be sure of without a real file, and the credit, not the base, is what a person claims. In `_differences`, replace the head list:
+
+```python
+def _differences(book: Invoice, portal: Invoice) -> dict[str, int]:
+    """Heads where the two differ by more than the rounding tolerance. An import is compared on its tax heads only."""
+    heads = TAX_HEADS if book.section is Section.IMPG else ("taxable_paise", *TAX_HEADS)
+    diffs = {}
+    for head in heads:
+        delta = getattr(book, head) - getattr(portal, head)
+        if abs(delta) > TOLERANCE_PAISE:
+            diffs[head] = delta
+    return diffs
+```
+
+And add one more test to `gst/tests/test_matching_impg.py` (written in Step 1 above, so it fails first with the rest):
+
+```python
+def test_a_different_taxable_value_alone_does_not_stop_an_import_matching():
+    result = reconcile([book(taxable=10_00_000)], [portal(taxable=11_10_000)], period_start=JUNE)
+
+    assert kinds(result) == [MatchKind.MATCHED]
+```
+
 - [ ] **Step 4: Run to verify it passes**
 
 Run: `python -X utf8 -m pytest gst/tests/test_matching_impg.py gst/tests/test_matching.py -q`
@@ -1067,27 +1164,49 @@ def looks_foreign(fields: dict) -> bool:
 In `ledger/openitems.py`, after `purchases_not_in_the_register`:
 
 ```python
-@detector("boe_without_invoice", "A Bill of Entry with no supplier invoice that adds up to it")
-def bills_of_entry_without_an_invoice(client):
-    """The duty is booked but nothing shows the goods it was paid on: no purchase from a foreign supplier for that value."""
-    from ledger.models import BillOfEntry
+#: How far apart a Bill of Entry and the supplier invoice it was paid on may be dated. The two are never the same figure (the
+#: assessed value is converted at Customs' own rate and may be CIF where the invoice is FOB), so they are paired by supplier
+#: and by date, not by amount.
+BOE_WINDOW_DAYS = 60
 
-    for record in BillOfEntry.objects.filter(firm_id=client.firm_id, client=client).select_related("bill"):
-        invoice_exists = Bill.objects.filter(
+
+def _foreign_goods_purchases(client):
+    """Purchases from a party marked foreign that put something on a goods ledger. Reverse charge ones are services."""
+    from classify.models import LedgerGroup
+
+    goods = [LedgerGroup.PURCHASE, LedgerGroup.DIRECT_EXPENSE, LedgerGroup.FIXED_ASSET]
+    return (
+        Bill.objects.filter(
             firm_id=client.firm_id,
             client=client,
             kind=BillKind.PURCHASE,
             party__is_foreign=True,
-            taxable_paise=record.assessable_paise,
-        ).exists()
-        if invoice_exists:
+            rcm=False,
+            entry__lines__ledger_account__group__in=goods,
+        )
+        .distinct()
+        .select_related("party")
+    )
+
+
+@detector("boe_without_invoice", "A Bill of Entry with no foreign purchase booked near it")
+def bills_of_entry_without_an_invoice(client):
+    """The duty is booked but no purchase of goods from a foreign supplier is booked within weeks of it."""
+    import datetime
+
+    from ledger.models import BillOfEntry
+
+    window = datetime.timedelta(days=BOE_WINDOW_DAYS)
+    dates = [bill.bill_date for bill in _foreign_goods_purchases(client)]
+    for record in BillOfEntry.objects.filter(firm_id=client.firm_id, client=client):
+        if any(abs(date - record.boe_date) <= window for date in dates):
             continue
         yield OpenItem(
             kind="boe_without_invoice",
             client_id=client.pk,
             summary=(
-                f"Bill of Entry {record.boe_number} ({record.port_code}) was assessed at {format_inr(record.assessable_paise)}, "
-                f"but no purchase from a foreign supplier is booked for that value."
+                f"Bill of Entry {record.boe_number} ({record.port_code}) of {record.boe_date:%d-%m-%Y} has no purchase of "
+                f"goods from a foreign supplier booked near it, so the goods it was paid on are not in the books."
             ),
             amount_paise=record.assessable_paise,
             since=record.boe_date,
@@ -1097,26 +1216,17 @@ def bills_of_entry_without_an_invoice(client):
 
 @detector("import_invoice_without_boe", "An import invoice with no Bill of Entry")
 def import_invoices_without_a_bill_of_entry(client):
-    """A purchase of goods from a foreign supplier, with no Bill of Entry booked within a few weeks either side of it.
+    """A purchase of goods from a foreign supplier with no Bill of Entry booked within weeks of it.
 
-    Services are not covered: an import of services has no Bill of Entry (it is reverse charge).
+    Services are left out: an import of services is booked under reverse charge and has no Bill of Entry.
     """
     import datetime
 
-    from classify.models import LedgerGroup
     from ledger.models import BillOfEntry
 
-    goods = [LedgerGroup.PURCHASE, LedgerGroup.DIRECT_EXPENSE, LedgerGroup.FIXED_ASSET]
-    window = datetime.timedelta(days=60)
+    window = datetime.timedelta(days=BOE_WINDOW_DAYS)
     dates = list(BillOfEntry.objects.filter(firm_id=client.firm_id, client=client).values_list("boe_date", flat=True))
-    invoices = (
-        Bill.objects.filter(
-            firm_id=client.firm_id, client=client, kind=BillKind.PURCHASE, party__is_foreign=True, entry__lines__ledger_account__group__in=goods
-        )
-        .distinct()
-        .select_related("party")
-    )
-    for bill in invoices:
+    for bill in _foreign_goods_purchases(client):
         if any(abs(date - bill.bill_date) <= window for date in dates):
             continue
         yield OpenItem(
@@ -1168,13 +1278,58 @@ Make sure `BillKind` and `format_inr` are imported at the top of `ledger/openite
 Append to `api/tests/test_boe.py`:
 
 ```python
-def test_a_bill_of_entry_with_no_foreign_invoice_is_an_open_item(client_record, senior):
+def test_a_bill_of_entry_with_no_foreign_purchase_near_it_is_an_open_item(client_record, senior):
     from ledger import openitems
 
     with firm_context(client_record.firm_id):
         book(client_record, senior)
         kinds = [item.kind for item in openitems.open_items(client_record)]
         assert "boe_without_invoice" in kinds
+
+
+def test_a_foreign_goods_purchase_near_the_bill_of_entry_clears_both_items(api, client_record, senior):
+    from api.tests.test_bills import make_party, post_bill, voucher
+    from classify.models import Party
+    from ledger import openitems
+
+    supplier = make_party(api, client_record, name="Shenzhen Parts Ltd", gstin="")
+    purchases = make_ledger(api, client_record, "Import purchases", "PURCHASE")
+    with firm_context(client_record.firm_id):
+        Party.objects.filter(pk=supplier["id"]).update(is_foreign=True)
+        book(client_record, senior)
+    # Booked at a different figure from the assessed value, three weeks earlier, as it would be in practice.
+    posted = post_bill(
+        api,
+        client_record,
+        voucher(
+            supplier, purchases, bill_date="2025-05-20", cgst_paise=0, sgst_paise=0,
+            heads=[{"ledger": purchases["id"], "amount_paise": 9_00_000}],
+        ),
+    )
+    assert posted.status_code == 201, posted.content
+
+    with firm_context(client_record.firm_id):
+        kinds = [item.kind for item in openitems.open_items(client_record)]
+    assert "boe_without_invoice" not in kinds and "import_invoice_without_boe" not in kinds
+
+
+def test_a_reverse_charge_import_is_a_service_and_is_not_asked_for_a_bill_of_entry(api, client_record):
+    from api.tests.test_bills import make_party, post_bill, voucher
+    from classify.models import Party
+    from ledger import openitems
+
+    supplier = make_party(api, client_record, name="Cloud Services Inc", gstin="")
+    purchases = make_ledger(api, client_record, "Import purchases", "PURCHASE")
+    with firm_context(client_record.firm_id):
+        Party.objects.filter(pk=supplier["id"]).update(is_foreign=True)
+    posted = post_bill(
+        api, client_record, voucher(supplier, purchases, bill_date="2025-05-20", cgst_paise=0, sgst_paise=0, igst_paise=90_000, rcm=True)
+    )
+    assert posted.status_code == 201, posted.content
+
+    with firm_context(client_record.firm_id):
+        kinds = [item.kind for item in openitems.open_items(client_record)]
+    assert "import_invoice_without_boe" not in kinds
 ```
 
 - [ ] **Step 6: Run and commit**
@@ -1287,11 +1442,6 @@ def test_a_read_only_member_can_list_but_not_book(reader, client_record):
 
     assert reader.get(url).status_code == 200
     assert reader.post(url, boe_body(), format="json").status_code == 403
-
-
-def test_another_firm_cannot_see_these(client_record):
-    # Tenant isolation is gated by core/tests/test_rls_isolation.py through the BillOfEntry factory.
-    from core.tests.factories import FACTORIES  # noqa: F401
 ```
 
 (`reader` is defined in `api/tests/conftest.py`, so it needs no import.)
@@ -1456,8 +1606,6 @@ class BillOfEntryViewSet(
             document=document,
             narration=data["narration"],
         )
-        if document is not None:
-            invoice_intake.note_booked(document, bill, user=request.user)
         # A payment already on Customs' account for exactly this amount is its payment.
         invoice_intake.settle_payment(bill)
         record = self.get_queryset().get(bill=bill)
@@ -1516,6 +1664,7 @@ git commit -m "Bills of Entry API: book, list with settled and open, remove"
 **Files:**
 - Create: `web/src/features/purchases/BillOfEntryDialog.tsx`
 - Modify: `web/src/features/purchases/PurchasesScreen.tsx` (a button that opens it)
+- Modify: `web/src/features/purchases/model.ts` and `model.test.ts` (Bills of Entry are not rows of the purchases list)
 - Modify: `web/src/lib/vouchers.ts` (label and side for `IMPORT_DUTY`)
 - Modify: `web/src/features/masters/MastersScreen.tsx` (party checkbox)
 - Test: `web/src/features/purchases/BillOfEntryDialog.component.test.tsx`, `web/src/lib/vouchers.test.ts`
@@ -1575,6 +1724,23 @@ Create `web/src/features/purchases/BillOfEntryDialog.tsx`, modelled on `web/src/
 
 In `web/src/features/purchases/PurchasesScreen.tsx` add state `const [boeOpen, setBoeOpen] = useState(false)`, a secondary `Button` "Bill of Entry" beside the existing upload control (shown only when `can('journal.approve')`, the same check the screen already uses for booking), and `{boeOpen && <BillOfEntryDialog clientId={clientId} onClose={() => setBoeOpen(false)} />}` at the end of the component.
 
+A Bill of Entry must not appear as a row in this list: a click on it would open the purchase voucher page (`ExpensePage`), which is built for the four voucher kinds and cannot save one. They are listed and removed in the dialog instead. Add a failing test to `web/src/features/purchases/model.test.ts` first:
+
+```ts
+it('leaves Bills of Entry out of the purchases list', () => {
+  const boe = { id: 'b1', kind: 'IMPORT_DUTY', party_name: 'Customs (INBOM4)', bill_date: '2025-06-10', reference: '2345678', total_paise: 1, open_paise: 1 }
+  expect(buildItems([], [boe as never])).toEqual([])
+})
+```
+
+then, in `web/src/features/purchases/model.ts`, as the first line of `buildItems`:
+
+```ts
+  bills = bills.filter((b) => b.kind !== 'IMPORT_DUTY')
+```
+
+(change the parameter from a `const`-like binding if the linter objects: name the parameter `allBills` and write `const bills = allBills.filter(...)`). The dialog is also where a Bill of Entry's file would be linked; this slice has no file upload, so a Bill of Entry entered here shows the existing "no invoice file behind it" open item. That is accepted and listed as deferred; say so to the user.
+
 - [ ] **Step 6: The party checkbox**
 
 In `web/src/features/masters/MastersScreen.tsx` `PartyForm`: add `const [foreign, setForeign] = useState(party?.is_foreign ?? false)`, include `is_foreign: foreign` in `body`, and add beside the MSME checkbox:
@@ -1591,7 +1757,7 @@ Run: `cd web && npx tsc --noEmit && npx oxlint src`
 Expected: no errors.
 
 ```bash
-git add web/src/features/purchases/BillOfEntryDialog.tsx web/src/features/purchases/BillOfEntryDialog.component.test.tsx web/src/features/purchases/PurchasesScreen.tsx web/src/lib/vouchers.ts web/src/lib/vouchers.test.ts web/src/features/masters/MastersScreen.tsx
+git add web/src/features/purchases/BillOfEntryDialog.tsx web/src/features/purchases/BillOfEntryDialog.component.test.tsx web/src/features/purchases/PurchasesScreen.tsx web/src/features/purchases/model.ts web/src/features/purchases/model.test.ts web/src/lib/vouchers.ts web/src/lib/vouchers.test.ts web/src/features/masters/MastersScreen.tsx
 git commit -m "Screens: enter a Bill of Entry from Purchases, see what is settled; mark a supplier as foreign"
 ```
 
@@ -1605,7 +1771,7 @@ git commit -m "Screens: enter a Bill of Entry from Purchases, see what is settle
 
 - [ ] **Step 1: Update the spec to match the plan**
 
-In the spec: change the default landed-cost ledger to the existing standard ledger "Purchases"; state that the key is port + number (financial year already in the uniqueness constraint) and the date is not part of it; replace the party-screen foreign hint with the `party_looks_foreign` open item; remove the "customs payment with no BoE" detector bullet and list it under "Deferred": an open item for a customs payment that no BoE explains, needing a way to recognise such payments by narration when no party is set. Also list under "Deferred": ITC timing from `icegate_ref_date` (it is stored and shown, but the reconciliation does not yet use it), and the exact-value match of the supplier invoice (`boe_without_invoice` compares the assessable value with a foreign purchase's taxable value; a part-shipment or a freight-inclusive invoice will not match and is left to a person).
+In the spec: change the default landed-cost ledger to the existing standard ledger "Purchases"; state that the key is port + number (financial year already in the uniqueness constraint) and the date is not part of it; replace the party-screen foreign hint with the `party_looks_foreign` open item; remove the "customs payment with no BoE" detector bullet and list it under "Deferred": an open item for a customs payment that no BoE explains, needing a way to recognise such payments by narration when no party is set. Also list under "Deferred": ITC timing from `icegate_ref_date` (it is stored and shown, but the reconciliation does not yet use it), attaching the Bill of Entry file and reading it (the dialog has no upload, so each Bill of Entry shows the "no invoice file" open item until then), and pairing a Bill of Entry with its supplier invoice by value (they are paired by date within 60 days only, because the assessed value is at Customs' exchange rate and may be CIF against the invoice's FOB). In the spec also note that an unpaid Customs balance at year end sits in Trade payables because the party ledger is a creditor; statutory dues is arguably the right head, and the case is rare since duty is paid at clearance.
 
 - [ ] **Step 2: Full local verification**
 

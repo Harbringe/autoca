@@ -70,7 +70,7 @@ export function AlertBell({ clientId }: { clientId?: string }) {
         >
           <Bell className="size-[18px]" aria-hidden />
           {count > 0 && (
-            <span className="num absolute right-0.5 top-0.5 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-[10px] font-semibold leading-4 text-white">
+            <span className="num absolute right-0.5 top-0.5 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-xs font-semibold leading-4 text-white">
               {badgeText(count)}
             </span>
           )}

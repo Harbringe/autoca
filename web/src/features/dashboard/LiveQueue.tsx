@@ -55,7 +55,7 @@ export function LiveQueue() {
           <div className="flex items-center gap-2.5">
             <span className="relative flex size-2.5" aria-hidden="true"><span className="absolute inline-flex size-full animate-ping rounded-full bg-success opacity-50" /><span className="relative inline-flex size-2.5 rounded-full bg-success" /></span>
             <span className="text-sm font-semibold text-heading">Live operations</span>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">Auto-refreshes every 15 sec</span>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground">Auto-refreshes every 15 sec</span>
           </div>
           <div className="flex items-center gap-3 text-xs text-muted-foreground">
             <span>{updated ? `Updated ${formatDateTime(updated.toISOString())}` : 'Waiting for first update'}</span>

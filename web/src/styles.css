@@ -111,6 +111,12 @@
   --row-h: 1.875rem;
 }
 
+/* Small text was 12px and 11px in a hundred places, which is hard to read for hours on a laptop. One step up, in one place. */
+@theme {
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.2;
+}
+
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);

@@ -151,7 +151,7 @@ export function LedgerPicker({
             return (
               <li key={l.id} role="presentation" className="contents">
                 {heading && (
-                  <div role="presentation" className="sticky top-0 bg-popover px-2 pb-0.5 pt-1.5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  <div role="presentation" className="sticky top-0 bg-popover px-2 pb-0.5 pt-1.5 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
                     {group}
                   </div>
                 )}

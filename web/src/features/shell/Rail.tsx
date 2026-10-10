@@ -61,7 +61,7 @@ export function Rail({ onShortcuts }: { onShortcuts: () => void }) {
               {RAIL_ICONS[item.id]}
               <span>{item.label}</span>
               {count > 0 && (
-                <span className="num absolute right-1.5 top-1 grid min-w-4 place-items-center rounded-full bg-sidebar-chip px-1 text-[10px] font-semibold leading-4 text-sidebar-chip-foreground">
+                <span className="num absolute right-1.5 top-1 grid min-w-4 place-items-center rounded-full bg-sidebar-chip px-1 text-xs font-semibold leading-4 text-sidebar-chip-foreground">
                   {count > 99 ? '99+' : count}
                   <span className="sr-only"> need attention</span>
                 </span>

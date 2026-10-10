@@ -389,7 +389,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
                             </span>
                           )}
                           {proposedIds.has(r.ledger ?? '') && (
-                            <span className="shrink-0 rounded-sm bg-info-bg px-1 text-[11px] font-medium text-info" title="A new ledger the assistant added. A senior CA keeps it, renames it or merges it into an existing one.">
+                            <span className="shrink-0 rounded-sm bg-info-bg px-1 text-xs font-medium text-info" title="A new ledger the assistant added. A senior CA keeps it, renames it or merges it into an existing one.">
                               New
                             </span>
                           )}

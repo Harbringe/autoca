@@ -428,31 +428,31 @@ export function VoucherForm({
                           onChange={(e) => editLine(n, { description: e.target.value })}
                         />
                         {i.remembered && i.read_description && i.read_description !== i.description && (
-                          <div className="mt-0.5 text-[11px] text-muted-foreground" title={i.read_description}>
+                          <div className="mt-0.5 text-xs text-muted-foreground" title={i.read_description}>
                             Remembered wording; the invoice printed “{i.read_description.slice(0, 48)}{i.read_description.length > 48 ? '…' : ''}”
                           </div>
                         )}
                       </div>
                     </div>
                     <div className="grid grid-cols-3 gap-2 pl-7 sm:grid-cols-6">
-                      <label className="grid gap-0.5 text-[11px] text-muted-foreground">
+                      <label className="grid gap-0.5 text-xs text-muted-foreground">
                         HSN/SAC
                         <Input aria-label={`HSN/SAC of line ${n + 1}`} value={i.hsn_sac} onChange={(e) => editLine(n, { hsn_sac: e.target.value })} />
                       </label>
-                      <label className="grid gap-0.5 text-[11px] text-muted-foreground">
+                      <label className="grid gap-0.5 text-xs text-muted-foreground">
                         Quantity
                         <Input aria-label={`Quantity of line ${n + 1}`} inputMode="decimal" className="num text-right" value={i.quantity} onChange={(e) => editLine(n, { quantity: e.target.value })} />
                         {i.usual_quantity && i.usual_quantity !== i.quantity && (
-                          <button type="button" className="text-left text-[11px] text-primary underline" onClick={() => editLine(n, { quantity: i.usual_quantity ?? '' })}>
+                          <button type="button" className="text-left text-xs text-primary underline" onClick={() => editLine(n, { quantity: i.usual_quantity ?? '' })}>
                             Usually {i.usual_quantity}
                           </button>
                         )}
                       </label>
-                      <label className="grid gap-0.5 text-[11px] text-muted-foreground">
+                      <label className="grid gap-0.5 text-xs text-muted-foreground">
                         Unit
                         <Input aria-label={`Unit of line ${n + 1}`} value={i.unit} onChange={(e) => editLine(n, { unit: e.target.value })} />
                       </label>
-                      <label className="grid gap-0.5 text-[11px] text-muted-foreground">
+                      <label className="grid gap-0.5 text-xs text-muted-foreground">
                         Rate (₹)
                         <Input
                           aria-label={`Rate of line ${n + 1}`}
@@ -462,7 +462,7 @@ export function VoucherForm({
                           onBlur={(e) => editLine(n, { rate_paise: e.target.value.trim() ? parseRupees(e.target.value) : null })}
                         />
                       </label>
-                      <label className="grid gap-0.5 text-[11px] text-muted-foreground">
+                      <label className="grid gap-0.5 text-xs text-muted-foreground">
                         Amount (₹)
                         <Input
                           aria-label={`Amount of line ${n + 1}`}
@@ -472,7 +472,7 @@ export function VoucherForm({
                           onBlur={(e) => editLine(n, { amount_paise: e.target.value.trim() ? parseRupees(e.target.value) : null })}
                         />
                       </label>
-                      <div className="grid gap-0.5 text-[11px] text-muted-foreground" title={i.gst_rate_derived ? 'Worked out from the tax amounts; not printed on the line' : undefined}>
+                      <div className="grid gap-0.5 text-xs text-muted-foreground" title={i.gst_rate_derived ? 'Worked out from the tax amounts; not printed on the line' : undefined}>
                         GST %
                         <div className="num flex h-10 items-center justify-end px-1 text-sm text-foreground">
                           {i.gst_rate != null ? `${i.gst_rate}${i.gst_rate_derived ? '*' : ''}` : '—'}

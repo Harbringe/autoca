@@ -137,7 +137,7 @@ function SwitcherBody({ currentId, close }: { currentId: string; close: () => vo
           <ul id={listId} role="listbox" aria-label="Clients">
             {groups.map((group) => (
               <li key={group} role="presentation">
-                <div className="px-3.5 pb-1 pt-2.5 text-[11px] font-medium uppercase tracking-[0.06em] text-muted-foreground">{group}</div>
+                <div className="px-3.5 pb-1 pt-2.5 text-xs font-medium uppercase tracking-[0.06em] text-muted-foreground">{group}</div>
                 <ul role="presentation">
                   {options
                     .filter((o) => o.group === group)

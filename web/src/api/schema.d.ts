@@ -2590,6 +2590,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/journal-entries/{id}/rectify/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Rectify an entry inside signed-off books
+         * @description Sealed books are not edited. This posts a journal, dated after the sign-off, that moves an amount from the wrong ledger to the right one; the original stays as it was and its change log records the rectification. Only the client's lead or a firm administrator may do it, a reason is required, and party and bank/cash ledgers are refused (those are put right through allocations or the statement).
+         */
+        post: operations["journal_entries_rectify_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/journal-entries/{id}/remove/": {
         parameters: {
             query?: never;
@@ -4220,9 +4240,10 @@ export interface components {
          *     * `REMOVED` - Entry removed
          *     * `AI_REVISED` - Revised by the AI after a correction
          *     * `RENUMBERED` - Voucher renumbered at sign-off
+         *     * `RECTIFIED` - Rectified by a journal after sign-off
          * @enum {string}
          */
-        EntryChangeActionEnum: "EDITED" | "REMOVED" | "AI_REVISED" | "RENUMBERED";
+        EntryChangeActionEnum: "EDITED" | "REMOVED" | "AI_REVISED" | "RENUMBERED" | "RECTIFIED";
         /**
          * @description * `BANK` - Posted from a bank statement row
          *     * `VOUCHER` - A purchase, sales or note voucher
@@ -6612,6 +6633,26 @@ export interface components {
         RecategorizeRequest: {
             /** Format: uuid */
             statement?: string | null;
+        };
+        RectifyRequest: {
+            /**
+             * Format: uuid
+             * @description The ledger the entry put the amount on, wrongly.
+             */
+            from_ledger: string;
+            /**
+             * Format: uuid
+             * @description The ledger it belongs on.
+             */
+            to_ledger: string;
+            amount_paise: number;
+            /** @description Written into the journal's narration and the change log. */
+            reason: string;
+            /**
+             * Format: date
+             * @description Defaults to today. Must be after the sign-off date.
+             */
+            date?: string;
         };
         Registration: {
             /** Format: uuid */
@@ -12448,6 +12489,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Settled"];
+                };
+            };
+        };
+    };
+    journal_entries_rectify_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RectifyRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["RectifyRequest"];
+                "multipart/form-data": components["schemas"]["RectifyRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["JournalEntry"];
                 };
             };
         };

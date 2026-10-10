@@ -25,6 +25,7 @@ from api.serializers.ledger import (
     EntryChangeSerializer,
     JournalEntrySerializer,
     ProfitAndLossSerializer,
+    RectifySerializer,
     RemoveEntrySerializer,
     TrialBalanceSerializer,
 )
@@ -44,6 +45,7 @@ from core.access import can_post, get_visible_client, posting_refusal, visible_c
 from core.fy import financial_year
 from core.money import format_inr
 from ledger import billing, nce, nce_export
+from ledger import rectify as rectifying
 from ledger import settlement as settling
 from ledger.approval import approve_many, correct
 from ledger.editing import remove_entry, require_bank_entry
@@ -158,6 +160,35 @@ class JournalEntryViewSet(
         return Response(
             JournalEntrySerializer(corrected).data, status=status.HTTP_201_CREATED
         )
+
+    @extend_schema(
+        summary="Rectify an entry inside signed-off books",
+        description=(
+            "Sealed books are not edited. This posts a journal, dated after the sign-off, that moves an amount from the wrong "
+            "ledger to the right one; the original stays as it was and its change log records the rectification. Only the "
+            "client's lead or a firm administrator may do it, a reason is required, and party and bank/cash ledgers are "
+            "refused (those are put right through allocations or the statement)."
+        ),
+        request=RectifySerializer,
+        responses={201: JournalEntrySerializer},
+    )
+    @action(detail=True, methods=["post"], permission_classes=[CanApprove])
+    def rectify(self, request, pk=None):
+        entry = self.get_object()
+        payload = RectifySerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        data = payload.validated_data
+        scope = {"firm_id": request.firm.pk, "client": entry.client}
+        journal = rectifying.rectify(
+            entry,
+            from_ledger=get_object_or_404(LedgerAccount, pk=data["from_ledger"], **scope),
+            to_ledger=get_object_or_404(LedgerAccount, pk=data["to_ledger"], **scope),
+            amount_paise=data["amount_paise"],
+            reason=data["reason"],
+            membership=request.membership,
+            on=data.get("date"),
+        )
+        return Response(JournalEntrySerializer(journal).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(
         summary="Remove an entry from the working books",

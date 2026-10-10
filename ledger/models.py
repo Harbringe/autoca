@@ -315,6 +315,7 @@ class ChangeAction(models.TextChoices):
     REMOVED = "REMOVED", "Entry removed"
     AI_REVISED = "AI_REVISED", "Revised by the AI after a correction"
     RENUMBERED = "RENUMBERED", "Voucher renumbered at sign-off"
+    RECTIFIED = "RECTIFIED", "Rectified by a journal after sign-off"
 
 
 class EntryChange(UUIDModel, FirmScopedModel):

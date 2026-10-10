@@ -71,6 +71,7 @@ DOMAIN_ERRORS = {
     # Purchase and sales vouchers, bills and their settlement. Both are things a person can fix.
     "BillingError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "billing_rule"),
     "IntakeError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "invoice_intake"),
+    "RectifyError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "rectify_rule"),
     "AssetError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "asset_rule"),
     "TdsError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "tds_rule"),
     "PayrollError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "payroll_rule"),

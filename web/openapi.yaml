@@ -5522,6 +5522,46 @@ paths:
               schema:
                 $ref: '#/components/schemas/Settled'
           description: ''
+  /api/v1/journal-entries/{id}/rectify/:
+    post:
+      operationId: journal_entries_rectify_create
+      description: Sealed books are not edited. This posts a journal, dated after
+        the sign-off, that moves an amount from the wrong ledger to the right one;
+        the original stays as it was and its change log records the rectification.
+        Only the client's lead or a firm administrator may do it, a reason is required,
+        and party and bank/cash ledgers are refused (those are put right through allocations
+        or the statement).
+      summary: Rectify an entry inside signed-off books
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RectifyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RectifyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RectifyRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/JournalEntry'
+          description: ''
   /api/v1/journal-entries/{id}/remove/:
     post:
       operationId: journal_entries_remove_create
@@ -8972,12 +9012,14 @@ components:
       - REMOVED
       - AI_REVISED
       - RENUMBERED
+      - RECTIFIED
       type: string
       description: |-
         * `EDITED` - Ledger changed
         * `REMOVED` - Entry removed
         * `AI_REVISED` - Revised by the AI after a correction
         * `RENUMBERED` - Voucher renumbered at sign-off
+        * `RECTIFIED` - Rectified by a journal after sign-off
     EntryKindEnum:
       enum:
       - BANK
@@ -13861,6 +13903,34 @@ components:
           type: string
           format: uuid
           nullable: true
+    RectifyRequest:
+      type: object
+      properties:
+        from_ledger:
+          type: string
+          format: uuid
+          description: The ledger the entry put the amount on, wrongly.
+        to_ledger:
+          type: string
+          format: uuid
+          description: The ledger it belongs on.
+        amount_paise:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+          minLength: 1
+          description: Written into the journal's narration and the change log.
+          maxLength: 300
+        date:
+          type: string
+          format: date
+          description: Defaults to today. Must be after the sign-off date.
+      required:
+      - amount_paise
+      - from_ledger
+      - reason
+      - to_ledger
     Registration:
       type: object
       properties:

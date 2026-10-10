@@ -24,10 +24,12 @@ import { Button } from '@/components/ui/button'
 import { Checkbox, Textarea } from '@/components/ui/controls'
 import { DataTable, type Column } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DateInput } from '@/components/ui/date-input'
+import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { LedgerPicker, usableLedgers } from '@/features/review/LedgerPicker'
-import { formatDate, formatDateTime, formatPaise, fyLabel, plural } from '@/lib/format'
+import { formatDate, formatDateTime, formatPaise, fyLabel, parseRupees, plural } from '@/lib/format'
 import { useFy } from '@/features/shell/useFy'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
@@ -216,6 +218,12 @@ function EntryDialog({ clientId, entry, onClose }: { clientId: string; entry: Jo
   const invalidate = useInvalidateClient(clientId)
   const [correcting, setCorrecting] = useState(false)
   const [removing, setRemoving] = useState(false)
+  const [rectifying, setRectifying] = useState(false)
+  const [fromLedger, setFromLedger] = useState<string>(entry.lines[0]?.ledger_account ?? '')
+  const [toLedger, setToLedger] = useState<string | null>(null)
+  const [amount, setAmount] = useState('')
+  const [reason, setReason] = useState('')
+  const [rectDate, setRectDate] = useState(new Date().toISOString().slice(0, 10))
 
   const bankNames = new Set((accounts.data?.results ?? []).map((a) => a.ledger_name ?? ''))
   const sourceBank = entry.lines.find((l) => bankNames.has(l.ledger_name))?.ledger_name
@@ -227,6 +235,23 @@ function EntryDialog({ clientId, entry, onClose }: { clientId: string; entry: Jo
   // A purchase, sales or note voucher has no bank row, so it is changed through its bill, not by the bank-entry correction.
   const isVoucher = entry.entry_kind !== 'BANK'
   const mayEdit = !isVoucher && can('journal.correct') && !!client.data?.can_post && (!entry.is_locked || !!client.data?.can_sign_off)
+
+  const mayRectify = entry.is_locked && can('journal.correct') && !!client.data?.can_sign_off
+
+  async function rectify() {
+    const paise = parseRupees(amount)
+    if (!paise || paise <= 0 || !toLedger) return
+    try {
+      await raw.post(`${V1}/journal-entries/${entry.id}/rectify/`, {
+        from_ledger: fromLedger, to_ledger: toLedger, amount_paise: paise, reason, date: rectDate,
+      })
+      await invalidate()
+      toast.success('Rectifying journal posted; the original entry is unchanged')
+      onClose()
+    } catch (e) {
+      toast.error(messageOf(e))
+    }
+  }
 
   async function correct() {
     try {
@@ -342,6 +367,37 @@ function EntryDialog({ clientId, entry, onClose }: { clientId: string; entry: Jo
               <Button onClick={() => setCorrecting(true)}>Correct</Button>
             </div>
           )
+          )
+        )}
+
+        {mayRectify && (
+          rectifying ? (
+            <div className="grid gap-3 rounded-md border p-3">
+              <p className="text-sm text-muted-foreground">
+                This entry is in signed-off books and will not be changed. A journal dated after the sign-off moves the amount to the right ledger.
+              </p>
+              <Field label="Move from">
+                {(p) => (
+                  <select {...p} className="h-9 rounded-md border bg-background px-2 text-sm" value={fromLedger} onChange={(e) => setFromLedger(e.target.value)}>
+                    {entry.lines.map((l) => (
+                      <option key={l.id} value={l.ledger_account}>{l.ledger_name} ({l.direction === 'DR' ? 'debit' : 'credit'} {formatPaise(l.amount_paise)})</option>
+                    ))}
+                  </select>
+                )}
+              </Field>
+              <LedgerPicker clientId={clientId} ledgers={usableLedgers(ledgers.data, sourceBank)} value={toLedger} onChange={setToLedger} label="Move to ledger" />
+              <Field label="Amount (₹)">{(p) => <Input {...p} inputMode="decimal" value={amount} onChange={(e) => setAmount(e.target.value)} />}</Field>
+              <Field label="Date of the journal">{(p) => <DateInput {...p} value={rectDate} onChange={(e) => setRectDate(e.target.value)} />}</Field>
+              <Field label="Why">{(p) => <Textarea {...p} value={reason} onChange={(e) => setReason(e.target.value)} />}</Field>
+              <div className="flex justify-end gap-2">
+                <Button variant="ghost" onClick={() => setRectifying(false)}>Cancel</Button>
+                <Button onClick={() => void rectify()} disabled={!toLedger || !parseRupees(amount) || reason.trim().length < 5}>Post journal</Button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex justify-end">
+              <Button variant="outline" onClick={() => setRectifying(true)}>Rectify by journal</Button>
+            </div>
           )
         )}
 

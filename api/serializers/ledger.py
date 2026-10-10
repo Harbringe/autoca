@@ -114,6 +114,14 @@ class RemoveEntrySerializer(serializers.Serializer):
     )
 
 
+class RectifySerializer(serializers.Serializer):
+    from_ledger = serializers.UUIDField(help_text="The ledger the entry put the amount on, wrongly.")
+    to_ledger = serializers.UUIDField(help_text="The ledger it belongs on.")
+    amount_paise = serializers.IntegerField(min_value=1)
+    reason = serializers.CharField(max_length=300, help_text="Written into the journal's narration and the change log.")
+    date = serializers.DateField(required=False, help_text="Defaults to today. Must be after the sign-off date.")
+
+
 class EntryChangeSerializer(serializers.ModelSerializer):
     action_display = serializers.CharField(source="get_action_display", read_only=True)
     actor_email = serializers.CharField(source="actor.email", read_only=True, allow_null=True)

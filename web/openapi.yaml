@@ -4727,6 +4727,75 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/clients/{client_id}/tds/return/:
+    get:
+      operationId: clients_tds_return_retrieve
+      description: 'Deductees, challans and the things to look at: a deductee with
+        no PAN, a late deposit, a late return. Read from the books; nothing is filed.
+        Interest and fee are estimates.'
+      summary: The data a quarter's TDS return (Form 26Q) is filed from
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: The calendar year the financial year starts in (2025 for 2025-26).
+      - in: query
+        name: quarter
+        schema:
+          type: integer
+        description: 1 is April to June.
+      tags:
+      - tds
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TdsReturn'
+          description: ''
+  /api/v1/clients/{client_id}/tds/return/export/:
+    get:
+      operationId: clients_tds_return_export_retrieve
+      description: The challans recorded for a client's TDS deposits.
+      summary: The quarter's TDS return data as an Excel file
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: The calendar year the financial year starts in (2025 for 2025-26).
+      - in: query
+        name: quarter
+        schema:
+          type: integer
+        description: 1 is April to June.
+      tags:
+      - tds
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
+          description: ''
   /api/v1/clients/{client_id}/tds/summary/:
     get:
       operationId: clients_tds_summary_retrieve
@@ -14416,6 +14485,71 @@ components:
           maxLength: 1000
       required:
       - note
+    ReturnChallan:
+      type: object
+      properties:
+        section:
+          type: string
+        bsr_code:
+          type: string
+        serial:
+          type: string
+        paid_on:
+          type: string
+          format: date
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - amount_paise
+      - bsr_code
+      - paid_on
+      - section
+      - serial
+    ReturnDeductee:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        party:
+          type: string
+        pan:
+          type: string
+          description: Blank when the party has no GSTIN on file to read it from.
+        section:
+          type: string
+        paid_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: The amount the deduction was made on (the bill's taxable value).
+        rate:
+          type: number
+          format: double
+        deducted_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        voucher:
+          type: string
+      required:
+      - date
+      - deducted_paise
+      - paid_paise
+      - pan
+      - party
+      - rate
+      - section
+      - voucher
     ReviewBandEnum:
       enum:
       - HIGH
@@ -16288,6 +16422,65 @@ components:
       - amount_paise
       - entry
       - entry_date
+    TdsReturn:
+      type: object
+      properties:
+        financial_year:
+          type: integer
+        quarter:
+          type: integer
+        due:
+          type: string
+          format: date
+        deducted_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        deposited_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        interest_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Estimated interest on late or missing deposits.
+        fee_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Estimated section 234E fee if the return is past its due date.
+        warnings:
+          type: array
+          items:
+            type: string
+        deductees:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReturnDeductee'
+        challans:
+          type: array
+          items:
+            $ref: '#/components/schemas/ReturnChallan'
+      required:
+      - challans
+      - deducted_paise
+      - deductees
+      - deposited_paise
+      - due
+      - fee_paise
+      - financial_year
+      - interest_paise
+      - quarter
+      - warnings
     TdsSectionEnum:
       enum:
       - '192'

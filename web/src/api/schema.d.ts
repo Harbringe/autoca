@@ -2123,6 +2123,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/tds/return/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The data a quarter's TDS return (Form 26Q) is filed from
+         * @description Deductees, challans and the things to look at: a deductee with no PAN, a late deposit, a late return. Read from the books; nothing is filed. Interest and fee are estimates.
+         */
+        get: operations["clients_tds_return_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/tds/return/export/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The quarter's TDS return data as an Excel file
+         * @description The challans recorded for a client's TDS deposits.
+         */
+        get: operations["clients_tds_return_export_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/tds/summary/": {
         parameters: {
             query?: never;
@@ -6904,6 +6944,39 @@ export interface components {
             /** @description Why -- shown to whoever reads the history. */
             note: string;
         };
+        ReturnChallan: {
+            section: string;
+            bsr_code: string;
+            serial: string;
+            /** Format: date */
+            paid_on: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            amount_paise: number;
+        };
+        ReturnDeductee: {
+            /** Format: date */
+            date: string;
+            party: string;
+            /** @description Blank when the party has no GSTIN on file to read it from. */
+            pan: string;
+            section: string;
+            /**
+             * Format: int64
+             * @description The amount the deduction was made on (the bill's taxable value).
+             */
+            paid_paise: number;
+            /** Format: double */
+            rate: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            deducted_paise: number;
+            voucher: string;
+        };
         /**
          * @description * `HIGH` - High confidence -- bulk approvable
          *     * `ADVISED` - Review advised
@@ -7921,6 +7994,35 @@ export interface components {
              */
             amount_paise: number;
             amount_display: string;
+        };
+        TdsReturn: {
+            financial_year: number;
+            quarter: number;
+            /** Format: date */
+            due: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            deducted_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            deposited_paise: number;
+            /**
+             * Format: int64
+             * @description Estimated interest on late or missing deposits.
+             */
+            interest_paise: number;
+            /**
+             * Format: int64
+             * @description Estimated section 234E fee if the return is past its due date.
+             */
+            fee_paise: number;
+            warnings: string[];
+            deductees: components["schemas"]["ReturnDeductee"][];
+            challans: components["schemas"]["ReturnChallan"][];
         };
         /**
          * @description * `192` - 192 -- Salary
@@ -11847,6 +11949,58 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    clients_tds_return_retrieve: {
+        parameters: {
+            query?: {
+                /** @description The calendar year the financial year starts in (2025 for 2025-26). */
+                fy?: number;
+                /** @description 1 is April to June. */
+                quarter?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TdsReturn"];
+                };
+            };
+        };
+    };
+    clients_tds_return_export_retrieve: {
+        parameters: {
+            query?: {
+                /** @description The calendar year the financial year starts in (2025 for 2025-26). */
+                fy?: number;
+                /** @description 1 is April to June. */
+                quarter?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
+                };
             };
         };
     };

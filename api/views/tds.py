@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import datetime
 
+from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema
-from rest_framework import mixins, status, viewsets
+from drf_spectacular.utils import OpenApiParameter, extend_schema
+from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
@@ -15,11 +16,13 @@ from api.permissions import CanApprove, HasFirmPermission
 from api.serializers.tds import (
     ChallanCreateSerializer,
     ChallanSerializer,
+    TdsReturnSerializer,
     TdsSummarySerializer,
+    return_payload,
     summary_payload,
 )
 from api.views.base import ClientScopedMixin
-from ledger import tds
+from ledger import tds, tds_return
 from ledger.models import JournalEntry, TdsChallan
 
 
@@ -44,6 +47,46 @@ class TdsChallanViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.CreateM
     def summary(self, request, client_id=None):
         payload = summary_payload(tds.position(self.client), tds.payments_without_challan(self.client), datetime.date.today())
         return Response(TdsSummarySerializer(payload).data)
+
+    def _pack(self, request):
+        try:
+            year, quarter = int(request.query_params["fy"]), int(request.query_params["quarter"])
+        except (KeyError, ValueError):
+            raise serializers.ValidationError({"detail": "Give fy (the year the financial year starts) and quarter (1 to 4)."}) from None
+        return tds_return.build(self.client, year, quarter)
+
+    _PARAMS = [
+        OpenApiParameter("fy", int, description="The calendar year the financial year starts in (2025 for 2025-26)."),
+        OpenApiParameter("quarter", int, description="1 is April to June."),
+    ]
+
+    @extend_schema(
+        summary="The data a quarter's TDS return (Form 26Q) is filed from",
+        description=(
+            "Deductees, challans and the things to look at: a deductee with no PAN, a late deposit, a late return. "
+            "Read from the books; nothing is filed. Interest and fee are estimates."
+        ),
+        parameters=_PARAMS,
+        responses={200: TdsReturnSerializer},
+    )
+    @action(detail=False, methods=["get"], url_path="return", pagination_class=None)
+    def tds_return(self, request, client_id=None):
+        return Response(TdsReturnSerializer(return_payload(self._pack(request))).data)
+
+    @extend_schema(
+        summary="The quarter's TDS return data as an Excel file",
+        parameters=_PARAMS,
+        responses={(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"): bytes},
+    )
+    @action(detail=False, methods=["get"], url_path="return/export", pagination_class=None)
+    def tds_return_export(self, request, client_id=None):
+        pack = self._pack(request)
+        response = HttpResponse(
+            tds_return.workbook(self.client, pack),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        response["Content-Disposition"] = f'attachment; filename="tds-26Q-FY{pack.financial_year}-Q{pack.quarter}.xlsx"'
+        return response
 
     @extend_schema(
         summary="Record the challan for a deposit",

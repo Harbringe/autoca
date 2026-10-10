@@ -76,3 +76,56 @@ def summary_payload(months, payments, today) -> dict:
             {"entry": e.pk, "entry_date": e.entry_date, "amount_paise": a, "amount_display": format_inr(a)} for e, a in payments
         ],
     }
+
+
+class ReturnDeducteeSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    party = serializers.CharField()
+    pan = serializers.CharField(help_text="Blank when the party has no GSTIN on file to read it from.")
+    section = serializers.CharField()
+    paid_paise = PaiseField(help_text="The amount the deduction was made on (the bill's taxable value).")
+    rate = serializers.FloatField()
+    deducted_paise = PaiseField()
+    voucher = serializers.CharField()
+
+
+class ReturnChallanSerializer(serializers.Serializer):
+    section = serializers.CharField()
+    bsr_code = serializers.CharField()
+    serial = serializers.CharField()
+    paid_on = serializers.DateField()
+    amount_paise = PaiseField()
+
+
+class TdsReturnSerializer(serializers.Serializer):
+    financial_year = serializers.IntegerField()
+    quarter = serializers.IntegerField()
+    due = serializers.DateField()
+    deducted_paise = PaiseField()
+    deposited_paise = PaiseField()
+    interest_paise = PaiseField(help_text="Estimated interest on late or missing deposits.")
+    fee_paise = PaiseField(help_text="Estimated section 234E fee if the return is past its due date.")
+    warnings = serializers.ListField(child=serializers.CharField())
+    deductees = ReturnDeducteeSerializer(many=True)
+    challans = ReturnChallanSerializer(many=True)
+
+
+def return_payload(pack) -> dict:
+    return {
+        "financial_year": pack.financial_year,
+        "quarter": pack.quarter,
+        "due": pack.due,
+        "deducted_paise": pack.deducted_paise,
+        "deposited_paise": pack.deposited_paise,
+        "interest_paise": pack.interest_paise,
+        "fee_paise": pack.fee_paise,
+        "warnings": pack.warnings,
+        "deductees": [
+            {
+                "date": d.date, "party": d.party, "pan": d.pan, "section": d.section, "paid_paise": d.paid_paise,
+                "rate": d.rate, "deducted_paise": d.deducted_paise, "voucher": d.voucher,
+            }
+            for d in pack.deductees
+        ],
+        "challans": pack.challans,
+    }

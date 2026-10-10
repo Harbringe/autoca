@@ -95,3 +95,15 @@ def test_a_party_account_and_a_reason_less_request_are_refused(api, client_recor
 
     assert no_reason.status_code == 422 and "why" in no_reason.json()["detail"]
     assert party.status_code == 422
+
+
+def test_the_tds_return_pack_is_empty_without_deductions_and_wants_its_parameters(api, client_record):
+    url = f"{base(client_record)}/tds/return/"
+
+    empty = api.get(url, {"fy": 2025, "quarter": 1})
+    export = api.get(f"{url}export/", {"fy": 2025, "quarter": 1})
+    missing = api.get(url)
+
+    assert empty.status_code == 200 and empty.json()["deductees"] == [] and empty.json()["due"] == "2025-07-31"
+    assert export.status_code == 200 and export.content[:2] == b"PK"
+    assert missing.status_code == 400

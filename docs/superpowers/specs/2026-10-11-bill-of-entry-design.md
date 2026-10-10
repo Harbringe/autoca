@@ -49,6 +49,15 @@ New table rules (project standing rules): its own RLS migration via `ddl_tenant_
 One supplier `Party` per client, named "Customs (<port code>)", created on first use. It never adopts a same-name party (existing
 rule for auto-created parties). Its ledger is the party ledger of the bill, so settled-so-far is the ordinary party position.
 
+### Foreign party flag
+
+`Party.is_foreign = BooleanField(default=False, db_default=False)` in `classify/models.py`, one migration (adding a column needs
+no RLS change). It follows the `msme` flag beside it: set by a person on the party form, shown on the party screen, exposed in
+the party serializer, never guessed. The Customs party is not foreign (it is the Indian customs authority).
+
+What it is used for in this slice: only the `import_invoice_without_boe` open item. It is also what later work needs (TDS
+section 195 and reverse charge on imported services), but those are not part of this slice.
+
 ### Identity
 
 `core.identity.invoice_key(firm, "BOE:<port_code>", boe_number)`: port + number, with the date checked alongside, not a supplier
@@ -85,9 +94,11 @@ the Customs party is expected to land on a BoE, and surface it as "customs payme
 ## Ties to the rest (no islands)
 
 1. **Supplier invoice cross-check.** The BoE's `assessable_paise` is compared with import purchase invoices of the client in the
-   same period. New open item `boe_without_invoice`: no purchase invoice with that assessable value. The reverse (an import
-   invoice with no BoE) is not raised in this slice, because a domestic purchase is not an import and the Party model has no
-   "foreign" flag to tell them apart; revisit when it has one.
+   same period. Two open items:
+   - `boe_without_invoice`: no purchase invoice with that assessable value.
+   - `import_invoice_without_boe`: a purchase from a party flagged foreign (see "Foreign party flag") whose heads include a
+     goods head (purchases, stock or fixed asset ledger group) and for which no BoE exists in the period. Services are
+     exempt: an import of services has no BoE (it is reverse charge). The tolerance on "same period" is a planning detail.
 2. **GSTR-2B.** `gst/books.py::load_register_from_books` currently selects only `PURCHASE`/`DEBIT_NOTE`, so a BoE stays out of
    the B2B register by default. Extend it to emit `IMPORT_DUTY` bills as `Section.IMPG` rows, and make `gst/matching.py`
    match an `IMPG` book row to the portal `IMPG` row (today `_portal_credit` treats `IMPG` as portal-only). Mismatch in IGST

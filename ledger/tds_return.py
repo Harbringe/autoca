@@ -231,7 +231,7 @@ def workbook(client, pack: Pack) -> bytes:
     for cell in ded[1]:
         cell.font = bold
     for d in pack.deductees:
-        ded.append([d.date, _safe_cell(d.party), d.pan or "PANNOTAVBL", d.section, d.paid_paise / 100, d.rate, d.deducted_paise / 100, d.voucher])
+        ded.append([d.date, _safe_cell(d.party), _safe_cell(d.pan or "PANNOTAVBL"), _safe_cell(d.section), d.paid_paise / 100, d.rate, d.deducted_paise / 100, _safe_cell(d.voucher)])
     for row in ded.iter_rows(min_row=2, min_col=1, max_col=1):
         row[0].number_format = "dd-mm-yyyy"
     for col in ("E", "G"):
@@ -243,7 +243,7 @@ def workbook(client, pack: Pack) -> bytes:
     for cell in chal[1]:
         cell.font = bold
     for c in pack.challans:
-        chal.append([c["section"], c["bsr_code"], c["serial"], c["paid_on"], c["amount_paise"] / 100])
+        chal.append([_safe_cell(c["section"]), _safe_cell(c["bsr_code"]), _safe_cell(c["serial"]), c["paid_on"], c["amount_paise"] / 100])
     for row in chal.iter_rows(min_row=2, min_col=4, max_col=4):
         row[0].number_format = "dd-mm-yyyy"
     for cell in chal["E"][1:]:

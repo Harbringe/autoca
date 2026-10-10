@@ -16,6 +16,7 @@ of agents from harming the one thing they cannot rebuild: the shared database.
 | `senior-ca-reviewer` | sonnet | A Senior CA who signs the books, through screens and API | No |
 | `backend-dev` | sonnet | Django fixes and features (everything outside `web/`) | Yes |
 | `frontend-dev` | sonnet | React/Vite fixes and features (`web/src` only) | Yes |
+| `data-analyst` | sonnet | Dashboard and report visualisation: audits the running site read-only, rebuilds charts (`web/src` dashboards, reports, charts only) | Yes |
 
 Agents cannot talk to each other. They talk through files and through the
 orchestrator, who is the only one that dispatches anyone. Start the team with

@@ -9638,6 +9638,12 @@ components:
     InvoiceUploadRequest:
       type: object
       properties:
+        password:
+          type: string
+          writeOnly: true
+          description: Only for a password-protected PDF. It opens the file for this
+            one request and is not kept; the file is saved as it came.
+          maxLength: 128
         file:
           type: string
           format: binary
@@ -15333,6 +15339,13 @@ components:
         a dropdown is one more way to file a statement against the wrong account,
         and the statement itself is the authority on which account it belongs to.
       properties:
+        password:
+          type: string
+          writeOnly: true
+          description: 'Only for a password-protected PDF. It opens the file for this
+            one request: it is not stored, logged or kept, and the file is saved as
+            it came, still locked.'
+          maxLength: 128
         file:
           type: string
           format: binary

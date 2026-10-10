@@ -4517,6 +4517,8 @@ export interface components {
             payments: components["schemas"]["PaymentHint"][];
         };
         InvoiceUploadRequest: {
+            /** @description Only for a password-protected PDF. It opens the file for this one request and is not kept; the file is saved as it came. */
+            password?: string;
             /**
              * Format: binary
              * @description The invoice: a PDF, an Excel sheet (.xlsx), a CSV, a Word file (.docx) or a photo or scan (JPG, PNG, WEBP, TIFF).
@@ -7409,6 +7411,8 @@ export interface components {
          *     and the statement itself is the authority on which account it belongs to.
          */
         StatementUploadRequest: {
+            /** @description Only for a password-protected PDF. It opens the file for this one request: it is not stored, logged or kept, and the file is saved as it came, still locked. */
+            password?: string;
             /**
              * Format: binary
              * @description The statement as uploaded by the client: a PDF, an Excel sheet (.xlsx), a CSV, a Word file (.docx) or a photo or scan (JPG, PNG, WEBP, TIFF). The kind is read from the file, not its name.

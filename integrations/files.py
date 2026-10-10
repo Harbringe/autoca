@@ -118,8 +118,11 @@ def describe_refusal(data: bytes, filename: str = "") -> str:
     return f"This file type cannot be read. Send a {ACCEPTED}."
 
 
-def load(data: bytes, filename: str = "") -> LoadedFile:
-    """Read ``data`` into a :class:`LoadedFile`, or raise :class:`UnsupportedFileError` / ``PdfExtractionError``."""
+def load(data: bytes, filename: str = "", password: str | None = None) -> LoadedFile:
+    """Read ``data`` into a :class:`LoadedFile`, or raise :class:`UnsupportedFileError` / ``PdfExtractionError``.
+
+    ``password`` opens a locked PDF for this call only. Nothing keeps it, and the file is stored as it came, still locked.
+    """
     kind = sniff(data, filename)
     if kind is None:
         raise UnsupportedFileError(describe_refusal(data, filename))
@@ -127,7 +130,16 @@ def load(data: bytes, filename: str = "") -> LoadedFile:
     if kind == PDF:
         from integrations.registry import get_pdf
 
-        return LoadedFile(PDF, get_pdf().extract(data), None, extension, content_type)
+        adapter = get_pdf()
+        document = adapter.extract(data, password) if password else adapter.extract(data)
+        images = None
+        if password and not document.has_text_layer:
+            # A locked scan: its page images are made now, while the password is to hand, so the model reads these and nothing
+            # later needs the password. They exist in memory for the length of the call.
+            from banking.scan import render_pages
+
+            images = render_pages(data, password=password)
+        return LoadedFile(PDF, document, images, extension, content_type)
     if kind == XLSX:
         return LoadedFile(XLSX, _read_xlsx(data), None, extension, content_type)
     if kind == DOCX:

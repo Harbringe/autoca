@@ -10,7 +10,7 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { ChevronLeft, EyeOff, MoreHorizontal, PanelRight, Sparkles, TriangleAlert, Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { messageOf } from '@/api/errors'
+import { isApiError, messageOf } from '@/api/errors'
 import { ledgers as ledgersQuery } from '@/api/queries/books'
 import {
   bill as billQuery,
@@ -26,6 +26,7 @@ import { clientDetail, V1 } from '@/api/queries/clients'
 import { Confirm } from '@/components/ca/Confirm'
 import { Money } from '@/components/ca/Money'
 import { ErrorState } from '@/components/ca/Page'
+import { isLockedCode, PasswordDialog } from '@/components/ca/PasswordPrompt'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -73,7 +74,9 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
 
   const listPath = () => void navigate({ to: '/clients/$clientId/bills', params: { clientId } })
 
-  async function take(file: File | undefined) {
+  const [locked, setLocked] = useState<{ file: File; wrong: boolean } | null>(null)
+
+  async function take(file: File | undefined, password?: string) {
     if (!file) return
     if (!ACCEPTED_NAME.test(file.name)) {
       toast.error('That kind of file cannot be read. Send a PDF, Excel, CSV, Word file or a photo.')
@@ -81,11 +84,13 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
     }
     setUploadingName(file.name)
     try {
-      const made = await upload.mutateAsync({ file, book: false })
+      const made = await upload.mutateAsync({ file, book: false, password })
+      setLocked(null)
       if (made.status !== 'OPEN') toast.message(made.status === 'DISCARDED' ? 'This file was set aside earlier.' : 'This invoice is already booked.')
       void navigate({ to: '/clients/$clientId/bills/$itemId', params: { clientId, itemId: made.id }, search: { as: 'reading' }, replace: true })
     } catch (e) {
-      toast.error(messageOf(e))
+      if (isApiError(e) && isLockedCode(e.code)) setLocked({ file, wrong: e.code === 'password_incorrect' })
+      else toast.error(messageOf(e))
     } finally {
       setUploadingName(null)
       if (input.current) input.current.value = ''
@@ -373,6 +378,16 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
       </Dialog>
 
       {statement && bill && <PartyStatementDialog clientId={clientId} partyId={bill.party} partyName={bill.party_name} onClose={() => setStatement(false)} />}
+
+      {locked && (
+        <PasswordDialog
+          fileName={locked.file.name}
+          wrong={locked.wrong}
+          busy={!!uploadingName}
+          onSubmit={(password) => void take(locked.file, password)}
+          onCancel={() => setLocked(null)}
+        />
+      )}
 
       <Confirm
         open={deleting}

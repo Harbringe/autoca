@@ -162,6 +162,15 @@ class StatementUploadSerializer(serializers.Serializer):
     and the statement itself is the authority on which account it belongs to.
     """
 
+    password = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        write_only=True,
+        trim_whitespace=False,
+        max_length=128,
+        style={"input_type": "password"},
+        help_text="Only for a password-protected PDF. It opens the file for this one request: it is not stored, logged or kept, and the file is saved as it came, still locked.",
+    )
     file = serializers.FileField(help_text="The statement as uploaded by the client: a PDF, an Excel sheet (.xlsx), a CSV, a Word file (.docx) or a photo or scan (JPG, PNG, WEBP, TIFF). The kind is read from the file, not its name.")
 
     def validate_file(self, upload):
@@ -193,7 +202,10 @@ class StatementUploadSerializer(serializers.Serializer):
         # report in its own words.
         ceiling = settings.MAX_STATEMENT_PAGES
         try:
-            pages = get_pdf().page_count(upload.read())
+            given = (self.initial_data.get("password") or None) if hasattr(self, "initial_data") else None
+            adapter = get_pdf()
+            data = upload.read()
+            pages = adapter.page_count(data, given) if given else adapter.page_count(data)
         except PdfExtractionError:
             pages = 0
         finally:

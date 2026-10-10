@@ -42,6 +42,14 @@ class PdfTruncationError(PdfExtractionError):
     """A backend returned fewer pages than the document contains."""
 
 
+class PdfPasswordRequired(PdfExtractionError):
+    """The PDF is locked and no password was given. The person is asked for it; it is never guessed."""
+
+
+class PdfPasswordIncorrect(PdfExtractionError):
+    """A password was given and it did not open the PDF. Neither the password nor the file's contents are in the message."""
+
+
 #: One extracted table: rows of cells. A cell that the backend reported as
 #: empty or absent is normalised to ``""`` so callers never handle ``None``.
 PdfTable = tuple[tuple[str, ...], ...]
@@ -128,22 +136,25 @@ class PdfDocument:
 
 class PdfTextAdapter(abc.ABC):
     @abc.abstractmethod
-    def extract(self, data: bytes) -> PdfDocument:
+    def extract(self, data: bytes, password: str | None = None) -> PdfDocument:
         """Return the text and table structure of ``data``.
+
+        ``password`` opens a locked PDF. It is used for this call only: it is never stored, logged or put in an error, and
+        an adapter is only handed one when the person gave one.
 
         Raises :class:`PdfExtractionError` if the file cannot be opened. An
         unreadable *text layer* is not an error -- it yields empty pages, and
         the caller decides whether to route to OCR.
         """
 
-    def page_count(self, data: bytes) -> int:
+    def page_count(self, data: bytes, password: str | None = None) -> int:
         """How many pages ``data`` has, without extracting any of them.
 
         This default extracts, so a backend that can count more cheaply should
         override it. Callers use it to refuse an oversized document before
         paying for extraction.
         """
-        return self.extract(data).page_count
+        return (self.extract(data, password) if password else self.extract(data)).page_count
 
     @property
     def name(self) -> str:

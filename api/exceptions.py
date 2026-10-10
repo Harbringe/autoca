@@ -46,6 +46,8 @@ DOMAIN_ERRORS = {
     "StatementParseError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "statement_unreadable"),
     "PdfExtractionError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "unreadable_file"),
     "PdfTruncationError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "pages_missing"),
+    "PdfPasswordRequired": (status.HTTP_422_UNPROCESSABLE_ENTITY, "password_required"),
+    "PdfPasswordIncorrect": (status.HTTP_422_UNPROCESSABLE_ENTITY, "password_incorrect"),
     "MoneyError": (status.HTTP_400_BAD_REQUEST, "bad_amount"),
     # The request conflicts with where things currently stand.
     "StatementContinuityError": (status.HTTP_409_CONFLICT, "statement_period_missing"),

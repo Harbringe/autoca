@@ -9,12 +9,13 @@ import { useNavigate } from '@tanstack/react-router'
 import { CirclePlus, FileText, FilePenLine, ListChecks, MoreHorizontal, Search, TriangleAlert, Upload } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { messageOf } from '@/api/errors'
+import { isApiError, messageOf } from '@/api/errors'
 import { bills as billsQuery, invoiceReadings, useDeleteInvoice, useRemoveBill, useUploadInvoice } from '@/api/queries/bills'
 import { clientDetail, V1 } from '@/api/queries/clients'
 import { Confirm } from '@/components/ca/Confirm'
 import { Money } from '@/components/ca/Money'
 import { ErrorState } from '@/components/ca/Page'
+import { isLockedCode, PasswordDialog } from '@/components/ca/PasswordPrompt'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -76,7 +77,11 @@ export function PurchasesScreen({ clientId }: { clientId: string }) {
 
   const open = (item: ListItem) => void navigate({ to: '/clients/$clientId/bills/$itemId', params: { clientId, itemId: item.id }, search: { as: item.as } })
 
-  async function pick(files: FileList | File[] | null) {
+  const [lockedFiles, setLockedFiles] = useState<{ file: File; wrong: boolean }[]>([])
+  const askingFor = lockedFiles[0]
+
+  /** One locked file at a time is asked for its password; the others in the same drop have already been read. */
+  async function pick(files: FileList | File[] | null, password?: string) {
     const chosen = [...(files ?? [])]
     if (!chosen.length) return
     let booked = 0
@@ -89,12 +94,15 @@ export function PurchasesScreen({ clientId }: { clientId: string }) {
       }
       setProcessing((p) => [...p, file.name])
       try {
-        const made = await upload.mutateAsync({ file })
+        const made = await upload.mutateAsync({ file, password })
+        setLockedFiles((current) => current.filter((l) => l.file !== file))
         if (made.status === 'BOOKED') booked += 1
         else needing += 1
         last = made.id
       } catch (e) {
-        toast.error(`${file.name}: ${messageOf(e)}`)
+        if (isApiError(e) && isLockedCode(e.code)) {
+          setLockedFiles((current) => [...current.filter((l) => l.file !== file), { file, wrong: e.code === 'password_incorrect' }])
+        } else toast.error(`${file.name}: ${messageOf(e)}`)
       } finally {
         setProcessing((p) => p.filter((n) => n !== file.name))
       }
@@ -428,6 +436,15 @@ export function PurchasesScreen({ clientId }: { clientId: string }) {
           </ul>
         </DialogContent>
       </Dialog>
+
+      {askingFor && (
+        <PasswordDialog
+          fileName={askingFor.file.name}
+          wrong={askingFor.wrong}
+          onSubmit={(password) => void pick([askingFor.file], password)}
+          onCancel={() => setLockedFiles((current) => current.filter((l) => l !== askingFor))}
+        />
+      )}
 
       <Confirm
         open={!!deleting}

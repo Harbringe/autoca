@@ -20,6 +20,14 @@ export async function waitForJob(job: Job, onUpdate?: (job: Job) => void): Promi
 
 /** What went wrong with an upload, in the words a CA needs, keyed by the job's error code. */
 export const UPLOAD_PROBLEMS: Record<string, { title: string; help: string }> = {
+  password_required: {
+    title: 'This PDF is password-protected',
+    help: 'Enter the password the bank gave you. It is used once to read the file and is not saved.',
+  },
+  password_incorrect: {
+    title: 'That password did not open the PDF',
+    help: 'Check it and try again.',
+  },
   no_text_layer: {
     title: 'This PDF is a scan, not a text statement',
     help: 'Download the statement again from net banking as a PDF (not a scan, photo or printout) and upload that file.',

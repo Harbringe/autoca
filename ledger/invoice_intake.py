@@ -29,7 +29,7 @@ from core.identity import invoice_key, normalise_gstin
 from core.rbac import require_permission
 from documents.models import Document, DocumentKind, DocumentStatus, PipelineTier
 from integrations import debug_archive, files
-from integrations.pdf.base import PdfExtractionError
+from integrations.pdf.base import PdfExtractionError, PdfPasswordIncorrect, PdfPasswordRequired
 from integrations.registry import get_llm, get_storage
 from ledger import invoice_vision
 from ledger.invoice_reader import read_invoice
@@ -311,7 +311,9 @@ def reread(reading: InvoiceReading, *, membership) -> InvoiceReading:
     return reading
 
 
-def read_upload(*, client, data: bytes, filename: str, kind: str = "", uploaded_by) -> tuple[InvoiceReading, bool]:
+def read_upload(
+    *, client, data: bytes, filename: str, kind: str = "", uploaded_by, password: str | None = None
+) -> tuple[InvoiceReading, bool]:
     """Register the file and read it. Returns the reading and whether this file is new.
 
     ``kind`` is optional: when it is not given the file is told apart by the client's own GSTIN (``detect_kind``).
@@ -329,7 +331,9 @@ def read_upload(*, client, data: bytes, filename: str, kind: str = "", uploaded_
         return reading, False
 
     try:
-        loaded = files.load(data, filename)
+        loaded = files.load(data, filename, password)
+    except (PdfPasswordRequired, PdfPasswordIncorrect):
+        raise  # said in their own words, with their own code, so the person is asked for the password
     except PdfExtractionError as exc:
         raise IntakeError(str(exc) if isinstance(exc, files.UnsupportedFileError) else f"This file could not be opened: {exc}") from exc
     pdf = loaded.document

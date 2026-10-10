@@ -16,9 +16,18 @@ from __future__ import annotations
 import io
 
 import pdfplumber
+from pdfminer.pdfdocument import PDFPasswordIncorrect
 from pdfminer.pdfparser import PDFSyntaxError
 
-from .base import PdfDocument, PdfExtractionError, PdfPage, PdfTextAdapter, normalise_table
+from .base import (
+    PdfDocument,
+    PdfExtractionError,
+    PdfPage,
+    PdfPasswordIncorrect,
+    PdfPasswordRequired,
+    PdfTextAdapter,
+    normalise_table,
+)
 
 TABLE_SETTINGS = {
     "vertical_strategy": "lines",
@@ -26,28 +35,57 @@ TABLE_SETTINGS = {
 }
 
 
+def _is_password_error(exc: BaseException) -> bool:
+    """pdfplumber wraps pdfminer's password failure in a generic exception; look through the wrapper."""
+    seen = set()
+    stack = [exc]
+    while stack:
+        current = stack.pop()
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        if isinstance(current, PDFPasswordIncorrect):
+            return True
+        stack.extend(a for a in getattr(current, "args", ()) if isinstance(a, BaseException))
+        for link in (current.__cause__, current.__context__):
+            if link is not None:
+                stack.append(link)
+    return False
+
+
+def _locked(password: str | None) -> PdfExtractionError:
+    """The right error for a PDF that would not open: no password given, or one that did not fit."""
+    if password:
+        return PdfPasswordIncorrect("That password did not open the PDF. Check it and try again.")
+    return PdfPasswordRequired("This PDF is password-protected. Enter its password to read it.")
+
+
 class PdfPlumberAdapter(PdfTextAdapter):
     def __init__(self, **_ignored):
         pass
 
-    def page_count(self, data: bytes) -> int:
+    def page_count(self, data: bytes, password: str | None = None) -> int:
         if not data:
             raise PdfExtractionError("Empty file: nothing to extract.")
         try:
-            with pdfplumber.open(io.BytesIO(data)) as pdf:
+            with pdfplumber.open(io.BytesIO(data), password=password or None) as pdf:
                 return len(pdf.pages)
+        except PDFPasswordIncorrect as exc:
+            raise _locked(password) from exc
         except PDFSyntaxError as exc:
             raise PdfExtractionError(f"Not a readable PDF: {exc}") from exc
         except Exception as exc:  # noqa: BLE001 -- pdfminer raises a wide variety
+            if _is_password_error(exc):
+                raise _locked(password) from exc
             raise PdfExtractionError(
                 f"This PDF could not be read ({type(exc).__name__})."
             ) from exc
 
-    def extract(self, data: bytes) -> PdfDocument:
+    def extract(self, data: bytes, password: str | None = None) -> PdfDocument:
         if not data:
             raise PdfExtractionError("Empty file: nothing to extract.")
         try:
-            with pdfplumber.open(io.BytesIO(data)) as pdf:
+            with pdfplumber.open(io.BytesIO(data), password=password or None) as pdf:
                 pages = tuple(
                     PdfPage(
                         page_number=number,
@@ -60,11 +98,15 @@ class PdfPlumberAdapter(PdfTextAdapter):
                     for number, page in enumerate(pdf.pages, start=1)
                 )
                 page_count = len(pdf.pages)
+        except PDFPasswordIncorrect as exc:
+            raise _locked(password) from exc
         except PDFSyntaxError as exc:
             raise PdfExtractionError(f"Not a readable PDF: {exc}") from exc
         except PdfExtractionError:
             raise
         except Exception as exc:  # noqa: BLE001 -- pdfminer raises a wide variety
+            if _is_password_error(exc):
+                raise _locked(password) from exc
             raise PdfExtractionError(
                 "This PDF could not be read; it may be damaged or cut off. "
                 f"Download it from the bank again and retry. ({type(exc).__name__}: {exc})"

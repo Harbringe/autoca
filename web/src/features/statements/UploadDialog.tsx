@@ -15,6 +15,7 @@ import { isApiError, messageOf } from '@/api/errors'
 import { UPLOAD_PROBLEMS, waitForJob } from '@/api/jobs'
 import { clientDetail, useInvalidateClient, V1 } from '@/api/queries/clients'
 import type { BankAccount, IngestResult, Job, Statement } from '@/api/types'
+import { isLockedCode, PasswordForm } from '@/components/ca/PasswordPrompt'
 import { Button } from '@/components/ui/button'
 import { DateInput } from '@/components/ui/date-input'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -61,24 +62,28 @@ type Phase =
   | { kind: 'done'; file: File; result: IngestResult; statement: Statement | null; account: BankAccount | null }
   | { kind: 'failed'; file: File; job: Job }
   | { kind: 'layout'; file: File; job: Job }
+  | { kind: 'password'; file: File; wrong: boolean }
 
 function UploadDialog({ clientId, onClose }: { clientId: string; onClose: () => void }) {
   const [phase, setPhase] = useState<Phase>({ kind: 'choose', file: null })
   const invalidate = useInvalidateClient(clientId)
   const client = useQuery(clientDetail(clientId))
 
-  async function send(file: File, allowGap = false, layout?: Record<string, number>) {
+  async function send(file: File, allowGap = false, layout?: Record<string, number>, password?: string) {
     setPhase({ kind: 'reading', file })
     try {
       const form = new FormData()
       form.append('file', file)
       if (allowGap) form.append('allow_gap', 'true')
       if (layout) form.append('layout', JSON.stringify(layout))
+      if (password) form.append('password', password)
       const created = await raw.post<Job>(`${V1}/clients/${clientId}/statements/upload/`, form)
       setPhase({ kind: 'reading', file, job: created })
       const job = await waitForJob(created, (update) => setPhase({ kind: 'reading', file, job: update }))
       if (job.status === 'FAILED') {
-        setPhase({ kind: 'failed', file, job })
+        // A locked PDF is asked for its password, here, with the file still chosen; anything else is a failure to read.
+        if (isLockedCode(job.error_code)) setPhase({ kind: 'password', file, wrong: job.error_code === 'password_incorrect' })
+        else setPhase({ kind: 'failed', file, job })
         return
       }
       const result = job.result as IngestResult
@@ -104,6 +109,14 @@ function UploadDialog({ clientId, onClose }: { clientId: string; onClose: () => 
         </DialogHeader>
         {phase.kind === 'choose' && <Chooser phase={phase} setPhase={setPhase} onSend={(f) => void send(f)} />}
         {phase.kind === 'reading' && <Reading file={phase.file} job={phase.job} />}
+        {phase.kind === 'password' && (
+          <PasswordForm
+            fileName={phase.file.name}
+            wrong={phase.wrong}
+            onSubmit={(password) => void send(phase.file, false, undefined, password)}
+            onCancel={() => setPhase({ kind: 'choose', file: null })}
+          />
+        )}
         {phase.kind === 'failed' && (
           <Failed
             job={phase.job}

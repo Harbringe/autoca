@@ -62,13 +62,13 @@ def enabled() -> bool:
 
 
 def render_pages(
-    data: bytes, *, dpi: int | None = None, first: int = 0, count: int | None = None
+    data: bytes, *, dpi: int | None = None, first: int = 0, count: int | None = None, password: str | None = None
 ) -> list[bytes]:
     """PNG bytes for ``count`` pages of the PDF from page index ``first`` (all of them by default), in order."""
     import pypdfium2 as pdfium
 
     scale = (dpi or settings.VISION_DPI) / 72
-    pdf = pdfium.PdfDocument(data)
+    pdf = pdfium.PdfDocument(data, password=password or None)
     try:
         stop = len(pdf) if count is None else min(len(pdf), first + count)
         out = []

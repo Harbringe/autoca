@@ -34,6 +34,8 @@ logger = logging.getLogger("autoca.jobs")
 ERROR_CODES = {
     "PdfExtractionError": "unreadable_file",
     "PdfTruncationError": "pages_missing",
+    "PdfPasswordRequired": "password_required",
+    "PdfPasswordIncorrect": "password_incorrect",
     "NoTextLayerError": "no_text_layer",
     "UnsupportedBankError": "unsupported_bank",
     "BalanceChainError": "balance_chain_broken",

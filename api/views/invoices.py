@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from django.shortcuts import get_object_or_404
+from django.utils.decorators import method_decorator
+from django.views.decorators.debug import sensitive_post_parameters
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -77,6 +79,7 @@ class InvoiceReadingViewSet(
         responses={201: InvoiceReadingSerializer, 200: InvoiceReadingSerializer},
     )
     @action(detail=False, methods=["post"], url_path="upload")
+    @method_decorator(sensitive_post_parameters("password"))
     def upload(self, request, client_id=None):
         enforce(request, self, "upload")
         payload = InvoiceUploadSerializer(data=request.data)
@@ -88,6 +91,7 @@ class InvoiceReadingViewSet(
             filename=upload.name,
             kind=payload.validated_data["kind"],
             uploaded_by=request.user,
+            password=payload.validated_data.get("password") or None,
         )
         if is_new and not payload.validated_data["kind"] and payload.validated_data["book"]:
             # Left to the system: certain, then it is booked now; if not, it waits with the reason, and an alert.

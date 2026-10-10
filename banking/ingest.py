@@ -88,6 +88,7 @@ def ingest_statement(
     store_original: bool = True,
     allow_gap: bool = False,
     layout: dict | None = None,
+    password: str | None = None,
 ) -> IngestResult:
     """Parse ``data`` as a bank statement for ``client`` and persist its rows."""
     digest = Document.digest(data)
@@ -104,7 +105,7 @@ def ingest_statement(
             is_new=False,
         )
 
-    loaded = files.load(data, filename)
+    loaded = files.load(data, filename, password)
     document = loaded.document
     tier = PipelineTier.TEXT_LAYER
     scanned = scan.needs_vision(document)

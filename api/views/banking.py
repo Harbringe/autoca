@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 
+from django.utils.decorators import method_decorator
+from django.views.decorators.debug import sensitive_post_parameters
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, status, viewsets
@@ -68,6 +70,7 @@ class StatementUploadView(viewsets.GenericViewSet):
         request=StatementUploadSerializer,
         responses={202: JobSerializer},
     )
+    @method_decorator(sensitive_post_parameters("password"))
     def create(self, request, client_id=None):
         enforce(request, self, "upload")
         client = get_visible_client(request, client_id)
@@ -92,6 +95,8 @@ class StatementUploadView(viewsets.GenericViewSet):
                 user=request.user,
                 allow_gap=payload.validated_data["allow_gap"],
                 layout=payload.validated_data.get("layout"),
+                # Used to open this one file and then let go: it is not in the job, the key, a message or the database.
+                password=payload.validated_data.get("password") or None,
             ),
         )
         return Response(
@@ -135,7 +140,7 @@ def _drop_job_for_removed_statement(firm_id, key: str) -> None:
         job.delete()
 
 
-def _ingest(*, client, data, filename, user, allow_gap, layout=None) -> dict:
+def _ingest(*, client, data, filename, user, allow_gap, layout=None, password=None) -> dict:
     """Ingest, seed the client's baseline ledgers, classify by rules, and queue what is left.
 
     Seeding on every upload rather than at client creation is deliberate: a
@@ -149,6 +154,7 @@ def _ingest(*, client, data, filename, user, allow_gap, layout=None) -> dict:
         uploaded_by=user,
         allow_gap=allow_gap,
         layout=layout,
+        password=password,
     )
     seed_client(client, created_by=user)
     classified = classify_statement(result.statement)

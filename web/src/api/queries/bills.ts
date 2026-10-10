@@ -143,9 +143,10 @@ export function useUploadInvoice(clientId: string) {
     // No kind: the server tells a purchase from a sale by the client's own GSTIN and books it when certain.
     // `book: false` reads the file into a draft for a person to complete (the capture screen); otherwise a certain
     // invoice is booked at once.
-    mutationFn: ({ file, kind, book }: { file: File; kind?: 'PURCHASE' | 'SALES'; book?: boolean }) => {
+    mutationFn: ({ file, kind, book, password }: { file: File; kind?: 'PURCHASE' | 'SALES'; book?: boolean; password?: string }) => {
       const form = new FormData()
       form.append('file', file)
+      if (password) form.append('password', password)
       if (kind) form.append('kind', kind)
       if (book === false) form.append('book', 'false')
       return raw.post<InvoiceReading>(`${V1}/clients/${clientId}/invoices/upload/`, form)

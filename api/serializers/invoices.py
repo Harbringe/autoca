@@ -14,6 +14,15 @@ from ledger.models import BillKind, InvoiceReading
 
 
 class InvoiceUploadSerializer(serializers.Serializer):
+    password = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        write_only=True,
+        trim_whitespace=False,
+        max_length=128,
+        style={"input_type": "password"},
+        help_text="Only for a password-protected PDF. It opens the file for this one request and is not kept; the file is saved as it came.",
+    )
     file = serializers.FileField(help_text="The invoice: a PDF, an Excel sheet (.xlsx), a CSV, a Word file (.docx) or a photo or scan (JPG, PNG, WEBP, TIFF).")
     kind = serializers.ChoiceField(
         choices=[BillKind.PURCHASE, BillKind.SALES],
@@ -51,7 +60,10 @@ class InvoiceUploadSerializer(serializers.Serializer):
         if kind != files.PDF:
             return upload
         try:
-            pages = get_pdf().page_count(upload.read())
+            given = (self.initial_data.get("password") or None) if hasattr(self, "initial_data") else None
+            adapter = get_pdf()
+            data = upload.read()
+            pages = adapter.page_count(data, given) if given else adapter.page_count(data)
         except PdfExtractionError:
             pages = 0
         finally:

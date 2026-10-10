@@ -24,7 +24,7 @@ import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { LedgerPicker, usableLedgers } from '@/features/review/LedgerPicker'
 import { formatDate, formatPaise, parseDate, parseRupees } from '@/lib/format'
-import { normaliseName, sameBusiness } from '@/lib/names'
+import { normaliseName, sameBusiness, sharesAWord } from '@/lib/names'
 import { cn } from '@/lib/utils'
 import {
   isPurchaseSide,
@@ -446,8 +446,10 @@ export function VoucherForm({
       <Field label="GSTIN on this invoice" hint="Filled from the invoice; only needed if the client has more than one" error={errors.own_gstin} mask="gstin">
         {(props, m) => <Input {...props} {...m} value={ownGstin} onChange={(e) => setOwnGstin(e.target.value)} />}
       </Field>
-      {ownFacts?.name && clientName && !sameBusiness(ownFacts.name, clientName) && (
-        <p className="text-xs text-muted-foreground">Printed as “{normaliseName(ownFacts.name)}”</p>
+      {ownFacts?.name && clientName && !sharesAWord(ownFacts.name, clientName) && (
+        <p role="status" className="rounded-sm bg-accent px-2 py-1 text-xs text-warning">
+          This invoice is made out to “{normaliseName(ownFacts.name)}”, not to {clientName}. Check it is the right client’s invoice.
+        </p>
       )}
       <PrintedLines label="Printed on the invoice" party={ownFacts ? { ...ownFacts, name: '', gstin: '' } : undefined} />
     </fieldset>

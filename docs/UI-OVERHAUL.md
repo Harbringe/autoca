@@ -45,17 +45,25 @@ showed a wide-screen layout, not a laptop's. The receipt page and the purchases 
 | Phone list | The purchases list is cards under 640px, not a table that scrolls sideways |
 | Itemizations | Each line as its own block with every column visible, no sideways scroll; edits are remembered per party; "Read the lines again" for readings made before the reader improved |
 | Small text | The smallest step raised from 12px to 13px in one place, and the 10 to 11px labels moved onto it |
+| Invoice From, To | The invoice reads as two cards: From (seller) and To (buyer). The client's own side shows its name and its GSTIN as printed; the other side is the party, matched to one already on file by GSTIN or by business name, with the printed details beneath. A warning when the invoice is made out to someone who shares no word with the client. The narration is worked out from the lines |
+| Header chips | The books' state and the year were repeated under every title, in the client panel and in the top bar; only the lock note stays |
 | Buyer and seller | Both shown on every invoice, whichever kind it is; kind suggested from the printed names and the model's own judgement, and chosen by the person when neither says |
 | Review filters | Confidence chips and search on one line |
 
-## Not done in this pass (so it is not forgotten)
+## Walked through and left as they are
 
-- **Dashboard**: dense, small figures; the donut and its legend say the same thing. Candidate: one list with bars, the chart
-  only where there is a trend worth reading.
-- **GST, Reports, Documents, Settings and the phone layouts** have not been walked through yet.
-- **Page header**: "Working draft" and the financial year appear both in the client panel and under the title.
-- **Empty states**: most say what is missing; few say what to do next.
-- **Phone widths** for everything except the receipt page and the purchases list (now cards), which were checked at 390px.
+Looked at in the running app at 1366px and, for several, at 390px: Dashboard, Clients, Client overview, Statements, Review, Pipeline,
+Day Book, Ledgers, Purchases and Sales, Reports (trial balance), Documents, GST (empty). They share one structure (title, tab row,
+table or cards) and, apart from the repeated chips fixed above, do not contradict each other. At 390px the dashboard cards stack, the
+client list drops its secondary columns and wide report tables scroll sideways, which is how a ledger table should behave.
+
+## Not done, so it is not forgotten
+
+- **Settings, Staff, Alerts, Parties & rules, Sign-off, TDS, Payroll, Assets and To fix** were not opened in this pass.
+- **Client overview** repeats the left panel as three "Open" cards. Candidate: replace them with the client's next step.
+- **Dashboard** is dense. Candidate: one list with bars in place of the donut and its legend.
+- **Empty states** mostly say what is missing and not what to do next.
+- **Nothing here has been tried by someone doing a day's work.** The next real test is a day of uploads on one client.
 
 ## Rules to keep to
 

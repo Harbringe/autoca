@@ -42,3 +42,9 @@ export function sameBusiness(a: string, b: string): boolean {
   const [small, large] = left.size <= right.size ? [left, right] : [right, left]
   return [...small].every((w) => large.has(w))
 }
+
+/** Whether two names share any identifying word. Looser than sameBusiness: used to warn only when they have nothing in common. */
+export function sharesAWord(a: string, b: string): boolean {
+  const right = tokens(b)
+  return [...tokens(a)].some((w) => right.has(w))
+}

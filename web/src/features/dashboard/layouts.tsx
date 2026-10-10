@@ -52,7 +52,7 @@ function HealthKpis({ data, state }: Pick<LayoutProps, 'data' | 'state'>) {
         loading={loading}
         label="Clients on track"
         value={`${h.onTrack} of ${h.total}`}
-        note="Nothing late, nothing failing"
+        note="No late item and no failing check"
         progress={{ value: h.onTrack, max: h.total, label: `${h.onTrack} of ${plural(h.total, 'client')} on track` }}
         to="/clients"
       />

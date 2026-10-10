@@ -15,7 +15,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { TabNav, type TabItem } from '@/components/ui/tabs'
-import { BOOKS_STATE_HINT, BOOKS_STATE_LABEL, BOOKS_STATE_TONE, booksState, lockLabel } from '@/features/books/state'
+import { lockLabel } from '@/features/books/state'
 import { useAssistantLoop } from '@/features/assistant/useAssistant'
 import { UploadProvider, useUpload } from '@/features/statements/UploadDialog'
 import { fyLabel } from '@/lib/format'
@@ -65,7 +65,6 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
   if (client.isPending) return <Spinner label="Opening client…" />
   if (client.error) return <ErrorState error={client.error} retry={() => void client.refetch()} />
 
-  const state = books.data ? booksState(books.data) : null
   const lock = books.data ? lockLabel(books.data) : null
 
   const module = moduleOf(path)
@@ -98,19 +97,14 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
         <div className="min-w-0 max-sm:w-full">
           <div className="truncate text-[13px] text-muted-foreground">{client.data.name}</div>
           <h1 className="text-[26px] leading-8 xl:text-[28px] xl:leading-[34px]">{title}</h1>
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm text-muted-foreground">
-            {state && (
-              <Badge tone={BOOKS_STATE_TONE[state]} title={BOOKS_STATE_HINT[state]}>
-                {BOOKS_STATE_LABEL[state]}
-              </Badge>
-            )}
-            {lock && (
+          {/* The books' state and the year are in the client panel and the top bar already; only what they do not say is here. */}
+          {lock && (
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm text-muted-foreground">
               <Badge tone="info" icon={<Lock aria-hidden />}>
                 {lock}
               </Badge>
-            )}
-            <span className="num">FY {fyLabel(fy)}</span>
-          </div>
+            </div>
+          )}
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {can('client.view') && module !== 'alerts' && screen !== 'team' && !onItemPage && <ModuleAlerts module={alertModule} clientId={clientId} />}

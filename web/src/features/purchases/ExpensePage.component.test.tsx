@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { cleanup, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { raw } from '@/api/client'
@@ -173,6 +173,17 @@ describe('one purchase or sale on its own page', () => {
     expect(await screen.findByText(/Matched to Jubilant FoodWorks Limited, already on file/)).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: 'Supplier' })).toHaveValue('p1')
     expect(screen.queryByLabelText('GSTIN (blank if unregistered)')).not.toBeInTheDocument()
+  })
+
+  it('warns when the invoice is made out to someone other than the client', async () => {
+    renderIt()
+    // The client is Acme; the invoice says Acme Traders, which is the same business, so no warning.
+    await screen.findByRole('region', { name: 'From and to' })
+    expect(screen.queryByText(/Check it is the right client/)).not.toBeInTheDocument()
+    const other = { ...READING, read: { ...READ, buyer_name: 'S.B.H Dryfruits' } } as unknown as InvoiceReading
+    cleanup()
+    renderIt({}, [other])
+    expect(await screen.findByText(/made out to “S.B.H Dryfruits”, not to Acme/)).toBeInTheDocument()
   })
 
   it('reads To, From the other way round on a sale', async () => {

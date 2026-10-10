@@ -42,6 +42,8 @@ from integrations import files
 
 
 @extend_schema(tags=["statements"])
+# On dispatch, where the request is still Django's: this decorator refuses DRF's wrapper of it.
+@method_decorator(sensitive_post_parameters("password"), name="dispatch")
 class StatementUploadView(viewsets.GenericViewSet):
     """Upload a bank statement for a client."""
 
@@ -70,7 +72,6 @@ class StatementUploadView(viewsets.GenericViewSet):
         request=StatementUploadSerializer,
         responses={202: JobSerializer},
     )
-    @method_decorator(sensitive_post_parameters("password"))
     def create(self, request, client_id=None):
         enforce(request, self, "upload")
         client = get_visible_client(request, client_id)

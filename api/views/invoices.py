@@ -27,6 +27,8 @@ from ledger.models import Bill, InvoiceReading
 
 
 @extend_schema(tags=["invoices"])
+# On dispatch, where the request is still Django's: this decorator refuses DRF's wrapper of it.
+@method_decorator(sensitive_post_parameters("password"), name="dispatch")
 class InvoiceReadingViewSet(
     ClientScopedMixin, mixins.ListModelMixin, mixins.RetrieveModelMixin, mixins.DestroyModelMixin, viewsets.GenericViewSet
 ):
@@ -79,7 +81,6 @@ class InvoiceReadingViewSet(
         responses={201: InvoiceReadingSerializer, 200: InvoiceReadingSerializer},
     )
     @action(detail=False, methods=["post"], url_path="upload")
-    @method_decorator(sensitive_post_parameters("password"))
     def upload(self, request, client_id=None):
         enforce(request, self, "upload")
         payload = InvoiceUploadSerializer(data=request.data)

@@ -7291,6 +7291,12 @@ components:
           format: uuid
           nullable: true
           description: An uploaded invoice file.
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConfirmedLineRequest'
+          description: The invoice's lines as the person left them. Kept with the
+            invoice, to fill the party's next invoice.
       required:
       - bill_date
       - heads
@@ -8529,6 +8535,55 @@ components:
           description: The party this payee is.
       required:
       - party
+    ConfirmedLineRequest:
+      type: object
+      description: 'A line of the invoice as a person left it: kept so the next invoice
+        from this party can be filled in the same way.'
+      properties:
+        description:
+          type: string
+          minLength: 1
+          maxLength: 200
+        read_description:
+          type: string
+          default: ''
+          maxLength: 200
+        hsn_sac:
+          type: string
+          default: ''
+          maxLength: 8
+        quantity:
+          type: string
+          default: ''
+          maxLength: 20
+        unit:
+          type: string
+          default: ''
+          maxLength: 16
+        rate_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        gst_rate:
+          type: number
+          format: double
+          maximum: 100
+          minimum: 0
+          nullable: true
+      required:
+      - description
     CorrectionRequest:
       type: object
       description: |-
@@ -13530,6 +13585,19 @@ components:
           default: false
           description: The rate was worked out from the tax amounts, not printed on
             the line.
+        read_description:
+          type: string
+          default: ''
+          description: What the invoice printed, before any remembered wording.
+        usual_quantity:
+          type: string
+          default: ''
+          description: The quantity this party usually sends of it.
+        remembered:
+          type: boolean
+          default: false
+          description: Filled in from lines a person confirmed on this party's earlier
+            invoices.
         discount_paise:
           type: integer
           maximum: 1000000000000000000

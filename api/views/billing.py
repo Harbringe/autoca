@@ -164,6 +164,7 @@ class BillViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.RetrieveModel
             # An uploaded invoice that was waiting for this is no longer waiting: the bill carries it.
             if document is not None:
                 invoice_intake.note_booked(document, bill, user=request.user)
+                invoice_intake.confirm_items(document, data.get("items") or [])
         return bill
 
     @extend_schema(

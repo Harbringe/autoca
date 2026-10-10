@@ -3482,6 +3482,8 @@ export interface components {
              * @description An uploaded invoice file.
              */
             document?: string | null;
+            /** @description The invoice's lines as the person left them. Kept with the invoice, to fill the party's next invoice. */
+            items?: components["schemas"]["ConfirmedLineRequest"][];
         };
         /** @description The bill with the voucher it booked and everything that has settled it. */
         BillDetail: {
@@ -4000,6 +4002,30 @@ export interface components {
              * @description The party this payee is.
              */
             party: string;
+        };
+        /** @description A line of the invoice as a person left it: kept so the next invoice from this party can be filled in the same way. */
+        ConfirmedLineRequest: {
+            description: string;
+            /** @default  */
+            read_description: string;
+            /** @default  */
+            hsn_sac: string;
+            /** @default  */
+            quantity: string;
+            /** @default  */
+            unit: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            rate_paise?: number | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            amount_paise?: number | null;
+            /** Format: double */
+            gst_rate?: number | null;
         };
         /**
          * @description Correct a posted entry.
@@ -6436,6 +6462,21 @@ export interface components {
              * @default false
              */
             gst_rate_derived: boolean;
+            /**
+             * @description What the invoice printed, before any remembered wording.
+             * @default
+             */
+            read_description: string;
+            /**
+             * @description The quantity this party usually sends of it.
+             * @default
+             */
+            usual_quantity: string;
+            /**
+             * @description Filled in from lines a person confirmed on this party's earlier invoices.
+             * @default false
+             */
+            remembered: boolean;
             /**
              * Format: int64
              * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.

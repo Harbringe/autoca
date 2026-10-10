@@ -191,7 +191,11 @@ export function VoucherForm({
   const purchaseSide = isPurchaseSide(kind)
   const canTds = kind === 'PURCHASE'
   const canRcm = kind === 'PURCHASE'
-  const items = prefill?.items ?? []
+  // The invoice's lines, editable here: what is left is kept with the invoice so the party's next one is filled the same way.
+  const [items, setItems] = useState<ReadItem[]>(() => prefill?.items ?? [])
+  function editLine(n: number, patch: Partial<ReadItem>) {
+    setItems((current) => current.map((line, i) => (i === n ? { ...line, ...patch } : line)))
+  }
   const itemsSum = items.reduce((sum, i) => sum + (i.amount_paise ?? 0), 0)
   // The printed lines can stand in for the ledger lines only when they add up to the taxable value the form already has.
   const itemsTie = items.length > 1 && items.every((i) => i.amount_paise != null) && itemsSum === (prefill?.taxablePaise ?? -1)
@@ -326,6 +330,18 @@ export function VoucherForm({
       rcm: canRcm && rcm,
       narration: narration.trim() || heads.map((h) => h.description?.trim()).filter(Boolean).join('; ').slice(0, 200),
       own_gstin: ownGstin.trim().toUpperCase(),
+      items: items
+        .filter((i) => i.description.trim())
+        .map((i) => ({
+          description: i.description.trim().slice(0, 200),
+          read_description: (i.read_description ?? '').slice(0, 200),
+          hsn_sac: (i.hsn_sac ?? '').replace(/\D/g, '').slice(0, 8),
+          quantity: (i.quantity ?? '').slice(0, 20),
+          unit: (i.unit ?? '').slice(0, 16),
+          rate_paise: i.rate_paise ?? null,
+          amount_paise: i.amount_paise ?? null,
+          gst_rate: i.gst_rate ?? null,
+        })),
       document: prefill?.document ?? null,
     }
     setSaving(true)
@@ -395,13 +411,56 @@ export function VoucherForm({
                   </thead>
                   <tbody>
                     {items.map((i, n) => (
-                      <tr key={n} className="border-b border-dashed">
-                        <td className="px-1 py-1.5">{i.description}</td>
-                        <td className="px-1">{i.hsn_sac || '—'}</td>
-                        <td className="num px-1 text-right">{i.quantity ? `${i.quantity}${i.unit ? ` ${i.unit}` : ''}` : '—'}</td>
-                        <td className="num px-1 text-right">{i.rate_paise != null ? (i.rate_paise / 100).toFixed(2) : '—'}</td>
-                        <td className="num px-1 text-right">{i.amount_paise != null ? (i.amount_paise / 100).toFixed(2) : '—'}</td>
-                        <td className="num px-1 text-right" title={i.gst_rate_derived ? 'Worked out from the tax amounts; not printed on the line' : undefined}>
+                      <tr key={n} className="border-b border-dashed align-top">
+                        <td className="min-w-[14rem] px-1 py-1.5">
+                          <Input
+                            aria-label={`Description of line ${n + 1}`}
+                            value={i.description}
+                            onChange={(e) => editLine(n, { description: e.target.value })}
+                          />
+                          {i.remembered && i.read_description && i.read_description !== i.description && (
+                            <div className="mt-0.5 text-[11px] text-muted-foreground" title={i.read_description}>Remembered wording; the invoice printed “{i.read_description.slice(0, 48)}{i.read_description.length > 48 ? '…' : ''}”</div>
+                          )}
+                        </td>
+                        <td className="px-1 py-1.5">
+                          <Input aria-label={`HSN/SAC of line ${n + 1}`} className="w-24" value={i.hsn_sac} onChange={(e) => editLine(n, { hsn_sac: e.target.value })} />
+                        </td>
+                        <td className="px-1 py-1.5">
+                          <div className="flex gap-1">
+                            <Input aria-label={`Quantity of line ${n + 1}`} inputMode="decimal" className="num w-20 text-right" value={i.quantity} onChange={(e) => editLine(n, { quantity: e.target.value })} />
+                            <Input aria-label={`Unit of line ${n + 1}`} className="w-16" value={i.unit} onChange={(e) => editLine(n, { unit: e.target.value })} />
+                          </div>
+                          {i.usual_quantity && i.usual_quantity !== i.quantity && (
+                            <button type="button" className="mt-0.5 text-[11px] text-primary underline" onClick={() => editLine(n, { quantity: i.usual_quantity ?? '' })}>
+                              Usually {i.usual_quantity}
+                            </button>
+                          )}
+                        </td>
+                        <td className="px-1 py-1.5">
+                          <Input
+                            aria-label={`Rate of line ${n + 1}`}
+                            inputMode="decimal"
+                            className="num w-24 text-right"
+                            defaultValue={i.rate_paise != null ? (i.rate_paise / 100).toFixed(2) : ''}
+                            onBlur={(e) => {
+                              const paise = e.target.value.trim() ? parseRupees(e.target.value) : null
+                              editLine(n, { rate_paise: paise })
+                            }}
+                          />
+                        </td>
+                        <td className="px-1 py-1.5">
+                          <Input
+                            aria-label={`Amount of line ${n + 1}`}
+                            inputMode="decimal"
+                            className="num w-28 text-right"
+                            defaultValue={i.amount_paise != null ? (i.amount_paise / 100).toFixed(2) : ''}
+                            onBlur={(e) => {
+                              const paise = e.target.value.trim() ? parseRupees(e.target.value) : null
+                              editLine(n, { amount_paise: paise })
+                            }}
+                          />
+                        </td>
+                        <td className="num px-1 py-2 text-right" title={i.gst_rate_derived ? 'Worked out from the tax amounts; not printed on the line' : undefined}>
                           {i.gst_rate != null ? `${i.gst_rate}${i.gst_rate_derived ? '*' : ''}` : '—'}
                         </td>
                       </tr>

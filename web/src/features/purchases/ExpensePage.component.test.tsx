@@ -118,13 +118,29 @@ describe('one purchase or sale on its own page', () => {
     renderIt()
     await userEvent.click(await screen.findByRole('tab', { name: 'Itemizations (2)' }))
     const lines = screen.getByRole('table', { name: 'Lines as printed on the invoice' })
-    expect(within(lines).getByText('Biryani')).toBeInTheDocument()
-    expect(within(lines).getAllByText('9963')).toHaveLength(2)
+    expect(within(lines).getByDisplayValue('Biryani')).toBeInTheDocument()
+    expect(within(lines).getAllByDisplayValue('9963')).toHaveLength(2)
 
     await userEvent.click(screen.getByRole('button', { name: 'Use one line per item' }))
 
     expect(screen.getAllByRole('textbox', { name: 'Amount (₹)' })).toHaveLength(2)
     expect(screen.getByText('Biryani')).toBeInTheDocument()
+  })
+
+  it('lets a line be corrected, and offers the quantity this party usually sends', async () => {
+    const withUsual = {
+      ...READING,
+      read: { ...READ, items: READ.items.map((i, n) => (n === 0 ? { ...i, quantity: '6', usual_quantity: '60', remembered: true, read_description: 'FPPUS 120 Bags' } : i)) },
+    } as unknown as InvoiceReading
+    renderIt({}, [withUsual])
+    await userEvent.click(await screen.findByRole('tab', { name: /Itemizations/ }))
+    const description = screen.getByLabelText('Description of line 1')
+    await userEvent.clear(description)
+    await userEvent.type(description, 'Cement PPC')
+    expect(description).toHaveValue('Cement PPC')
+    expect(screen.getByLabelText('Quantity of line 1')).toHaveValue('6')
+    await userEvent.click(screen.getByRole('button', { name: 'Usually 60' }))
+    expect(screen.getByLabelText('Quantity of line 1')).toHaveValue('60')
   })
 
   it('hides and shows the receipt viewer', async () => {

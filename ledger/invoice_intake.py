@@ -87,6 +87,46 @@ def detect_kind(client, parsed) -> tuple[str, str]:
     )
 
 
+def _confirmed_batches(client, party, limit: int = 40) -> list[list[dict]]:
+    """The lines a person confirmed on this party's earlier invoices, newest first."""
+    batches = []
+    readings = InvoiceReading.objects.filter(firm_id=client.firm_id, client=client, bill__party=party).order_by("-created_at")[:limit]
+    for earlier in readings:
+        lines = [i for i in fields_of(earlier).get("items", []) if i.get("confirmed")]
+        if lines:
+            batches.append(lines)
+    return batches
+
+
+def _remembered_lines(client, parsed, kind: str) -> list[dict]:
+    """The invoice's lines with the party's usual description, HSN, unit and quantity filled in where the page left them blank."""
+    from ledger import item_memory
+
+    gstin = _counterparty_gstin(kind, parsed.supplier_gstin, parsed.buyer_gstin) if kind else ""
+    party = None
+    if gstin:
+        party = Party.objects.filter(
+            firm_id=client.firm_id, client=client, gstin_hash=blind_index(normalise_gstin(gstin), client.firm_id, CRYPTO_PURPOSE)
+        ).first()
+    products = item_memory.learn(_confirmed_batches(client, party)) if party is not None else []
+    return item_memory.apply(parsed.items, products)
+
+
+def confirm_items(document, items: list[dict]) -> None:
+    """Keep the lines a person confirmed with the invoice's reading, so the next invoice from this party can be filled from them."""
+    if not items:
+        return
+    reading = InvoiceReading.objects.filter(document=document).first()
+    if reading is None:
+        return
+    fields = fields_of(reading)
+    if not fields:
+        return
+    fields["items"] = [{**item, "confirmed": True} for item in items]
+    reading.payload_enc = encrypt_for_firm(json.dumps(fields), reading.firm_id, PAYLOAD_PURPOSE)
+    reading.save(update_fields=["payload_enc"])
+
+
 def suggest_kind(client, parsed) -> dict:
     """What the printed names say, when the GSTINs could not settle it: a suggestion a person confirms, never a decision.
 
@@ -237,6 +277,8 @@ def read_upload(*, client, data: bytes, filename: str, kind: str = "", uploaded_
                 suggestion = suggest_kind(client, parsed)
         if parsed is not None and chosen:
             parsed.supplier_gstin, parsed.buyer_gstin = _roles(client, parsed.gstins, parsed.supplier_gstin, parsed.buyer_gstin, chosen)
+        if parsed is not None and parsed.items:
+            parsed.items = _remembered_lines(client, parsed, chosen or suggestion.get("kind", ""))
         if debug_archive.enabled():
             archive.json(
                 "outcome.json",

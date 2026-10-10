@@ -506,6 +506,15 @@ def remove_bill(bill: Bill, *, membership, note: str = "", release_payments: boo
         for allocation in allocations:
             if allocation.line_id is not None:
                 editing.require_editable(allocation.line.entry)
+        # What is un-linked is written into the change log with the removal, so the trail shows which payments were released.
+        released = "; ".join(
+            f"{a.line.entry.voucher_type} No. {a.line.entry.entry_no} of {a.line.entry.entry_date:%d-%m-%Y}, Rs {a.amount_paise / 100:,.2f}"
+            for a in allocations
+            if a.line_id is not None
+        )
+        if released:
+            note = (f"{note} " if note else "") + f"Payments released from this bill: {released}."
+            note = note[:500]
         for allocation in allocations:
             allocation.delete()
     _reopen_reading(bill)

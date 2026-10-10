@@ -96,6 +96,19 @@ class HeadSerializer(serializers.Serializer):
     amount_paise = PaiseField(min_value=1, help_text="The taxable value that goes to this ledger.")
 
 
+class ConfirmedLineSerializer(serializers.Serializer):
+    """A line of the invoice as a person left it: kept so the next invoice from this party can be filled in the same way."""
+
+    description = serializers.CharField(max_length=200)
+    read_description = serializers.CharField(max_length=200, required=False, allow_blank=True, default="")
+    hsn_sac = serializers.CharField(max_length=8, required=False, allow_blank=True, default="")
+    quantity = serializers.CharField(max_length=20, required=False, allow_blank=True, default="")
+    unit = serializers.CharField(max_length=16, required=False, allow_blank=True, default="")
+    rate_paise = PaiseField(required=False, allow_null=True, default=None)
+    amount_paise = PaiseField(required=False, allow_null=True, default=None)
+    gst_rate = serializers.FloatField(required=False, allow_null=True, default=None, min_value=0, max_value=100)
+
+
 class BillCreateSerializer(serializers.Serializer):
     """The shape of a voucher request. The accounting rules are the domain's, and say why in words."""
 
@@ -128,6 +141,10 @@ class BillCreateSerializer(serializers.Serializer):
         help_text="The client's own GSTIN this belongs to, so it lands in the right return.",
     )
     document = serializers.UUIDField(required=False, allow_null=True, default=None, help_text="An uploaded invoice file.")
+    items = ConfirmedLineSerializer(
+        many=True, required=False, default=list, max_length=100,
+        help_text="The invoice's lines as the person left them. Kept with the invoice, to fill the party's next invoice.",
+    )
 
     def validate_reference(self, value: str) -> str:
         value = value.strip()

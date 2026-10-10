@@ -13,7 +13,9 @@ import { Select } from '@/components/ui/controls'
 import { Spinner } from '@/components/ui/spinner'
 import { formatPaise, plural } from '@/lib/format'
 import { normaliseName } from '@/lib/names'
+import { Button } from '@/components/ui/button'
 import { ReportFrame } from './ReportFrame'
+import { StockEntries } from './StockEntries'
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
@@ -35,6 +37,7 @@ const money = (paise: number) => (paise === 0 ? '' : formatPaise(paise, { symbol
 export function InventoryReport({ clientId, fy }: { clientId: string; fy: number }) {
   const query = useQuery(inventoryReport(clientId, fy))
   const [picked, setPicked] = useState('')
+  const [recording, setRecording] = useState(false)
   if (query.isPending) return <Spinner label="Preparing the report…" />
   if (query.error) return <ErrorState error={query.error} retry={() => void query.refetch()} />
   const report = query.data
@@ -59,6 +62,11 @@ export function InventoryReport({ clientId, fy }: { clientId: string; fy: number
           </div>
         </div>
       )}
+
+      <div className="no-print mb-3 flex justify-end">
+        <Button variant="outline" size="sm" onClick={() => setRecording(true)}>Opening stock and adjustments</Button>
+      </div>
+      {recording && <StockEntries clientId={clientId} fy={fy} onClose={() => setRecording(false)} />}
 
       {report.items.length === 0 ? (
         <EmptyState title="No stock movements yet">

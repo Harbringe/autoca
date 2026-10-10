@@ -55,6 +55,7 @@ from api.views.ledger import (
 from api.views.overview import FirmMetricsView, FirmOverviewView
 from api.views.partyreports import OpenItemsView, OutstandingView
 from api.views.payroll import EmployeeViewSet, PayrollRunViewSet
+from api.views.stock import StockEntryViewSet
 from api.views.tally import TallyImportViewSet
 from api.views.tds import TdsChallanViewSet
 from api.views.workload import MyWorkView, PeopleWorkView, WorkFlowView
@@ -80,6 +81,7 @@ per_client.register("parties", PartyViewSet, basename="client-party")
 per_client.register("bills", BillViewSet, basename="client-bill")
 per_client.register("invoices", InvoiceReadingViewSet, basename="client-invoice")
 per_client.register("tds", TdsChallanViewSet, basename="client-tds")
+per_client.register("stock-entries", StockEntryViewSet, basename="client-stock-entries")
 per_client.register("employees", EmployeeViewSet, basename="client-employee")
 per_client.register("payroll", PayrollRunViewSet, basename="client-payroll")
 per_client.register("assets", AssetViewSet, basename="client-asset")

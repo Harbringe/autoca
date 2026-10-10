@@ -4385,6 +4385,102 @@ paths:
               schema:
                 $ref: '#/components/schemas/Job'
           description: ''
+  /api/v1/clients/{client_id}/stock-entries/:
+    get:
+      operationId: clients_stock_entries_list
+      description: Opening stock and count adjustments. Purchases and sales move stock
+        through their own invoice lines.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - inventory
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedStockEntryList'
+          description: ''
+    post:
+      operationId: clients_stock_entries_create
+      description: Opening stock and count adjustments. Purchases and sales move stock
+        through their own invoice lines.
+      summary: Record opening stock or a count adjustment
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockEntryCreateRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StockEntryCreateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StockEntryCreateRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockEntry'
+          description: ''
+  /api/v1/clients/{client_id}/stock-entries/{id}/remove/:
+    post:
+      operationId: clients_stock_entries_remove_create
+      description: Opening stock and count adjustments. Purchases and sales move stock
+        through their own invoice lines.
+      summary: Remove a stock entry
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - inventory
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/clients/{client_id}/tally-imports/:
     get:
       operationId: clients_tally_imports_list
@@ -10067,6 +10163,14 @@ components:
         * `payables` - payables
         * `tds` - tds
         * `gst` - gst
+    Kind0deEnum:
+      enum:
+      - OPENING
+      - ADJUSTMENT
+      type: string
+      description: |-
+        * `OPENING` - Opening stock
+        * `ADJUSTMENT` - Stock adjustment
     Kind1acEnum:
       enum:
       - PURCHASE
@@ -12420,6 +12524,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/StatementTransaction'
+    PaginatedStockEntryList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockEntry'
     PaginatedTallyImportSummaryList:
       type: object
       required:
@@ -15715,6 +15842,115 @@ components:
         * `RECEIVED` - Received
         * `PARSED` - Parsed
         * `FAILED` - Could not be read
+    StockEntry:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/Kind0deEnum'
+          readOnly: true
+        kind_display:
+          type: string
+          readOnly: true
+        entry_date:
+          type: string
+          format: date
+          readOnly: true
+        direction:
+          allOf:
+          - $ref: '#/components/schemas/StockEntryDirectionEnum'
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        unit:
+          type: string
+          readOnly: true
+        quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
+          readOnly: true
+        value_paise:
+          type: integer
+          readOnly: true
+        note:
+          type: string
+          readOnly: true
+      required:
+      - direction
+      - entry_date
+      - id
+      - kind
+      - kind_display
+      - name
+      - note
+      - quantity
+      - unit
+      - value_paise
+    StockEntryCreateDirectionEnum:
+      enum:
+      - IN
+      - OUT
+      type: string
+      description: |-
+        * `IN` - IN
+        * `OUT` - OUT
+    StockEntryCreateRequest:
+      type: object
+      properties:
+        kind:
+          $ref: '#/components/schemas/Kind0deEnum'
+        entry_date:
+          type: string
+          format: date
+        direction:
+          allOf:
+          - $ref: '#/components/schemas/StockEntryCreateDirectionEnum'
+          default: IN
+          description: |-
+            Ignored for opening stock, which is always in.
+
+            * `IN` - IN
+            * `OUT` - OUT
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        unit:
+          type: string
+          default: ''
+          maxLength: 16
+        quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
+        value_paise:
+          type: integer
+          minimum: 0
+          default: 0
+          description: What the stock is carried at.
+        note:
+          type: string
+          default: ''
+          maxLength: 300
+      required:
+      - entry_date
+      - kind
+      - name
+      - quantity
+    StockEntryDirectionEnum:
+      enum:
+      - IN
+      - OUT
+      type: string
+      description: |-
+        * `IN` - In
+        * `OUT` - Out
     SuggestedRoleEnum:
       enum:
       - VENDOR

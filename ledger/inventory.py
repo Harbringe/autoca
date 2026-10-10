@@ -13,7 +13,8 @@ The closing value is at weighted-average cost, which is how a trader values stoc
 * a quantity that goes negative (sold before the purchase was entered) is shown as it is, not hidden, and carries no cost,
   so a missing purchase is visible instead of netting away.
 
-The opening position is whatever the earlier financial years' lines come to; there is no separate opening stock entry.
+The opening position is whatever the earlier financial years' lines and stock entries come to. Opening stock, and corrections
+found at a physical count, are recorded as stock entries (``ledger.stock``) since no invoice carries them.
 """
 
 from __future__ import annotations
@@ -206,6 +207,15 @@ def build(client, fy: int) -> InventoryReport:
             left_out += 1
             if len(examples) < 5:
                 examples.append(f"{bill.reference} ({bill.party.canonical_name})")
+    from ledger.models import StockEntry
+
+    for row in StockEntry.objects.filter(firm_id=client.firm_id, client=client, entry_date__lte=end):
+        movements.append(
+            Movement(
+                date=row.entry_date, direction=row.direction, name=row.name, unit=row.unit,
+                quantity=row.quantity, value_paise=row.value_paise,
+            )
+        )
     return InventoryReport(
         fy=fy,
         items=summarise(movements, fy),

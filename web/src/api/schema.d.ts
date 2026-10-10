@@ -2012,6 +2012,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/stock-entries/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Opening stock and count adjustments. Purchases and sales move stock through their own invoice lines. */
+        get: operations["clients_stock_entries_list"];
+        put?: never;
+        /**
+         * Record opening stock or a count adjustment
+         * @description Opening stock and count adjustments. Purchases and sales move stock through their own invoice lines.
+         */
+        post: operations["clients_stock_entries_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/stock-entries/{id}/remove/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove a stock entry
+         * @description Opening stock and count adjustments. Purchases and sales move stock through their own invoice lines.
+         */
+        post: operations["clients_stock_entries_remove_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/tally-imports/": {
         parameters: {
             query?: never;
@@ -4714,6 +4755,12 @@ export interface components {
          */
         KeyEnum: "pnl" | "balance_sheet" | "trial_balance" | "receivables" | "payables" | "tds" | "gst";
         /**
+         * @description * `OPENING` - Opening stock
+         *     * `ADJUSTMENT` - Stock adjustment
+         * @enum {string}
+         */
+        Kind0deEnum: "OPENING" | "ADJUSTMENT";
+        /**
          * @description * `PURCHASE` - Purchase invoice
          *     * `SALES` - Sales invoice
          *     * `DEBIT_NOTE` - Debit note (a purchase return)
@@ -5908,6 +5955,21 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["StatementTransaction"][];
+        };
+        PaginatedStockEntryList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["StockEntry"][];
         };
         PaginatedTallyImportSummaryList: {
             /** @example 123 */
@@ -7611,6 +7673,58 @@ export interface components {
          * @enum {string}
          */
         Status58cEnum: "RECEIVED" | "PARSED" | "FAILED";
+        StockEntry: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly kind: components["schemas"]["Kind0deEnum"];
+            readonly kind_display: string;
+            /** Format: date */
+            readonly entry_date: string;
+            readonly direction: components["schemas"]["StockEntryDirectionEnum"];
+            readonly name: string;
+            readonly unit: string;
+            /** Format: decimal */
+            readonly quantity: string;
+            readonly value_paise: number;
+            readonly note: string;
+        };
+        /**
+         * @description * `IN` - IN
+         *     * `OUT` - OUT
+         * @enum {string}
+         */
+        StockEntryCreateDirectionEnum: "IN" | "OUT";
+        StockEntryCreateRequest: {
+            kind: components["schemas"]["Kind0deEnum"];
+            /** Format: date */
+            entry_date: string;
+            /**
+             * @description Ignored for opening stock, which is always in.
+             *
+             *     * `IN` - IN
+             *     * `OUT` - OUT
+             * @default IN
+             */
+            direction: components["schemas"]["StockEntryCreateDirectionEnum"];
+            name: string;
+            /** @default  */
+            unit: string;
+            /** Format: decimal */
+            quantity: string;
+            /**
+             * @description What the stock is carried at.
+             * @default 0
+             */
+            value_paise: number;
+            /** @default  */
+            note: string;
+        };
+        /**
+         * @description * `IN` - In
+         *     * `OUT` - Out
+         * @enum {string}
+         */
+        StockEntryDirectionEnum: "IN" | "OUT";
         /**
          * @description * `VENDOR` - Supplier
          *     * `CUSTOMER` - Customer
@@ -11636,6 +11750,80 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["Job"];
                 };
+            };
+        };
+    };
+    clients_stock_entries_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedStockEntryList"];
+                };
+            };
+        };
+    };
+    clients_stock_entries_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StockEntryCreateRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["StockEntryCreateRequest"];
+                "multipart/form-data": components["schemas"]["StockEntryCreateRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockEntry"];
+                };
+            };
+        };
+    };
+    clients_stock_entries_remove_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };

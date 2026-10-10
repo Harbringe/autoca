@@ -708,6 +708,44 @@ class FixedAsset(UUIDModel, FirmScopedModel):
         return f"{self.name} ({format_inr(self.cost_paise)})"
 
 
+class StockEntryKind(models.TextChoices):
+    OPENING = "OPENING", "Opening stock"
+    ADJUSTMENT = "ADJUSTMENT", "Stock adjustment"
+
+
+class StockEntry(UUIDModel, FirmScopedModel):
+    """A stock movement that no bill carries: opening stock, or a count correction (damage, shortage, samples, a count found over).
+
+    Purchases and sales move stock through their own invoice lines (``ledger.inventory``); these are the movements with no
+    invoice behind them, so the register can start from what the client actually held and be put right at a physical count.
+    The value is what the stock was carried at. This is the stock register only: the stock-in-trade figure in the accounts is
+    booked through the opening balances or the closing-stock entry, not by this row.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="stock_entries")
+    kind = models.CharField(max_length=12, choices=StockEntryKind.choices)
+    entry_date = models.DateField()
+    direction = models.CharField(max_length=3, choices=[("IN", "In"), ("OUT", "Out")])
+    name = models.CharField(max_length=200)
+    unit = models.CharField(max_length=16, blank=True)
+    quantity = models.DecimalField(max_digits=18, decimal_places=3)
+    value_paise = models.BigIntegerField(default=0, db_default=0)
+    note = models.CharField(max_length=300, blank=True, default="", db_default="")
+    created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+
+    class Meta:
+        db_table = "ledger_stock_entry"
+        ordering = ["entry_date", "name"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(quantity__gt=0), name="ck_stock_quantity_positive"),
+            models.CheckConstraint(condition=models.Q(value_paise__gte=0), name="ck_stock_value_not_negative"),
+        ]
+        indexes = [models.Index(fields=["firm", "client", "entry_date"], name="idx_stock_entry_client_date")]
+
+    def __str__(self) -> str:
+        return f"{self.get_kind_display()}: {self.name} x {self.quantity}"
+
+
 class DepreciationPosting(UUIDModel, FirmScopedModel):
     """The journal entry that books one financial year's depreciation, so it is booked once and can be found again.
 

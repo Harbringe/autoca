@@ -72,6 +72,7 @@ DOMAIN_ERRORS = {
     "BillingError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "billing_rule"),
     "IntakeError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "invoice_intake"),
     "RectifyError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "rectify_rule"),
+    "StockError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "stock_rule"),
     "AssetError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "asset_rule"),
     "TdsReturnError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "tds_rule"),
     "TdsError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "tds_rule"),

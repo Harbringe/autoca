@@ -78,3 +78,23 @@ def test_a_purchase_posts_as_a_journal_and_a_payment_from_the_bank_as_a_payment(
 
         card = LedgerAccount.objects.get(client=client_record, name__contains="Credit Card")
     assert card.group == "CURRENT_LIABILITY"
+
+
+def test_a_bank_row_placed_on_the_cards_ledger_is_recognised_as_the_cards_payment(api, client_record):
+    """Whichever of the bank's and the card's statements is posted second must find the first, so the payment is booked once."""
+    from types import SimpleNamespace
+
+    from banking.models import BankAccount
+    from classify.models import LedgerAccount
+    from core.db.session import firm_context
+    from ledger.approval import _is_card_ledger
+
+    upload(api, client_record)
+    with firm_context(client_record.firm_id):
+        card = BankAccount.objects.get(client=client_record)
+        card_ledger = LedgerAccount.objects.get(client=client_record, name=card.ledger_name)
+        other = LedgerAccount.objects.create(firm_id=client_record.firm_id, client=client_record, name="Rent", group="INDIRECT_EXPENSE")
+        bank_side = SimpleNamespace(ledger=card_ledger, transaction=SimpleNamespace(bank_account=SimpleNamespace(client_id=client_record.pk)))
+        elsewhere = SimpleNamespace(ledger=other, transaction=bank_side.transaction)
+        assert _is_card_ledger(bank_side) is True
+        assert _is_card_ledger(elsewhere) is False

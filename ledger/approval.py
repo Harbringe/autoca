@@ -99,8 +99,25 @@ def _loan_involved(classification) -> bool:
     from classify.models import LedgerGroup
 
     ledger = classification.ledger
-    return classification.transaction.bank_account.is_liability or (
-        ledger is not None and ledger.group == LedgerGroup.LOAN
+    return (
+        classification.transaction.bank_account.is_liability
+        or (ledger is not None and ledger.group == LedgerGroup.LOAN)
+        or _is_card_ledger(classification)
+    )
+
+
+def _is_card_ledger(classification) -> bool:
+    """The row is placed on the ledger of one of the client's credit cards. Its payment is on the card's statement too, so
+    whichever of the two is posted second must find the first and not write the payment again."""
+    from banking.models import AccountKind, BankAccount
+
+    ledger = classification.ledger
+    if ledger is None:
+        return False
+    account = classification.transaction.bank_account
+    return any(
+        card.ledger_name == ledger.name
+        for card in BankAccount.objects.filter(client_id=account.client_id, kind=AccountKind.CARD)
     )
 
 

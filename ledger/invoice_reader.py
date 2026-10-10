@@ -85,6 +85,8 @@ class Reading:
     rejected: list[dict] = field(default_factory=list)
     #: The model's reply as it came (bounded), kept with the reading so a wrong field can be traced to what was said.
     as_read: dict = field(default_factory=dict)
+    #: Which side of the invoice the client is, as the model judged from the names: ``seller``, ``buyer`` or blank.
+    client_role: str = ""
     checks: list[Check] = field(default_factory=list)
 
     @property
@@ -233,6 +235,8 @@ def reading_from_fields(fields: dict, *, today: datetime.date | None = None) -> 
     reading.discount_paise = money("discount")
     reading.details = _details(fields, reject)
     reading.rejected = rejected
+    role = str(fields.get("client_role") or "").strip().lower()
+    reading.client_role = role if role in ("seller", "buyer") else ""
     reading.as_read = _as_read(fields)
     reading.checks = _checks(reading, today)
     return reading

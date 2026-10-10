@@ -167,7 +167,7 @@ def test_the_schema_names_every_key_the_prompt_asks_for_and_requires_all_of_them
     schema = invoice_vision.INVOICE_SCHEMA
     assert set(schema["required"]) == set(schema["properties"])
     for key in schema["properties"]:
-        assert f'"{key}"' in invoice_vision.INSTRUCTION or key in ("unsure", "items"), key
+        assert f'"{key}"' in invoice_vision.INSTRUCTION or key in ("unsure", "items", "client_role"), key
     for key in ("supplier_name", "taxable", "tcs", "irn", "po_number", "bank_ifsc", "reverse_charge"):
         assert key in schema["properties"]
     item = schema["properties"]["items"]["items"]
@@ -211,3 +211,13 @@ def test_a_line_with_its_own_tax_gets_its_own_rate():
         {**GOOD, "items": [{"description": "Cement", "amount": 10000, "cgst": 1400, "sgst": 1400}]}
     )
     assert reading.items[0]["gst_rate"] == 28.0
+
+
+def test_the_client_is_named_in_the_instruction_and_the_models_answer_is_kept():
+    text = invoice_vision.instruction_for("Shri Narayan Trading Company Loha")
+    assert '"Shri Narayan Trading Company Loha"' in text and "client_role" in text
+    assert "client_role" in invoice_vision.INVOICE_SCHEMA["properties"]
+    assert invoice_vision.instruction_for("").endswith('"client_role": null.')
+    assert reading_from_fields({**GOOD, "client_role": "Seller"}).client_role == "seller"
+    assert reading_from_fields({**GOOD, "client_role": "unclear"}).client_role == ""
+    assert reading_from_fields({**GOOD, "client_role": "owner"}).client_role == ""

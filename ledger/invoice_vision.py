@@ -91,6 +91,7 @@ INVOICE_SCHEMA = {
         **{k: _nullable("string") for k in _TEXT_KEYS},
         **{k: _nullable("number") for k in _AMOUNT_KEYS},
         "reverse_charge": _nullable("boolean"),
+        "client_role": _nullable("string"),
         "unsure": {"type": "array", "items": {"type": "string"}},
         "items": {
             "type": "array",
@@ -102,8 +103,25 @@ INVOICE_SCHEMA = {
             },
         },
     },
-    "required": [*_TEXT_KEYS, *_AMOUNT_KEYS, "reverse_charge", "unsure", "items"],
+    "required": [*_TEXT_KEYS, *_AMOUNT_KEYS, "reverse_charge", "client_role", "unsure", "items"],
 }
+
+
+def instruction_for(client_name: str = "") -> str:
+    """The instruction, with the business the books belong to when it is known, so the model can say which side that is.
+
+    The name is the one the client is filed under, which the page already prints somewhere on a purchase or a sale. The
+    model is asked to judge by names and details, because the page may spell or abbreviate it differently.
+    """
+    name = " ".join(str(client_name or "").split())[:120]
+    if not name:
+        return INSTRUCTION + " \"client_role\": null."
+    return (
+        INSTRUCTION
+        + f' The business whose books these are is "{name}". In "client_role" say "seller" if that business issued this '
+        'invoice, "buyer" if it is the one billed, or "unclear" if the page does not settle it. Judge by the names, '
+        "addresses and GSTINs printed (the name may be spelled or shortened differently); never guess from the amounts."
+    )
 
 
 class InvoiceVisionError(ValueError):
@@ -121,7 +139,9 @@ def read_scanned_invoice(data: bytes, page_count: int, llm, *, client=None, page
     pages = page_images if page_images is not None else render_pages(data)
     started = time.monotonic()
     try:
-        reply = llm.complete_json_with_images(SYSTEM, INSTRUCTION, pages, max_tokens=8192, schema=INVOICE_SCHEMA)
+        reply = llm.complete_json_with_images(
+            SYSTEM, instruction_for(getattr(client, "name", "")), pages, max_tokens=8192, schema=INVOICE_SCHEMA
+        )
     except LLMUnavailable as exc:
         raise InvoiceVisionError("The model that reads scans is not set up. Set the model in the server settings.") from exc
     except LLMRateLimited as exc:

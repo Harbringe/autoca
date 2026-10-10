@@ -138,14 +138,20 @@ def suggest_kind(client, parsed) -> dict:
 
     supplier_is_us = bool(parsed.supplier_name) and same_business(client.name, parsed.supplier_name)
     buyer_is_us = bool(parsed.buyer_name) and same_business(client.name, parsed.buyer_name)
-    if supplier_is_us == buyer_is_us:
+    by_name = BillKind.SALES if supplier_is_us and not buyer_is_us else BillKind.PURCHASE if buyer_is_us and not supplier_is_us else ""
+    model_said = getattr(parsed, "client_role", "")
+    by_model = BillKind.SALES if model_said == "seller" else BillKind.PURCHASE if model_said == "buyer" else ""
+    if by_name and by_model and by_name != by_model:
+        return {}  # the two disagree: leave it to the person
+    kind = by_model or by_name
+    if not kind:
         return {}
-    kind = BillKind.SALES if supplier_is_us else BillKind.PURCHASE
-    printed = parsed.supplier_gstin if supplier_is_us else parsed.buyer_gstin
-    side = "the issuer" if supplier_is_us else "the one billed"
+    printed = parsed.supplier_gstin if kind == BillKind.SALES else parsed.buyer_gstin
+    side = "the issuer" if kind == BillKind.SALES else "the one billed"
+    evidence = "The reader and the printed names agree" if by_name and by_model else "The reader judged" if by_model else "The printed names show"
     return {
         "kind": kind,
-        "why": f"The client's name is on this invoice as {side}, so it looks like a {'sale' if supplier_is_us else 'purchase'}.",
+        "why": f"{evidence} that the client is {side} on this invoice, so it looks like a {'sale' if kind == BillKind.SALES else 'purchase'}.",
         "own_gstin_guess": printed or "",
     }
 

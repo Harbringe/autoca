@@ -4386,6 +4386,8 @@ export interface components {
             readonly uploaded_by_name: string | null;
             /** Format: date-time */
             readonly created_at: string;
+            /** @description Where the file is filed: its kind, or UNSORTED_INVOICE for an uploaded invoice not yet told as a purchase or a sale. */
+            readonly group: string;
         };
         FirmMetrics: {
             period: components["schemas"]["MetricsPeriod"];

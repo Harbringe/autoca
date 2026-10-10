@@ -28,12 +28,13 @@ export interface FirmDocument {
   failure_reason: string
   uploaded_by_name: string | null
   created_at: string
+  group?: string
 }
 
 const categories: Record<string, string> = {
   BANK_STATEMENT: 'Bank statements', PURCHASE_INVOICE: 'Purchase invoices',
   SALES_INVOICE: 'Sales invoices', GSTR2B: 'GSTR-2B', REGISTER: 'Registers',
-  TALLY_EXPORT: 'Tally exports', OTHER: 'Not yet sorted (invoices waiting to be told as purchase or sale, and other files)',
+  TALLY_EXPORT: 'Tally exports', OTHER: 'Other files', UNSORTED_INVOICE: 'Invoices waiting to be told as purchase or sale',
 }
 const bytes = (value: number) => value < 1024 * 1024 ? `${Math.max(1, Math.round(value / 1024))} KB` : `${(value / 1024 / 1024).toFixed(1)} MB`
 const date = (value: string) => formatDate(value)
@@ -65,7 +66,7 @@ export function DocumentsScreen({ clientId }: { clientId?: string }) {
         {visibleClients.map((client) => {
           const files = grouped.get(client.id) ?? []
           const byKind = new Map<string, FirmDocument[]>()
-          for (const file of files) byKind.set(file.kind, [...(byKind.get(file.kind) ?? []), file])
+          for (const file of files) byKind.set(file.group ?? file.kind, [...(byKind.get(file.group ?? file.kind) ?? []), file])
           return <details key={client.id} open={!!clientId || undefined} className="group border-b last:border-b-0">
             <summary className="flex cursor-pointer list-none items-center gap-3 px-4 py-3.5 hover:bg-muted/50 [&::-webkit-details-marker]:hidden">
               <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-0 -rotate-90" />

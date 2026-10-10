@@ -9322,10 +9322,16 @@ components:
           type: string
           format: date-time
           readOnly: true
+        group:
+          type: string
+          readOnly: true
+          description: 'Where the file is filed: its kind, or UNSORTED_INVOICE for
+            an uploaded invoice not yet told as a purchase or a sale.'
       required:
       - client_id
       - client_name
       - created_at
+      - group
       - id
       - kind
       - kind_display

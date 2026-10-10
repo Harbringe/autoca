@@ -30,12 +30,20 @@ class FirmDocumentSerializer(serializers.ModelSerializer):
     kind_display = serializers.CharField(source="get_kind_display", read_only=True)
     status_display = serializers.CharField(source="get_status_display", read_only=True)
     uploaded_by_name = serializers.CharField(source="uploaded_by.get_full_name", read_only=True, allow_null=True)
+    group = serializers.SerializerMethodField(
+        help_text="Where the file is filed: its kind, or UNSORTED_INVOICE for an uploaded invoice not yet told as a purchase or a sale."
+    )
+
+    def get_group(self, obj) -> str:
+        if obj.kind == "OTHER" and hasattr(obj, "reading"):
+            return "UNSORTED_INVOICE"
+        return obj.kind
 
     class Meta:
         model = Document
         fields = ["id", "client_id", "client_name", "kind", "kind_display", "original_filename",
                   "byte_size", "page_count", "status", "status_display", "failure_reason",
-                  "uploaded_by_name", "created_at"]
+                  "uploaded_by_name", "created_at", "group"]
 
 
 class FirmDocumentListView(ListAPIView):
@@ -48,7 +56,7 @@ class FirmDocumentListView(ListAPIView):
         queryset = Document.objects.filter(
             firm_id=self.request.firm.pk,
             client__in=visible_clients(self.request.membership),
-        ).select_related("client", "uploaded_by")
+        ).select_related("client", "uploaded_by", "reading")
         client_id = self.request.query_params.get("client")
         if client_id:
             queryset = queryset.filter(client_id=client_id)

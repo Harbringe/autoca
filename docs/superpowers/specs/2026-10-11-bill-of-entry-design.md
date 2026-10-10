@@ -55,6 +55,10 @@ rule for auto-created parties). Its ledger is the party ledger of the bill, so s
 no RLS change). It follows the `msme` flag beside it: set by a person on the party form, shown on the party screen, exposed in
 the party serializer, never guessed. The Customs party is not foreign (it is the Indian customs authority).
 
+A **suggestion**, never a setting: when an invoice reading has no GSTIN for the supplier and a non-Indian address or currency
+(from the reader's `details`), the party screen shows "Looks foreign: mark as foreign?" and a person confirms. Until confirmed
+the flag stays false and no open item is raised.
+
 What it is used for in this slice: only the `import_invoice_without_boe` open item. It is also what later work needs (TDS
 section 195 and reverse charge on imported services), but those are not part of this slice.
 

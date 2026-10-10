@@ -110,7 +110,8 @@ def test_the_rest_of_the_form_is_read_cleaned_and_bounded():
     assert reading.payment_mode == "bank_transfer" and reading.currency == "INR"
     assert reading.expense_hint == "Food and beverages"
     assert reading.items[0] == {"description": "Biryani", "hsn_sac": "9963", "quantity": "2", "unit": "plate", "rate_paise": 25050, "amount_paise": 50100, "gst_rate": 5.0,
-                                "discount_paise": None, "cgst_paise": None, "sgst_paise": None, "igst_paise": None, "total_paise": None}
+                                "discount_paise": None, "cgst_paise": None, "sgst_paise": None, "igst_paise": None, "total_paise": None,
+                                "gst_rate_derived": False}
     assert len(reading.items) == 2  # the blank and the non-object are dropped
     assert reading.items[1]["quantity"] == "" and reading.items[1]["gst_rate"] is None and reading.items[1]["rate_paise"] == 10000
 
@@ -183,3 +184,30 @@ def test_the_schema_is_sent_with_the_pages():
 
     invoice_vision.read_scanned_invoice(b"x", 1, Spy(), page_images=[b"p"])
     assert sent["schema"] is invoice_vision.INVOICE_SCHEMA
+
+
+def test_a_missing_line_rate_is_worked_out_from_the_tax_and_marked():
+    # 5% on 10,000.00: CGST 250.00 + SGST 250.00; the lines print no rate.
+    reading = reading_from_fields(
+        {**GOOD, "taxable": 10000, "cgst": 250, "sgst": 250, "total": 10500,
+         "items": [{"description": "Rice", "amount": 6000}, {"description": "Dal", "amount": 4000}]}
+    )
+    assert [i["gst_rate"] for i in reading.items] == [5.0, 5.0]
+    assert all(i["gst_rate_derived"] for i in reading.items)
+
+
+def test_a_printed_rate_is_kept_and_blocks_the_guess_for_mixed_invoices():
+    reading = reading_from_fields(
+        {**GOOD, "taxable": 10000, "cgst": 500, "sgst": 500, "total": 11000,
+         "items": [{"description": "Rice", "amount": 6000, "gst_rate": 5}, {"description": "Soap", "amount": 4000}]}
+    )
+    assert reading.items[0]["gst_rate"] == 5.0 and reading.items[0]["gst_rate_derived"] is False
+    # overall 10% is not the printed 5%, so it is not pushed onto the other line
+    assert reading.items[1]["gst_rate"] is None
+
+
+def test_a_line_with_its_own_tax_gets_its_own_rate():
+    reading = reading_from_fields(
+        {**GOOD, "items": [{"description": "Cement", "amount": 10000, "cgst": 1400, "sgst": 1400}]}
+    )
+    assert reading.items[0]["gst_rate"] == 28.0

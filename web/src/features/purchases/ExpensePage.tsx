@@ -28,6 +28,7 @@ import { DocumentViewer, ViewerSkeleton } from '@/features/documents/DocumentVie
 import { usableLedgers } from '@/features/review/LedgerPicker'
 import { ACCEPT, ACCEPTED_NAME } from '@/lib/fileTypes'
 import { formatDate, formatPaise } from '@/lib/format'
+import { normaliseName } from '@/lib/names'
 import { KIND_LABEL, NOT_A_HEAD, type VoucherKind } from '@/lib/vouchers'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
@@ -97,7 +98,9 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
   const bill = detail.data
   const read = reading?.read ?? null
   const openForm = !bill && (as === 'new' || (reading?.status === 'OPEN'))
-  const wantedKind: VoucherKind = (bill?.kind as VoucherKind | undefined) ?? (reading?.kind === 'SALES' ? 'SALES' : (kind ?? 'PURCHASE'))
+  const suggestedKind = read?.suggested_kind === 'SALES' || read?.suggested_kind === 'PURCHASE' ? read.suggested_kind : undefined
+  const readingKind = reading?.kind === 'SALES' || reading?.kind === 'PURCHASE' ? reading.kind : suggestedKind
+  const wantedKind: VoucherKind = (bill?.kind as VoucherKind | undefined) ?? readingKind ?? kind ?? 'PURCHASE'
   const heads = usableLedgers(ledgers.data).filter((l) => !NOT_A_HEAD.has(l.group ?? ''))
   const standard = heads.find((l) => l.name === (wantedKind === 'SALES' ? 'Sales' : 'Purchases') && l.status === 'ACTIVE')?.id
   const headLedger = (read?.expense_hint && suggestLedger(read.expense_hint, heads)) || standard
@@ -111,7 +114,8 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
   const filename = reading?.filename ?? ''
 
   const total = bill ? bill.total_paise : (read?.total_paise ?? null)
-  const party = bill?.party_name ?? read?.supplier_name ?? ''
+  const counterparty = readingKind === 'SALES' ? read?.buyer_name : readingKind === 'PURCHASE' ? read?.supplier_name : ''
+  const party = normaliseName(bill?.party_name ?? counterparty ?? '')
   const title = `${KIND_LABEL[wantedKind] ?? 'Voucher'}${party ? ` · ${party}` : ''}${total != null ? `  ${formatPaise(total)}` : ''}`
   const alertList = [
     reading?.unreadable_reason || reading?.attention || '',

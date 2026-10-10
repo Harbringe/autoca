@@ -24,6 +24,7 @@ import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { LedgerPicker, usableLedgers } from '@/features/review/LedgerPicker'
 import { formatDate, formatPaise, parseDate, parseRupees } from '@/lib/format'
+import { normaliseName } from '@/lib/names'
 import { cn } from '@/lib/utils'
 import {
   isPurchaseSide,
@@ -48,7 +49,22 @@ interface Head {
 type ReadItem = NonNullable<InvoiceReading['read']>['items'][number]
 
 /** What a receipt says that the voucher has no field for, shown beside the form so the person can see what was read. */
+/** One side of the invoice, as printed. */
+export interface PartyFacts {
+  name: string
+  gstin: string
+  address: string
+  pan?: string
+}
+
 export interface ReceiptFacts {
+  /** Who issued it and who is billed. Both are shown, whichever kind the voucher is. */
+  seller?: PartyFacts
+  buyer?: PartyFacts
+  /** Why the kind was suggested, when only the names could say. */
+  kindReason?: string
+  /** The GSTIN on the client's side of the invoice, to add under GST. */
+  ownGstinGuess?: string
   address: string
   pan: string
   place: string
@@ -87,6 +103,8 @@ const NEW_PARTY = '__new__'
 /** What an uploaded invoice was read as, to start the form from. The person still confirms every field. */
 export interface VoucherPrefill {
   kind: VoucherKind
+  /** Neither the GSTINs nor the names say whether this is a purchase or a sale: the person must choose. */
+  kindUnsure?: boolean
   partyId?: string
   newParty?: { name: string; gstin: string }
   reference: string
@@ -147,6 +165,7 @@ export function VoucherForm({
   const invalidate = useInvalidateClient(clientId)
 
   const [kind, setKind] = useState<VoucherKind>(prefill?.kind ?? initialKind)
+  const [kindChosen, setKindChosen] = useState(!prefill?.kindUnsure)
   const [partyId, setPartyId] = useState(prefill?.partyId ?? '')
   const [reference, setReference] = useState(prefill?.reference ?? '')
   const [billDate, setBillDate] = useState(() => formatDate(prefill?.billDate ?? new Date().toISOString().slice(0, 10)))
@@ -212,12 +231,21 @@ export function VoucherForm({
 
   function changeKind(next: VoucherKind) {
     setKind(next)
+    setKindChosen(true)
     setPartyId('')
     setRcm(false)
     setTds('')
     setTdsSection('')
     setNewParty(null)
     setErrors({})
+  }
+
+  /** The round off that brings taxable value plus tax to the nearest whole rupee (the way a printed invoice rounds). */
+  function roundToRupee() {
+    const before = amounts.heads.reduce((sum, h) => sum + h.paise, 0) + amounts.cgst.paise + amounts.sgst.paise + amounts.igst.paise + amounts.cess.paise
+    const nearest = Math.round(before / 100) * 100
+    const diff = nearest - before
+    setRoundOff(diff === 0 ? '' : (diff / 100).toFixed(2))
   }
 
   function splitByLines() {
@@ -267,6 +295,7 @@ export function VoucherForm({
     const found: Record<string, string> = {}
     const iso = parseDate(billDate)
     const due = dueDate.trim() ? parseDate(dueDate) : null
+    if (!kindChosen) found.kind = 'Say whether this is a purchase or a sale.'
     if (!partyId) found.party = purchaseSide ? 'Choose the supplier.' : 'Choose the customer.'
     if (!reference.trim()) found.reference = 'Enter the invoice number as printed.'
     if (!iso) found.bill_date = 'Enter a date as DD-MM-YYYY, for example 01-10-2025.'
@@ -372,7 +401,9 @@ export function VoucherForm({
                         <td className="num px-1 text-right">{i.quantity ? `${i.quantity}${i.unit ? ` ${i.unit}` : ''}` : '—'}</td>
                         <td className="num px-1 text-right">{i.rate_paise != null ? (i.rate_paise / 100).toFixed(2) : '—'}</td>
                         <td className="num px-1 text-right">{i.amount_paise != null ? (i.amount_paise / 100).toFixed(2) : '—'}</td>
-                        <td className="num px-1 text-right">{i.gst_rate ?? '—'}</td>
+                        <td className="num px-1 text-right" title={i.gst_rate_derived ? 'Worked out from the tax amounts; not printed on the line' : undefined}>
+                          {i.gst_rate != null ? `${i.gst_rate}${i.gst_rate_derived ? '*' : ''}` : '—'}
+                        </td>
                       </tr>
                     ))}
                   </tbody>
@@ -395,9 +426,10 @@ export function VoucherForm({
 
       <div className={layout === 'page' && tab !== 'details' ? 'hidden' : 'grid gap-4'}>
       {prefill?.facts && <ReceiptFactsCard facts={prefill.facts} />}
-      <Field label="Voucher type">
+      <Field label="Voucher type" error={errors.kind}>
         {(props) => (
-          <Select {...props} value={kind} onChange={(e) => changeKind(e.target.value as VoucherKind)}>
+          <Select {...props} value={kindChosen ? kind : ''} onChange={(e) => changeKind(e.target.value as VoucherKind)}>
+            {!kindChosen && <option value="" disabled>Choose purchase or sale…</option>}
             {VOUCHER_KINDS.map((k) => (
               <option key={k.value} value={k.value}>{k.label}</option>
             ))}
@@ -521,7 +553,14 @@ export function VoucherForm({
         </div>
         <div className="grid gap-3 sm:grid-cols-3">
           <Field label="Round off (₹, + or −)" hint="Positive if the invoice rounds up.">
-            {(props) => <Input {...props} inputMode="decimal" className="text-right tabular-nums" value={roundOff} onChange={(e) => setRoundOff(e.target.value)} />}
+            {(props) => (
+              <div className="flex items-center gap-2">
+                <Input {...props} inputMode="decimal" className="text-right tabular-nums" value={roundOff} onChange={(e) => setRoundOff(e.target.value)} />
+                <Button type="button" variant="outline" size="sm" onClick={roundToRupee} disabled={unreadable || amounts.heads.every((h) => !h.paise)} title="Fill the round off that brings the invoice total to a whole rupee">
+                  Round off
+                </Button>
+              </div>
+            )}
           </Field>
           {canTds && (
             <>
@@ -589,10 +628,23 @@ export function VoucherForm({
 }
 
 /** What was read off the receipt beyond the voucher's own fields, so the person sees all of it. */
+function PartyBlock({ title, party }: { title: string; party?: PartyFacts }) {
+  if (!party || !(party.name || party.gstin || party.address)) return null
+  return (
+    <div className="grid gap-0.5">
+      <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</div>
+      {party.name && <div className="font-medium text-heading">{normaliseName(party.name)}</div>}
+      {party.gstin && <div className="num">GSTIN {party.gstin}</div>}
+      {party.pan && <div className="num">PAN {party.pan}</div>}
+      {party.address && <div className="text-muted-foreground">{party.address}</div>}
+    </div>
+  )
+}
+
 function ReceiptFactsCard({ facts }: { facts: ReceiptFacts }) {
   const rows: [string, string][] = [
-    ['Address', facts.address],
-    ['PAN', facts.pan],
+    // The seller's address and PAN are in the seller block above.
+    ...(facts.seller ? [] : ([['Address', facts.address], ['PAN', facts.pan]] as [string, string][])),
     ['Place of supply', facts.place],
     ['Paid by', PAYMENT_MODE[facts.paymentMode] ?? ''],
     ['Payment terms', facts.terms],
@@ -605,10 +657,23 @@ function ReceiptFactsCard({ facts }: { facts: ReceiptFacts }) {
   const shown = rows.filter(([, v]) => v)
   const foreign = facts.currency && facts.currency !== 'INR'
   const rejected = facts.rejected ?? []
-  if (shown.length === 0 && !foreign && rejected.length === 0) return null
+  const parties = [facts.seller, facts.buyer].some((p) => p && (p.name || p.gstin || p.address))
+  if (shown.length === 0 && !foreign && rejected.length === 0 && !parties && !facts.kindReason) return null
   return (
     <section aria-label="Read from the receipt" className="grid gap-2 rounded-md border border-accent-edge bg-accent p-3 text-sm">
       <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Read from the receipt</h3>
+      {parties && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          <PartyBlock title="Seller (issued the invoice)" party={facts.seller} />
+          <PartyBlock title="Buyer (billed)" party={facts.buyer} />
+        </div>
+      )}
+      {facts.kindReason && <p className="text-info">{facts.kindReason} Check the voucher type below.</p>}
+      {facts.ownGstinGuess && (
+        <p className="text-muted-foreground">
+          The client’s side shows GSTIN <span className="num">{facts.ownGstinGuess}</span>. Add it under GST and every file is told apart exactly.
+        </p>
+      )}
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
         {shown.map(([label, value]) => (
           <div key={label} className="contents">

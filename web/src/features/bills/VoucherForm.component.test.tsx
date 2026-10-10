@@ -74,6 +74,21 @@ describe('Booking a voucher', () => {
     expect(preview).toHaveTextContent('₹1,18,000.00')
   })
 
+  it('fills the round off that brings the total to a whole rupee, up or down', async () => {
+    open()
+    await userEvent.type(await screen.findByLabelText('Amount (₹)'), '16780.20')
+    await userEvent.type(screen.getByLabelText('CGST'), '1510.21')
+    await userEvent.type(screen.getByLabelText('SGST'), '1510.21')
+    await userEvent.click(screen.getByRole('button', { name: 'Round off' }))
+    expect(screen.getByLabelText(/Round off \(₹/)).toHaveValue('0.38') // 19,800.62 up to 19,801
+    expect(screen.getByRole('region', { name: 'What this comes to' })).toHaveTextContent('₹19,801.00')
+
+    await userEvent.clear(screen.getByLabelText('SGST'))
+    await userEvent.type(screen.getByLabelText('SGST'), '1509.90')
+    await userEvent.click(screen.getByRole('button', { name: 'Round off' }))
+    expect(screen.getByLabelText(/Round off \(₹/)).toHaveValue('-0.31') // 19,800.31 rounds down to 19,800
+  })
+
   it('under reverse charge the supplier is owed only the taxable value', async () => {
     open()
     await userEvent.type(await screen.findByLabelText('Amount (₹)'), '1,00,000')

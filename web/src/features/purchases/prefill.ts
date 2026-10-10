@@ -7,6 +7,10 @@ import type { ReceiptFacts, VoucherPrefill } from '@/features/bills/VoucherDialo
 type Read = NonNullable<InvoiceReading['read']>
 
 const factsOf = (read: Read): ReceiptFacts => ({
+  seller: { name: read.supplier_name, gstin: read.supplier_gstin ?? '', address: read.supplier_address, pan: read.supplier_pan },
+  buyer: { name: read.buyer_name, gstin: read.buyer_gstin ?? '', address: read.buyer_address },
+  kindReason: read.kind_reason ?? '',
+  ownGstinGuess: read.own_gstin_guess ?? '',
   address: read.supplier_address,
   pan: read.supplier_pan,
   place: read.place_of_supply,
@@ -31,10 +35,14 @@ function extrasOf(read: Read | null | undefined): Pick<VoucherPrefill, 'dueDate'
 export function prefillFromReading(reading: InvoiceReading, headLedger?: string): VoucherPrefill | null {
   const read = reading.read
   if (!read) return null
-  const purchase = reading.kind !== 'SALES'
-  const counterparty = purchase ? read.supplier_name : read.buyer_name
+  // The file's own kind, else what the names suggested; with neither, the person chooses (never a silent purchase).
+  const decided = reading.kind === 'SALES' || reading.kind === 'PURCHASE' ? reading.kind : read.suggested_kind
+  const unsure = decided !== 'SALES' && decided !== 'PURCHASE'
+  const purchase = decided !== 'SALES'
+  const counterparty = unsure ? '' : purchase ? read.supplier_name : read.buyer_name
   return {
     kind: purchase ? 'PURCHASE' : 'SALES',
+    kindUnsure: unsure,
     partyId: reading.suggested_party?.id,
     newParty: reading.suggested_party || !counterparty ? undefined : { name: counterparty, gstin: read.counterparty_gstin },
     reference: read.invoice_no,

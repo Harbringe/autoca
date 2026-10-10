@@ -6364,6 +6364,10 @@ export interface components {
             due_date: string | null;
             supplier_address: string;
             supplier_pan: string;
+            /** @description The issuer's GSTIN, when the page says which one is which. */
+            supplier_gstin: string;
+            /** @description The GSTIN of the party billed, when the page says which one is which. */
+            buyer_gstin: string;
             buyer_name: string;
             buyer_address: string;
             place_of_supply: string;
@@ -6398,6 +6402,12 @@ export interface components {
             rejected: components["schemas"]["RejectedValue"][];
             /** @description The model's reply as it came (bounded), to trace a wrong field. */
             as_read: unknown;
+            /** @description PURCHASE or SALES when the printed names say which it is but no GSTIN could; blank otherwise. */
+            suggested_kind: string;
+            /** @description Why that kind is suggested, in words. */
+            kind_reason: string;
+            /** @description The GSTIN printed on the client's side of the invoice, to add under GST. */
+            own_gstin_guess: string;
             /** @description Fields the reader said it could not read clearly (a scan), to check against the page. */
             unsure: string[];
         };
@@ -6421,6 +6431,11 @@ export interface components {
              * @description Percent.
              */
             gst_rate: number | null;
+            /**
+             * @description The rate was worked out from the tax amounts, not printed on the line.
+             * @default false
+             */
+            gst_rate_derived: boolean;
             /**
              * Format: int64
              * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.

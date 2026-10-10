@@ -227,6 +227,7 @@ def reading_from_fields(fields: dict, *, today: datetime.date | None = None) -> 
     if currency and not reading.currency:
         reject("currency", currency, "is not a three-letter currency code")
     reading.items = _items(fields.get("items"))
+    _fill_gst_rates(reading)
     reading.tcs_paise = money("tcs") or 0
     reading.other_charges_paise = (money("freight") or 0) + (money("other_charges") or 0)
     reading.discount_paise = money("discount")
@@ -312,6 +313,42 @@ def _bounded(value, depth: int = 0):
 def _as_read(fields: dict) -> dict:
     bounded = _bounded(fields)
     return bounded if len(repr(bounded)) <= _AS_READ_LIMIT else {"note": "reply too large to keep", "keys": sorted(map(str, fields))[:80]}
+
+
+#: The GST rates in use, as percent. A rate worked out from the amounts is snapped to one of these, or left out.
+GST_SLABS = (0.0, 0.1, 0.25, 1.0, 1.5, 3.0, 5.0, 6.0, 7.5, 12.0, 14.0, 18.0, 28.0, 40.0)
+
+
+def _snap(rate: float) -> float | None:
+    nearest = min(GST_SLABS, key=lambda s: abs(s - rate))
+    return nearest if abs(nearest - rate) <= 0.25 else None
+
+
+def _fill_gst_rates(reading: Reading) -> None:
+    """Fill the GST rate of a line the invoice did not print one for, from the tax amounts, and say it was worked out.
+
+    A line's own tax amounts give its rate. Failing that, the invoice's whole tax over its whole taxable value gives one rate
+    for every line, but only when no line prints a different rate (an invoice mixing rates must print them per line).
+    """
+    if not reading.items:
+        return
+    printed = {i["gst_rate"] for i in reading.items if i.get("gst_rate") is not None}
+    overall = None
+    if reading.taxable_paise:
+        tax = reading.cgst_paise + reading.sgst_paise + reading.igst_paise + reading.cess_paise
+        overall = _snap(tax * 100 / reading.taxable_paise) if tax else None
+    for item in reading.items:
+        if item.get("gst_rate") is not None:
+            item["gst_rate_derived"] = False
+            continue
+        rate = None
+        line_tax = sum(item.get(k) or 0 for k in ("cgst_paise", "sgst_paise", "igst_paise"))
+        if line_tax and item.get("amount_paise"):
+            rate = _snap(line_tax * 100 / item["amount_paise"])
+        if rate is None and overall is not None and printed <= {overall}:
+            rate = overall
+        item["gst_rate"] = rate
+        item["gst_rate_derived"] = rate is not None
 
 
 def _quantity(value):

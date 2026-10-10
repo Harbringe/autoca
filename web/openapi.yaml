@@ -13370,6 +13370,13 @@ components:
           type: string
         supplier_pan:
           type: string
+        supplier_gstin:
+          type: string
+          description: The issuer's GSTIN, when the page says which one is which.
+        buyer_gstin:
+          type: string
+          description: The GSTIN of the party billed, when the page says which one
+            is which.
         buyer_name:
           type: string
         buyer_address:
@@ -13428,6 +13435,17 @@ components:
             out of the fields, with why.
         as_read:
           description: The model's reply as it came (bounded), to trace a wrong field.
+        suggested_kind:
+          type: string
+          description: PURCHASE or SALES when the printed names say which it is but
+            no GSTIN could; blank otherwise.
+        kind_reason:
+          type: string
+          description: Why that kind is suggested, in words.
+        own_gstin_guess:
+          type: string
+          description: The GSTIN printed on the client's side of the invoice, to add
+            under GST.
         unsure:
           type: array
           items:
@@ -13437,6 +13455,7 @@ components:
       required:
       - as_read
       - buyer_address
+      - buyer_gstin
       - buyer_name
       - cess_paise
       - cgst_paise
@@ -13451,14 +13470,18 @@ components:
       - invoice_date
       - invoice_no
       - items
+      - kind_reason
       - other_charges_paise
+      - own_gstin_guess
       - payment_mode
       - payment_terms
       - place_of_supply
       - rejected
       - round_off_paise
       - sgst_paise
+      - suggested_kind
       - supplier_address
+      - supplier_gstin
       - supplier_name
       - supplier_pan
       - taxable_paise
@@ -13497,6 +13520,11 @@ components:
           format: double
           nullable: true
           description: Percent.
+        gst_rate_derived:
+          type: boolean
+          default: false
+          description: The rate was worked out from the tax amounts, not printed on
+            the line.
         discount_paise:
           type: integer
           maximum: 1000000000000000000

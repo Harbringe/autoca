@@ -87,6 +87,29 @@ def detect_kind(client, parsed) -> tuple[str, str]:
     )
 
 
+def suggest_kind(client, parsed) -> dict:
+    """What the printed names say, when the GSTINs could not settle it: a suggestion a person confirms, never a decision.
+
+    The client is the issuer on a sale and the one billed on a purchase, so whichever side carries the client's own name
+    (written however the document wrote it) is the client. ``own_gstin_guess`` is the GSTIN printed on that side, so the person
+    can add it under GST once and have every later file told apart exactly.
+    """
+    from core.names import same_business
+
+    supplier_is_us = bool(parsed.supplier_name) and same_business(client.name, parsed.supplier_name)
+    buyer_is_us = bool(parsed.buyer_name) and same_business(client.name, parsed.buyer_name)
+    if supplier_is_us == buyer_is_us:
+        return {}
+    kind = BillKind.SALES if supplier_is_us else BillKind.PURCHASE
+    printed = parsed.supplier_gstin if supplier_is_us else parsed.buyer_gstin
+    side = "the issuer" if supplier_is_us else "the one billed"
+    return {
+        "kind": kind,
+        "why": f"The client's name is on this invoice as {side}, so it looks like a {'sale' if supplier_is_us else 'purchase'}.",
+        "own_gstin_guess": printed or "",
+    }
+
+
 def _counterparty_gstin(kind: str, supplier: str, buyer: str) -> str:
     """The other party's GSTIN: the supplier's on a purchase, the buyer's on a sale."""
     return supplier if kind == BillKind.PURCHASE else buyer if kind == BillKind.SALES else ""
@@ -114,8 +137,11 @@ def _key_for(client, supplier: str, invoice_no: str) -> str:
     return invoice_key(client.firm_id, supplier, invoice_no) if supplier and invoice_no else ""
 
 
-def _payload_of(parsed, kind: str) -> dict:
+def _payload_of(parsed, kind: str, suggestion: dict | None = None) -> dict:
     return {
+        "suggested_kind": (suggestion or {}).get("kind", ""),
+        "kind_reason": (suggestion or {}).get("why", ""),
+        "own_gstin_guess": (suggestion or {}).get("own_gstin_guess", ""),
         "supplier_name": parsed.supplier_name,
         "buyer_name": parsed.buyer_name,
         "unsure": parsed.unsure,
@@ -204,8 +230,11 @@ def read_upload(*, client, data: bytes, filename: str, kind: str = "", uploaded_
 
         attention = ""
         chosen = kind
+        suggestion: dict = {}
         if parsed is not None and not kind:
             chosen, attention = detect_kind(client, parsed)
+            if not chosen:
+                suggestion = suggest_kind(client, parsed)
         if parsed is not None and chosen:
             parsed.supplier_gstin, parsed.buyer_gstin = _roles(client, parsed.gstins, parsed.supplier_gstin, parsed.buyer_gstin, chosen)
         if debug_archive.enabled():
@@ -218,7 +247,7 @@ def read_upload(*, client, data: bytes, filename: str, kind: str = "", uploaded_
                     "unreadable": unreadable,
                     "proved": parsed.proved if parsed is not None else None,
                     "checks": [asdict(c) for c in parsed.checks] if parsed is not None else [],
-                    "kept": _payload_of(parsed, chosen) if parsed is not None else None,
+                    "kept": _payload_of(parsed, chosen, suggestion) if parsed is not None else None,
                 },
             )
 
@@ -257,7 +286,7 @@ def read_upload(*, client, data: bytes, filename: str, kind: str = "", uploaded_
                 kind=chosen,
                 proved=parsed.proved,
                 checks=[asdict(c) for c in parsed.checks],
-                payload_enc=encrypt_for_firm(json.dumps(_payload_of(parsed, chosen)), client.firm_id, PAYLOAD_PURPOSE),
+                payload_enc=encrypt_for_firm(json.dumps(_payload_of(parsed, chosen, suggestion)), client.firm_id, PAYLOAD_PURPOSE),
                 invoice_key=_key_for(client, issuer, parsed.invoice_no),
                 attention=attention[:255],
             )
@@ -439,7 +468,9 @@ def _find_or_make_party(client, kind: str, gstin: str, name: str) -> Party:
         raise IntakeError(
             "This customer is not on record yet. A new customer is added by a person, so choose or add the customer and book it."
         )
-    name = " ".join((name or "").split())[:255]
+    from core.names import normalise
+
+    name = normalise(" ".join((name or "").split()))[:255]
     if len(name) < 3:
         raise IntakeError("The party's name could not be read. Choose the party and book it.")
     if Party.objects.filter(firm_id=client.firm_id, client=client, canonical_name__iexact=name).exists():

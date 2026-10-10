@@ -85,6 +85,7 @@ class ReadItemSerializer(serializers.Serializer):
     rate_paise = PaiseField(allow_null=True)
     amount_paise = PaiseField(allow_null=True, help_text="The line's taxable amount.")
     gst_rate = serializers.FloatField(allow_null=True, help_text="Percent.")
+    gst_rate_derived = serializers.BooleanField(default=False, help_text="The rate was worked out from the tax amounts, not printed on the line.")
     discount_paise = PaiseField(allow_null=True)
     cgst_paise = PaiseField(allow_null=True)
     sgst_paise = PaiseField(allow_null=True)
@@ -117,6 +118,8 @@ class ReadFieldsSerializer(serializers.Serializer):
     due_date = serializers.DateField(allow_null=True)
     supplier_address = serializers.CharField(allow_blank=True)
     supplier_pan = serializers.CharField(allow_blank=True)
+    supplier_gstin = serializers.CharField(allow_blank=True, help_text="The issuer's GSTIN, when the page says which one is which.")
+    buyer_gstin = serializers.CharField(allow_blank=True, help_text="The GSTIN of the party billed, when the page says which one is which.")
     buyer_name = serializers.CharField(allow_blank=True)
     buyer_address = serializers.CharField(allow_blank=True)
     place_of_supply = serializers.CharField(allow_blank=True)
@@ -138,6 +141,13 @@ class ReadFieldsSerializer(serializers.Serializer):
         many=True, help_text="Values the model gave that failed their check and so were left out of the fields, with why."
     )
     as_read = serializers.JSONField(help_text="The model's reply as it came (bounded), to trace a wrong field.")
+    suggested_kind = serializers.CharField(
+        allow_blank=True, help_text="PURCHASE or SALES when the printed names say which it is but no GSTIN could; blank otherwise."
+    )
+    kind_reason = serializers.CharField(allow_blank=True, help_text="Why that kind is suggested, in words.")
+    own_gstin_guess = serializers.CharField(
+        allow_blank=True, help_text="The GSTIN printed on the client's side of the invoice, to add under GST."
+    )
     unsure = serializers.ListField(
         child=serializers.CharField(), help_text="Fields the reader said it could not read clearly (a scan), to check against the page."
     )
@@ -225,6 +235,8 @@ def reading_payload(reading: InvoiceReading, fields: dict, party, matching, paym
                 "due_date": fields.get("due_date"),
                 "supplier_address": fields.get("supplier_address", ""),
                 "supplier_pan": fields.get("supplier_pan", ""),
+                "supplier_gstin": fields.get("supplier_gstin", ""),
+                "buyer_gstin": fields.get("buyer_gstin", ""),
                 "buyer_name": fields.get("buyer_name", ""),
                 "buyer_address": fields.get("buyer_address", ""),
                 "place_of_supply": fields.get("place_of_supply", ""),
@@ -239,6 +251,9 @@ def reading_payload(reading: InvoiceReading, fields: dict, party, matching, paym
                 "details": fields.get("details", {}),
                 "rejected": fields.get("rejected", []),
                 "as_read": fields.get("as_read", {}),
+                "suggested_kind": fields.get("suggested_kind", ""),
+                "kind_reason": fields.get("kind_reason", ""),
+                "own_gstin_guess": fields.get("own_gstin_guess", ""),
                 "unsure": fields.get("unsure", []),
             }
             if fields

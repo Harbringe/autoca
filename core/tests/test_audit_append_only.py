@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import datetime
+
 import pytest
 from django.db import DatabaseError, transaction
+from django.utils import timezone
 
 from core.db.session import firm_context
 from core.models import AuditLog
@@ -39,35 +42,28 @@ def test_a_fresh_row_cannot_be_erased_through_the_owner_connection_either():
     with firm_context(firm.pk):
         fresh = AuditLog.objects.create(firm=firm, method="POST", path="/x", status_code=200)
 
-    with pytest.raises(DatabaseError), transaction.atomic(using="owner"):
+    with firm_context(firm.pk, using="owner"), pytest.raises(DatabaseError, match="retention floor"):
         AuditLog.objects.using("owner").filter(pk=fresh.pk).delete()
 
 
 def test_a_row_past_the_retention_floor_can_be_erased_through_the_owner_connection():
-    import datetime
-
-    from django.utils import timezone
-
     firm = create_firm("Audit Retention Firm 2")
     old = timezone.now() - datetime.timedelta(days=31)
     with firm_context(firm.pk):
         stale = AuditLog.objects.create(firm=firm, method="POST", path="/x", status_code=200, created_at=old)
 
-    deleted, _ = AuditLog.objects.using("owner").filter(pk=stale.pk).delete()
+    with firm_context(firm.pk, using="owner"):
+        deleted, _ = AuditLog.objects.using("owner").filter(pk=stale.pk).delete()
     assert deleted == 1
 
 
 def test_an_old_row_still_cannot_be_rewritten():
-    import datetime
-
-    from django.utils import timezone
-
     firm = create_firm("Audit Retention Firm 3")
     old = timezone.now() - datetime.timedelta(days=31)
     with firm_context(firm.pk):
         stale = AuditLog.objects.create(firm=firm, method="POST", path="/x", status_code=200, created_at=old)
 
-    with pytest.raises(DatabaseError), transaction.atomic(using="owner"):
+    with firm_context(firm.pk, using="owner"), pytest.raises(DatabaseError, match="append-only"):
         AuditLog.objects.using("owner").filter(pk=stale.pk).update(path="/rewritten")
 
 

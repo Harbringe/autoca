@@ -491,6 +491,11 @@ class AuditLog(UUIDModel, FirmScopedModel):
     Intentionally coarse for now -- one row per mutating request. The point of
     building it in this phase is that the hook point exists before any feature
     code lands, so nothing ever gets written that is not covered.
+
+    Never edited, and never deleted before it is a month old: the database enforces both
+    (``core/migrations/0013_audit_log_append_only.py``, loosened for old rows only by
+    ``0016_audit_log_retention.py``). ``core.management.commands.trim_audit_log`` removes what has aged
+    past that; the application role has no delete grant on this table at all.
     """
 
     user = models.ForeignKey(

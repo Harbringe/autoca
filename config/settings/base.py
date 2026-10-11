@@ -349,6 +349,11 @@ API_PATH_PREFIXES = ("/api/",)
 # under /api/ but are documentation, not the API.
 API_DOC_PATH_PREFIXES = ("/api/docs/", "/api/redoc/")
 
+#: How long a request-audit row (core_audit_log) is kept before `trim_audit_log` may remove it. The database itself
+#: refuses to remove anything younger than core.migrations.0016_audit_log_retention.RETENTION_FLOOR_DAYS (30), whatever
+#: this is set to, so a shorter value here can never actually delete a row before that floor.
+AUDIT_LOG_RETENTION_DAYS = int(env("AUDIT_LOG_RETENTION_DAYS", "30"))
+
 #: Local-demo escape hatch only. Honoured when DEBUG is on and never otherwise;
 #: a system check fails the process if it is set without DEBUG.
 MFA_DISABLED = False

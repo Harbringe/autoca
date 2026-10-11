@@ -40,7 +40,7 @@ export function DialogContent({ className, children, onCloseAutoFocus, ...props 
       >
         <RememberOpener into={opener} />
         {children}
-        <Primitive.Close className="absolute right-3 top-3 grid size-8 place-items-center rounded-md text-muted-foreground hover:bg-hover hover:text-foreground" aria-label="Close">
+        <Primitive.Close className="absolute right-3 top-3 grid size-8 place-items-center rounded-md max-sm:right-2 max-sm:top-2 max-sm:size-11 text-muted-foreground hover:bg-hover hover:text-foreground" aria-label="Close">
           <X className="size-4" />
         </Primitive.Close>
       </Primitive.Content>

@@ -19,6 +19,8 @@ import { DateInput } from '@/components/ui/date-input'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { ColumnChart, ColumnSkeleton, EmptyPlot } from '@/components/charts/ColumnChart'
+import { tdsByMonth } from '@/lib/reportSeries'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDate, fyLabel, parseDate } from '@/lib/format'
 import { saveFile } from '@/platform/download'
@@ -111,13 +113,21 @@ export function TdsScreen({ clientId }: { clientId: string }) {
   const [recording, setRecording] = useState<string | null>(null)
   const mayRecord = can('journal.approve') && !!client.data?.can_post
 
-  if (summary.isPending) return <Spinner label="Working out the TDS position…" />
+  if (summary.isPending) {
+    return (
+      <div aria-busy="true" className="grid gap-3">
+        <span className="sr-only">Working out the TDS position…</span>
+        <ColumnSkeleton />
+      </div>
+    )
+  }
   if (summary.isError) return <ErrorState error={summary.error} retry={() => void summary.refetch()} />
   const { months, payments_without_challan: loose } = summary.data
 
   if (months.length === 0 && loose.length === 0) {
     return (
       <EmptyState title="No TDS yet">
+        <EmptyPlot line="Deducted and deposited TDS is drawn here by month." className="mx-auto mb-3 max-w-sm text-left" />
         When a purchase deducts TDS it is credited to TDS Payable with its section, and it appears here with the date it is due.
       </EmptyState>
     )
@@ -144,6 +154,25 @@ export function TdsScreen({ clientId }: { clientId: string }) {
 
       <section className="grid gap-2" aria-labelledby="tds-months">
         <h2 id="tds-months" className="text-[15px] font-semibold text-heading">Deducted and deposited, by section and month</h2>
+        {months.length > 0 && (
+          <div className="no-print rounded-lg border bg-surface-2 p-4">
+            <ColumnChart
+              points={tdsByMonth(months).map((m) => ({
+                key: m.key,
+                label: MONTHS[m.month - 1]!,
+                full: `${MONTHS[m.month - 1]} ${m.year}`,
+                values: [m.deducted, m.deposited],
+                flag: m.late ? 'Deposit overdue' : undefined,
+              }))}
+              series={[
+                { name: 'Deducted', tone: 'out' },
+                { name: 'Deposited', tone: 'good' },
+              ]}
+              ariaLabel="TDS deducted and deposited by month"
+              caption="TDS deducted and deposited by month"
+            />
+          </div>
+        )}
         <div className="overflow-x-auto rounded-lg border bg-card">
           <table className="w-full min-w-[44rem] text-sm">
             <caption className="sr-only">TDS by section and month</caption>

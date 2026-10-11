@@ -23,6 +23,12 @@ import { Card } from '@/components/ui/card'
 import { Select, tbl } from '@/components/ui/controls'
 import { DateInput } from '@/components/ui/date-input'
 import { Spinner } from '@/components/ui/spinner'
+import { BalancePair } from '@/components/charts/BalancePair'
+import { Bridge } from '@/components/charts/Bridge'
+import { EmptyPlot } from '@/components/charts/ColumnChart'
+import { bsPair, plBridge, tbPair, type Pair } from '@/lib/reportSeries'
+import { formatCompact } from '@/lib/format'
+import { MonthlyTrend, Picture, ReportSkeleton } from './ReportPicture'
 import { asAt, closingLine, formatDate, formatDrCr, formatPaise, fyLabel, parseDate, sideTotal } from '@/lib/format'
 import { useFy } from '@/features/shell/useFy'
 import { FinancialStatements } from './FinancialStatements'
@@ -36,7 +42,7 @@ export type { ReportTab }
 export function ReportsScreen({ clientId, report }: { clientId: string; report: ReportTab }) {
   const { fy } = useFy()
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-4 [&>*]:min-w-0">
       {report !== 'recon' && (
         <div className="no-print flex justify-end">
           <Button variant="secondary" onClick={() => window.print()}>
@@ -59,7 +65,7 @@ const NO_SYMBOL = { symbol: false }
 
 
 function reportState<T>(q: { data?: T; isPending: boolean; error: unknown; refetch: () => unknown }) {
-  if (q.isPending) return { node: <Spinner label="Preparing the report…" /> }
+  if (q.isPending) return { node: <ReportSkeleton /> }
   if (q.error) return { node: <ErrorState error={q.error} retry={() => void q.refetch()} /> }
   return { data: q.data as T }
 }
@@ -82,7 +88,14 @@ function TrialBalanceReport({ clientId, fy }: { clientId: string; fy: number }) 
           </span>
         </div>
       )}
-      <div className="overflow-x-auto">
+      <Picture title="Debits against credits, by group">
+        <BalancePair
+          pair={tbPair(tb)}
+          agree={`Debits and credits agree at ${formatCompact(tb.total_debit_paise)}`}
+          gapWords={(gap) => `${gap > 0 ? 'Debits' : 'Credits'} are higher by ${formatCompact(Math.abs(gap))}`}
+        />
+      </Picture>
+      <div className="relative overflow-x-auto">
         <table className={tbl.table}>
           <thead className={tbl.head}>
             <tr>
@@ -214,6 +227,14 @@ function ProfitAndLossReport({ clientId, fy }: { clientId: string; fy: number })
   const rowsTo = Math.max(left.length, right.length)
   return (
     <ReportFrame clientId={clientId} title="Profit & Loss A/c" footer={pl.footer}>
+      <Picture title="From income to what was kept">
+        <Bridge
+          steps={plBridge(pl)}
+          ariaLabel={`${profit ? 'Net profit' : 'Net loss'} for the year ${formatCompact(Math.abs(pl.net_profit_paise))}, from income of ${formatCompact(pl.total_income_paise)} and expenses of ${formatCompact(pl.total_expenses_paise)}`}
+          caption="Profit and loss: income, the biggest expense heads and the result"
+        />
+      </Picture>
+      <MonthlyTrend clientId={clientId} fy={fy} />
       <div className="grid gap-4 md:grid-cols-2 md:gap-0 md:divide-x">
         <Side clientId={clientId} heading="Dr · Expenses" amount="Amount ₹" rows={left} rowsTo={rowsTo} total={total} />
         <Side clientId={clientId} heading="Cr · Income" amount="Amount ₹" rows={right} rowsTo={rowsTo} total={total} />
@@ -250,6 +271,13 @@ function BalanceSheetReport({ clientId, fy }: { clientId: string; fy: number }) 
           <strong>{bs.suspense_display}</strong> is in Suspense A/c. Place those transactions in their proper ledgers before finalising.
         </div>
       )}
+      <Picture title="What the business owes and keeps, against what it owns">
+        <BalancePair
+          pair={bsPair(bs)}
+          agree={`Both sides agree at ${formatCompact(Math.abs(bs.total_assets_paise))}`}
+          gapWords={(gap) => `${gap > 0 ? 'Liabilities and profit' : 'Assets'} are higher by ${formatCompact(Math.abs(gap))}`}
+        />
+      </Picture>
       <div className="grid gap-4 md:grid-cols-2 md:gap-0 md:divide-x">
         <Side clientId={clientId} heading="Liabilities" amount="Amount ₹" rows={liabilities} rowsTo={rowsTo} total={sideTotal(bs.total_liabilities_and_profit_paise, 'Cr', NO_SYMBOL)} />
         <Side clientId={clientId} heading="Assets" amount="Amount ₹" rows={assets} rowsTo={rowsTo} total={sideTotal(bs.total_assets_paise, 'Dr', NO_SYMBOL)} />
@@ -261,12 +289,27 @@ function BalanceSheetReport({ clientId, fy }: { clientId: string; fy: number }) 
 function NothingYet({ clientId, fy }: { clientId: string; fy: number }) {
   return (
     <EmptyState title={`No entries in FY ${fyLabel(fy)}`}>
+      <EmptyPlot line="The chart fills as entries are posted." className="mx-auto mb-3 max-w-sm text-left" />
       Reports are built from posted entries. Post transactions from{' '}
       <Link to="/clients/$clientId/review" params={{ clientId }} search={{ stage: 'unresolved' }} className="underline">
         Review
       </Link>
       , or choose another financial year at the top.
     </EmptyState>
+  )
+}
+
+/** The books and the bank statement as two bars on one scale, and the gap between them said once. */
+function ReconPicture({ books, bank, matches }: { books: number; bank: number; matches: boolean }) {
+  const seg = (v: number, tone: 'part1' | 'part3') => [{ key: 'v', label: 'Balance', value: Math.abs(v), valueLabel: formatCompact(Math.abs(v)), fullLabel: formatPaise(Math.abs(v)), tone }]
+  const pair: Pair = {
+    left: { title: 'As per the books', total: books, segments: seg(books, 'part1'), oppositePaise: 0 },
+    right: { title: 'As per the bank statement', total: bank, segments: seg(bank, 'part3'), oppositePaise: 0 },
+    gap: books - bank,
+    balanced: matches,
+  }
+  return (
+    <BalancePair pair={pair} agree="The books agree with the bank" gapWords={(gap) => `Books are ${gap < 0 ? 'lower' : 'higher'} than the bank by ${formatCompact(Math.abs(gap))}`} />
   )
 }
 
@@ -328,6 +371,7 @@ function Reconciliation({ clientId }: { clientId: string }) {
               </span>
             </div>
           )}
+          <ReconPicture books={check.data.ledger_balance_paise} bank={check.data.statement_balance_paise} matches={check.data.matches} />
           <dl className="grid grid-cols-[1fr_auto] gap-x-6 gap-y-1.5 text-sm">
             <dt>Balance as per books</dt>
             <dd className="num text-right font-medium">{formatDrCr(check.data.ledger_balance_paise)}</dd>

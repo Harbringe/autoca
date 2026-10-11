@@ -12,6 +12,9 @@ import { ErrorState } from '@/components/ca/Page'
 import { KpiCard } from '@/components/ca/KpiCard'
 import { MonthBars } from '@/components/charts/MonthBars'
 import { RankedBars } from '@/components/charts/RankedBars'
+import { SignedBars } from '@/components/charts/SignedBars'
+import { StackedBar, StackedBarSkeleton } from '@/components/charts/StackedBar'
+import { overNinetySegments } from '@/lib/ageing'
 import { isApiError } from '@/api/errors'
 import { formatCompact, formatDate, formatPaise } from '@/lib/format'
 import { pct } from '@/lib/pct'
@@ -35,6 +38,12 @@ const REPORTS = '/clients/$clientId/reports'
 /** Whether the year has any posted money at all. */
 export const hasPosted = (s: ClientSnapshot) => s.trend.some((m) => m.income_paise !== 0 || m.expense_paise !== 0) || s.income_paise !== 0 || s.expense_paise !== 0
 
+/** A real monthly series for a figure, only when the year has posted money and there are months to draw. */
+function spark(s: ClientSnapshot | undefined, pick: (m: ClientSnapshot['trend'][number]) => number, label: string) {
+  if (!s || !hasPosted(s) || s.trend.length < 2) return undefined
+  return { values: s.trend.map(pick), label }
+}
+
 /** The four figures: money in, money out, profit or loss, tax still to pay. */
 export function MoneyKpis({ query, clientId }: { query: Q; clientId: string }) {
   const s = query.data
@@ -53,6 +62,7 @@ export function MoneyKpis({ query, clientId }: { query: Q; clientId: string }) {
         label="Money in this year"
         value={s && posted ? formatCompact(s.income_paise) : none}
         valueTitle={s ? formatPaise(s.income_paise) : undefined}
+        spark={spark(s, (m) => m.income_paise, 'Money in by month, April to March')}
         note={withLastYear(posted ? 'Sales and other income, from entries in the books' : 'Nothing has been recorded yet', s?.prior_income_paise)}
         to={REPORTS}
         params={params}
@@ -63,6 +73,7 @@ export function MoneyKpis({ query, clientId }: { query: Q; clientId: string }) {
         label="Money out this year"
         value={s && posted ? formatCompact(s.expense_paise) : none}
         valueTitle={s ? formatPaise(s.expense_paise) : undefined}
+        spark={spark(s, (m) => m.expense_paise, 'Money out by month, April to March')}
         note={withLastYear(posted ? 'Costs and expenses' : 'Nothing has been recorded yet', s?.prior_expense_paise)}
         to={REPORTS}
         params={params}
@@ -73,6 +84,7 @@ export function MoneyKpis({ query, clientId }: { query: Q; clientId: string }) {
         label={s && s.profit_paise < 0 ? 'Loss this year' : 'Profit this year'}
         value={s && posted ? formatCompact(Math.abs(s.profit_paise)) : none}
         valueTitle={s ? formatPaise(s.profit_paise) : undefined}
+        spark={spark(s, (m) => m.income_paise - m.expense_paise, 'Profit or loss by month, April to March')}
         note={posted ? 'Money in less money out' : 'Nothing has been recorded yet'}
         tone={s && s.profit_paise < 0 ? 'attention' : 'plain'}
         to={REPORTS}
@@ -100,7 +112,6 @@ export function MonthlyCard({ query, clientId }: { query: Q; clientId: string })
   return (
     <DashCard
       title="How has money moved month by month?"
-      hint="Money in against money out, April to March."
       state={state === 'ready' && s && !hasPosted(s) ? 'empty' : state}
       empty="Nothing has been posted in this year yet."
       error={query.error}
@@ -130,21 +141,27 @@ function Party({ rows }: { rows: ClientSnapshot['owed']['receivables']['top'] })
   )
 }
 
-function Side({ title, side, report, clientId, none }: { title: string; side: ClientSnapshot['owed']['receivables']; report: 'receivables' | 'payables'; clientId: string; none: string }) {
+function Side({ title, side, report, clientId, none, scaleMax }: { title: string; side: ClientSnapshot['owed']['receivables']; report: 'receivables' | 'payables'; clientId: string; none: string; scaleMax: number }) {
+  const segments = overNinetySegments(side.total_paise, side.over_90_paise)
   return (
-    <div className="min-w-0">
-      <h3 className="text-xs text-muted-foreground">{title}</h3>
-      <p className="num text-xl font-semibold text-heading" title={formatPaise(side.total_paise)}>
-        {side.total_paise > 0 ? formatCompact(side.total_paise) : '—'}
-      </p>
-      {side.over_90_paise > 0 ? (
-        <p className="text-xs font-medium text-destructive">{formatCompact(side.over_90_paise)} is over 90 days old</p>
-      ) : (
-        <p className="text-xs text-muted-foreground">{side.total_paise > 0 ? 'Nothing over 90 days old' : none}</p>
-      )}
+    <div className="grid min-w-0 content-start gap-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-sm font-medium text-heading">{title}</h3>
+        <span className="num text-xl font-semibold text-heading" title={formatPaise(side.total_paise)}>
+          {side.total_paise > 0 ? formatCompact(side.total_paise) : '—'}
+        </span>
+      </div>
+      <StackedBar
+        segments={segments}
+        scaleMax={scaleMax}
+        empty={none}
+        ariaLabel={`${title}: ${formatCompact(side.total_paise)}, of which ${formatCompact(side.over_90_paise)} is over 90 days old`}
+        caption={`${title}, by age`}
+        className="[&_ul]:sm:grid-cols-2"
+      />
       {side.top.length > 0 && <Party rows={side.top} />}
       {side.total_paise > 0 && (
-        <Link to={REPORTS} params={{ clientId }} search={{ report } as never} className="mt-1 inline-flex min-h-8 items-center text-xs text-link underline underline-offset-2 max-sm:min-h-11">
+        <Link to={REPORTS} params={{ clientId }} search={{ report } as never} className="inline-flex min-h-8 items-center text-xs text-link underline underline-offset-2 max-lg:min-h-11">
           See the full list
         </Link>
       )}
@@ -157,22 +174,21 @@ export function OwedCard({ query, clientId }: { query: Q; clientId: string }) {
   const s = query.data
   const state = stateOf(query)
   const nothing = !!s && s.owed.receivables.total_paise === 0 && s.owed.payables.total_paise === 0
+  const scaleMax = Math.max(s?.owed.receivables.total_paise ?? 0, s?.owed.payables.total_paise ?? 0, 1)
   return (
     <DashCard
       title="Who owes me, and whom do I owe?"
-      hint="Unpaid sales and unpaid bills, the biggest three of each."
       state={state === 'ready' && nothing ? 'empty' : state}
       empty="No unpaid bills or invoices."
       error={query.error}
       onRetry={() => void query.refetch()}
       skeleton="h-56"
+      skeletonShape={<StackedBarSkeleton rows={2} />}
     >
       {s && (
-        <div className="@container">
-         <div className="grid gap-5 @md:grid-cols-2">
-          <Side title="Customers owe me" side={s.owed.receivables} report="receivables" clientId={clientId} none="No unpaid sales" />
-          <Side title="I owe suppliers" side={s.owed.payables} report="payables" clientId={clientId} none="No unpaid bills" />
-         </div>
+        <div className="grid gap-5">
+          <Side title="Customers owe me" side={s.owed.receivables} report="receivables" clientId={clientId} none="No unpaid sales" scaleMax={scaleMax} />
+          <Side title="I owe suppliers" side={s.owed.payables} report="payables" clientId={clientId} none="No unpaid bills" scaleMax={scaleMax} />
         </div>
       )}
     </DashCard>
@@ -186,7 +202,6 @@ export function AccountsCard({ query, clientId }: { query: Q; clientId: string }
   return (
     <DashCard
       title="Where is my money?"
-      hint="Bank balances, and what is owed on cards and loans."
       state={state === 'ready' && s?.accounts.length === 0 ? 'empty' : state}
       empty="No bank account has been added yet."
       error={query.error}
@@ -196,19 +211,16 @@ export function AccountsCard({ query, clientId }: { query: Q; clientId: string }
       seeAll="See statements"
       skeleton="h-40"
     >
-      <ul className="divide-y">
-        {s?.accounts.map((a) => (
-          <li key={a.label} className="flex items-baseline justify-between gap-3 py-2 text-sm first:pt-0 last:pb-0">
-            <span className="min-w-0 truncate text-muted-foreground" title={a.label}>
-              {a.label}
-            </span>
-            <span className="num shrink-0 font-medium text-heading">
-              {a.balance_display}
-              {a.kind === 'CARD' || a.kind === 'LOAN' ? <span className="ml-1 text-xs font-normal text-muted-foreground">owed</span> : null}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <SignedBars
+        ariaLabel={`${s?.accounts.length ?? 0} accounts, from zero: money in hand to the right, money owed to the left`}
+        caption="Account balances"
+        rows={(s?.accounts ?? []).map((a) => {
+          const owed = a.kind === 'CARD' || a.kind === 'LOAN'
+          return owed
+            ? { key: a.label, label: a.label, note: 'owed', value: -Math.abs(a.balance_paise), display: formatCompact(Math.abs(a.balance_paise)), full: formatPaise(Math.abs(a.balance_paise)), tone: 'watch' as const }
+            : { key: a.label, label: a.label, value: a.balance_paise }
+        })}
+      />
     </DashCard>
   )
 }
@@ -220,7 +232,6 @@ export function CostsCard({ query, clientId }: { query: Q; clientId: string }) {
   return (
     <DashCard
       title="What do I spend the most on?"
-      hint="The biggest costs this year, and their share of all money out."
       state={state === 'ready' && s?.top_expenses.length === 0 ? 'empty' : state}
       empty="No expenses have been recorded yet."
       error={query.error}
@@ -276,13 +287,13 @@ function Readiness({ ready }: { ready: ClientSnapshot['reports_ready'][number] |
 
 /** D11: the reports a client can open, each saying whether it is ready to rely on. */
 export function ReportTiles({ clientId, gst, query }: { clientId: string; gst: boolean; query?: Q }): ReactNode {
-  const box = 'grid min-h-[4.5rem] content-center gap-0.5 rounded-lg border bg-card px-4 py-3 hover:bg-hover'
+  const box = 'grid min-h-[4.5rem] min-w-0 content-center gap-0.5 break-words rounded-lg border bg-card px-4 py-3 hover:bg-hover'
   const byKey = new Map((query?.data?.reports_ready ?? []).map((r) => [r.key, r]))
   return (
     <DashCard title="Which reports can I open?" hint="Each one opens on the year you are looking at." skeleton="h-24">
-      <ul className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+      <ul className="grid grid-cols-1 gap-3 min-[460px]:grid-cols-2 md:grid-cols-3 xl:grid-cols-4 [&>*]:min-w-0">
         {TILES.map((t) => (
-          <li key={t.report}>
+          <li key={t.report} className="min-w-0">
             <Link to={REPORTS} params={{ clientId }} search={{ report: t.report } as never} className={box}>
               <span className="text-sm font-semibold text-heading">{t.title}</span>
               <span className="text-xs text-muted-foreground">{t.note}</span>

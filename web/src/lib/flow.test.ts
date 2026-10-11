@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { WorkFlow } from '@/api/types'
-import { flowSentence, markPartial, weekLabel } from './flow'
+import { activeWeeks, flowSentence, markPartial, weekLabel } from './flow'
 
 const flow = (over: Partial<WorkFlow> = {}): WorkFlow =>
   ({
@@ -30,5 +30,16 @@ describe('the weekly work-flow wording', () => {
   })
   it('labels a week as day and month', () => {
     expect(weekLabel('2026-10-05')).toBe('5 Oct')
+  })
+})
+
+describe('activeWeeks', () => {
+  it('keeps only the weeks with rows or entries', () => {
+    const weeks = activeWeeks(flow({ weekly: [
+      { week_start: '2026-07-20', received: 0, finished: 0 },
+      { week_start: '2026-07-27', received: 0, finished: 3 },
+      { week_start: '2026-08-03', received: 0, finished: 0 },
+    ] }))
+    expect(weeks.map((w) => w.week_start)).toEqual(['2026-07-27'])
   })
 })

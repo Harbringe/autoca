@@ -33,7 +33,7 @@ describe('the people table', () => {
   })
   it('says these are counts of work and not a rating of people', async () => {
     wrap(<PeopleCard />)
-    expect(await screen.findByText('Counts of work, not a rating of people.')).toBeInTheDocument()
+    expect(await screen.findByText(/Counts of work, not a rating of people/)).toBeInTheDocument()
   })
 })
 

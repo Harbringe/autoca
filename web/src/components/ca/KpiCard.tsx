@@ -5,6 +5,7 @@
 import { ArrowDown, ArrowRight, ArrowUp } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { ProgressBar } from '@/components/charts/ProgressBar'
+import { Sparkline } from '@/components/charts/Sparkline'
 import { StatCard } from '@/components/ui/stat-card'
 import { cn } from '@/lib/utils'
 
@@ -25,6 +26,7 @@ export function KpiCard({
   note,
   delta,
   progress,
+  spark,
   to,
   params,
   search,
@@ -37,6 +39,8 @@ export function KpiCard({
   note?: ReactNode
   delta?: Delta
   progress?: { value: number; max: number; label: string }
+  /** A real series for this figure (two or more points). Nothing is drawn without one. */
+  spark?: { values: number[]; label: string }
   to?: string
   params?: Record<string, string>
   search?: Record<string, unknown>
@@ -65,6 +69,11 @@ export function KpiCard({
         <>
           {note && <span className="block">{note}</span>}
           {progress && <ProgressBar value={progress.value} max={progress.max} label={progress.label} className="mt-2" />}
+          {spark && spark.values.length >= 2 && (
+            <span className="mt-2 block">
+              <Sparkline values={spark.values} ariaLabel={spark.label} />
+            </span>
+          )}
           {delta && Arrow && (
             <span className={cn('mt-1 flex items-center gap-1', delta.good === true && 'text-success', delta.good === false && 'text-destructive')}>
               <Arrow className="size-3" aria-hidden /> {delta.text}

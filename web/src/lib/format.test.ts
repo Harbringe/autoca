@@ -151,8 +151,14 @@ describe('formatCompact', () => {
     expect(formatCompact(20_000_000_00)).toBe('₹2 Cr')
     expect(formatCompact(1_999_999_00)).toBe('₹19.9 L')
   })
-  it('keeps the full figure under a lakh and the sign on a negative', () => {
-    expect(formatCompact(99_999_99)).toBe('₹99,999.99')
+  it('shows whole rupees under a lakh, never paise, and keeps the sign on a negative', () => {
+    expect(formatCompact(99_999_99)).toBe('₹99,999')
+    expect(formatCompact(7_140_100)).toBe('₹71,401')
+    expect(formatCompact(0)).toBe('₹0')
+    expect(formatCompact(-250_00)).toBe('-₹250')
     expect(formatCompact(-12_500_000_00)).toBe('-₹1.25 Cr')
+  })
+  it('keeps the paise of an amount under one rupee so it never reads as nil', () => {
+    expect(formatCompact(50)).toBe('₹0.50')
   })
 })

@@ -10,6 +10,7 @@ const MonthBarsChart = lazy(() => import('./MonthBarsChart'))
 export function monthsSummary(trend: MonthPoint[]): string {
   const active = trend.filter((m) => m.income_paise > 0 || m.expense_paise > 0)
   if (active.length === 0) return 'Nothing has been posted in this financial year yet.'
+  if (active.length === 1) return `Only ${monthLong(active[0]!.month)} has entries so far.`
   const higher = active.filter((m) => m.income_paise > m.expense_paise).length
   return `Income was higher than expense in ${higher} of the ${plural(active.length, 'month')} with entries.`
 }

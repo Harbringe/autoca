@@ -48,7 +48,7 @@ export function SealSchedule({ clientId, books, mayChange }: { clientId: string;
         </div>
         <Select
           aria-label="How often the books are sealed"
-          className="w-80"
+          className="w-80 max-w-full"
           value={books.close_period}
           disabled={!mayChange || busy}
           onChange={(e) => void change(e.target.value)}

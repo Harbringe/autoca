@@ -35,6 +35,28 @@ interface Step {
   action?: false | null | ((primary: boolean) => ReactNode)
 }
 
+/** The six steps as a rail: done steps filled with a tick, the current one numbered, the rest outlined. Names are in the list under it. */
+function StepRail({ steps, current }: { steps: Step[]; current: number }) {
+  return (
+    <ol className="flex items-center" aria-label={`Step ${current >= 0 ? current + 1 : steps.length} of ${steps.length}`}>
+      {steps.map((s, i) => (
+        <li key={s.title} className="flex flex-1 items-center last:flex-none" title={s.title}>
+          <span
+            aria-hidden
+            className={cn(
+              'grid size-7 shrink-0 place-items-center rounded-full border text-xs font-semibold',
+              s.done ? 'border-success bg-success text-primary-foreground' : i === current ? 'border-primary bg-primary text-primary-foreground' : 'border-input text-muted-foreground',
+            )}
+          >
+            {s.done ? <Check className="size-4" /> : i + 1}
+          </span>
+          {i < steps.length - 1 && <span aria-hidden className={cn('h-0.5 flex-1', s.done ? 'bg-success' : 'bg-border')} />}
+        </li>
+      ))}
+    </ol>
+  )
+}
+
 export function ClientOverview({ clientId }: { clientId: string }) {
   const { can } = useSession()
   const upload = useUpload()
@@ -179,8 +201,14 @@ export function ClientOverview({ clientId }: { clientId: string }) {
 
       <div className={cn('order-3 col-span-12 lg:order-4', snapshotOn ? 'lg:col-span-5 xl:col-span-4' : 'lg:col-span-12')}>
         <DashCard title="What is left to do?" hint={`${doneSteps} of ${steps.length} steps done`} className="h-full">
-          <ol className="-mx-2 grid gap-1">
-            {steps.map((step, i) => (
+          <StepRail steps={steps} current={current} />
+          <ol className="-mx-2 mt-3 grid gap-1">
+            {steps.map((step, i) =>
+              step.done ? (
+                <li key={step.title} className="sr-only">
+                  {step.title} (done)
+                </li>
+              ) : (
               <li
                 key={step.title}
                 aria-current={i === current ? 'step' : undefined}
@@ -206,7 +234,8 @@ export function ClientOverview({ clientId }: { clientId: string }) {
                 </div>
                 {step.action && <div className="shrink-0 max-sm:w-full [&>*]:max-sm:w-full">{step.action(false)}</div>}
               </li>
-            ))}
+              ),
+            )}
           </ol>
         </DashCard>
       </div>

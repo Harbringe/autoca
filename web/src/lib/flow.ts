@@ -26,3 +26,8 @@ export function flowSentence(flow: WorkFlow): string {
   const { finished, received } = flow.totals
   return `Finished ${plural(finished, 'entry', 'entries')} and received ${plural(received, 'row')} in ${weeks === 1 ? 'this week' : `these ${weeks} weeks`} (${formatDate(flow.period.from)} to ${formatDate(flow.period.to)}).`
 }
+
+/** The weeks that had any rows or entries. When only one did, a column chart of eleven empty weeks says nothing. */
+export function activeWeeks(flow: WorkFlow) {
+  return flow.weekly.filter((w) => w.received > 0 || w.finished > 0)
+}

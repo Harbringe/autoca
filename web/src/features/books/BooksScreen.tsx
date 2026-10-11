@@ -51,8 +51,8 @@ export function BooksScreen({ clientId }: { clientId: string }) {
   }
 
   return (
-    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="grid content-start gap-4">
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px] [&>*]:min-w-0">
+      <div className="grid content-start gap-4 [&>*]:min-w-0">
         <Card className="grid gap-4 p-5">
           <div className="flex flex-wrap items-center gap-2">
             <Badge tone={BOOKS_STATE_TONE[state]}>{BOOKS_STATE_LABEL[state]}</Badge>

@@ -36,8 +36,10 @@ export function formatPaise(paise: number, { symbol = true, sign = true }: Money
 
 /**
  * A short form for dashboard cards only: "₹1.25 Cr", "₹48.5 L". Integer-exact and truncating (never
- * rounded up, so a card cannot claim more than the books hold). Under a lakh the full figure is used.
- * Callers keep the full amount in `title` and `aria-label`; tables and reports never abbreviate.
+ * rounded up, so a card cannot claim more than the books hold). Under a lakh it is whole rupees with no
+ * paise ("₹68,000"), one rule for every figure on a card; below one rupee the paise are kept so a small
+ * amount never reads as nil. Callers keep the full amount in `title` and `aria-label`; tables and reports
+ * never abbreviate and always show paise.
  */
 export function formatCompact(paise: number): string {
   const negative = paise < 0
@@ -53,7 +55,8 @@ export function formatCompact(paise: number): string {
     const tenths = Math.trunc(rupees / 10_000)
     return `${sign}${RUPEE}${trim(Math.trunc(tenths / 10), tenths % 10, 1)} L`
   }
-  return formatPaise(paise)
+  if (rupees === 0 && paise !== 0) return formatPaise(paise)
+  return `${sign}${RUPEE}${groupIndian(String(rupees))}`
 }
 
 /**

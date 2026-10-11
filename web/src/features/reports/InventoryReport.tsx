@@ -15,7 +15,12 @@ import { inventoryReport } from '@/api/queries/books'
 import type { InventoryItem } from '@/api/types'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Select } from '@/components/ui/controls'
-import { Spinner } from '@/components/ui/spinner'
+import { ColumnChart, EmptyPlot } from '@/components/charts/ColumnChart'
+import { RankedBars } from '@/components/charts/RankedBars'
+import { topStockItems } from '@/lib/reportSeries'
+import { formatCompact } from '@/lib/format'
+import { monthLong } from '@/lib/chartFormat'
+import { Picture, ReportSkeleton } from './ReportPicture'
 import { formatPaise, plural } from '@/lib/format'
 import { normaliseName } from '@/lib/names'
 import { Button } from '@/components/ui/button'
@@ -45,7 +50,7 @@ export function InventoryReport({ clientId, fy }: { clientId: string; fy: number
   const [recording, setRecording] = useState(false)
   const [using, setUsing] = useState(false)
   const invalidate = useInvalidateClient(clientId)
-  if (query.isPending) return <Spinner label="Preparing the report…" />
+  if (query.isPending) return <ReportSkeleton />
   if (query.error) return <ErrorState error={query.error} retry={() => void query.refetch()} />
   const report = query.data
   const closingValue = report.items.reduce((sum, i) => sum + Math.max(i.closing_value_paise, 0), 0)
@@ -97,6 +102,7 @@ export function InventoryReport({ clientId, fy }: { clientId: string; fy: number
 
       {report.items.length === 0 ? (
         <EmptyState title="No stock movements yet">
+          <EmptyPlot line="Inwards, outwards and closing value are drawn here by month." className="no-print mx-auto mb-3 max-w-sm text-left" />
           Stock is taken from the lines of purchase and sales invoices. Upload invoices (with their lines read) and they appear here.
         </EmptyState>
       ) : (
@@ -111,6 +117,13 @@ export function InventoryReport({ clientId, fy }: { clientId: string; fy: number
             </Select>
             <span className="text-muted-foreground">Values are at weighted-average cost. {plural(report.bills_counted, 'bill')} counted.</span>
           </div>
+          {!picked && report.items.length > 1 && (
+            <Picture title="Closing stock value, by item">
+              <RankedBars
+                rows={topStockItems(report.items).map((p) => ({ key: p.label, label: normaliseName(p.label), value: p.value, valueLabel: formatCompact(p.value) }))}
+              />
+            </Picture>
+          )}
           {shown.map((item) => (
             <ItemBlock key={item.name} item={item} />
           ))}
@@ -123,8 +136,20 @@ export function InventoryReport({ clientId, fy }: { clientId: string; fy: number
 function ItemBlock({ item }: { item: InventoryItem }) {
   const unit = item.unit
   return (
-    <section aria-label={item.name} className="overflow-x-auto print:break-inside-avoid">
+    <section aria-label={item.name} className="relative overflow-x-auto print:break-inside-avoid">
       <h3 className="mb-1 font-semibold text-heading">{normaliseName(item.name)}</h3>
+      <div className="no-print mb-3 rounded-lg border bg-surface-2 p-3">
+        <ColumnChart
+          points={item.months.map((m) => ({ key: m.month, label: monthLabel(m.month).slice(0, 3), full: monthLong(m.month), values: [m.in_value_paise, m.out_value_paise, m.closing_value_paise] }))}
+          series={[
+            { name: 'Inwards', tone: 'focus' },
+            { name: 'Outwards', tone: 'out' },
+            { name: 'Closing', tone: 'context' },
+          ]}
+          ariaLabel={`${normaliseName(item.name)}: inwards, outwards and closing stock value by month`}
+          caption={`${item.name}: stock value by month`}
+        />
+      </div>
       <table className="w-full min-w-[44rem] text-sm" aria-label={`Monthly summary of ${item.name}`}>
         <thead className="border-b-2 text-left text-xs uppercase tracking-wide text-muted-foreground">
           <tr>

@@ -17,6 +17,8 @@ import { ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
+import { StackedBar } from '@/components/charts/StackedBar'
+import { formatCompact, formatPaise } from '@/lib/format'
 import { StatCard, StatGrid } from '@/components/ui/stat-card'
 import { DataTable, type Column } from '@/components/ui/table'
 import { saveFile } from '@/platform/download'
@@ -377,7 +379,21 @@ function Steps({
 function Figures({ report }: { report: GstReport }) {
   const s = report.summary
   return (
-    <section aria-label="Credit totals" className="grid gap-2">
+    <section aria-label="Credit totals" className="grid gap-3">
+      <div className="no-print rounded-lg border bg-surface-2 p-4">
+        <h3 className="mb-3 text-sm font-semibold text-heading">Input tax credit: what can be claimed</h3>
+        <StackedBar
+          segments={[
+            { key: 'eligible', label: 'Eligible', value: Math.max(s.eligible_paise, 0), valueLabel: formatCompact(s.eligible_paise), fullLabel: formatPaise(s.eligible_paise), tone: 'good' },
+            { key: 'blocked', label: 'Blocked (17(5))', value: Math.max(s.blocked_paise, 0), valueLabel: formatCompact(s.blocked_paise), fullLabel: formatPaise(s.blocked_paise), tone: 'bad' },
+            { key: 'ineligible', label: 'Not claimable', value: Math.max(s.ineligible_paise, 0), valueLabel: formatCompact(s.ineligible_paise), fullLabel: formatPaise(s.ineligible_paise), tone: 'context' },
+          ]}
+          ariaLabel={`Input tax credit: ${formatCompact(s.eligible_paise)} eligible, ${formatCompact(s.blocked_paise)} blocked, ${formatCompact(s.ineligible_paise)} not claimable`}
+          caption="Input tax credit by claimability"
+          empty="No input credit in this run yet. It fills as purchase invoices are matched."
+          className="[&_ul]:sm:grid-cols-3"
+        />
+      </div>
       <StatGrid className="lg:grid-cols-3">
         <StatCard label="Eligible ITC" value={<Money paise={s.eligible_paise} />} note="With your decisions applied" />
         <StatCard label="Blocked credit" value={<Money paise={s.blocked_paise} />} note="Section 17(5) categories" />

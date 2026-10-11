@@ -362,7 +362,7 @@ export function Shell() {
           )}
         </header>
         {!desktop && clientId && <ClientStrip clientId={clientId} />}
-        <main id="content" tabIndex={-1} className="mx-auto w-full max-w-[1400px] flex-1 p-4 outline-none md:p-6">
+        <main id="content" tabIndex={-1} className="mx-auto w-full max-w-[1920px] flex-1 p-4 outline-none md:p-6 2xl:px-10">
           <Outlet />
         </main>
       </div>

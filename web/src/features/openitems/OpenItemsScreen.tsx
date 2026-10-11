@@ -20,6 +20,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { PartyStatementDialog } from '@/features/bills/PartyStatementDialog'
 import { SettlementEditor } from '@/features/review/SettlementEditor'
 import { OpeningBillsDialog } from './OpeningBillsDialog'
+import { RankedBars } from '@/components/charts/RankedBars'
 import { plural } from '@/lib/format'
 import { useSession } from '@/session/session'
 
@@ -52,9 +53,18 @@ export function OpenItemsScreen({ clientId }: { clientId: string }) {
   return (
     <div className="grid gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-sm text-muted-foreground">
-          {count === 0 ? 'Everything ties out.' : `${plural(count, 'item')} to fix, oldest first.`} Fixing one removes it from this list.
-        </p>
+        <div className="min-w-0 flex-1 basis-80">
+          {count === 0 ? (
+            <p className="text-sm text-muted-foreground">Everything ties out.</p>
+          ) : (
+            <RankedBars
+              rows={kinds
+                .filter((k) => k.count > 0)
+                .sort((a, b) => b.count - a.count)
+                .map((k) => ({ key: k.kind, label: k.title, value: k.count, valueLabel: String(k.count), tone: 'accent' as const }))}
+            />
+          )}
+        </div>
         <label className="flex items-center gap-2 text-sm">
           <span className="text-muted-foreground">Show</span>
           <Select aria-label="Kind of item" className="w-64" value={kind} onChange={(e) => setKind(e.target.value)}>

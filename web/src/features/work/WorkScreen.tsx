@@ -19,6 +19,7 @@ import { rangeFor, type PeriodKey, type Range } from '@/lib/period'
 import { usePageTitle } from '@/lib/title'
 import { MeasuredFigures } from './MeasuredFigures'
 import { PeriodPicker } from './PeriodPicker'
+import { PersonCards } from './PersonCards'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 
@@ -63,20 +64,24 @@ export function WorkScreen({ search }: { search: WorkSearch }) {
           title={firmView ? 'Staff performance' : 'My work'}
           description={
             firmView
-              ? 'What each person did in the period, and what is waiting on them now. Counts only: no rankings.'
+              ? 'Counts of work, in name order. No rankings.'
               : 'What you did in the period, and what is waiting on you now.'
           }
         />
         <PeriodPicker key={`${key}${range?.from}${range?.to}`} value={key} range={range} onPick={go} />
-        <p className="mt-3 max-w-3xl text-[13px] text-muted-foreground">
-          Not counted yet: books sent for review, and clients still to send for review. The server does not record them per person.
-        </p>
+        <p className="mt-3 text-xs text-muted-foreground">Books in review are not counted per person: the server does not record them.</p>
       </div>
 
       {firmView && range && (
         <>
+          <PersonCards range={range} selected={memberId} onSelect={(id) => go({ member: id })} />
           <MeasuredFigures range={range} />
-          <People range={range} selected={memberId} onSelect={(id) => go({ member: id })} title={can('member.manage') ? 'Firm activity' : 'Team activity'} />
+          <details className="rounded-lg border bg-card">
+            <summary className="flex min-h-11 cursor-pointer items-center px-4 text-[15px] font-semibold text-heading">Show the full table of counts</summary>
+            <div className="p-4 pt-0">
+              <People range={range} selected={memberId} onSelect={(id) => go({ member: id })} title={can('member.manage') ? 'Firm activity' : 'Team activity'} />
+            </div>
+          </details>
         </>
       )}
       {memberId && range && <PersonWork memberId={memberId} range={range} heading={firmView} />}

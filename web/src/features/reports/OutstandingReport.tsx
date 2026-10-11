@@ -14,9 +14,11 @@ import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Card } from '@/components/ui/card'
 import { DateInput } from '@/components/ui/date-input'
 import { Field } from '@/components/ui/field'
-import { Spinner } from '@/components/ui/spinner'
+import { StackedBar, StackedBarSkeleton } from '@/components/charts/StackedBar'
+import { StackedRows } from '@/components/charts/StackedRows'
 import { PartyStatementDialog } from '@/features/bills/PartyStatementDialog'
-import { formatDate, formatPaise, parseDate, plural } from '@/lib/format'
+import { AGE_BUCKETS, AGE_LABEL, ageSegments } from '@/lib/ageing'
+import { formatCompact, formatDate, formatPaise, parseDate, plural } from '@/lib/format'
 
 const SIDE = {
   payables: { title: 'Payables', who: 'suppliers' },
@@ -46,15 +48,52 @@ export function OutstandingReport({ clientId, side }: { clientId: string; side: 
       </div>
 
       {report.isPending && asOf ? (
-        <Spinner label="Preparing the report…" />
+        <div aria-busy="true">
+          <span className="sr-only">Preparing the report…</span>
+          <StackedBarSkeleton className="mb-4" />
+        </div>
       ) : report.isError ? (
         <ErrorState error={report.error} retry={() => void report.refetch()} />
       ) : !report.data || report.data.parties.length === 0 ? (
+        <div className="grid gap-4">
+          <StackedBar
+            segments={ageSegments({})}
+            ariaLabel={`${words.title}: nothing outstanding`}
+            caption={`${words.title} by age of the bill: nothing outstanding`}
+            empty="The ageing bar fills as bills are booked."
+            className="no-print mx-auto w-full max-w-xl"
+          />
         <EmptyState title={`Nothing is outstanding to ${words.who}`}>
           {asOf ? `On ${formatDate(asOf)} no bill is unpaid. ` : ''}Book a {side === 'payables' ? 'purchase' : 'sales'} voucher in Purchases & Sales to see it here.
         </EmptyState>
+        </div>
       ) : (
-        <div className="overflow-x-auto">
+        <>
+        <div className="no-print mb-5 grid gap-5 rounded-lg border bg-surface-2 p-4">
+          <StackedBar
+            segments={ageSegments(report.data.bucket_paise)}
+            ariaLabel={`${words.title} by age of the bill: ${formatCompact(Object.values(report.data.bucket_paise).reduce((n, v) => n + Math.max(v ?? 0, 0), 0))} in bills`}
+            caption={`${words.title} by age of the bill, as at ${asOf ? formatDate(asOf) : ''}`}
+          />
+          <div>
+            <h3 className="mb-2 text-sm font-semibold text-heading">Largest balances, by age</h3>
+            <StackedRows
+              ariaLabel={`The ${Math.min(report.data.parties.length, 8)} largest balances by age of the bill`}
+              caption={`Largest ${words.who} balances by age of the bill`}
+              rows={[...report.data.parties]
+                .filter((p) => p.total_paise > 0)
+                .sort((a, b) => b.total_paise - a.total_paise)
+                .slice(0, 8)
+                .map((p) => ({
+                  key: p.party,
+                  label: p.name,
+                  totalLabel: formatCompact(p.total_paise),
+                  parts: ageSegments(p.bucket_paise).map((seg, i) => ({ name: AGE_LABEL[AGE_BUCKETS[i]!], value: seg.value, tone: seg.tone, full: formatPaise(seg.value) })),
+                }))}
+            />
+          </div>
+        </div>
+        <div className="relative overflow-x-auto">
           <table className="w-full min-w-[40rem] text-sm">
             <caption className="sr-only">{words.title} as at {asOf ? formatDate(asOf) : ''}</caption>
             <thead className="border-b text-xs text-muted-foreground">
@@ -128,6 +167,7 @@ export function OutstandingReport({ clientId, side }: { clientId: string; side: 
             </tfoot>
           </table>
         </div>
+        </>
       )}
 
       {statement && (

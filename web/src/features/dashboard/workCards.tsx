@@ -3,15 +3,17 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
+import { AlertTriangle, Briefcase, CheckCircle2, Users } from 'lucide-react'
 import { useMemo } from 'react'
 import { firmPeople, myWork, workFlow } from '@/api/queries/dashboard'
 import type { MyWork, NextTask, PersonWork } from '@/api/types'
 import { DashCard } from '@/components/ca/DashCard'
-import { KpiCard } from '@/components/ca/KpiCard'
+import { FigureTile } from '@/components/ca/FigureTile'
 import { DailyBars } from '@/components/charts/DailyBars'
-import { DonutLegend } from '@/components/charts/DonutLegend'
 import { FlowChart } from '@/components/charts/FlowChart'
 import { ProgressBar } from '@/components/charts/ProgressBar'
+import { StackedBar, StackedBarSkeleton } from '@/components/charts/StackedBar'
+import { RowsSkeleton, StackedRows } from '@/components/charts/StackedRows'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DataTable, type Column } from '@/components/ui/table'
@@ -25,7 +27,7 @@ export function WorkFlowCard({ title = 'Is work getting done?' }: { title?: stri
   return (
     <DashCard
       title={title}
-      hint={q.data?.scope === 'team' ? 'For your clients, the last 12 weeks.' : 'Across the firm, the last 12 weeks.'}
+      hint={q.data?.scope === 'team' ? 'Your clients, last 12 weeks' : 'The firm, last 12 weeks'}
       state={q.isLoading ? 'loading' : q.error ? 'error' : empty ? 'empty' : 'ready'}
       error={q.error}
       onRetry={() => void q.refetch()}
@@ -66,7 +68,7 @@ export function PeopleCard({ title = 'What does each person have on?' }: { title
       { key: 'clients', header: 'Clients', label: 'Clients', align: 'right', sortValue: (p) => p.assigned_clients, cell: (p) => <span className="num">{p.assigned_clients}</span> },
       { key: 'open', header: 'Open', label: 'Open', align: 'right', sortValue: (p) => p.open_items, cell: (p) => <span className="num">{p.open_items}</span> },
       { key: 'done', header: 'Finished', label: 'Finished', align: 'right', sortValue: (p) => p.finished_in_period, cell: (p) => <span className="num">{p.finished_in_period}</span> },
-      { key: 'late', header: 'Late', label: 'Late', align: 'right', priority: 2, sortValue: (p) => p.overdue, cell: (p) => (detailed ? <span className={p.overdue ? 'num text-destructive' : 'num'}>{p.overdue}</span> : <span className="text-faint">—</span>) },
+      { key: 'late', header: 'Late items', label: 'Late items', align: 'right', priority: 2, sortValue: (p) => p.overdue, cell: (p) => (detailed ? <span className={p.overdue ? 'num text-destructive' : 'num'}>{p.overdue}</span> : <span className="text-faint">—</span>) },
       { key: 'wait', header: 'Waiting on others', label: 'Waiting on others', align: 'right', priority: 3, sortValue: (p) => p.waiting_on_others, cell: (p) => <span className="num">{p.waiting_on_others}</span> },
       { key: 'share', header: 'Own share done', label: 'Own share done', priority: 2, sortValue: (p) => pct(p.finished_in_period, p.finished_in_period + p.open_items), cell: (p) => <OwnShare finished={p.finished_in_period} open={p.open_items} /> },
     ],
@@ -75,16 +77,40 @@ export function PeopleCard({ title = 'What does each person have on?' }: { title
   return (
     <DashCard
       title={title}
-      hint="Counts of work in name order. This month for finished; right now for the rest."
+      hint="In name order. Counts of work, not a rating of people."
       state={q.isLoading ? 'loading' : q.error ? 'error' : rows.length === 0 ? 'empty' : 'ready'}
       error={q.error}
       onRetry={() => void q.refetch()}
       empty="Nobody has been added to your team yet."
       skeleton="h-48"
+      skeletonShape={<RowsSkeleton rows={3} />}
     >
       {!detailed && <p className="mb-3 text-[13px] text-muted-foreground">This firm has many clients, so lateness is not worked out here.</p>}
-      <DataTable caption="What each person has on" columns={columns} rows={rows} rowKey={(p) => p.member_id} defaultSort={{ key: 'name', dir: 'asc' }} />
-      <p className="mt-3 text-xs text-muted-foreground">Counts of work, not a rating of people.</p>
+      <StackedRows
+        ariaLabel={`What ${plural(rows.length, 'person', 'people')} on the team have on`}
+        caption="Work by person: finished this month, open, and waiting on others"
+        total="Open"
+        rows={rows.map((p) => ({
+          key: p.member_id,
+          label: p.name,
+          badge:
+            detailed && p.overdue > 0 ? (
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-destructive-bg px-1.5 text-xs font-medium text-destructive">
+                <AlertTriangle className="size-3" aria-hidden /> {p.overdue} late
+              </span>
+            ) : undefined,
+          totalLabel: `${p.open_items} open`,
+          parts: [
+            { name: 'Finished this month', value: p.finished_in_period, tone: 'good' as const },
+            { name: 'Open', value: p.open_items, tone: 'watch' as const },
+            { name: 'Waiting on others', value: p.waiting_on_others, tone: 'context' as const },
+          ],
+        }))}
+      />
+      <details className="mt-3">
+        <summary className="min-h-11 cursor-pointer py-2 text-[13px] text-link underline sm:min-h-8 sm:py-1">Show as a table</summary>
+        <DataTable caption="What each person has on" columns={columns} rows={rows} rowKey={(p) => p.member_id} defaultSort={{ key: 'name', dir: 'asc' }} />
+      </details>
     </DashCard>
   )
 }
@@ -97,14 +123,14 @@ export function useMyWork() {
   return useQuery(myWork())
 }
 
-export function MyKpis({ data, loading }: { data: MyWork | undefined; loading: boolean }) {
+export function MyKpis({ data, loading, late, lateLoading }: { data: MyWork | undefined; loading: boolean; late: number; lateLoading?: boolean }) {
   const d = data
   return (
     <div className="col-span-12 grid grid-cols-2 gap-3 lg:grid-cols-4">
-      <KpiCard loading={loading} label="Work given to me" value={d?.assigned_clients ?? 0} note={d ? plural(d.assigned_clients, 'client') + ' assigned to me' : undefined} to="/clients" />
-      <KpiCard loading={loading} label="Still to do" value={d?.open_items ?? 0} note="Entries to sort or record, right now" tone={d?.open_items ? 'attention' : 'plain'} to="/pipeline" />
-      <KpiCard loading={loading} label="Late" value={d?.overdue ?? 0} note={d?.overdue ? 'Something is overdue on my clients' : 'Nothing is late'} tone={d?.overdue ? 'attention' : 'plain'} to="/alerts" />
-      <KpiCard loading={loading} label="Finished this month" value={d?.finished_in_period ?? 0} note="Entries I posted" />
+      <FigureTile icon={Users} loading={loading} label="Clients given to me" value={d?.assigned_clients ?? 0} caption="Assigned to me" to="/clients" />
+      <FigureTile icon={Briefcase} loading={loading} label="Work waiting" value={d?.open_items ?? 0} caption="Entries still to be decided" tone={d?.open_items ? 'watch' : 'plain'} to="/pipeline" />
+      <FigureTile icon={AlertTriangle} loading={loading || !!lateLoading} label="Clients late" value={late} caption={late ? 'A seal or TDS date has passed' : 'No seal or TDS date has passed'} tone={late ? 'bad' : 'plain'} to="/alerts" />
+      <FigureTile icon={CheckCircle2} loading={loading} label="Finished this month" value={d?.finished_in_period ?? 0} caption="Entries I posted" tone="good" />
     </div>
   )
 }
@@ -146,7 +172,7 @@ export function NextTasksCard({ data, loading, error }: { data: MyWork | undefin
   )
 }
 
-/** "How much of my work is done?": finished this period against what is still open and what waits on others. */
+/** "How much of my work is done?": finished this period against what is still open and what waits on others, as one bar. */
 export function MyProgressCard({ data, loading }: { data: MyWork | undefined; loading: boolean }) {
   const finished = data?.finished_in_period ?? 0
   const open = data?.open_items ?? 0
@@ -155,22 +181,26 @@ export function MyProgressCard({ data, loading }: { data: MyWork | undefined; lo
   return (
     <DashCard
       title="How much of my work is done?"
-      hint="Finished this month, still open, and waiting on someone else."
       state={loading ? 'loading' : total === 0 ? 'empty' : 'ready'}
       empty="No work is assigned to you yet, so there is nothing to measure."
-      skeleton="h-44"
+      skeleton="h-24"
+      skeletonShape={<StackedBarSkeleton />}
     >
-      <DonutLegend
-        rows={[
-          { key: 'done', label: 'Finished', count: finished, color: 'var(--chart-1)' },
-          { key: 'open', label: 'Still open', count: open, color: 'var(--chart-2)' },
-          { key: 'wait', label: 'Waiting on others', count: waiting, color: 'var(--chart-muted)' },
-        ]}
-        centerValue={`${pct(finished, total)}%`}
-        centerLabel="done"
-        summary={`${finished} finished, ${open} still open and ${waiting} waiting on others: ${pct(finished, total)}% done.`}
-        caption="My work by state"
-      />
+      <div className="grid gap-3">
+        <div className="num text-[28px] font-semibold leading-8 text-heading">
+          {pct(finished, total)}% <span className="text-sm font-normal text-muted-foreground">finished this month</span>
+        </div>
+        <StackedBar
+          segments={[
+            { key: 'done', label: 'Finished', value: finished, valueLabel: String(finished), tone: 'good' },
+            { key: 'open', label: 'Still open', value: open, valueLabel: String(open), tone: 'watch' },
+            { key: 'wait', label: 'Waiting on others', value: waiting, valueLabel: String(waiting), tone: 'context' },
+          ]}
+          ariaLabel={`${finished} finished, ${open} still open and ${waiting} waiting on others: ${pct(finished, total)}% done.`}
+          caption="My work by state"
+          className="[&_ul]:sm:grid-cols-3"
+        />
+      </div>
     </DashCard>
   )
 }
@@ -181,8 +211,7 @@ export function DailyFinishedCard({ data, loading }: { data: MyWork | undefined;
   const total = days.reduce((n, d) => n + d.finished, 0)
   return (
     <DashCard
-      title="How much did I finish each day?"
-      hint="Entries I posted, this month."
+      title="Entries I finished each day, this month"
       state={loading ? 'loading' : total === 0 ? 'empty' : 'ready'}
       empty="You have not finished anything yet this month."
       skeleton="h-44"
@@ -199,7 +228,6 @@ export function MyWorkClientsCard({ data, loading }: { data: MyWork | undefined;
   return (
     <DashCard
       title="Which of my clients have work open?"
-      hint="In name order. The bar is how many things are open on it."
       state={loading ? 'loading' : rows.length === 0 ? 'empty' : 'ready'}
       empty="You are not on any client yet. Ask your Senior CA."
       to="/clients"

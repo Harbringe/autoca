@@ -14,6 +14,7 @@ import { isApiError } from '@/api/errors'
 import { firmMetrics } from '@/api/queries/metrics'
 import type { FirmMetrics, MetricsTurnaround } from '@/api/types'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
+import { KpiCard } from '@/components/ca/KpiCard'
 import { StatCard, StatGrid } from '@/components/ui/stat-card'
 import { DataTable, type Column } from '@/components/ui/table'
 import { formatDate, plural } from '@/lib/format'
@@ -74,15 +75,17 @@ function Loaded({ data }: { data: FirmMetrics }) {
     <div className="grid gap-6 [&>*]:min-w-0">
       <div className="grid gap-2">
         <StatGrid>
-          <StatCard
+          <KpiCard
             label="Automation share"
             value={automation ?? <span className="text-base font-medium text-muted-foreground">{NOT_ENOUGH_DATA}</span>}
-            note={automation ? `${f.rows_automated} of ${plural(f.rows_posted, 'posted row')} were placed and posted by the assistant, unchanged` : 'No row reached the books in this period.'}
+            note={automation ? `${f.rows_automated} of ${plural(f.rows_posted, 'posted row')} posted unchanged` : 'No row reached the books in this period.'}
+            progress={automation ? { value: f.rows_automated, max: Math.max(f.rows_posted, 1), label: `${f.rows_automated} of ${plural(f.rows_posted, 'posted row')} placed and posted by the assistant` } : undefined}
           />
-          <StatCard
+          <KpiCard
             label="Accuracy"
             value={accuracy ?? <span className="text-base font-medium text-muted-foreground">{NOT_ENOUGH_DATA}</span>}
             note={accuracy ? `${f.placements_stayed} stood, ${f.placements_changed} changed` : 'No rule or model placement to judge yet.'}
+            progress={accuracy ? { value: f.placements_stayed, max: Math.max(f.placements_stayed + f.placements_changed, 1), label: `${f.placements_stayed} placements stood, ${f.placements_changed} changed` } : undefined}
           />
           <StatCard
             label="Estimated time saved"
@@ -113,9 +116,10 @@ function Loaded({ data }: { data: FirmMetrics }) {
                   {c.name}
                 </Link>
                 <ul className="grid gap-0.5 text-muted-foreground">
-                  {c.needs_attention.map((reason) => (
+                  {c.needs_attention.slice(0, 2).map((reason) => (
                     <li key={reason.code}>{reason.message}</li>
                   ))}
+                  {c.needs_attention.length > 2 && <li className="text-xs">and {c.needs_attention.length - 2} more</li>}
                 </ul>
               </li>
             ))}

@@ -86,9 +86,16 @@ describe('Payables', () => {
 
   it('shows money held on account or as an advance as reducing what is owed', async () => {
     renderReport()
-    const table = await screen.findByRole('table')
+    const table = await screen.findByRole('table', { name: /^Payables as at/ })
     expect(within(table).getByText('Held on account or as an advance').closest('tr')).toHaveTextContent('-300.00')
     expect(screen.getByText(/held on account or as advances, which lowers the total/)).toBeInTheDocument()
+  })
+
+  it('draws the ageing as a bar above the table, with the same data for a screen reader', async () => {
+    renderReport()
+    await screen.findByRole('table', { name: /^Payables as at/ })
+    expect(screen.getByRole('img', { name: /Payables by age of the bill/ })).toBeInTheDocument()
+    expect(screen.getByRole('table', { name: /Payables by age of the bill/ })).toBeInTheDocument()
   })
 
   it('says plainly when nothing is owed', async () => {

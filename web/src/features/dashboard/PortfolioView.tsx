@@ -8,7 +8,7 @@ import type { PortfolioClient, Portfolio } from '@/api/types'
 import { DashCard, type CardState } from '@/components/ca/DashCard'
 import { Badge } from '@/components/ui/badge'
 import { DataTable, type Column } from '@/components/ui/table'
-import { clientHealth } from '@/lib/dashboard'
+import { clientHealth, standingContext } from '@/lib/dashboard'
 import { formatCompact, formatDate, formatPaise, plural } from '@/lib/format'
 import { nextTarget, STAGE_LABEL, STAGE_TONE } from '@/lib/overview'
 
@@ -26,7 +26,7 @@ function booksCell(c: PortfolioClient) {
     <span className="grid gap-0.5 text-xs">
       <span className="text-muted-foreground">{parts[0]}</span>
       {c.changed_since_approval ? <span className="text-accent-foreground">{plural(c.changed_since_approval, 'change')} since</span> : null}
-      {c.seal_due ? <span className="text-destructive">Seal due {formatDate(c.seal_due)}</span> : c.next_seal_date ? <span className="text-faint">Next seal {formatDate(c.next_seal_date)}</span> : null}
+      {c.seal_due ? <span className="text-destructive">Seal date passed {formatDate(c.seal_due)}</span> : c.next_seal_date ? <span className="text-faint">Next seal {formatDate(c.next_seal_date)}</span> : null}
     </span>
   )
 }
@@ -34,18 +34,19 @@ function booksCell(c: PortfolioClient) {
 export function ClientHealthTable({ data, state }: { data: Portfolio | undefined; state: CardState }) {
   const navigate = useNavigate()
   const rows = data?.clients ?? []
+  const ctx = useMemo(() => standingContext(data), [data])
   const columns: Column<PortfolioClient>[] = useMemo(
     () => [
       { key: 'client', header: 'Client', label: 'Client', sortValue: (c) => c.name.toLowerCase(), sticky: true, cell: (c) => <Link to="/clients/$clientId" params={{ clientId: c.id }} className="block max-w-[26ch] truncate font-medium text-heading hover:underline" title={c.name} onClick={(e) => e.stopPropagation()}>{c.name}</Link> },
       { key: 'stage', header: 'Stage', label: 'Stage', sortValue: (c) => c.stage, cell: (c) => <Badge tone={STAGE_TONE[c.stage] === 'done' ? 'done' : STAGE_TONE[c.stage] === 'attention' ? 'attention' : STAGE_TONE[c.stage] === 'info' ? 'info' : 'neutral'}>{STAGE_LABEL[c.stage]}</Badge> },
-      { key: 'health', header: 'Standing', label: 'Standing', sortValue: (c) => ['overdue', 'at_risk', 'on_track'].indexOf(clientHealth(c).health), cell: (c) => { const h = clientHealth(c); return <Badge tone={h.health === 'overdue' ? 'danger' : h.health === 'at_risk' ? 'attention' : 'done'} title={h.reasons.join(', ') || undefined}>{h.health === 'overdue' ? 'Late' : h.health === 'at_risk' ? 'At risk' : 'On track'}</Badge> } },
+      { key: 'health', header: 'Standing', label: 'Standing', sortValue: (c) => ['overdue', 'at_risk', 'on_track'].indexOf(clientHealth(c, ctx).health), cell: (c) => { const h = clientHealth(c, ctx); return <Badge tone={h.health === 'overdue' ? 'danger' : h.health === 'at_risk' ? 'attention' : 'done'} title={h.reasons.join(', ') || undefined}>{h.health === 'overdue' ? 'Late' : h.health === 'at_risk' ? 'At risk' : 'On track'}</Badge> } },
       { key: 'books', header: 'Books', cell: booksCell, priority: 2 },
-      { key: 'open', header: 'Open items', label: 'Open items', align: 'right', sortValue: (c) => c.open_items ?? 0, priority: 2, cell: (c) => c.detail ? <span className={c.blocking_unexplained ? 'num text-destructive' : 'num'} title={c.blocking_unexplained ? `${c.blocking_unexplained} block sealing` : undefined}>{c.open_items ?? 0}</span> : <span className="text-faint">—</span> },
+      { key: 'open', header: 'To fix', label: 'To fix', align: 'right', sortValue: (c) => c.open_items ?? 0, priority: 2, cell: (c) => c.detail ? <span className={c.blocking_unexplained ? 'num text-destructive' : 'num'} title={c.blocking_unexplained ? `${c.blocking_unexplained} block sealing` : undefined}>{c.open_items ?? 0}</span> : <span className="text-faint">—</span> },
       { key: 'recv', header: 'Receivable', label: 'Receivable', align: 'right', sortValue: (c) => c.receivables_paise ?? 0, priority: 3, cell: (c) => <Money paise={c.receivables_paise} /> },
       { key: 'pay', header: 'Payable', label: 'Payable', align: 'right', sortValue: (c) => c.payables_paise ?? 0, priority: 3, cell: (c) => <Money paise={c.payables_paise} /> },
       { key: 'tds', header: 'TDS overdue', label: 'TDS overdue', align: 'right', sortValue: (c) => c.tds_overdue_paise ?? 0, priority: 3, cell: (c) => c.tds_overdue_paise ? <span className="num text-destructive" title={formatPaise(c.tds_overdue_paise)}>{formatCompact(c.tds_overdue_paise)}</span> : <span className="text-faint">—</span> },
     ],
-    [],
+    [ctx],
   )
 
   const open = (c: PortfolioClient) => {

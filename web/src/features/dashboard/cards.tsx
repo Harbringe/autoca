@@ -7,145 +7,87 @@ import type { Portfolio, PortfolioClient } from '@/api/types'
 import { ActionList } from '@/components/ca/ActionList'
 import { DashCard, type CardState } from '@/components/ca/DashCard'
 import { RankedBars } from '@/components/charts/RankedBars'
-import { actionsFor, clientHealth, dueWithin, groupAttention } from '@/lib/dashboard'
-import { formatCompact, formatDate, formatPaise, plural } from '@/lib/format'
-import { STAGES, STAGE_LABEL } from '@/lib/overview'
+import { DueTimeline } from '@/components/charts/DueTimeline'
+import { StackedBar, StackedBarSkeleton } from '@/components/charts/StackedBar'
+import { ageSegmentsFromList, sumSegments } from '@/lib/ageing'
+import { actionsFor, clientHealth, dueWithin, standingContext } from '@/lib/dashboard'
+import { formatCompact, formatPaise } from '@/lib/format'
 
 export interface CardProps {
   data: Portfolio | undefined
   state: CardState
 }
 
-/** "Where are my clients' books today?": one bar per stage, each opening those clients. A ring and a legend said it twice. */
-export function BooksDonutCard({ data, state, title, empty }: CardProps & { title: string; empty: string }) {
-  const rows = STAGES.map((stage) => ({
-    key: stage,
-    label: STAGE_LABEL[stage],
-    count: data?.by_stage[stage] ?? 0,
-  }))
-  const total = rows.reduce((n, r) => n + r.count, 0)
-  const signed = data?.by_stage.signed_off ?? 0
-  return (
-    <DashCard
-      title={title}
-      hint={total ? `${signed} of ${plural(total, 'client')} fully signed off.` : 'Every client sits in one of these places.'}
-      state={total === 0 && state === 'ready' ? 'empty' : state}
-      empty={empty}
-      skeleton="h-44"
-    >
-      <RankedBars
-        max={total || 1}
-        rows={rows.map((r) => ({
-          key: r.key,
-          label: r.label,
-          value: r.count,
-          valueLabel: `${r.count} of ${total}`,
-          to: '/clients',
-          search: { stage: r.key },
-          tone: r.key === 'signed_off' ? 'primary' : 'accent',
-        }))}
-      />
-    </DashCard>
-  )
-}
-
-/** "Which clients need me first?": one bar per client, as many items as the server has flagged for it. */
-export function NeedMeFirstCard({ data, state }: CardProps) {
-  const groups = useMemo(() => groupAttention(data?.attention ?? []), [data])
-  const flagged = new Set(data?.attention.map((a) => a.client)).size
-  return (
-    <DashCard
-      title="Which clients need me first?"
-      hint="Most serious first. The words say what is wrong."
-      state={state === 'ready' && groups.length === 0 ? 'empty' : state}
-      empty="No client needs attention. Good."
-      to="/alerts"
-      seeAll={flagged > groups.length ? `See all ${flagged}` : 'See all alerts'}
-      skeleton="h-48"
-    >
-      <RankedBars
-        rows={groups.map((g) => ({
-          key: g.clientId,
-          label: g.client,
-          value: g.items,
-          valueLabel: g.critical ? `${plural(g.items, 'item')}, ${g.critical} overdue` : plural(g.items, 'item'),
-          note: g.others > 0 ? `${g.text} (and ${g.others} more)` : g.text,
-          to: g.to,
-          search: g.search,
-          tone: g.critical ? 'danger' : 'accent',
-        }))}
-      />
-    </DashCard>
-  )
-}
-
-/** "What falls due in the next 30 days?": the server's dated list (TDS deposits, sealing dates), trimmed to a month. */
+/** "What falls due in the next 30 days?": the server's dated list as a line of dates, with the list beneath as the detail. */
 export function DueSoonCard({ data, state, today }: CardProps & { today: Date }) {
   const rows = useMemo(() => dueWithin(data?.deadlines ?? [], 30, today), [data, today])
   return (
-    <DashCard title="What falls due in the next 30 days?" hint="TDS deposits and sealing dates." state={state === 'ready' && rows.length === 0 ? 'empty' : state} empty="Nothing falls due in the next 30 days." skeleton="h-40">
-      <ul className="divide-y">
-        {rows.map((d) => (
-          <li key={`${d.date}-${d.label}`} className="grid gap-0.5 py-2.5 first:pt-0 last:pb-0">
-            <span className="flex items-baseline justify-between gap-3">
-              <strong className="text-sm text-heading">{d.label}</strong>
-              <span className="num shrink-0 text-[13px] text-muted-foreground">{formatDate(d.date)}</span>
-            </span>
-            <span className="text-[13px] text-muted-foreground">{d.clients.length > 3 ? `${d.clients.slice(0, 3).join(', ')} and ${d.clients.length - 3} more` : d.clients.join(', ')}</span>
-          </li>
-        ))}
-      </ul>
+    <DashCard
+      title="What falls due in the next 30 days?"
+      state={state}
+      skeleton="h-32"
+    >
+      <DueTimeline items={rows} today={today} />
     </DashCard>
   )
 }
 
-/** "How much is owed to my clients, and by them?": the server's firm-wide roll-up, only where it sent money. */
+/** One side of the owed card: the total as a figure, then how old it is as a bar on the shared scale. */
+function OwedSide({ title, empty, total, buckets, scaleMax }: { title: string; empty: string; total: number; buckets: { bucket: string; amount_paise: number }[] | undefined; scaleMax: number }) {
+  const segments = ageSegmentsFromList(buckets ?? [])
+  const bills = sumSegments(segments)
+  const apart = total - bills
+  return (
+    <div className="grid gap-2">
+      <div className="flex items-baseline justify-between gap-3">
+        <h3 className="text-sm font-medium text-heading">{title}</h3>
+        <span className="num text-2xl font-semibold text-heading" title={formatPaise(total)}>
+          {formatCompact(total)}
+        </span>
+      </div>
+      {buckets && (
+        <>
+          <StackedBar
+            segments={segments}
+            scaleMax={scaleMax}
+            ariaLabel={`${title}: ${formatCompact(total)} in all, ${formatCompact(segments[3]!.value)} over 90 days old`}
+            caption={`${title}, by age of the bill`}
+            empty={empty}
+          />
+          {apart !== 0 && bills > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Bar is bills only; {formatCompact(Math.abs(apart))} {apart < 0 ? 'held on account or as advances is taken off the total' : 'is not aged'}.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
+
+/** "Who owes what, and how old?": the server's firm-wide roll-up, only where it sent money. Both sides share one scale. */
 export function OwedCard({ data, state }: CardProps) {
   const receivable = data?.receivables_total_paise
   const payable = data?.payables_total_paise
   const top = data?.top_receivables ?? []
-  const aging = data?.aging?.receivables ?? []
-  const agingTotal = aging.reduce((n, b) => n + b.amount_paise, 0)
+  const aging = data?.aging
   const present = receivable !== undefined && payable !== undefined
   const missing = state === 'ready' && !present
   const none = state === 'ready' && present && receivable === 0 && payable === 0
+  const sum = (list: { amount_paise: number }[] | undefined) => (list ?? []).reduce((n, b) => n + Math.max(b.amount_paise, 0), 0)
+  const scaleMax = Math.max(sum(aging?.receivables), sum(aging?.payables), 1)
   return (
     <DashCard
-      title="How much is owed to my clients, and by them?"
-      hint="Unpaid invoices and bills, added up across clients."
+      title="Who owes what, and how old?"
       state={missing || none ? 'empty' : state}
       empty={missing ? 'Not shown for your role, or for firms with very many clients. Open a client to see its figures.' : 'No unpaid invoices or bills have been posted yet.'}
       skeleton="h-40"
+      skeletonShape={<StackedBarSkeleton rows={2} />}
     >
-      <dl className="grid grid-cols-2 gap-4">
-        <div>
-          <dt className="text-xs text-muted-foreground">Customers owe your clients</dt>
-          <dd className="num text-2xl font-semibold text-heading" title={formatPaise(receivable ?? 0)}>
-            {formatCompact(receivable ?? 0)}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs text-muted-foreground">Your clients owe suppliers</dt>
-          <dd className="num text-2xl font-semibold text-heading" title={formatPaise(payable ?? 0)}>
-            {formatCompact(payable ?? 0)}
-          </dd>
-        </div>
-      </dl>
-      {agingTotal > 0 && (
-        <div className="mt-4 border-t pt-3">
-          <p className="mb-1.5 text-xs text-muted-foreground">How old the money customers owe is</p>
-          <ul className="grid grid-cols-2 gap-x-4 gap-y-1 text-[13px] sm:grid-cols-4">
-            {aging.map((b) => (
-              <li key={b.bucket} className="flex items-baseline justify-between gap-2">
-                <span className={b.bucket === 'Over 90' && b.amount_paise > 0 ? 'text-destructive' : 'text-muted-foreground'}>{b.bucket === 'Over 90' ? 'Over 90 days' : `${b.bucket} days`}</span>
-                <span className="num font-medium text-heading" title={formatPaise(b.amount_paise)}>
-                  {formatCompact(b.amount_paise)}
-                </span>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <div className="grid gap-5">
+        <OwedSide title="Customers owe your clients" empty="No customer owes your clients anything." total={receivable ?? 0} buckets={aging?.receivables} scaleMax={scaleMax} />
+        <OwedSide title="Your clients owe suppliers" empty="Your clients owe no supplier anything." total={payable ?? 0} buckets={aging?.payables} scaleMax={scaleMax} />
+      </div>
       {top.length > 0 && (
         <div className="mt-4 border-t pt-3">
           <p className="mb-1 text-xs text-muted-foreground">Clients with the most to collect</p>
@@ -167,18 +109,18 @@ export function OwedCard({ data, state }: CardProps) {
 }
 
 /** "Which clients are at risk, and why?": clients with a late or failing thing, with the reasons in words. */
-export function AtRiskCard({ data, state, title = 'Which clients are at risk, and why?' }: CardProps & { title?: string }) {
+export function AtRiskCard({ data, state, today, title = 'Which clients are at risk, and why?' }: CardProps & { today?: Date; title?: string }) {
   const rows = useMemo(
     () =>
       (data?.clients ?? [])
-        .map((c) => ({ c, h: clientHealth(c) }))
+        .map((c) => ({ c, h: clientHealth(c, standingContext(data, today)) }))
         .filter((r) => r.h.health !== 'on_track')
         .sort((a, b) => Number(b.h.health === 'overdue') - Number(a.h.health === 'overdue') || b.h.reasons.length - a.h.reasons.length || a.c.name.localeCompare(b.c.name))
         .slice(0, 8),
     [data],
   )
   return (
-    <DashCard title={title} hint="Late: a date has passed. At risk: a check is failing." state={state === 'ready' && rows.length === 0 ? 'empty' : state} empty="No client is at risk." to="/alerts" seeAll="See alerts" skeleton="h-48">
+    <DashCard title={title} hint="Late: a seal or TDS date has passed. At risk: a date within 7 days, or a month missing." state={state === 'ready' && rows.length === 0 ? 'empty' : state} empty="No client is at risk." to="/alerts" seeAll="See alerts" skeleton="h-48">
       <RankedBars
         rows={rows.map(({ c, h }) => ({
           key: c.id,
@@ -197,8 +139,8 @@ export function AtRiskCard({ data, state, title = 'Which clients are at risk, an
 }
 
 /** "What is waiting on me?" / "What should I do next?": the actions, each with its button. */
-export function ActionCard({ data, state, title, hint, empty, limit = 8, pick }: CardProps & { title: string; hint: string; empty: string; limit?: number; pick?: (c: PortfolioClient) => boolean }) {
-  const all = useMemo(() => actionsFor((data?.clients ?? []).filter(pick ?? (() => true))), [data, pick])
+export function ActionCard({ data, state, today, title, hint, empty, limit = 8, pick }: CardProps & { today?: Date; title: string; hint: string; empty: string; limit?: number; pick?: (c: PortfolioClient) => boolean }) {
+  const all = useMemo(() => actionsFor((data?.clients ?? []).filter(pick ?? (() => true)), standingContext(data, today)), [data, pick, today])
   return (
     <DashCard title={title} hint={hint} state={state === 'ready' && all.length === 0 ? 'empty' : state} empty={empty} skeleton="h-56">
       <ActionList items={all.slice(0, limit)} more={all.length - limit} moreTo="/pipeline" />

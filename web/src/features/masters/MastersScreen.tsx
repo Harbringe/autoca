@@ -61,7 +61,7 @@ export function MastersScreen({ clientId, tab, ledgerId }: { clientId: string; t
               params={{ clientId }}
               search={{ tab: t.tab }}
               aria-current={tab === t.tab ? 'page' : undefined}
-              className={cn('rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground', tab === t.tab && 'bg-card text-foreground shadow-xs')}
+              className={cn('rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground max-lg:py-3', tab === t.tab && 'bg-card text-foreground shadow-xs')}
             >
               {t.label}
             </Link>

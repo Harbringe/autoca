@@ -218,13 +218,25 @@
   }
 }
 
-/* A hit area a finger can find. */
-@media (pointer: coarse) {
+/* A hit area a finger can find: on touch devices and on any window narrower than a laptop. */
+@media (pointer: coarse), (max-width: 1023px) {
   button,
   [role='button'],
+  a[class*='justify-center'],
+  [role='tab'],
   select,
   input:not([type='checkbox']):not([type='radio']) {
     min-height: 2.75rem;
+  }
+  /* A link inside a table cell or a list row is a tap target too: give it the height of the row, not the height of its text. */
+  td a,
+  th a,
+  li > a:not([class*='block']) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 2.75rem;
+    min-width: 2.75rem;
   }
 }
 

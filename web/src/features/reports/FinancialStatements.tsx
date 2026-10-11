@@ -19,10 +19,12 @@ import type { StatementRow, Statements } from '@/api/types'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Button } from '@/components/ui/button'
 import { Select } from '@/components/ui/controls'
-import { Spinner } from '@/components/ui/spinner'
 import { formatPaise, fyLabel } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
+import { PairedBars } from '@/components/charts/PairedBars'
+import { statementHeadlines } from '@/lib/reportSeries'
+import { Picture, ReportSkeleton } from './ReportPicture'
 import { ReportFrame } from './ReportFrame'
 import { StatementDetails } from './StatementDetails'
 
@@ -52,7 +54,7 @@ const lineName = (code: string) => LINE_NAMES[code] ?? code
 
 function StatementTable({ title, rows, current, previous, hasPrevious, unit }: { title: string; rows: StatementRow[]; current: string; previous: string; hasPrevious: boolean; unit: number }) {
   return (
-    <div className="overflow-x-auto">
+    <div className="relative overflow-x-auto">
       <table className="w-full text-sm" aria-label={title}>
         <caption className="sr-only">{title}</caption>
         <thead className="border-b-2 text-left text-xs uppercase tracking-wide text-muted-foreground">
@@ -92,7 +94,7 @@ function StatementTable({ title, rows, current, previous, hasPrevious, unit }: {
 
 function ScheduleTable({ schedule, unit }: { schedule: Statements['schedules'][number]; unit: number }) {
   return (
-    <article className="overflow-x-auto rounded-lg border bg-card p-4 print:break-inside-avoid" aria-label={schedule.title}>
+    <article className="relative overflow-x-auto rounded-lg border bg-card p-4 print:break-inside-avoid" aria-label={schedule.title}>
       <h3 className="mb-2 text-sm font-semibold text-heading">
         Note {schedule.note} · {schedule.title}
       </h3>
@@ -120,6 +122,27 @@ function ScheduleTable({ schedule, unit }: { schedule: Statements['schedules'][n
   )
 }
 
+/** The bold total lines of both statements, this year against last, above the statements themselves. */
+function HeadlinePictures({ s, end, prevEnd }: { s: Statements; end: string; prevEnd: string }) {
+  const bs = statementHeadlines(s.balance_sheet)
+  const pl = statementHeadlines(s.profit_and_loss)
+  if (bs.length === 0 && pl.length === 0) return null
+  return (
+    <div className="no-print grid gap-4 lg:grid-cols-2 [&>*]:min-w-0">
+      {bs.length > 0 && (
+        <Picture title="Balance Sheet, the main totals" className="mb-0">
+          <PairedBars rows={bs} current={end} previous={prevEnd} ariaLabel="Balance Sheet totals, this year against last" caption="Balance Sheet totals, this year and last" />
+        </Picture>
+      )}
+      {pl.length > 0 && (
+        <Picture title="Profit and Loss, the main totals" className="mb-0">
+          <PairedBars rows={pl} current={end} previous={prevEnd} ariaLabel="Profit and Loss totals, this year against last" caption="Profit and Loss totals, this year and last" />
+        </Picture>
+      )}
+    </div>
+  )
+}
+
 export function FinancialStatements({ clientId, fy }: { clientId: string; fy: number }) {
   const q = useQuery(financialStatements(clientId, fy))
   const { can } = useSession()
@@ -134,7 +157,7 @@ export function FinancialStatements({ clientId, fy }: { clientId: string; fy: nu
       toast.error(messageOf(e))
     }
   }
-  if (q.isPending) return <Spinner label="Preparing the statements…" />
+  if (q.isPending) return <ReportSkeleton label="Preparing the statements…" />
   if (q.error) return <ErrorState error={q.error} retry={() => void q.refetch()} />
   const s = q.data
   const filled = s.balance_sheet.some((r) => (r.current_paise ?? 0) !== 0) || s.profit_and_loss.some((r) => (r.current_paise ?? 0) !== 0)
@@ -153,7 +176,7 @@ export function FinancialStatements({ clientId, fy }: { clientId: string; fy: nu
   const prevEnd = `31 March ${fy}`
   const unit = s.unit_paise
   return (
-    <div className="grid gap-4">
+    <div className="grid gap-4 [&>*]:min-w-0">
       <div className="no-print flex flex-wrap items-center justify-between gap-2">
         <p className="text-sm text-muted-foreground">Presented in ICAI’s format for non-corporate entities.</p>
         <div className="flex gap-2">
@@ -180,6 +203,7 @@ export function FinancialStatements({ clientId, fy }: { clientId: string; fy: nu
           ))}
         </ul>
       )}
+      <HeadlinePictures s={s} end={end} prevEnd={prevEnd} />
       <ReportFrame clientId={clientId} title="Balance Sheet" footer={s.footer} period={`as at ${end}`}>
         {!s.balances && (
           <div className="mb-4 flex gap-2 rounded-md border border-destructive/40 bg-destructive-bg p-3 text-sm">
@@ -232,7 +256,7 @@ export function FinancialStatements({ clientId, fy }: { clientId: string; fy: nu
         </section>
       )}
 
-      <section aria-label="Notes" className="grid gap-4">
+      <section aria-label="Notes" className="grid gap-4 [&>*]:min-w-0">
         <h2 className="text-base font-semibold text-heading">Notes forming part of the financial statements</h2>
         <article id="note-1" className="scroll-mt-20 rounded-lg border bg-card p-4 print:break-inside-avoid">
           <h3 className="mb-2 text-sm font-semibold text-heading">Note 1 · Brief about the entity</h3>
@@ -244,7 +268,7 @@ export function FinancialStatements({ clientId, fy }: { clientId: string; fy: nu
           <p className="mt-2 text-sm text-muted-foreground">{s.size_statement}</p>
         </article>
         {s.capital && (
-          <article id="capital-table" className="scroll-mt-20 overflow-x-auto rounded-lg border bg-card p-4 print:break-inside-avoid">
+          <article id="capital-table" className="scroll-mt-20 relative overflow-x-auto rounded-lg border bg-card p-4 print:break-inside-avoid">
             <h3 className="mb-2 text-sm font-semibold text-heading">Note 3 · {s.capital_title}, partner by partner</h3>
             <table className="w-full min-w-[48rem] text-sm">
               <thead className="border-b text-left text-xs text-muted-foreground">
@@ -289,7 +313,7 @@ export function FinancialStatements({ clientId, fy }: { clientId: string; fy: nu
         )}
         {s.notes.map((note) => (
           <Fragment key={note.number}>
-          <article id={`note-${note.number}`} className="scroll-mt-20 rounded-lg border bg-card p-4 print:break-inside-avoid">
+          <article id={`note-${note.number}`} className="relative scroll-mt-20 overflow-x-auto rounded-lg border bg-card p-4 print:break-inside-avoid">
             <h3 className="mb-2 text-sm font-semibold text-heading">
               Note {note.number} · {note.title}
             </h3>

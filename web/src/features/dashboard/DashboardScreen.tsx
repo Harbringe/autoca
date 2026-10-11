@@ -8,36 +8,16 @@ import { Link } from '@tanstack/react-router'
 import { ChevronDown, FileUp } from 'lucide-react'
 import { useId, useState } from 'react'
 import { portfolio } from '@/api/queries/dashboard'
-import type { Portfolio } from '@/api/types'
 import { EmptyState, ErrorState, PageHeader } from '@/components/ca/Page'
 import { Button } from '@/components/ui/button'
-import { clientHealth, layoutFor, type DashboardLayout } from '@/lib/dashboard'
-import { formatDateLong, plural } from '@/lib/format'
+import { layoutFor } from '@/lib/dashboard'
+import { formatDateLong } from '@/lib/format'
 import { isoOf } from '@/lib/period'
 import { usePageTitle } from '@/lib/title'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { OwnerDashboard, SeniorDashboard, StaffDashboard } from './layouts'
 import { LiveQueue } from './LiveQueue'
-
-/** The reader's question, answered in one plain sentence from what the portfolio says. */
-export function questionLine(layout: DashboardLayout, data: Portfolio | undefined): string {
-  if (!data) return { owner: 'Is my firm on track?', senior: 'What do I need to approve or seal, and which clients are at risk?', staff: 'What do I do next?' }[layout]
-  const clients = data.clients
-  const health = clients.map(clientHealth)
-  const late = health.filter((h) => h.health === 'overdue').length
-  const risk = health.filter((h) => h.health !== 'on_track').length
-  if (layout === 'owner') {
-    const on = health.length - risk
-    return `Is my firm on track? ${on} of ${plural(health.length, 'client')} ${on === 1 ? 'is' : 'are'} on track${late ? `; ${late} ${late === 1 ? 'is' : 'are'} late.` : '.'}`
-  }
-  if (layout === 'senior') {
-    const waiting = clients.filter((c) => c.review_pending).length
-    return `What is waiting on me? ${plural(waiting, 'book')} to approve, ${plural(risk, 'client')} at risk.`
-  }
-  const work = data.totals.unresolved + data.totals.pending_approval
-  return work ? `What do I do next? ${plural(work, 'entry', 'entries')} on my clients ${work === 1 ? 'is' : 'are'} waiting.` : 'What do I do next? Nothing is waiting on my clients.'
-}
 
 export function DashboardScreen() {
   usePageTitle('Dashboard')
@@ -54,9 +34,9 @@ export function DashboardScreen() {
         title="Dashboard"
         className="mb-1"
         description={
-          <>
-            {questionLine(layout, data)} <span className="whitespace-nowrap text-faint">· {me?.firm?.name ?? 'Your firm'}, {formatDateLong(isoOf(today))}</span>
-          </>
+          <span className="whitespace-nowrap text-faint">
+            {me?.firm?.name ?? 'Your firm'}, {formatDateLong(isoOf(today))}
+          </span>
         }
       />
       {query.error ? (

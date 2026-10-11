@@ -8,6 +8,7 @@ import type { AlertModule } from '@/api/types'
 import { EmptyState, ErrorState, PageHeader } from '@/components/ca/Page'
 import { cn } from '@/lib/utils'
 import { usePageTitle } from '@/lib/title'
+import { StackedBar } from '@/components/charts/StackedBar'
 import { AlertList, MODULE_LABEL } from './AlertList'
 import { sortAlerts } from './alertView'
 
@@ -40,9 +41,17 @@ export function AlertsScreen({ search }: { search: AlertsSearch }) {
 
   return (
     <div className="grid gap-5">
-      <PageHeader
-        title="Alerts"
-        description={counts.total ? `${counts.total} things need attention, most serious first. Select one to go straight to where it is fixed.` : 'Nothing needs attention right now.'}
+      <PageHeader title="Alerts" />
+      <StackedBar
+        segments={[
+          { key: 'critical', label: 'Urgent', value: counts.by_severity.critical ?? 0, valueLabel: String(counts.by_severity.critical ?? 0), tone: 'bad' },
+          { key: 'high', label: 'Important', value: counts.by_severity.high ?? 0, valueLabel: String(counts.by_severity.high ?? 0), tone: 'watch' },
+          { key: 'medium', label: 'To do', value: counts.by_severity.medium ?? 0, valueLabel: String(counts.by_severity.medium ?? 0), tone: 'context' },
+        ]}
+        ariaLabel={`${counts.total} alerts: ${counts.by_severity.critical ?? 0} urgent, ${counts.by_severity.high ?? 0} important, ${counts.by_severity.medium ?? 0} to do`}
+        caption="Alerts by severity"
+        empty="Nothing needs attention right now."
+        className="max-w-4xl [&_ul]:sm:grid-cols-3"
       />
       <div role="group" aria-label="Filter by module" className="flex flex-wrap gap-2">
         <button type="button" className={chip(!search.module)} aria-pressed={!search.module} onClick={() => choose(undefined)}>

@@ -29,6 +29,8 @@ export interface DashCardProps {
   onRetry?: () => void
   /** Height of the skeleton while loading, as a Tailwind class. */
   skeleton?: string
+  /** A skeleton drawn in the shape of what is loading; used instead of the plain block when given. */
+  skeletonShape?: ReactNode
   className?: string
   children?: ReactNode
 }
@@ -45,6 +47,7 @@ export function DashCard({
   error,
   onRetry,
   skeleton = 'h-32',
+  skeletonShape,
   className,
   children,
 }: DashCardProps) {
@@ -65,7 +68,7 @@ export function DashCard({
             params={params as never}
             search={search as never}
             aria-label={`${seeAll}: ${title}`}
-            className="no-print -my-2 inline-flex min-h-11 shrink-0 items-center text-[13px] text-link underline underline-offset-2 sm:min-h-8"
+            className="no-print -my-2 inline-flex min-h-11 shrink-0 items-center text-[13px] text-link underline underline-offset-2 lg:min-h-8"
           >
             {seeAll}
           </Link>
@@ -73,9 +76,16 @@ export function DashCard({
       </div>
       <div className="mt-3">
         {state === 'loading' ? (
-          <div className={cn('skeleton', skeleton)}>
-            <span className="sr-only">Loading: {title}</span>
-          </div>
+          skeletonShape ? (
+            <div>
+              <span className="sr-only">Loading: {title}</span>
+              {skeletonShape}
+            </div>
+          ) : (
+            <div className={cn('skeleton', skeleton)}>
+              <span className="sr-only">Loading: {title}</span>
+            </div>
+          )
         ) : state === 'error' ? (
           <ErrorState error={error} retry={onRetry} />
         ) : state === 'empty' ? (

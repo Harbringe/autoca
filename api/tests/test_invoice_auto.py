@@ -259,6 +259,23 @@ def test_a_stored_invoice_can_be_shown_as_pages_in_the_viewer(api, client_record
     assert api.get(f"/api/v1/documents/{reading['document']}/preview/99/").status_code == 404
 
 
+def test_viewing_a_stored_invoice_page_by_page_leaves_an_audit_row(api, client_record):
+    from core.db.session import firm_context
+    from core.models import AuditLog
+    from integrations.tests.test_files import docx
+
+    file = _file("invoice.docx", docx(PURCHASE.splitlines()))
+    reading = api.post(f"{base(client_record)}/invoices/upload/", {"file": file, "book": "false"}, format="multipart").json()
+
+    api.get(f"/api/v1/documents/{reading['document']}/preview/")
+    api.get(f"/api/v1/documents/{reading['document']}/preview/1/")
+
+    with firm_context(client_record.firm_id):
+        paths = list(AuditLog.objects.filter(method="GET").values_list("path", flat=True))
+    assert any(p.endswith(f"/documents/{reading['document']}/preview/") for p in paths)
+    assert any(p.endswith(f"/documents/{reading['document']}/preview/1/") for p in paths)
+
+
 def test_an_unbooked_invoice_can_be_deleted_with_its_file(api, client_record):
     register_own_gstin(client_record)
     file = _file("inv.pdf", b"%PDF-1.4\n" + PURCHASE.encode())

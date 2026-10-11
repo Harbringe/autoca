@@ -29,12 +29,15 @@ MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 #: HEAD runs the same view as GET (the number is decrypted, the file fetched) and only drops the body.
 READ_METHODS = {"GET", "HEAD"}
 
-#: Reads that hand over something sensitive and so are recorded like a write: a stored statement being downloaded, and a
-#: bank account being opened (its number is decrypted for the response).
+#: Reads that hand over something sensitive and so are recorded like a write: a stored statement being downloaded, a
+#: bank account being opened (its number is decrypted for the response), and a stored file shown page by page in the
+#: in-app viewer -- the same content as a download, read a different way, and just as worth a row in the trail.
 _UUID = r"[0-9a-fA-F-]{36}"
 SENSITIVE_READS = (
     re.compile(rf"^/api/v1/documents/{_UUID}/download/$"),
     re.compile(rf"^/api/v1/clients/{_UUID}/bank-accounts/{_UUID}/$"),
+    re.compile(rf"^/api/v1/documents/{_UUID}/preview/$"),
+    re.compile(rf"^/api/v1/documents/{_UUID}/preview/\d+/$"),
 )
 
 

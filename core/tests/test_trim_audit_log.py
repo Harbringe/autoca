@@ -13,7 +13,8 @@ from core.db.session import firm_context
 from core.models import AuditLog
 from core.provisioning import create_firm
 
-pytestmark = pytest.mark.django_db
+#: The command itself deletes through the privileged "owner" connection; these tests check what it left behind on it.
+pytestmark = pytest.mark.django_db(databases=["default", "owner"])
 
 
 def _row(firm, *, days_old: int):

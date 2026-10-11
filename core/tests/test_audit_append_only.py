@@ -31,8 +31,6 @@ def test_the_database_refuses_to_erase_an_audit_row(row):
 
 def test_a_fresh_row_cannot_be_erased_even_through_the_owner_connection():
     """The retention floor is enforced by the trigger itself, not by trusting the caller to ask nicely."""
-    import datetime
-
     firm = create_firm("Audit Retention Firm")
     with firm_context(firm.pk):
         fresh = AuditLog.objects.create(firm=firm, method="POST", path="/x", status_code=200)

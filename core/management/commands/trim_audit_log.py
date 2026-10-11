@@ -1,11 +1,8 @@
 """Delete request-audit rows past their retention window.
 
-``core_audit_log`` holds one row per mutating request plus the reads ``core.middleware.audit.SENSITIVE_READS``
-names, and the application role may only ever SELECT and INSERT into it (``core/migrations/0013``): nothing this
-command does runs as that role, or it would fail before reaching a row. It runs on the privileged ``owner``
-connection instead, the same one migrations use, which the database's own retention floor
-(``core/migrations/0016_audit_log_retention.py``) still refuses to let touch anything newer than the floor,
-whatever window this command is asked to use.
+Calls ``app.trim_audit_log(integer, boolean)`` (``core/retention_sql.py``), the one function allowed to remove a
+``core_audit_log`` row across every firm at once. ``core.management.commands.install_log_retention`` must have been
+run once first; without it, this refuses in words rather than with a bare Postgres error.
 
 Run nightly, e.g. from a systemd timer (``deploy/install-log-retention.sh`` installs one, matching the pattern
 ``deploy/install-backups.sh`` already uses for the database backup):
@@ -15,13 +12,11 @@ Run nightly, e.g. from a systemd timer (``deploy/install-log-retention.sh`` inst
 
 from __future__ import annotations
 
-import datetime
-
 from django.conf import settings
-from django.core.management.base import BaseCommand
-from django.utils import timezone
+from django.core.management.base import BaseCommand, CommandError
+from django.db import connections
 
-from core.models import AuditLog
+from core import retention_sql as sql
 
 
 class Command(BaseCommand):
@@ -32,12 +27,13 @@ class Command(BaseCommand):
         parser.add_argument("--dry-run", action="store_true", help="Say how many rows would go. Delete nothing.")
 
     def handle(self, *args, days, dry_run, **options):
-        cutoff = timezone.now() - datetime.timedelta(days=days)
-        queryset = AuditLog.objects.using("owner").filter(created_at__lt=cutoff)
+        with connections["owner"].cursor() as cursor:
+            if not sql.installed(cursor):
+                raise CommandError(
+                    "app.trim_audit_log is not installed. Run `python manage.py install_log_retention` first."
+                )
+            cursor.execute("SELECT app.trim_audit_log(%s, %s)", [days, dry_run])
+            count = cursor.fetchone()[0]
 
-        if dry_run:
-            self.stdout.write(f"Would delete {queryset.count()} audit-log rows older than {cutoff:%Y-%m-%d}.")
-            return
-
-        deleted, _ = queryset.delete()
-        self.stdout.write(f"Deleted {deleted} audit-log rows older than {cutoff:%Y-%m-%d}.")
+        verb = "Would delete" if dry_run else "Deleted"
+        self.stdout.write(f"{verb} {count} audit-log rows older than {days} days.")

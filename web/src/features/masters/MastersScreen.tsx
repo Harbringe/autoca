@@ -225,6 +225,16 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
                 const newGroup = index === 0 || grouped[index - 1]!.group !== l.group
                 const isOpen = selectedLedger === l.id
                 const toggle = () => setSelectedLedger(isOpen ? null : l.id)
+                // Every ledger shows both buttons; the ones that cannot be used say why.
+                const isBank = l.group === 'BANK'
+                const editReason = isBank ? 'This is the bank account’s own ledger; it is changed from the bank account.' : undefined
+                const deleteReason = isBank
+                  ? 'The bank account’s ledger cannot be deleted.'
+                  : l.row_count > 0
+                    ? `${plural(l.row_count, 'row')} placed here, so it cannot be deleted. Edit it and untick Active instead.`
+                    : (entryStats.get(l.id)?.count ?? 0) > 0
+                      ? 'It has posted entries, so it cannot be deleted. Edit it and untick Active instead.'
+                      : undefined
                 return (
                   <Fragment key={l.id}>
                     {newGroup && (
@@ -251,18 +261,18 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
                       <td className="num px-4 py-4 text-right max-sm:hidden">{l.row_count}</td>
                       <td className="num px-4 py-4 text-right">{entryStats.get(l.id)?.count ?? 0}</td>
                       <td className="whitespace-nowrap px-4 py-2 text-right">
-                        {manage && l.group !== 'BANK' && (
+                        {manage && (
                           <span className="inline-flex justify-end gap-1">
-                            <Button size="sm" variant="ghost" onClick={() => setEditing(l)} aria-label={`Edit ${l.name}`}>
-                              Edit
-                            </Button>
-                            {l.row_count === 0 ? (
-                              <Button size="sm" variant="ghost" onClick={() => void remove(l)} aria-label={`Delete ${l.name}`}>
+                            <span title={editReason}>
+                              <Button size="sm" variant="ghost" onClick={() => setEditing(l)} disabled={!!editReason} aria-label={`Edit ${l.name}`}>
+                                Edit
+                              </Button>
+                            </span>
+                            <span title={deleteReason}>
+                              <Button size="sm" variant="ghost" onClick={() => void remove(l)} disabled={!!deleteReason} aria-label={`Delete ${l.name}`}>
                                 <Trash2 />
                               </Button>
-                            ) : (
-                              <span aria-hidden className="inline-block w-10" />
-                            )}
+                            </span>
                           </span>
                         )}
                       </td>

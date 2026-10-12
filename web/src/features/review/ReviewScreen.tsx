@@ -380,7 +380,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
                         canPost && stage !== 'unresolved' ? 'pl-0' : 'pl-5',
                       )}
                     >
-                      <span className="num text-[13px] text-muted-foreground max-sm:col-span-2">{formatDate(r.transaction.value_date)}</span>
+                      <span className="num font-mono text-[13px] text-muted-foreground max-sm:col-span-2">{formatDate(r.transaction.value_date)}</span>
                       <span className="min-w-0">
                         <span className="block truncate" title={r.transaction.narration}>
                           {r.counterparty && <span className="font-medium text-heading">{r.counterparty} </span>}
@@ -419,15 +419,15 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
                         </span>
                       </span>
                       <span className="text-right">
-                        <span className={cn('num block font-medium', r.transaction.is_debit ? 'text-heading' : 'text-success')}>{r.transaction.amount_display}</span>
-                        <span className="block text-xs text-muted-foreground">{r.transaction.is_debit ? 'Withdrawal' : 'Deposit'}</span>
+                        <span className="num block font-mono text-heading">{r.transaction.amount_display}</span>
+                        <span className="sr-only">{r.transaction.is_debit ? 'Withdrawal' : 'Deposit'}</span>
                       </span>
                     </button>
                   </div>
                   {showBody && (
                     <div id={`decision-${r.id}`}>
                       <Collapse open={isOpen}>
-                        <div className="max-w-5xl px-5 pb-5 pt-1">
+                        <div className="px-5 pb-5 pt-1">
                           <Decision
                             key={r.id}
                             clientId={clientId}
@@ -521,6 +521,17 @@ function SortChip({ label, sortKey, sort, onSort }: { label: string; sortKey: So
 }
 
 const NEW_PARTY = '__new__'
+
+/** Inline, the less used fields (party, TDS, reverse charge) are folded away; on the side panel they are simply shown. */
+function Folded({ flat, open, children }: { flat?: boolean; open: boolean; children: React.ReactNode }) {
+  if (!flat) return <>{children}</>
+  return (
+    <details open={open || undefined} className="border-t border-border-strong pt-3">
+      <summary className="cursor-pointer text-sm text-muted-foreground">Party, TDS and reverse charge</summary>
+      <div className="mt-3 grid gap-3">{children}</div>
+    </details>
+  )
+}
 
 /** Everything needed to decide one row, and the two actions: place it, and post it. */
 function Decision({
@@ -666,57 +677,51 @@ function Decision({
   const legs = (row.entry_legs ?? []).map((leg) => (leg.is_bank ? leg : { ...leg, ledger: chosenLedger?.name ?? null }))
   const extras = [chosenParty?.canonical_name, tds && `TDS ${tds}`, rcm && 'Reverse charge'].filter(Boolean).join(' · ')
   return (
-    <Card className={cn('grid content-start gap-4 p-4', flat ? 'border-0 bg-transparent p-0 shadow-none lg:grid-cols-2 lg:items-start lg:gap-x-10' : 'xl:sticky xl:top-20 xl:max-h-[calc(100svh-6rem)] xl:overflow-auto xl:overscroll-contain')}>
+    <Card className={cn('grid content-start gap-4 p-4', flat ? 'border-0 bg-transparent p-0 shadow-none' : 'xl:sticky xl:top-20 xl:max-h-[calc(100svh-6rem)] xl:overflow-auto xl:overscroll-contain')}>
       <div className="grid content-start gap-4">
-      {flat ? (
-        (row.channel && row.channel !== 'UNKNOWN') || row.counterparty || row.is_self_transfer ? (
-          <div className="flex flex-wrap gap-1.5 text-xs">
-            {row.channel && row.channel !== 'UNKNOWN' && <Badge>{row.channel}</Badge>}
-            {row.counterparty && <Badge tone="outline">{row.counterparty}</Badge>}
-            {row.is_self_transfer && <Badge tone="info">Between the client’s own accounts</Badge>}
-          </div>
-        ) : null
-      ) : (
       <div>
-          <div className="flex items-baseline justify-between gap-3">
-            <span className="num text-sm text-muted-foreground">{formatDate(t.value_date)}</span>
-            <span className={cn('num text-lg font-semibold', t.is_debit ? 'text-foreground' : 'text-success')}>
-              {t.is_debit ? 'Paid ' : 'Received '}
-              {t.amount_display}
-            </span>
-          </div>
-          <p className="mt-1 break-words font-mono text-[13px]">{t.narration}</p>
+        <div className="flex items-baseline justify-between gap-3">
+          <span className={cn('num text-muted-foreground', flat ? 'font-mono text-[13px]' : 'text-sm')}>{formatDate(t.value_date)}</span>
+          <span className={cn('num font-semibold', flat ? 'font-mono text-[26px] leading-tight' : 'text-lg', t.is_debit ? 'text-foreground' : 'text-success')}>
+            {t.is_debit ? 'Paid ' : 'Received '}
+            {t.amount_display}
+          </span>
+        </div>
+        <p className={cn('mt-1 break-words font-mono', flat ? 'text-xs text-muted-foreground' : 'text-[13px]')}>{t.narration}</p>
+        {((row.channel && row.channel !== 'UNKNOWN') || row.counterparty || row.is_self_transfer) && (
           <div className="mt-1.5 flex flex-wrap gap-1.5 text-xs">
             {row.channel && row.channel !== 'UNKNOWN' && <Badge>{row.channel}</Badge>}
             {row.counterparty && <Badge tone="outline">{row.counterparty}</Badge>}
             {row.is_self_transfer && <Badge tone="info">Between the client’s own accounts</Badge>}
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
       {row.open_question && (
-        <div className="flex gap-2 rounded-md border border-accent-edge bg-accent p-2.5 text-sm">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />
+        <div className={cn('flex gap-2 border border-accent-edge bg-accent text-sm', flat ? 'rounded-lg px-3.5 py-3' : 'rounded-md p-2.5')}>
+          {!flat && <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />}
           <span>{row.open_question}</span>
         </div>
       )}
 
       {legs.length > 0 && (
         <div>
-          <div className="mb-1 text-[13px] font-medium">The entry this makes</div>
-          <table className="w-full text-sm">
-            <tbody>
-              {legs.map((leg, i) => (
-                <tr key={i} className="border-b last:border-b-0">
-                  <td className="w-8 py-1 text-muted-foreground">{leg.side}</td>
-                  <td className="py-1">{leg.ledger ?? <span className="italic text-muted-foreground">choose a ledger</span>}</td>
-                  <td className="num py-1 text-right">
-                    <Money display={leg.amount_display} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          <div className={cn('mb-1.5 text-[13px]', flat ? 'text-muted-foreground' : 'font-medium')}>The entry this makes</div>
+          <div className={flat ? 'rounded-lg border border-border-strong px-4' : undefined}>
+            <table className="w-full text-sm">
+              <tbody>
+                {legs.map((leg, i) => (
+                  <tr key={i} className={cn('border-b last:border-b-0', flat && 'border-border-strong')}>
+                    <td className={cn('w-8 text-muted-foreground', flat ? 'py-2.5' : 'py-1')}>{leg.side}</td>
+                    <td className={flat ? 'py-2.5' : 'py-1'}>{leg.ledger ?? <span className="italic text-muted-foreground">choose a ledger</span>}</td>
+                    <td className={cn('num text-right', flat ? 'py-2.5 font-mono' : 'py-1')}>
+                      <Money display={leg.amount_display} />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
           {extras && <p className="mt-1 text-xs text-muted-foreground">{extras}</p>}
           {ledger !== row.ledger && ledger && <p className="mt-1 text-xs text-info">Not saved yet: press Enter or Place in ledger.</p>}
         </div>
@@ -784,6 +789,7 @@ function Decision({
             </p>
           )}
 
+          <Folded flat={flat} open={!!newParty || (row.party_candidates?.length > 0 && !row.party)}>
           <div className="grid gap-1.5">
             <label className="text-[13px] font-medium" htmlFor={`party-${row.id}`}>
               Party (who it was paid to or received from)
@@ -850,12 +856,19 @@ function Decision({
               <Checkbox label="Reverse charge (RCM)" checked={rcm} onChange={(e) => setRcm(e.target.checked)} />
             </div>
           </div>
+          </Folded>
 
           {canPost && row.ledger && unchanged && row.on_party_account && (
             <SettlementPanel clientId={clientId} row={row} onDone={onDone} />
           )}
 
-          <div className={cn('flex flex-wrap justify-end gap-2 max-sm:[&>*]:flex-1', flat ? 'pt-1' : 'sticky bottom-0 -mx-4 border-t bg-card px-4 py-3')}>
+          <div className={cn('flex flex-wrap items-center gap-2 max-sm:[&>*]:flex-1', flat ? 'justify-between pt-1' : 'sticky bottom-0 -mx-4 justify-end border-t bg-card px-4 py-3')}>
+            {flat && (
+              <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground max-sm:hidden">
+                <Kbd>L</Kbd> ledger · <Kbd>Enter</Kbd> place
+              </span>
+            )}
+            <span className="flex flex-wrap items-center justify-end gap-2 max-sm:w-full max-sm:[&>*]:flex-1">
             {!alreadyPlacedByPerson && (
               <Button variant={row.ledger && unchanged ? 'outline' : 'primary'} onClick={() => void place()} disabled={busy || !ledger}>
                 {row.ledger && ledger === row.ledger ? 'Confirm ledger' : 'Place in ledger'} <Kbd className="ml-1 bg-transparent max-sm:hidden">Enter</Kbd>
@@ -866,6 +879,7 @@ function Decision({
                 Post entry <Kbd className="ml-1 bg-transparent text-primary-foreground/80 max-sm:hidden">P</Kbd>
               </Button>
             )}
+            </span>
           </div>
           {canPost && row.ledger && !unchanged && (
             <p className="text-right text-xs text-muted-foreground">Place it with your changes first, then post.</p>

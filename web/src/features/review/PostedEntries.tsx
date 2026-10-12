@@ -115,7 +115,7 @@ export function PostedEntries({ clientId }: { clientId: string }) {
                         onClick={() => setOpenId(isOpen ? null : e.id)}
                         className="grid w-full grid-cols-[6rem_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 px-5 py-4 text-left max-sm:grid-cols-[minmax(0,1fr)_auto]"
                       >
-                        <span className="num text-[13px] text-muted-foreground max-sm:col-span-2">{formatDate(e.entry_date)}</span>
+                        <span className="num font-mono text-[13px] text-muted-foreground max-sm:col-span-2">{formatDate(e.entry_date)}</span>
                         <span className="min-w-0">
                           <span className="block truncate" title={e.narration}>
                             <span className="font-mono text-xs text-muted-foreground">{e.narration}</span>
@@ -125,14 +125,14 @@ export function PostedEntries({ clientId }: { clientId: string }) {
                             {e.voucher_type} · {e.entry_no} · FY {e.fy_label}
                           </span>
                         </span>
-                        <span className="num text-right font-medium text-heading">
+                        <span className="num text-right font-mono text-heading">
                           <Money display={e.total_display} />
                         </span>
                       </button>
                       {showBody && (
                         <div id={`entry-${e.id}`}>
                           <Collapse open={isOpen}>
-                            <div className="grid max-w-2xl gap-4 px-5 pb-5 pt-1">
+                            <div className="grid gap-4 px-5 pb-5 pt-1">
                               <div>
                                 <div className="mb-1.5 text-[13px] text-muted-foreground">The entry</div>
                                 <div className="divide-y divide-border-strong rounded-lg border border-border-strong px-4 text-sm">

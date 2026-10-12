@@ -80,7 +80,7 @@ export function DocumentsScreen({ clientId }: { clientId?: string }) {
                   <ul className="ml-7 border-l pl-4">
                     {entries.map((file) => <li key={file.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b py-2.5 last:border-0">
                       <FileText className="size-4 shrink-0 text-muted-foreground" />
-                      <span className="min-w-0 flex-1 truncate text-sm font-medium text-heading" title={file.original_filename}>{file.original_filename || file.kind_display}</span>
+                      <button type="button" onClick={() => setViewing(file)} className="min-w-0 flex-1 truncate rounded-sm text-left text-sm font-medium text-heading hover:text-primary hover:underline focus-visible:outline-2 focus-visible:outline-primary" title={`Preview ${file.original_filename}`}>{file.original_filename || file.kind_display}</button>
                       <span className="text-xs text-muted-foreground">{file.status_display}</span><span className="text-xs text-muted-foreground">{bytes(file.byte_size)}</span><time className="text-xs text-muted-foreground">{date(file.created_at)}</time>
                       <Button size="sm" variant="ghost" aria-label={`Preview ${file.original_filename}`} onClick={() => setViewing(file)}><Eye /></Button>
                       <Button asChild size="sm" variant="ghost" aria-label={`Download ${file.original_filename}`}><a href={`${V1}/documents/${file.id}/download/`}><Download /></a></Button>

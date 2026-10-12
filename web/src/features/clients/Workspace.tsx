@@ -88,8 +88,6 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
   // Alerts follow where you are: a place shows its own and those of its tabs; the client's home and pipeline show all of its.
   const alertModule = module && module !== 'clients' ? (module as AlertModule) : undefined
   const title = clientScreenName(path) ?? client.data.name
-  // Uploading is the point of the Statements screen; elsewhere it is a quiet second action.
-  const upload_primary = screen === 'statements' || screen === '' || screen === 'pipeline'
   const showsUpload = UPLOAD_SCREENS.has(screen ?? '')
   // One purchase or sale on its own page has its own back link and its own alerts; the section tabs and the module's
   // alerts would only repeat them.
@@ -125,7 +123,7 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
         <div className="flex shrink-0 items-center gap-2">
           {can('client.view') && module !== 'alerts' && screen !== 'team' && !onItemPage && <ModuleAlerts module={alertModule} clientId={clientId} />}
           {can('document.upload') && showsUpload && (
-            <Button variant={upload_primary ? 'primary' : 'secondary'} size="lg" onClick={upload.open} className="h-12 rounded-lg px-5 font-semibold max-sm:h-11 max-sm:px-3" aria-label="Upload bank statement">
+            <Button size="lg" onClick={upload.open} className="h-12 rounded-lg border border-transparent px-5 font-semibold max-sm:h-11 max-sm:px-3" aria-label="Upload bank statement">
               <span className="max-sm:hidden">Upload bank statement</span>
               <span className="sm:hidden">Upload</span>
             </Button>

@@ -197,9 +197,9 @@ export function StatementsScreen({ clientId }: { clientId: string }) {
       <PartiesFound clientId={clientId} />
 
       <Dialog open={!!opening} onOpenChange={(o) => !o && setOpening(null)}>
-        <DialogContent aria-describedby={undefined}>
+        <DialogContent aria-describedby={undefined} className="max-w-xl gap-5 rounded-2xl p-7">
           <DialogHeader>
-            <DialogTitle>Opening balance of {opening?.label}</DialogTitle>
+            <DialogTitle className="text-2xl">Opening balance of {opening?.label}</DialogTitle>
             <DialogDescription>The balance before the first row on file, as at the day before it.</DialogDescription>
           </DialogHeader>
           {opening && (

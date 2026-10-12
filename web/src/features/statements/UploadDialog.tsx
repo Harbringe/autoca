@@ -476,15 +476,15 @@ export function OpeningBalance({
           </p>
         </div>
       )}
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-[3fr_2fr] gap-4 max-sm:grid-cols-1">
         <Field label="Opening balance (₹)">
-          {(p) => <Input {...p} inputMode="decimal" className="text-right num" value={amount} onChange={(e) => setAmount(e.target.value)} />}
+          {(p) => <Input {...p} inputMode="decimal" className="h-12 rounded-lg text-right font-mono text-lg" value={amount} onChange={(e) => setAmount(e.target.value)} />}
         </Field>
-        <Field label="As at">{(p) => <DateInput {...p} value={asOf} onChange={(e) => setAsOf(e.target.value)} />}</Field>
+        <Field label="As at">{(p) => <DateInput {...p} className="h-12 rounded-lg text-base" value={asOf} onChange={(e) => setAsOf(e.target.value)} />}</Field>
       </div>
       {statement?.opening_balance_paise != null && (
-        <p className="text-xs text-muted-foreground">
-          The statement opens at {formatPaise(statement.opening_balance_paise)}
+        <p className="text-sm text-muted-foreground">
+          The statement opens at <span className="font-mono text-heading">{formatPaise(statement.opening_balance_paise)}</span>
           {statement.opening_balance_paise < 0 ? ' (negative: an overdrawn account)' : ''}. A negative figure here means overdrawn too.
         </p>
       )}
@@ -493,13 +493,13 @@ export function OpeningBalance({
           {error}
         </p>
       )}
-      <div className="flex justify-end gap-2">
+      <div className="flex flex-wrap justify-end gap-3 pt-1">
         {differs && (
-          <Button size="sm" variant="outline" onClick={() => void save(true)} disabled={busy}>
+          <Button size="lg" variant="outline" onClick={() => void save(true)} disabled={busy}>
             Keep my figure anyway
           </Button>
         )}
-        <Button size="sm" onClick={() => void save()} disabled={busy}>
+        <Button size="lg" className="rounded-lg px-6 font-semibold" onClick={() => void save()} disabled={busy}>
           {busy ? 'Saving…' : 'Confirm opening balance'}
         </Button>
       </div>

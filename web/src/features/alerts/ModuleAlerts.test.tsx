@@ -35,7 +35,7 @@ async function setup() {
 describe('the View alerts button on a module', () => {
   it('shows the count, lists every alert most serious first, and closes with the close button', async () => {
     const user = await setup()
-    await user.click(await screen.findByRole('button', { name: /View alerts \(2\)/ }))
+    await user.click(await screen.findByRole('button', { name: /View alerts 2/ }))
     const rows = await screen.findAllByRole('link', { name: /GST return overdue|Rows to review/ })
     expect(rows[0]).toHaveTextContent('GST return overdue')
     await user.click(screen.getByRole('button', { name: 'Close alerts' }))

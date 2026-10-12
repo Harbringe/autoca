@@ -7,7 +7,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
-import { Lock, Upload } from 'lucide-react'
+import { Lock } from 'lucide-react'
 import { booksStatus, clientDetail } from '@/api/queries/clients'
 import type { AlertModule } from '@/api/types'
 import { ErrorState } from '@/components/ca/Page'
@@ -109,8 +109,7 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
         <div className="flex shrink-0 items-center gap-2">
           {can('client.view') && module !== 'alerts' && screen !== 'team' && !onItemPage && <ModuleAlerts module={alertModule} clientId={clientId} />}
           {can('document.upload') && showsUpload && (
-            <Button variant={upload_primary ? 'primary' : 'secondary'} onClick={upload.open} className="max-sm:px-3" aria-label="Upload bank statement">
-              <Upload />
+            <Button variant={upload_primary ? 'primary' : 'secondary'} size="lg" onClick={upload.open} className="h-12 rounded-lg px-5 font-semibold max-sm:h-11 max-sm:px-3" aria-label="Upload bank statement">
               <span className="max-sm:hidden">Upload bank statement</span>
               <span className="sm:hidden">Upload</span>
             </Button>

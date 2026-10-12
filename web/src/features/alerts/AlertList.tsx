@@ -98,9 +98,8 @@ export function ModuleAlerts({ module, clientId }: { module?: AlertModule; clien
     <>
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger asChild>
-          <Button variant="outline" size="sm" aria-haspopup="dialog" className="max-sm:h-10">
-            <AlertTriangle className={cn('size-4', urgent > 0 ? 'text-destructive' : 'text-accent-foreground')} aria-hidden />
-            View alerts <span className="num">({alerts.length})</span>
+          <Button variant="outline" size="lg" aria-haspopup="dialog" className="h-12 rounded-lg px-5 font-semibold text-heading max-sm:h-11 max-sm:px-3">
+            View alerts <span className={cn('num', urgent > 0 ? 'text-destructive' : 'text-accent-foreground')}>{alerts.length}</span>
           </Button>
         </PopoverTrigger>
         <PopoverContent align="end" aria-label={`Alerts for ${scopeLabel}`} className="w-[420px] max-w-[calc(100vw-1rem)]">

@@ -83,7 +83,7 @@ export function LoginScreen() {
             {messageOf(login.error)}
           </p>
         )}
-        <Button type="submit" size="lg" disabled={login.isPending || !email || !password}>
+        <Button type="submit" size="lg" loading={login.isPending} disabled={!email || !password}>
           {login.isPending ? 'Signing in…' : 'Sign in'}
         </Button>
       </form>

@@ -108,6 +108,7 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
   const [selectedLedger, setSelectedLedger] = useState<string | null>(openLedger ?? null)
   const [entrySearch, setEntrySearch] = useState('')
   const closingId = useClosing(selectedLedger)
+  const [removing, setRemoving] = useState<Set<string>>(new Set())
   const detailId = selectedLedger ?? closingId
   // Rows placed in the open ledger, in every year and posted or not: the ledger list counts these,
   // while the entries below are only what has been posted, in the year on screen.
@@ -161,17 +162,23 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
 
   const headCell = 'whitespace-nowrap px-4 py-4 text-xs font-semibold text-muted-foreground'
 
+  // Deleting waits for the server: the row dims and its button spins, then the row leaves. If the server refuses, the row simply
+  // wakes up again with the reason shown.
   async function remove(l: LedgerAccount) {
-    const key = ledgersQuery(clientId).queryKey
-    const before = queryClient.getQueryData<LedgerAccount[]>(key)
-    queryClient.setQueryData<LedgerAccount[]>(key, (rows) => rows?.filter((x) => x.id !== l.id))
+    setRemoving((ids) => new Set(ids).add(l.id))
     try {
       await raw.delete(`${V1}/clients/${clientId}/ledgers/${l.id}/`)
+      queryClient.setQueryData<LedgerAccount[]>(ledgersQuery(clientId).queryKey, (rows) => rows?.filter((x) => x.id !== l.id))
       void invalidate()
       toast.success(`Ledger “${l.name}” deleted`)
     } catch (e) {
-      queryClient.setQueryData(key, before)
       toast.error(isApiError(e) && e.code === 'in_use' ? `“${l.name}” has posted entries, so it cannot be deleted. Edit it and untick Active instead.` : messageOf(e))
+    } finally {
+      setRemoving((ids) => {
+        const next = new Set(ids)
+        next.delete(l.id)
+        return next
+      })
     }
   }
 
@@ -270,7 +277,7 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
                         if ((ev.target as HTMLElement).closest('a, button, input, label')) return
                         toggle()
                       }}
-                      className={cn('cursor-pointer border-b border-border-strong hover:bg-hover', isOpen && 'bg-surface-2')}
+                      className={cn('cursor-pointer border-b border-border-strong transition-opacity hover:bg-hover', isOpen && 'bg-surface-2', removing.has(l.id) && 'pointer-events-none opacity-60')}
                     >
                       <td className="w-full px-4 py-4">
                         <button type="button" onClick={toggle} aria-expanded={isOpen} className="inline-flex items-center gap-2 rounded-sm text-left font-medium text-heading">
@@ -290,7 +297,7 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
                               </Button>
                             </span>
                             <span title={deleteReason}>
-                              <Button size="sm" variant="ghost" onClick={() => void remove(l)} disabled={!!deleteReason} aria-label={`Delete ${l.name}`}>
+                              <Button size="sm" variant="ghost" onClick={() => void remove(l)} disabled={!!deleteReason} loading={removing.has(l.id)} aria-label={`Delete ${l.name}`}>
                                 <Trash2 />
                               </Button>
                             </span>
@@ -413,10 +420,12 @@ function LedgerForm({ clientId, ledger, onClose }: { clientId: string; ledger: L
   const [active, setActive] = useState(ledger?.is_active ?? true)
   const [line, setLine] = useState<string>(ledger?.nce_line ?? '')
   const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
   async function save() {
+    setSaving(true)
     try {
-      const body = { name: name.trim(), group, is_active: active, nce_line: line }
+      const body = { name: name.trim(), group, is_active: active, nce_line: line, expected_version: ledger?.version }
       const saved = ledger
         ? await raw.patch<LedgerAccount>(`${V1}/clients/${clientId}/ledgers/${ledger.id}/`, body)
         : await raw.post<LedgerAccount>(`${V1}/clients/${clientId}/ledgers/`, body)
@@ -425,12 +434,15 @@ function LedgerForm({ clientId, ledger, onClose }: { clientId: string; ledger: L
       toast.success(ledger ? 'Ledger saved' : `Ledger “${body.name}” created`)
       onClose()
     } catch (e) {
+      if (isApiError(e) && e.code === 'stale_edit') void queryClient.invalidateQueries({ queryKey: ledgersQuery(clientId).queryKey })
       setError(isApiError(e) ? (e.field('name') ?? e.field('group') ?? e.message) : messageOf(e))
+    } finally {
+      setSaving(false)
     }
   }
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
+    <Dialog open onOpenChange={(o) => !o && !saving && onClose()}>
       <DialogContent aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>{ledger ? `Edit ${ledger.name}` : 'New ledger'}</DialogTitle>
@@ -464,8 +476,8 @@ function LedgerForm({ clientId, ledger, onClose }: { clientId: string; ledger: L
         </Field>
         {ledger && <Checkbox label="Active (offered when placing rows)" checked={active} onChange={(e) => setActive(e.target.checked)} />}
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => void save()} disabled={name.trim().length < 2}>Save</Button>
+          <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={() => void save()} loading={saving} disabled={name.trim().length < 2}>Save</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -552,7 +564,7 @@ export function ProposalDecision({ clientId, proposal, existing, onClose }: { cl
         {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button variant={mode === 'reject' ? 'destructive' : 'primary'} onClick={() => void go()} disabled={busy || (mode === 'merge' && !into) || (mode === 'accept' && name.trim().length < 2)}>
+          <Button variant={mode === 'reject' ? 'destructive' : 'primary'} onClick={() => void go()} loading={busy} disabled={(mode === 'merge' && !into) || (mode === 'accept' && name.trim().length < 2)}>
             {mode === 'accept' ? 'Keep' : mode === 'merge' ? 'Merge' : 'Reject'}
           </Button>
         </DialogFooter>
@@ -769,7 +781,7 @@ function PartyEditor({ clientId, party, onClose }: { clientId: string; party: Pa
   const [saving, setSaving] = useState(false)
 
   async function save() {
-    const body = { canonical_name: name.trim(), role, gstin: gstin.trim().toUpperCase(), tds_section: tds, rcm_default: rcm, msme, udyam_no: udyam.trim().toUpperCase(), is_active: active }
+    const body = { canonical_name: name.trim(), role, gstin: gstin.trim().toUpperCase(), tds_section: tds, rcm_default: rcm, msme, udyam_no: udyam.trim().toUpperCase(), is_active: active, expected_version: party?.version }
     setSaving(true)
     setErrors({})
     try {
@@ -781,6 +793,7 @@ function PartyEditor({ clientId, party, onClose }: { clientId: string; party: Pa
       toast.success('Party saved')
       onClose()
     } catch (e) {
+      if (isApiError(e) && e.code === 'stale_edit') void queryClient.invalidateQueries({ queryKey: partiesQuery(clientId).queryKey })
       if (isApiError(e) && Object.keys(e.fields).length) setErrors(Object.fromEntries(Object.entries(e.fields).map(([k, v]) => [k, v[0] ?? ''])))
       else setErrors({ root: messageOf(e) })
     } finally {
@@ -841,10 +854,10 @@ function PartyEditor({ clientId, party, onClose }: { clientId: string; party: Pa
         </p>
       )}
       <div className="flex gap-2">
-        <Button type="submit" disabled={saving || name.trim().length < 2}>
+        <Button type="submit" loading={saving} disabled={name.trim().length < 2}>
           {saving ? 'Saving…' : 'Save'}
         </Button>
-        <Button type="button" variant="ghost" onClick={onClose}>
+        <Button type="button" variant="ghost" onClick={onClose} disabled={saving}>
           Cancel
         </Button>
       </div>
@@ -874,42 +887,54 @@ function Rules({ clientId }: { clientId: string }) {
   const listRef = useRef<HTMLUListElement>(null)
   const [chosen, setChosen] = useState<Record<string, boolean>>({})
   const queue = useRef<Record<string, Promise<void>>>({})
+  const timers = useRef<Record<string, ReturnType<typeof setTimeout>>>({})
+  const [removing, setRemoving] = useState<Set<string>>(new Set())
   const manage = can('suggestion.edit')
 
   if (list.isPending) return <Spinner />
   if (list.error) return <ErrorState error={list.error} retry={() => void list.refetch()} />
 
-  // The switch is drawn from what you last chose, not from the server, so it moves on the click itself. The change is sent in
-  // the background, one request at a time per rule so quick clicks cannot arrive out of order, and the server's answer is
-  // read back afterwards; if it refuses, the switch returns to what the server holds.
+  // The switch is drawn from what you last chose, not from the server, so it moves on the click itself and shows a small spinner
+  // until the server has it. Quick clicks are collapsed: after a short pause only the final choice is sent (nothing at all if
+  // it is back where the server already had it), one request at a time per rule so they cannot arrive out of order. The
+  // server's answer is read back afterwards; if it refuses, the switch returns to what the server holds.
   const isOn = (r: Rule) => chosen[r.id] ?? !!r.is_active
   function toggle(r: Rule) {
     const next = !isOn(r)
     setChosen((c) => ({ ...c, [r.id]: next }))
     const settle = () => setChosen((c) => (c[r.id] === next ? Object.fromEntries(Object.entries(c).filter(([k]) => k !== r.id)) : c))
-    queue.current[r.id] = (queue.current[r.id] ?? Promise.resolve()).then(async () => {
-      try {
-        await raw.patch(`${V1}/clients/${clientId}/rules/${r.id}/`, { is_active: next })
-        await queryClient.invalidateQueries({ queryKey: rulesQuery(clientId).queryKey })
-        void invalidate()
-      } catch (e) {
-        toast.error(messageOf(e))
-      } finally {
-        settle()
-      }
-    })
+    clearTimeout(timers.current[r.id])
+    timers.current[r.id] = setTimeout(() => {
+      queue.current[r.id] = (queue.current[r.id] ?? Promise.resolve()).then(async () => {
+        if (next === !!r.is_active) return settle()
+        try {
+          await raw.patch(`${V1}/clients/${clientId}/rules/${r.id}/`, { is_active: next })
+          await queryClient.invalidateQueries({ queryKey: rulesQuery(clientId).queryKey })
+          void invalidate()
+        } catch (e) {
+          toast.error(messageOf(e))
+        } finally {
+          settle()
+        }
+      })
+    }, 300)
   }
+  // Deleting waits for the server: the row dims and its button spins, then the row leaves.
   async function remove(r: Rule) {
-    const key = rulesQuery(clientId).queryKey
-    const before = queryClient.getQueryData<Rule[]>(key)
-    queryClient.setQueryData<Rule[]>(key, (rows) => rows?.filter((x) => x.id !== r.id))
+    setRemoving((ids) => new Set(ids).add(r.id))
     try {
       await raw.delete(`${V1}/clients/${clientId}/rules/${r.id}/`)
+      queryClient.setQueryData<Rule[]>(rulesQuery(clientId).queryKey, (rows) => rows?.filter((x) => x.id !== r.id))
       void invalidate()
       toast.success('Rule deleted')
     } catch (e) {
-      queryClient.setQueryData(key, before)
       toast.error(messageOf(e))
+    } finally {
+      setRemoving((ids) => {
+        const next = new Set(ids)
+        next.delete(r.id)
+        return next
+      })
     }
   }
 
@@ -934,7 +959,7 @@ function Rules({ clientId }: { clientId: string }) {
           {sorted.map((r) => {
             const words = `${MATCH_LABEL[r.match_type ?? ''] ?? r.match_type} ${r.pattern}, ${DIRECTION_LABEL[r.direction ?? 'ANY']}, to ${r.ledger_name}`
             return (
-              <li key={r.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-4 transition-colors hover:bg-hover">
+              <li key={r.id} className={cn('flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-4 transition-[colors,opacity] hover:bg-hover', removing.has(r.id) && 'pointer-events-none opacity-60')}>
                 <div className={cn('min-w-0 flex-1 basis-80 transition-opacity duration-200', !isOn(r) && 'opacity-60')}>
                   <p className="text-[15px]">
                     <RuleSentence rule={r} />
@@ -946,11 +971,11 @@ function Rules({ clientId }: { clientId: string }) {
                 </div>
                 <div className="flex items-center gap-3">
                   {manage && r.source !== 'SEED' && (
-                    <Button size="sm" variant="ghost" onClick={() => void remove(r)} aria-label={`Delete rule: ${words}`}>
+                    <Button size="sm" variant="ghost" onClick={() => void remove(r)} loading={removing.has(r.id)} aria-label={`Delete rule: ${words}`}>
                       <Trash2 /> Delete
                     </Button>
                   )}
-                  <Switch checked={isOn(r)} disabled={!manage} label={`Active: ${words}`} onChange={() => toggle(r)} />
+                  <Switch checked={isOn(r)} pending={r.id in chosen} disabled={!manage} label={`Active: ${words}`} onChange={() => toggle(r)} />
                 </div>
               </li>
             )
@@ -970,8 +995,10 @@ function RuleForm({ clientId, ledgers, onClose }: { clientId: string; ledgers: L
   const [direction, setDirection] = useState('ANY')
   const [ledger, setLedger] = useState('')
   const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
 
   async function save() {
+    setSaving(true)
     try {
       const saved = await raw.post<Rule>(`${V1}/clients/${clientId}/rules/`, { match_type: matchType, pattern: pattern.trim(), direction, ledger })
       if (saved?.id) upsertInCache(queryClient, rulesQuery(clientId).queryKey, saved)
@@ -980,11 +1007,13 @@ function RuleForm({ clientId, ledgers, onClose }: { clientId: string; ledgers: L
       onClose()
     } catch (e) {
       setError(isApiError(e) ? (e.field('pattern') ?? e.message) : messageOf(e))
+    } finally {
+      setSaving(false)
     }
   }
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
+    <Dialog open onOpenChange={(o) => !o && !saving && onClose()}>
       <DialogContent aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>New rule</DialogTitle>
@@ -1024,8 +1053,8 @@ function RuleForm({ clientId, ledgers, onClose }: { clientId: string; ledgers: L
           )}
         </Field>
         <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => void save()} disabled={!pattern.trim() || !ledger}>Create rule</Button>
+          <Button variant="ghost" onClick={onClose} disabled={saving}>Cancel</Button>
+          <Button onClick={() => void save()} loading={saving} disabled={!pattern.trim() || !ledger}>Create rule</Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

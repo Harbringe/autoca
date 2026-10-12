@@ -148,13 +148,17 @@ export function FinancialStatements({ clientId, fy }: { clientId: string; fy: nu
   const { can } = useSession()
   const [editing, setEditing] = useState(false)
   const invalidate = useInvalidateClient(clientId)
+  const [pinning, setPinning] = useState<string | null>(null)
   async function pin(ledger: string, section: string) {
+    setPinning(ledger)
     try {
       await raw.patch(`${V1}/clients/${clientId}/ledgers/${ledger}/`, { nce_section: section })
       await invalidate()
       toast.success('Placed')
     } catch (e) {
       toast.error(messageOf(e))
+    } finally {
+      setPinning(null)
     }
   }
   if (q.isPending) return <ReportSkeleton label="Preparing the statements…" />
@@ -347,6 +351,7 @@ export function FinancialStatements({ clientId, fy }: { clientId: string; fy: nu
                             aria-label={`Sub-head for ${row.label}`}
                             className="ml-2 inline-block h-7 w-auto py-0 text-xs no-print"
                             value=""
+                            disabled={pinning === row.ledger}
                             onChange={(e) => e.target.value && void pin(row.ledger as string, e.target.value)}
                           >
                             <option value="">Placed by guess · choose</option>

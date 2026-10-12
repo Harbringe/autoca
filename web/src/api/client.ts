@@ -11,6 +11,7 @@
 import createClient from 'openapi-fetch'
 import { API_BASE } from '@/platform/env'
 import { send } from '@/platform/http'
+import { trackWrite } from './pending'
 import { ApiError, SESSION_CODES, type ApiErrorBody } from './errors'
 import type { paths } from './schema'
 
@@ -74,6 +75,10 @@ async function looksLikeCsrfFailure(response: Response): Promise<boolean> {
 
 /** Every request, from the generated client and from the hand-typed helpers, goes through here. */
 export async function apiFetch(request: Request): Promise<Response> {
+  return SAFE.has(request.method.toUpperCase()) ? doFetch(request) : trackWrite(() => doFetch(request))
+}
+
+async function doFetch(request: Request): Promise<Response> {
   const mutating = !SAFE.has(request.method.toUpperCase())
   const spare = mutating ? request.clone() : null
 

@@ -820,7 +820,7 @@ export function VoucherForm({
       {layout === 'dialog' && (
         <DialogFooter>
           <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button type="submit" disabled={saving}>{saving ? (prefill?.reviseBill ? 'Saving…' : 'Booking…') : prefill?.reviseBill ? 'Save changes' : 'Book voucher'}</Button>
+          <Button type="submit" loading={saving}>{saving ? (prefill?.reviseBill ? 'Saving…' : 'Booking…') : prefill?.reviseBill ? 'Save changes' : 'Book voucher'}</Button>
         </DialogFooter>
       )}
     </form>

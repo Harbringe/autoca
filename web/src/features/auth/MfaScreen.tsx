@@ -100,7 +100,7 @@ export function MfaScreen({ step }: { step: MfaStep }) {
             {messageOf(verify.error)}
           </p>
         )}
-        <Button type="submit" size="lg" disabled={verify.isPending || token.length < 6}>
+        <Button type="submit" size="lg" loading={verify.isPending} disabled={token.length < 6}>
           {verify.isPending ? 'Checking…' : step === 'setup' ? 'Turn on and continue' : 'Verify'}
         </Button>
         <Button variant="link" size="sm" onClick={() => void signOut()}>

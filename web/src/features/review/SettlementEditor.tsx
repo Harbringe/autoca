@@ -111,7 +111,7 @@ export function SettlementEditor({
       {decision.problem && <p role="alert" className="text-sm text-destructive">{decision.problem}</p>}
 
       <div className="flex justify-end">
-        <Button onClick={() => onSubmit(decision)} disabled={busy || !!decision.problem}>
+        <Button onClick={() => onSubmit(decision)} loading={busy} disabled={!!decision.problem}>
           {busy ? 'Posting…' : confirmLabel}
         </Button>
       </div>

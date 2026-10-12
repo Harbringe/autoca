@@ -79,9 +79,9 @@ export function AssetsScreen({ clientId }: { clientId: string }) {
           {mayEdit && (
             <div className="flex gap-2">
               {status.posted_paise === null ? (
-                <Button size="sm" onClick={() => void bookYear()} disabled={book.isPending}>Book depreciation</Button>
+                <Button size="sm" onClick={() => void bookYear()} loading={book.isPending}>Book depreciation</Button>
               ) : (
-                <Button size="sm" variant="outline" onClick={() => void bookYear(true)} disabled={book.isPending}>Take it out</Button>
+                <Button size="sm" variant="outline" onClick={() => void bookYear(true)} loading={book.isPending}>Take it out</Button>
               )}
             </div>
           )}
@@ -267,7 +267,7 @@ function RegisterDialog({ clientId, onClose }: { clientId: string; onClose: () =
           </div>
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <div className="flex justify-end">
-            <Button onClick={submit} disabled={register.isPending}>{register.isPending ? 'Saving…' : 'Register'}</Button>
+            <Button onClick={submit} loading={register.isPending}>{register.isPending ? 'Saving…' : 'Register'}</Button>
           </div>
         </div>
       </DialogContent>
@@ -305,7 +305,7 @@ function SellDialog({ clientId, asset, onClose }: { clientId: string; asset: Ass
           <Field label="Sale price (₹)">{(p) => <Input {...p} inputMode="decimal" className="text-right" value={price} onChange={(e) => setPrice(e.target.value)} />}</Field>
           {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
           <div className="flex justify-end">
-            <Button onClick={submit} disabled={action.isPending}>Record the sale</Button>
+            <Button onClick={submit} loading={action.isPending}>Record the sale</Button>
           </div>
         </div>
       </DialogContent>

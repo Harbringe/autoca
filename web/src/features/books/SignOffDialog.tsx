@@ -84,7 +84,7 @@ export function SignOffDialog({
             </Link>
           </Button>
           {mayMark && (
-            <Button size="sm" variant="outline" onClick={() => void markChecked()} disabled={marking}>
+            <Button size="sm" variant="outline" onClick={() => void markChecked()} loading={marking}>
               {marking ? 'Marking…' : 'Mark assistant entries as checked'}
             </Button>
           )}

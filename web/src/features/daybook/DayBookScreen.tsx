@@ -63,6 +63,8 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
   const closingId = useClosing(openId)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [marking, setMarking] = useState(false)
+  const [markingIds, setMarkingIds] = useState<Set<string>>(new Set())
+  const [unposting, setUnposting] = useState<{ done: number; total: number } | null>(null)
   const invalidate = useInvalidateClient(clientId)
   const queryClient = useQueryClient()
 
@@ -108,24 +110,28 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
       return next
     })
 
-  // The markers disappear at once; the server is told in the background and they come back if it refuses.
+  // Marking waits for the server: the rows dim and the button spins, then the markers go. The server says how many it really
+  // cleared, because an entry someone else just unposted or sealed is skipped, and the message says so rather than overclaiming.
   async function markChecked(list: JournalEntry[]) {
-    const key = journal(clientId).queryKey
-    const before = queryClient.getQueryData<JournalEntry[]>(key)
-    const ids = new Set(list.map((e) => e.id))
-    queryClient.setQueryData<JournalEntry[]>(key, (rows) => rows?.map((e) => (ids.has(e.id) ? { ...e, marker: '', marker_display: '' } : e)))
-    setPicked(new Set())
+    const ids = list.map((e) => e.id)
+    setMarkingIds(new Set(ids))
     setMarking(true)
     try {
-      const all = [...ids]
-      for (let i = 0; i < all.length; i += 500) await raw.post(`${V1}/clients/${clientId}/books/mark-reviewed/`, { entries: all.slice(i, i + 500) })
-      void Promise.all([invalidate(), queryClient.invalidateQueries({ queryKey: clientKeys.part(clientId, 'journal') })])
-      toast.success(list.length === 1 ? 'Marked as checked' : `${plural(list.length, 'entry', 'entries')} marked as checked`)
+      let marked = 0
+      for (let i = 0; i < ids.length; i += 500) {
+        const answer = await raw.post<{ marked?: number }>(`${V1}/clients/${clientId}/books/mark-reviewed/`, { entries: ids.slice(i, i + 500) })
+        marked += answer?.marked ?? 0
+      }
+      await queryClient.invalidateQueries({ queryKey: clientKeys.part(clientId, 'journal') })
+      void invalidate()
+      setPicked(new Set())
+      if (marked === ids.length) toast.success(ids.length === 1 ? 'Marked as checked' : `${plural(marked, 'entry', 'entries')} marked as checked`)
+      else toast.warning(`${marked} of ${ids.length} marked as checked`, { description: 'The rest had already changed: checked, unposted or sealed by someone else.' })
     } catch (e) {
-      queryClient.setQueryData(key, before)
       toast.error(messageOf(e))
     } finally {
       setMarking(false)
+      setMarkingIds(new Set())
     }
   }
 
@@ -157,7 +163,7 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
         {targets.length > 0 && (mayMark || mayUnpost) && (
           <div className="flex flex-wrap items-center gap-2">
             {mayMark && (
-              <Button variant="outline" size="sm" disabled={marking} onClick={() => void markChecked(targets)}>
+              <Button variant="outline" size="sm" loading={marking} onClick={() => void markChecked(targets)}>
                 <Check /> Mark {targets.length} {targetWord} as checked
               </Button>
             )}
@@ -224,7 +230,7 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
                         if ((ev.target as HTMLElement).closest('a, button, input, label')) return
                         toggleOpen()
                       }}
-                      className={cn('cursor-pointer border-b border-border-strong hover:bg-hover', isOpen && 'bg-surface-2', !detailShown && 'last:border-b-0')}
+                      className={cn('cursor-pointer border-b border-border-strong transition-opacity hover:bg-hover', isOpen && 'bg-surface-2', !detailShown && 'last:border-b-0', markingIds.has(e.id) && 'opacity-60')}
                     >
                       {withBox && (
                         <td className="w-12 py-4 pl-4 pr-0 align-top sm:pl-5">
@@ -298,10 +304,12 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
         onOpenChange={setBulk}
         title={`Unpost ${plural(targets.length, 'assistant-posted entry', 'assistant-posted entries')}?`}
         confirmLabel={`Unpost ${targets.length}`}
+        busyLabel={unposting ? `Unposting ${unposting.done} of ${unposting.total}…` : undefined}
         note="optional"
         noteLabel="Why (kept in each entry's change log)"
         onConfirm={async (note) => {
-          const { done, failed } = await unpostMany(targets, note || 'Unposted: posted by the assistant without review.')
+          setUnposting({ done: 0, total: targets.length })
+          const { done, failed } = await unpostMany(targets, note || 'Unposted: posted by the assistant without review.', (finished) => setUnposting({ done: finished, total: targets.length })).finally(() => setUnposting(null))
           setPicked(new Set())
           if (failed.length) toast.warning(`Unposted ${done}; ${failed.length} could not be`, { description: failed.slice(0, 3).join(' · ') })
           else toast.success(`Unposted ${plural(done, 'entry', 'entries')}; the transactions are back in Review`)
@@ -340,6 +348,7 @@ function EntryDetail({
   const invalidate = useInvalidateClient(clientId)
   const [correcting, setCorrecting] = useState(false)
   const [removing, setRemoving] = useState(false)
+  const [saving, setSaving] = useState(false)
   const [rectifying, setRectifying] = useState(false)
   const [fromLedger, setFromLedger] = useState<string>(entry.lines[0]?.ledger_account ?? '')
   const [toLedger, setToLedger] = useState<string | null>(null)
@@ -363,29 +372,37 @@ function EntryDetail({
   async function rectify() {
     const paise = parseRupees(amount)
     if (!paise || paise <= 0 || !toLedger) return
+    setSaving(true)
     try {
       await raw.post(`${V1}/journal-entries/${entry.id}/rectify/`, {
         from_ledger: fromLedger, to_ledger: toLedger, amount_paise: paise, reason, date: rectDate,
       })
-      await invalidate()
+      await queryClient.invalidateQueries({ queryKey: clientKeys.part(clientId, 'journal') })
+      void invalidate()
       toast.success('Rectifying journal posted; the original entry is unchanged')
       onClose()
     } catch (e) {
       toast.error(messageOf(e))
+    } finally {
+      setSaving(false)
     }
   }
 
   async function correct() {
+    setSaving(true)
     try {
       await raw.post(`${V1}/journal-entries/${entry.id}/correct/`, {
         treatment: { ledger, learn: !onlyThis },
         narration: narration !== entry.narration ? narration : undefined,
       })
-      await invalidate()
+      await queryClient.invalidateQueries({ queryKey: clientKeys.part(clientId, 'journal') })
+      void invalidate()
       toast.success(entry.is_locked ? 'Correcting entry posted after the signed-off period' : 'Entry corrected; the old version is kept in its history')
       onClose()
     } catch (e) {
       toast.error(messageOf(e))
+    } finally {
+      setSaving(false)
     }
   }
 
@@ -500,7 +517,7 @@ function EntryDetail({
             )}
             <div className="flex justify-end gap-2">
               <Button variant="ghost" onClick={() => setCorrecting(false)}>Cancel</Button>
-              <Button onClick={() => void correct()} disabled={!ledger}>Save correction</Button>
+              <Button onClick={() => void correct()} loading={saving} disabled={!ledger}>Save correction</Button>
             </div>
           </div>
         ) : (
@@ -526,7 +543,7 @@ function EntryDetail({
               <Button variant="ghost" onClick={onClose}>Close</Button>
               {mayEdit && <Button variant="outline" onClick={() => setCorrecting(true)}>Correct</Button>}
               {mayMark && (
-                <Button onClick={onMark} disabled={marking}>
+                <Button onClick={onMark} loading={marking}>
                   <Check /> It is right: mark as checked
                 </Button>
               )}
@@ -556,7 +573,7 @@ function EntryDetail({
               <Field label="Why">{(p) => <Textarea {...p} value={reason} onChange={(e) => setReason(e.target.value)} />}</Field>
               <div className="flex justify-end gap-2">
                 <Button variant="ghost" onClick={() => setRectifying(false)}>Cancel</Button>
-                <Button onClick={() => void rectify()} disabled={!toLedger || !parseRupees(amount) || reason.trim().length < 5}>Post journal</Button>
+                <Button onClick={() => void rectify()} loading={saving} disabled={!toLedger || !parseRupees(amount) || reason.trim().length < 5}>Post journal</Button>
               </div>
             </div>
           ) : (

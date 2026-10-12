@@ -261,7 +261,7 @@ function Form({ clientId, fy, onClose, initial }: { clientId: string; fy: number
       {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
       <DialogFooter>
         <Button variant="ghost" onClick={onClose}>Cancel</Button>
-        <Button onClick={() => void save()} disabled={busy}>Save</Button>
+        <Button onClick={() => void save()} loading={busy}>Save</Button>
       </DialogFooter>
     </div>
   )

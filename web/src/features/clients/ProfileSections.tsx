@@ -226,7 +226,7 @@ function Section({ clientId, profile, title, fields, after, note }: { clientId: 
             </p>
           )}
           <div className="flex gap-3">
-            <Button type="submit" size="lg" className="rounded-lg px-6 font-semibold" disabled={update.isPending}>
+            <Button type="submit" size="lg" className="rounded-lg px-6 font-semibold" loading={update.isPending}>
               {update.isPending ? 'Saving…' : 'Save'}
             </Button>
             <Button type="button" size="lg" variant="ghost" onClick={() => setEditing(false)}>

@@ -19,7 +19,7 @@ export function unpostEntry(entry: JournalEntry, note: string) {
 /** Unpost several, one by one, and report what happened. Stops at nothing: a refusal is counted, not fatal. */
 export function useUnpostMany(clientId: string) {
   const queryClient = useQueryClient()
-  return async (entries: JournalEntry[], note: string) => {
+  return async (entries: JournalEntry[], note: string, onProgress?: (finished: number) => void) => {
     let done = 0
     const failed: string[] = []
     for (const entry of entries) {
@@ -29,6 +29,7 @@ export function useUnpostMany(clientId: string) {
       } catch (e) {
         failed.push(`${entry.voucher_type} ${entry.entry_no}: ${e instanceof Error ? e.message : 'refused'}`)
       }
+      onProgress?.(done + failed.length)
     }
     await Promise.all([
       queryClient.invalidateQueries({ queryKey: clientKeys.one(clientId) }),

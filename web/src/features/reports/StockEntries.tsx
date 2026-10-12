@@ -45,7 +45,11 @@ export function StockEntries({ clientId, fy, onClose }: { clientId: string; fy: 
   const [date, setDate] = useState(`${fy}-04-01`)
   const [note, setNote] = useState('')
 
+  const [saving, setSaving] = useState(false)
+  const [removing, setRemoving] = useState<string | null>(null)
+
   async function save() {
+    setSaving(true)
     try {
       await raw.post(`${V1}/clients/${clientId}/stock-entries/`, {
         kind, entry_date: date, direction, name, unit, quantity, value_paise: parseRupees(value || '0') ?? 0, note,
@@ -59,16 +63,21 @@ export function StockEntries({ clientId, fy, onClose }: { clientId: string; fy: 
       await invalidate()
     } catch (e) {
       toast.error(messageOf(e))
+    } finally {
+      setSaving(false)
     }
   }
 
   async function remove(id: string) {
+    setRemoving(id)
     try {
       await raw.post(`${V1}/clients/${clientId}/stock-entries/${id}/remove/`, {})
       await rows.refetch()
       await invalidate()
     } catch (e) {
       toast.error(messageOf(e))
+    } finally {
+      setRemoving(null)
     }
   }
 
@@ -111,7 +120,7 @@ export function StockEntries({ clientId, fy, onClose }: { clientId: string; fy: 
           </div>
           {kind === 'ADJUSTMENT' && <Field label="Why">{(p) => <Textarea {...p} value={note} onChange={(e) => setNote(e.target.value)} />}</Field>}
           <div className="flex justify-end">
-            <Button onClick={() => void save()} disabled={!name.trim() || !quantity.trim()}>Record</Button>
+            <Button onClick={() => void save()} loading={saving} disabled={!name.trim() || !quantity.trim()}>Record</Button>
           </div>
         </div>
         {(rows.data?.results ?? []).length > 0 && (
@@ -122,7 +131,7 @@ export function StockEntries({ clientId, fy, onClose }: { clientId: string; fy: 
                   {r.kind_display}: {r.direction === 'OUT' ? '−' : '+'}{Number(r.quantity)} {r.unit} {r.name} · {formatDate(r.entry_date)}
                   {r.note ? ` · ${r.note}` : ''}
                 </span>
-                <Button size="sm" variant="ghost" onClick={() => void remove(r.id)}>Remove</Button>
+                <Button size="sm" variant="ghost" onClick={() => void remove(r.id)} loading={removing === r.id}>Remove</Button>
               </li>
             ))}
           </ul>

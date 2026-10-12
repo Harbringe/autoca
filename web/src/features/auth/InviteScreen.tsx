@@ -89,7 +89,7 @@ export function InviteScreen({ token }: { token: string }) {
             {messageOf(accept.error)}
           </p>
         )}
-        <Button type="submit" size="lg" disabled={accept.isPending || !canSubmit}>
+        <Button type="submit" size="lg" loading={accept.isPending} disabled={!canSubmit}>
           {accept.isPending ? 'Joining…' : 'Accept invitation'}
         </Button>
       </form>

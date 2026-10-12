@@ -183,7 +183,7 @@ export function InviteDialog({
               <Button variant="ghost" onClick={() => close(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={invite.isPending || missingManager}>
+              <Button type="submit" loading={invite.isPending} disabled={missingManager}>
                 {invite.isPending ? 'Creating…' : 'Create invitation'}
               </Button>
             </DialogFooter>

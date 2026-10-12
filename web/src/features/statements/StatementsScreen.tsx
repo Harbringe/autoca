@@ -254,8 +254,10 @@ export function StatementsScreen({ clientId }: { clientId: string }) {
 function RenameLedger({ clientId, account, onClose }: { clientId: string; account: BankAccount; onClose: () => void }) {
   const [name, setName] = useState(account.ledger_name ?? '')
   const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
   const invalidate = useInvalidateClient(clientId)
   async function save() {
+    setSaving(true)
     try {
       const r = await raw.patch<{ posted_lines?: number }>(`${V1}/clients/${clientId}/bank-accounts/${account.id}/`, { ledger_name: name.trim() })
       await invalidate()
@@ -263,10 +265,12 @@ function RenameLedger({ clientId, account, onClose }: { clientId: string; accoun
       onClose()
     } catch (e) {
       setError(messageOf(e))
+    } finally {
+      setSaving(false)
     }
   }
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
+    <Dialog open onOpenChange={(o) => !o && !saving && onClose()}>
       <DialogContent aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>Ledger name for {account.label}</DialogTitle>
@@ -277,7 +281,7 @@ function RenameLedger({ clientId, account, onClose }: { clientId: string; accoun
         </Field>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => void save()} disabled={!name.trim()}>Save</Button>
+          <Button onClick={() => void save()} loading={saving} disabled={!name.trim()}>Save</Button>
         </div>
       </DialogContent>
     </Dialog>

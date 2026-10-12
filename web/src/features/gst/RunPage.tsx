@@ -344,7 +344,7 @@ function Steps({
                   <Button variant={prim('register')} size="sm" loading={uploading === 'register'} disabled={busy.upload && uploading !== 'register'} onClick={() => registerInput.current?.click()}>
                     <Upload /> {report.has_register ? 'Replace register' : 'Upload register'}
                   </Button>
-                  <Button variant="secondary" size="sm" disabled={busy.upload} onClick={() => void fromBooks()}>
+                  <Button variant="secondary" size="sm" loading={busy.upload} onClick={() => void fromBooks()}>
                     {report.register_from_books ? 'Reload from the books' : 'Use the books'}
                   </Button>
                 </>

@@ -135,7 +135,7 @@ export function OpeningBillsDialog({
                 Listed <strong className="tabular-nums">{formatPaise(entered)}</strong> of{' '}
                 <span className="tabular-nums">{formatPaise(remaining)}</span> left
               </span>
-              <Button onClick={submit} disabled={save.isPending || !!problem}>
+              <Button onClick={submit} loading={save.isPending} disabled={!!problem}>
                 {save.isPending ? 'Saving…' : 'Save bills'}
               </Button>
             </div>

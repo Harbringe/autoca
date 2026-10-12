@@ -22,6 +22,8 @@ export interface ConfirmProps {
   note?: 'optional' | 'required'
   noteLabel?: string
   onConfirm: (note: string) => Promise<unknown>
+  /** What the confirm button says while it works, e.g. "Unposting 2 of 5…". Defaults to "Working…". */
+  busyLabel?: string
   /** Refuse to continue, and say why (shown above the buttons). */
   blockedReason?: ReactNode
 }
@@ -36,6 +38,7 @@ export function Confirm({
   note,
   noteLabel,
   onConfirm,
+  busyLabel,
   blockedReason,
 }: ConfirmProps) {
   const [text, setText] = useState('')
@@ -80,8 +83,8 @@ export function Confirm({
           <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={busy}>
             Cancel
           </Button>
-          <Button variant={destructive ? 'destructive' : 'primary'} onClick={go} disabled={busy || blocked} autoFocus={!note}>
-            {busy ? 'Working…' : confirmLabel}
+          <Button variant={destructive ? 'destructive' : 'primary'} onClick={go} loading={busy} disabled={blocked} autoFocus={!note}>
+            {busy ? (busyLabel ?? 'Working…') : confirmLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

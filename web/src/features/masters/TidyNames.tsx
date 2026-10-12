@@ -70,7 +70,7 @@ export function TidyNames({ clientId, parties, onClose }: { clientId: string; pa
         </ul>
         <div className="flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>Close</Button>
-          {changes.length > 0 && <Button onClick={() => void apply()} disabled={busy || chosen.length === 0}>Re-spell {chosen.length}</Button>}
+          {changes.length > 0 && <Button onClick={() => void apply()} loading={busy} disabled={chosen.length === 0}>Re-spell {chosen.length}</Button>}
         </div>
       </DialogContent>
     </Dialog>

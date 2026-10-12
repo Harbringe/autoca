@@ -142,7 +142,7 @@ export function NewAccountDialog({
 
         <DialogFooter>
           <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => void create()} disabled={busy || name.trim().length < 2 || !!exact}>
+          <Button onClick={() => void create()} loading={busy} disabled={name.trim().length < 2 || !!exact}>
             Create and use
           </Button>
         </DialogFooter>

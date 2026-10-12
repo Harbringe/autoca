@@ -3,6 +3,7 @@
 // A senior's approval says the books are good and locks nothing. The seal is the permanent lock, and it goes on only at the
 // end of the period the firm has promised this client: each quarter, half-year or year. Books run April to March.
 
+import { Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
@@ -46,6 +47,7 @@ export function SealSchedule({ clientId, books, mayChange }: { clientId: string;
             {books.next_seal_date ? ` Next sealing date: ${formatDate(books.next_seal_date)}.` : ''}
           </p>
         </div>
+        <div className="flex items-center gap-2">
         <Select
           aria-label="How often the books are sealed"
           className="w-80 max-w-full"
@@ -57,6 +59,8 @@ export function SealSchedule({ clientId, books, mayChange }: { clientId: string;
             <option key={value} value={value}>{label}</option>
           ))}
         </Select>
+        {busy && <Loader2 className="size-4 animate-spin text-muted-foreground" role="status" aria-label="Saving" />}
+        </div>
       </div>
     </Card>
   )

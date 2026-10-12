@@ -495,11 +495,11 @@ export function OpeningBalance({
       )}
       <div className="flex flex-wrap justify-end gap-3 pt-1">
         {differs && (
-          <Button size="lg" variant="outline" onClick={() => void save(true)} disabled={busy}>
+          <Button size="lg" variant="outline" onClick={() => void save(true)} loading={busy}>
             Keep my figure anyway
           </Button>
         )}
-        <Button size="lg" className="rounded-lg px-6 font-semibold" onClick={() => void save()} disabled={busy}>
+        <Button size="lg" className="rounded-lg px-6 font-semibold" onClick={() => void save()} loading={busy}>
           {busy ? 'Saving…' : 'Confirm opening balance'}
         </Button>
       </div>

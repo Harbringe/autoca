@@ -268,8 +268,8 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
         )}
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
           {can('transaction.classify') && (summary.data?.unresolved ?? 0) > 0 && (
-            <Button variant="outline" onClick={() => suggest.mutate()} disabled={suggest.isPending}>
-              <Sparkles /> {suggest.isPending ? 'Asking the assistant…' : `Suggest ledgers for ${plural(summary.data!.unresolved, 'row')}`}
+            <Button variant="outline" onClick={() => suggest.mutate()} loading={suggest.isPending}>
+              {!suggest.isPending && <Sparkles />} {suggest.isPending ? 'Asking the assistant…' : `Suggest ledgers for ${plural(summary.data!.unresolved, 'row')}`}
             </Button>
           )}
           {!queue.isPending && !queue.error && (queue.data?.length ?? 0) > 1 && (
@@ -592,7 +592,9 @@ function Decision({
   const [tds, setTds] = useState<string>(row.tds_section ?? '')
   const [rcm, setRcm] = useState(row.rcm)
   const [learn, setLearn] = useState(!row.is_self_transfer && !!row.counterparty)
-  const [busy, setBusy] = useState(false)
+  // Which action is waiting on the server: only that button spins, and the others wait their turn.
+  const [action, setAction] = useState<'place' | 'post' | 'party' | null>(null)
+  const busy = action !== null
   const t = row.transaction
   const canPlace = can('transaction.classify')
   const mayUndoRule = can('suggestion.edit')
@@ -601,7 +603,7 @@ function Decision({
 
   async function place() {
     if (!ledger) return ledgerInput.current?.focus()
-    setBusy(true)
+    setAction('place')
     try {
       const result = await raw.post<PlacementResult>(`${V1}/classifications/${row.id}/review/`, {
         ledger,
@@ -643,12 +645,12 @@ function Decision({
     } catch (e) {
       toast.error(messageOf(e))
     } finally {
-      setBusy(false)
+      setAction(null)
     }
   }
 
   async function postNow() {
-    setBusy(true)
+    setAction('post')
     try {
       await raw.post(`${V1}/clients/${clientId}/approvals/`, { classifications: [row.id] })
       await invalidate()
@@ -657,11 +659,12 @@ function Decision({
     } catch (e) {
       toast.error(messageOf(e))
     } finally {
-      setBusy(false)
+      setAction(null)
     }
   }
 
   async function confirmParty(id: string) {
+    setAction('party')
     try {
       await raw.post(`${V1}/classifications/${row.id}/confirm-party/`, { party: id })
       await invalidate()
@@ -669,6 +672,8 @@ function Decision({
       toast.success('Payee confirmed', { description: 'Every other waiting row with this spelling is now recognised too.' })
     } catch (e) {
       toast.error(messageOf(e))
+    } finally {
+      setAction(null)
     }
   }
 
@@ -802,7 +807,7 @@ function Decision({
             {row.party_candidates?.length > 0 && !row.party && (
               <div className="flex flex-wrap gap-1.5">
                 {row.party_candidates.slice(0, 3).map((c) => (
-                  <Button key={c.party} size="sm" variant="outline" onClick={() => void confirmParty(c.party)} title={c.why}>
+                  <Button key={c.party} size="sm" variant="outline" onClick={() => void confirmParty(c.party)} disabled={busy} title={c.why}>
                     Is it {c.name}?
                   </Button>
                 ))}
@@ -840,7 +845,7 @@ function Decision({
                 {newParty.error && <p role="alert" className="text-xs text-destructive">{newParty.error}</p>}
                 <div className="flex justify-end gap-2">
                   <Button size="sm" variant="ghost" onClick={() => setNewParty(null)}>Cancel</Button>
-                  <Button size="sm" disabled={newParty.busy || newParty.name.trim().length < 2} onClick={() => void createParty()}>
+                  <Button size="sm" loading={newParty.busy} disabled={newParty.name.trim().length < 2} onClick={() => void createParty()}>
                     {newParty.busy ? 'Adding…' : 'Add and use'}
                   </Button>
                 </div>
@@ -875,12 +880,12 @@ function Decision({
             )}
             <span className="flex flex-wrap items-center justify-end gap-2 max-sm:w-full max-sm:[&>*]:flex-1">
             {!alreadyPlacedByPerson && (
-              <Button variant={row.ledger && unchanged ? 'outline' : 'primary'} onClick={() => void place()} disabled={busy}>
+              <Button variant={row.ledger && unchanged ? 'outline' : 'primary'} onClick={() => void place()} loading={action === 'place'} disabled={busy}>
                 {row.ledger && ledger === row.ledger ? 'Confirm ledger' : 'Place in ledger'} <Kbd className={cn('ml-1 max-sm:hidden', row.ledger && unchanged ? 'border-border-strong bg-transparent' : 'border-primary-foreground/30 bg-transparent text-primary-foreground/80')}>Enter</Kbd>
               </Button>
             )}
             {canPost && row.ledger && unchanged && !row.on_party_account && (
-              <Button onClick={() => void postNow()} disabled={busy}>
+              <Button onClick={() => void postNow()} loading={action === 'post'} disabled={busy}>
                 Post entry <Kbd className="ml-1 bg-transparent text-primary-foreground/80 max-sm:hidden">P</Kbd>
               </Button>
             )}

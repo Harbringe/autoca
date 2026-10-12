@@ -6,12 +6,13 @@
 
 import { Listbox } from '@/components/ui/listbox'
 import { Link, Outlet, useNavigate, useRouterState, useSearch } from '@tanstack/react-router'
-import { Menu, Search, X } from 'lucide-react'
+import { Loader2, Menu, Search, X } from 'lucide-react'
 import { Sparkles } from '@/components/ui/sparkles'
 import { Dialog as Drawer } from 'radix-ui'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
+import { useSavingMark } from '@/api/pending'
 import { useAssistantShort } from '@/features/assistant/useAssistant'
 import { Brand } from '@/features/auth/AuthLayout'
 import { AlertBell, useAlertCount } from '@/features/alerts/AlertBell'
@@ -107,6 +108,24 @@ function PaletteTrigger() {
         <Kbd>K</Kbd>
       </span>
     </button>
+  )
+}
+
+/**
+ * "Saving…" while a change is on its way to the server. A change that takes longer than a quarter of a second shows it; it is
+ * announced politely and never blocks anything, so the screen stays usable underneath.
+ */
+function SavingMark() {
+  const shown = useSavingMark()
+  return (
+    <div role="status" aria-live="polite">
+      {shown && (
+        <span className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-card px-2.5 text-[13px] font-medium text-muted-foreground">
+          <Loader2 className="size-3.5 animate-spin" aria-hidden />
+          Saving…
+        </span>
+      )}
+    </div>
   )
 }
 
@@ -337,6 +356,7 @@ export function Shell() {
               <FySelect />
               <PaletteTrigger />
               <div className="ml-auto flex shrink-0 items-center gap-3">
+                <SavingMark />
                 <AssistantIndicator />
                 {clientId && <AlertBell key={`bell-${clientId}`} clientId={clientId} />}
                 <UserMenu onShortcuts={() => setShortcutsOpen(true)} />
@@ -352,6 +372,7 @@ export function Shell() {
               ) : (
                 <div className="min-w-0 flex-1 truncate px-1 text-base font-semibold text-heading">{(module && FIRM_TITLE[module]) || 'AutoCA'}</div>
               )}
+              <div className="ml-auto"><SavingMark /></div>
               {clientId && <AlertBell key={`bell-${clientId}`} clientId={clientId} />}
             </>
           )}

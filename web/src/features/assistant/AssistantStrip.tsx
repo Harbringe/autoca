@@ -1,11 +1,11 @@
-import { Sparkles } from 'lucide-react'
+import { Sparkles } from '@/components/ui/sparkles'
 import { cn } from '@/lib/utils'
 import { useAssistantLine } from './useAssistant'
 
 /**
  * One line on Bank statements and Review saying what the assistant is doing with this client's rows
  * (the top bar carries the same state and is the one announced to screen readers). Silent when the
- * assistant has nothing to say. While it reads, its icon gently turns; nothing else moves, so it costs
+ * assistant has nothing to say. While it reads, its four sparkles take turns to swell and fade; nothing else moves, so it costs
  * almost nothing on an old machine. A thin bar shows how far through a run it is.
  */
 export function AssistantStrip({ clientId, className }: { clientId: string; className?: string }) {
@@ -22,7 +22,7 @@ export function AssistantStrip({ clientId, className }: { clientId: string; clas
         className,
       )}
     >
-      <Sparkles className={cn('size-4 shrink-0', working && 'motion-safe:animate-[twinkle_1.6s_ease-in-out_infinite]')} aria-hidden />
+      <Sparkles working={working} className={cn('size-6', !attention && 'text-accent-foreground')} />
       <span className="min-w-0 flex-1">{line}</span>
       {working && (
         <span

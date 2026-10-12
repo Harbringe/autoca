@@ -312,14 +312,16 @@
   }
 }
 
-/* One small motion, for the assistant's icon while it works. It moves only a transform, which is cheap on an old machine, and stops under reduced motion. */
-@keyframes twinkle {
+/* One small motion, for the assistant's sparkles while it works: transform and opacity of four tiny shapes, cheap on an old machine, and off under reduced motion. */
+@keyframes sparkle {
   0%,
   100% {
-    transform: scale(0.9) rotate(0deg);
+    transform: scale(0.45);
+    opacity: 0.35;
   }
   50% {
-    transform: scale(1.15) rotate(14deg);
+    transform: scale(1);
+    opacity: 1;
   }
 }
 

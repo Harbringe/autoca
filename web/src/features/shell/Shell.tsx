@@ -6,7 +6,8 @@
 
 import { Listbox } from '@/components/ui/listbox'
 import { Link, Outlet, useNavigate, useRouterState, useSearch } from '@tanstack/react-router'
-import { Menu, Search, Sparkles, X } from 'lucide-react'
+import { Menu, Search, X } from 'lucide-react'
+import { Sparkles } from '@/components/ui/sparkles'
 import { Dialog as Drawer } from 'radix-ui'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
@@ -127,7 +128,7 @@ function AssistantIndicator() {
           search={{ stage: 'all' }}
           className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-info-bg px-2.5 text-[13px] font-medium text-info hover:bg-hover"
         >
-          <Sparkles className="size-3.5" aria-hidden />
+          <Sparkles working className="size-4 text-accent-foreground" />
           {text}
         </Link>
       )}

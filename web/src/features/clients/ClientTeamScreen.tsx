@@ -13,6 +13,7 @@ import { Confirm } from '@/components/ca/Confirm'
 import { ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Listbox } from '@/components/ui/listbox'
 import { Select, Textarea } from '@/components/ui/controls'
 import { DateInput } from '@/components/ui/date-input'
 import { Field } from '@/components/ui/field'
@@ -87,23 +88,33 @@ export function People({ clientId, justCreated, split = false }: { clientId: str
         hint={canSetLead ? 'They sign off this client’s entries. Staff work under them.' : 'Only a firm administrator changes this.'}
       >
         {(p) => (
-          <Select
-            {...p}
-            ref={leadRef}
-            disabled={!canSetLead || setLead.isPending}
-            value={row.lead?.id ?? ''}
-            onChange={(e) => {
-              const lead = e.target.value || null
-              void run(() => setLead.mutateAsync({ clientId, lead }), lead ? 'Senior CA set' : 'Senior CA removed')
-            }}
-          >
-            <option value="">Not assigned</option>
-            {leads.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name} ({l.role_display})
-              </option>
-            ))}
-          </Select>
+          split ? (
+            <Listbox
+              {...p}
+              disabled={!canSetLead || setLead.isPending}
+              value={row.lead?.id ?? ''}
+              onValueChange={(lead) => void run(() => setLead.mutateAsync({ clientId, lead: lead || null }), lead ? 'Senior CA set' : 'Senior CA removed')}
+              options={[{ value: '', label: 'Not assigned' }, ...leads.map((l) => ({ value: l.id, label: `${l.name} (${l.role_display})` }))]}
+            />
+          ) : (
+            <Select
+              {...p}
+              ref={leadRef}
+              disabled={!canSetLead || setLead.isPending}
+              value={row.lead?.id ?? ''}
+              onChange={(e) => {
+                const lead = e.target.value || null
+                void run(() => setLead.mutateAsync({ clientId, lead }), lead ? 'Senior CA set' : 'Senior CA removed')
+              }}
+            >
+              <option value="">Not assigned</option>
+              {leads.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name} ({l.role_display})
+                </option>
+              ))}
+            </Select>
+          )
         )}
       </Field>
 
@@ -142,14 +153,24 @@ export function People({ clientId, justCreated, split = false }: { clientId: str
           >
             <Field label="Add a person">
               {(p) => (
-                <Select {...p} className="min-w-56" value={pick} onChange={(e) => setPick(e.target.value)}>
-                  <option value="">Choose…</option>
-                  {addable.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name} ({m.role_display})
-                    </option>
-                  ))}
-                </Select>
+                split ? (
+                  <Listbox
+                    {...p}
+                    className="min-w-56"
+                    value={pick}
+                    onValueChange={setPick}
+                    options={[{ value: '', label: 'Choose…' }, ...addable.map((m) => ({ value: m.id, label: `${m.name} (${m.role_display})` }))]}
+                  />
+                ) : (
+                  <Select {...p} className="min-w-56" value={pick} onChange={(e) => setPick(e.target.value)}>
+                    <option value="">Choose…</option>
+                    {addable.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.name} ({m.role_display})
+                      </option>
+                    ))}
+                  </Select>
+                )
               )}
             </Field>
             <Button type="submit" disabled={!pick || assign.isPending}>

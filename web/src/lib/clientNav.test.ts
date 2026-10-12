@@ -24,13 +24,13 @@ describe('the client panel list', () => {
   it('lists the places, not every screen', () => {
     const { items, bottom } = clientNavFor(all)
     expect(items.map((i) => i.label)).toEqual(['Overview', 'Pipeline', 'Bank statements', 'Documents', 'Bookkeeping', 'GST', 'Reports'])
-    expect(bottom.map((i) => i.label)).toEqual(['Client settings'])
+    expect(bottom.map((i) => i.label)).toEqual(['Client profile'])
   })
   it('shows only what the person may open', () => {
     expect(clientNavFor(() => false)).toEqual({ items: [], bottom: [] })
     const reviewer = clientNavFor(only('client.view', 'transaction.view', 'document.view'))
     expect(reviewer.items.map((i) => i.label)).toEqual(['Overview', 'Pipeline', 'Bank statements', 'Documents'])
-    expect(reviewer.bottom).toEqual([])
+    expect(reviewer.bottom.map((i) => i.label)).toEqual(['Client profile'])
     const books = clientNavFor(only('report.view', 'journal.view'))
     expect(books.items.map((i) => i.label)).toContain('Bookkeeping')
     expect(books.items.map((i) => i.label)).not.toContain('GST')
@@ -44,10 +44,9 @@ describe('the client panel list', () => {
     expect(clientTabsFor('/clients/c1', all)).toEqual([])
     expect(clientTabsFor('/clients/c1/documents', all)).toEqual([])
   })
-  it('gives Client settings to anyone who may see the team or edit the client', () => {
-    expect(clientNavFor(only('team.view')).bottom).toHaveLength(1)
-    expect(clientNavFor(only('client.update')).bottom).toHaveLength(1)
-    expect(clientNavFor(only('client.view')).bottom).toHaveLength(0)
+  it('gives the Client profile to anyone who may open the client', () => {
+    expect(clientNavFor(only('client.view')).bottom).toHaveLength(1)
+    expect(clientNavFor(only('team.view')).bottom).toHaveLength(0)
   })
   it('names a screen on its page by its tab, with a fuller name for GST', () => {
     expect(clientScreenName('/clients/c1/daybook')).toBe('Day Book')

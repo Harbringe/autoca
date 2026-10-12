@@ -62,7 +62,7 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
   useHotkey('g v', 'This client: Review', go('/clients/$clientId/review'), 'Go to')
   useHotkey('g l', 'This client: Ledgers', go('/clients/$clientId/ledgers'), 'Go to')
   useHotkey('g k', 'This client: Sign-off', go('/clients/$clientId/books'), 'Go to')
-  useHotkey('g e', 'This client: Client settings', () => (can('team.view') || can('client.update')) && go('/clients/$clientId/team')(), 'Go to')
+  useHotkey('g e', 'This client: Client profile', go('/clients/$clientId/team'), 'Go to')
   useHotkey('g m', 'This client: Parties & rules', go('/clients/$clientId/masters'), 'Go to')
 
   if (client.isPending) return <Spinner label="Opening client…" />

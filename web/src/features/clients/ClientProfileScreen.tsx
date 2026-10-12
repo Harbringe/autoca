@@ -133,13 +133,11 @@ export function ClientProfileScreen({ clientId }: { clientId: string }) {
               </div>
             )}
           </dl>
-          {(can('team.view') || can('client.update')) && (
-            <Button asChild variant="outline" size="lg" className="rounded-lg font-semibold text-heading dark:border-border-strong dark:bg-background dark:hover:bg-hover">
-              <Link to="/clients/$clientId/team" params={{ clientId }}>
-                <Users /> Edit client settings and team
-              </Link>
-            </Button>
-          )}
+          <Button asChild variant="outline" size="lg" className="rounded-lg font-semibold text-heading dark:border-border-strong dark:bg-background dark:hover:bg-hover">
+            <Link to="/clients/$clientId/team" params={{ clientId }}>
+              <Users /> Open client profile
+            </Link>
+          </Button>
         </Card>
         {addingGstin && <AddGstinDialog clientId={clientId} onClose={() => setAddingGstin(false)} />}
         {accounts.error && <ErrorState error={accounts.error} retry={() => void accounts.refetch()} />}

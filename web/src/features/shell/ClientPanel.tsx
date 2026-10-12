@@ -58,7 +58,7 @@ export function ClientNavList({ clientId, touch = false, part = 'all', onNavigat
     )
   }
 
-  if (part === 'bottom') return bottom.length > 0 ? <ul aria-label="Client settings" className="grid gap-0.5 px-2">{bottom.map(link)}</ul> : null
+  if (part === 'bottom') return bottom.length > 0 ? <ul aria-label="Client profile" className="grid gap-0.5 px-2">{bottom.map(link)}</ul> : null
   return (
     <nav aria-label="Client screens" className="grid gap-0 px-2">
       <ul className="grid gap-0.5">{items.map(link)}</ul>

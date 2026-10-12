@@ -42,7 +42,7 @@ export const CLIENT_NAV: ClientNavItem[] = [
   },
   { screen: 'gst', label: 'GST', icon: FileSpreadsheet, permission: 'gst.view' },
   { screen: 'reports', label: 'Reports', icon: BarChart3, permission: 'report.view' },
-  { screen: 'team', label: 'Client settings', icon: Settings2, permission: ['team.view', 'client.update'], bottom: true },
+  { screen: 'team', label: 'Client profile', icon: Settings2, permission: 'client.view', bottom: true },
 ]
 
 /** One tab of a place: the closely related screens, in the order they are used. */

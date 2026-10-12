@@ -103,9 +103,7 @@ function PaletteBody({ search, setSearch, close }: { search: string; setSearch: 
           { value: 'c-pl', label: 'Profit & Loss A/c', group: 'This client', icon: <FileText />, run: go(() => void navigate({ to: '/clients/$clientId/reports', params: { clientId }, search: { report: 'pl' } })) },
           { value: 'c-bs', label: 'Balance Sheet', group: 'This client', icon: <FileText />, run: go(() => void navigate({ to: '/clients/$clientId/reports', params: { clientId }, search: { report: 'bs' } })) },
           { value: 'c-books', label: 'Sign-off', group: 'This client', icon: <ListChecks />, run: go(() => void navigate({ to: '/clients/$clientId/books', params: { clientId } })) },
-          ...(can('team.view') || can('client.update')
-            ? ([{ value: 'c-team', label: 'Client settings', group: 'This client', icon: <Users />, run: go(() => void navigate({ to: '/clients/$clientId/team', params: { clientId } })) }] satisfies Item[])
-            : []),
+          { value: 'c-team', label: 'Client profile', group: 'This client', icon: <Users />, run: go(() => void navigate({ to: '/clients/$clientId/team', params: { clientId } })) },
           { value: 'c-ledgers', label: 'Ledgers (chart of accounts)', group: 'This client', icon: <BookOpen />, run: go(() => void navigate({ to: '/clients/$clientId/ledgers', params: { clientId } })) },
         ] satisfies Item[])
       : []

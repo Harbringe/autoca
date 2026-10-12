@@ -4,6 +4,8 @@ import type { components } from '@/api/schema'
 import type { BankAccount, BooksStatus, Client, Page, ReviewSummary, Statement } from '@/api/types'
 
 export type ClientRequest = components['schemas']['ClientRequest']
+export type ClientProfile = components['schemas']['ClientProfile']
+export type ProfilePatch = components['schemas']['PatchedClientProfileRequest']
 
 // Every key for one client's data starts ['client', id], so a change to that client's books
 // can mark all of it stale with one prefix. The firm-wide list of clients is ['clients', ...].
@@ -29,6 +31,12 @@ export const clientDetail = (id: string) =>
   queryOptions({
     queryKey: [...clientKeys.one(id), 'detail'],
     queryFn: async () => data(await api.GET('/api/v1/clients/{id}/', { params: { path: { id } } })) as unknown as Client,
+  })
+
+export const clientProfile = (id: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(id, 'profile'),
+    queryFn: () => raw.get<ClientProfile>(`${V1}/clients/${id}/profile/`),
   })
 
 export const reviewSummary = (id: string) =>
@@ -70,6 +78,14 @@ export function useCreateClient() {
   return useMutation({
     mutationFn: async (body: ClientRequest) => data(await api.POST('/api/v1/clients/', { body })) as unknown as Client,
     onSuccess: () => queryClient.invalidateQueries({ queryKey: clientKeys.all }),
+  })
+}
+
+export function useUpdateProfile(id: string) {
+  const invalidate = useInvalidateClient(id)
+  return useMutation({
+    mutationFn: (body: ProfilePatch) => raw.patch<ClientProfile>(`${V1}/clients/${id}/profile/`, body),
+    onSuccess: invalidate,
   })
 }
 

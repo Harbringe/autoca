@@ -61,7 +61,7 @@ describe('the client panel', () => {
     await screen.findByText('12')
     const links = within(nav).getAllByRole('link')
     expect(links.map((l) => l.textContent?.replace(/ rows waiting$/, ''))).toEqual([
-      'Overview', 'Pipeline', 'Bank statements12', 'Documents', 'Bookkeeping', 'GST', 'Reports', 'Client settings',
+      'Overview', 'Pipeline', 'Bank statements12', 'Documents', 'Bookkeeping', 'GST', 'Reports', 'Client profile',
     ])
     const current = links.filter((l) => l.getAttribute('aria-current') === 'page')
     expect(current).toHaveLength(1)
@@ -74,7 +74,7 @@ describe('the client panel', () => {
     await inRouter('/clients/a', <ClientNavList clientId="a" />)
     const nav = await screen.findByRole('navigation', { name: 'Client screens' })
     await screen.findByText('12')
-    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/ rows waiting$/, ''))).toEqual(['Overview', 'Pipeline', 'Bank statements12'])
+    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/ rows waiting$/, ''))).toEqual(['Overview', 'Pipeline', 'Bank statements12', 'Client profile'])
   })
 })
 

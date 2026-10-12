@@ -125,7 +125,11 @@ export function LedgerPicker({
         aria-controls={`${clientId}-ledger-list`}
         autoComplete="off"
         placeholder={chosen ? chosen.name : 'Type to search ledgers…'}
-        className={cn(chosen && 'placeholder:text-foreground placeholder:font-medium')}
+        className={cn(
+          chosen
+            ? 'placeholder:text-foreground placeholder:font-medium'
+            : 'h-11 border-primary/50 shadow-[0_0_0_3px_color-mix(in_oklab,var(--primary)_12%,transparent)] focus-visible:border-primary',
+        )}
         value={text}
         onChange={(e) => {
           setText(e.target.value)

@@ -9,7 +9,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { AlertTriangle, ArrowDown, ArrowUp, ArrowUpDown, Bot, Brain, CheckCheck, Link2, Search, Sparkles } from 'lucide-react'
+import { AlertTriangle, ArrowUp, Bot, Brain, CheckCheck, Link2, Search, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
@@ -25,6 +25,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Collapse, useClosing } from '@/components/ui/collapse'
+import { GlideChips } from '@/components/ui/glide-chips'
 import { AssistantStrip } from '@/features/assistant/AssistantStrip'
 import { Checkbox, Select } from '@/components/ui/controls'
 import { Input } from '@/components/ui/input'
@@ -133,6 +134,11 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
     if (rows.length && !rows.some((r) => r.id === selectedId)) setSelectedId(rows[Math.min(index, rows.length - 1)]!.id)
   }, [rows, selectedId, index])
   useEffect(() => setTicked(new Set()), [stage, band])
+  // A filter or a sort changes what is listed; a short fade says so without remounting the rows.
+  useEffect(() => {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+    listRef.current?.animate?.([{ opacity: 0.35 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' })
+  }, [band, sort])
   // The decision opens under its row; keep the whole of it on screen when the selection moves.
   useEffect(() => {
     if (!selectedId) return
@@ -250,16 +256,12 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
         {stage !== 'unresolved' ? (
           <div className="flex flex-wrap items-center gap-1.5 text-sm">
             <span className="text-muted-foreground">Confidence:</span>
-            {['', 'HIGH', 'ADVISED', 'JUDGEMENT'].map((b) => (
-              <button
-                key={b || 'any'}
-                type="button"
-                onClick={() => setBand(b)}
-                className={cn('rounded-full border px-2.5 py-0.5', band === b ? 'border-primary bg-primary text-primary-foreground' : 'hover:bg-hover')}
-              >
-                {b ? BAND_LABEL[b]!.label : 'Any'}
-              </button>
-            ))}
+            <GlideChips
+              label="Confidence"
+              value={band}
+              onChange={setBand}
+              options={['', 'HIGH', 'ADVISED', 'JUDGEMENT'].map((b) => ({ value: b, label: b ? BAND_LABEL[b]!.label : 'Any' }))}
+            />
           </div>
         ) : (
           <span />
@@ -414,7 +416,10 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
                               )}
                             </>
                           ) : (
-                            <span className="text-muted-foreground">No ledger yet</span>
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-edge bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">
+                              <span aria-hidden className="size-1.5 rounded-full bg-current" />
+                              Needs a ledger
+                            </span>
                           )}
                         </span>
                       </span>
@@ -502,7 +507,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
 
 function SortChip({ label, sortKey, sort, onSort }: { label: string; sortKey: SortKey; sort: Sort; onSort: (key: SortKey) => void }) {
   const on = sort?.key === sortKey
-  const Icon = !on ? ArrowUpDown : sort.dir === 'asc' ? ArrowUp : ArrowDown
+  const flipped = on && sort.dir === 'desc'
   return (
     <button
       type="button"
@@ -510,12 +515,12 @@ function SortChip({ label, sortKey, sort, onSort }: { label: string; sortKey: So
       aria-pressed={on}
       title={sortKey === 'amount' ? 'Sort by amount (withdrawals and deposits together)' : `Sort by ${label.toLowerCase()}`}
       className={cn(
-        'inline-flex items-center gap-1 rounded-full border px-3 py-0.5 text-[13px] transition-colors',
+        'inline-flex items-center gap-1 rounded-full border px-3 py-0.5 text-[13px] transition-colors duration-200',
         on ? 'border-foreground bg-foreground text-background' : 'hover:bg-hover',
       )}
     >
       {label}
-      <Icon className={cn('size-3', !on && 'opacity-50')} aria-hidden />
+      <ArrowUp className={cn('size-3 transition-[rotate,opacity] duration-200', flipped && 'rotate-180', !on && 'opacity-40')} aria-hidden />
     </button>
   )
 }
@@ -865,13 +870,13 @@ function Decision({
           <div className={cn('flex flex-wrap items-center gap-2 max-sm:[&>*]:flex-1', flat ? 'justify-between pt-1' : 'sticky bottom-0 -mx-4 justify-end border-t bg-card px-4 py-3')}>
             {flat && (
               <span className="flex items-center gap-1.5 text-[13px] text-muted-foreground max-sm:hidden">
-                <Kbd>L</Kbd> ledger · <Kbd>Enter</Kbd> place
+                <Kbd className="border-border-strong bg-background">L</Kbd> ledger · <Kbd className="border-border-strong bg-background">Enter</Kbd> place
               </span>
             )}
             <span className="flex flex-wrap items-center justify-end gap-2 max-sm:w-full max-sm:[&>*]:flex-1">
             {!alreadyPlacedByPerson && (
-              <Button variant={row.ledger && unchanged ? 'outline' : 'primary'} onClick={() => void place()} disabled={busy || !ledger}>
-                {row.ledger && ledger === row.ledger ? 'Confirm ledger' : 'Place in ledger'} <Kbd className="ml-1 bg-transparent max-sm:hidden">Enter</Kbd>
+              <Button variant={row.ledger && unchanged ? 'outline' : 'primary'} onClick={() => void place()} disabled={busy}>
+                {row.ledger && ledger === row.ledger ? 'Confirm ledger' : 'Place in ledger'} <Kbd className={cn('ml-1 max-sm:hidden', row.ledger && unchanged ? 'border-border-strong bg-transparent' : 'border-primary-foreground/30 bg-transparent text-primary-foreground/80')}>Enter</Kbd>
               </Button>
             )}
             {canPost && row.ledger && unchanged && !row.on_party_account && (

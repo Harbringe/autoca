@@ -3,7 +3,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { journal } from '@/api/queries/books'
 import type { JournalEntry } from '@/api/types'
 import { Money } from '@/components/ca/Money'
@@ -29,6 +29,7 @@ export function PostedEntries({ clientId }: { clientId: string }) {
   const [year, setYear] = useState('')
   const [text, setText] = useState('')
   const [openId, setOpenId] = useState<string | null>(null)
+  const listRef = useRef<HTMLUListElement>(null)
   const closing = useClosing(openId)
 
   const years = useMemo(() => {
@@ -38,6 +39,11 @@ export function PostedEntries({ clientId }: { clientId: string }) {
   }, [entries.data])
 
   const q = text.trim().toLowerCase()
+  // A different year or search changes what is listed; a short fade says so.
+  useEffect(() => {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+    listRef.current?.animate?.([{ opacity: 0.35 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' })
+  }, [year, q])
   const rows = useMemo(
     () =>
       (entries.data ?? [])
@@ -98,7 +104,7 @@ export function PostedEntries({ clientId }: { clientId: string }) {
             </EmptyState>
           ) : (
             <div className="overflow-hidden rounded-xl border border-border-strong bg-surface-2">
-              <ul aria-label="Posted entries, newest first" className="divide-y divide-border-strong">
+              <ul ref={listRef} aria-label="Posted entries, newest first" className="divide-y divide-border-strong">
                 {rows.map((e) => {
                   const isOpen = e.id === openId
                   const showBody = isOpen || closing === e.id

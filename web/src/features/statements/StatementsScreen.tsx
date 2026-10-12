@@ -7,7 +7,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Eye, FileUp, Pencil, Trash2 } from 'lucide-react'
+import { FileUp, Pencil } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
@@ -30,7 +30,11 @@ import { Spinner } from '@/components/ui/spinner'
 import { formatDate, plural } from '@/lib/format'
 import { useSession } from '@/session/session'
 import { PartiesFound } from './PartiesFound'
+import { groupByAccount, rowsHeadline } from './statementGroups'
 import { OpeningBalance, useUpload } from './UploadDialog'
+
+/** The Rows and Delete buttons at the end of a statement row. */
+const ROW_BUTTON = 'h-11 rounded-lg px-4 font-semibold text-heading dark:border-border-strong dark:bg-background dark:hover:bg-hover'
 
 export function StatementsScreen({ clientId }: { clientId: string }) {
   const { can } = useSession()
@@ -49,34 +53,7 @@ export function StatementsScreen({ clientId }: { clientId: string }) {
   const waiting = summary.data ? summary.data.unresolved + summary.data.pending_approval : 0
   const standing = summary.data ? { posted: Math.max(0, rowsOnFile - waiting), ready: summary.data.pending_approval, needs: summary.data.unresolved } : null
 
-  const accountColumns: Column<BankAccount>[] = [
-    { key: 'account', header: 'Account', cell: (a) => <span className="font-medium text-heading">{a.label}</span> },
-    { key: 'ifsc', header: 'IFSC', priority: 3, cell: (a) => <span className="font-mono text-xs text-muted-foreground">{a.ifsc || '—'}</span> },
-    { key: 'ledger', header: 'Ledger in Tally', priority: 2, cell: (a) => a.ledger_name },
-    {
-      key: 'opening',
-      header: 'Opening balance',
-      align: 'right',
-      cell: (a) => (a.has_opening_balance ? <Money display={a.opening_balance_display} /> : <Badge tone="attention">Not confirmed</Badge>),
-    },
-    { key: 'asat', header: 'As at', priority: 2, align: 'right', cell: (a) => formatDate(a.opening_as_of) },
-    {
-      key: 'actions',
-      header: <span className="sr-only">Actions</span>,
-      align: 'right',
-      cell: (a) =>
-        can('ledger.manage') && (
-          <span className="flex justify-end gap-1">
-            <Button size="sm" variant={a.has_opening_balance ? 'ghost' : 'primary'} onClick={() => setOpening(a)}>
-              {a.has_opening_balance ? 'Change opening' : 'Confirm opening'}
-            </Button>
-            <Button size="sm" variant="ghost" onClick={() => setRenaming(a)} aria-label={`Rename ledger for ${a.label}`}>
-              <Pencil />
-            </Button>
-          </span>
-        ),
-    },
-  ]
+  const { groups, orphans } = groupByAccount(accounts.data?.results ?? [], stmts.data?.results ?? [])
 
   const statementColumns: Column<Statement>[] = [
     {
@@ -94,24 +71,23 @@ export function StatementsScreen({ clientId }: { clientId: string }) {
         </>
       ),
     },
-    { key: 'account', header: 'Account', priority: 2, cell: (s) => s.bank_account_label },
     { key: 'rows', header: 'Rows', align: 'right', priority: 2, cell: (s) => s.transaction_count },
-    { key: 'opening', header: 'Opening', align: 'right', priority: 3, cell: (s) => <Money display={s.opening_balance_display} /> },
-    { key: 'withdrawals', header: 'Withdrawals', align: 'right', cell: (s) => <Money display={s.total_debit_display} /> },
-    { key: 'deposits', header: 'Deposits', align: 'right', cell: (s) => <Money display={s.total_credit_display} /> },
-    { key: 'closing', header: 'Closing', align: 'right', priority: 3, cell: (s) => <Money display={s.closing_balance_display} /> },
+    { key: 'opening', header: 'Opening', align: 'right', priority: 3, cell: (s) => <span className="font-mono"><Money display={s.opening_balance_display} /></span> },
+    { key: 'withdrawals', header: 'Withdrawals', align: 'right', cell: (s) => <span className="font-mono"><Money display={s.total_debit_display} /></span> },
+    { key: 'deposits', header: 'Deposits', align: 'right', cell: (s) => <span className="font-mono"><Money display={s.total_credit_display} /></span> },
+    { key: 'closing', header: 'Closing', align: 'right', priority: 3, cell: (s) => <span className="font-mono font-semibold text-heading"><Money display={s.closing_balance_display} /></span> },
     {
       key: 'actions',
       header: <span className="sr-only">Actions</span>,
       align: 'right',
       cell: (s) => (
         <span className="flex justify-end gap-1">
-          <Button size="sm" variant="ghost" onClick={() => setViewing(s)}>
-            <Eye /> Rows
+          <Button variant="outline" className={ROW_BUTTON} onClick={() => setViewing(s)}>
+            Rows
           </Button>
           {can('statement.delete') && (
-            <Button size="sm" variant="ghost" onClick={() => setRemoving(s)} aria-label={`Remove the statement ${formatDate(s.period_start)} to ${formatDate(s.period_end)}`}>
-              <Trash2 />
+            <Button variant="outline" className={ROW_BUTTON} onClick={() => setRemoving(s)} aria-label={`Remove the statement ${formatDate(s.period_start)} to ${formatDate(s.period_end)}`}>
+              Delete
             </Button>
           )}
         </span>
@@ -122,12 +98,15 @@ export function StatementsScreen({ clientId }: { clientId: string }) {
   return (
     <div className="grid gap-5">
       {(standing || can('transaction.view')) && (
-        <section aria-labelledby="st-standing" className="grid gap-3 rounded-lg border bg-card p-5">
-          <h2 id="st-standing" className="text-[15px] font-semibold text-heading">
-            Where the rows stand
-          </h2>
+        <section aria-labelledby="st-standing" className="grid gap-4 rounded-xl border border-border-strong bg-surface-2 p-6">
+          <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+            <h2 id="st-standing" className="text-xl font-semibold text-heading">
+              {standing ? rowsHeadline(rowsOnFile, waiting) : 'Where the rows stand'}
+            </h2>
+            {standing && <span className="text-sm text-muted-foreground">From {plural(stmts.data?.results.length ?? 0, 'statement')}</span>}
+          </div>
           {standing ? (
-            <StandingBar {...standing} />
+            <StandingBar {...standing} roomy />
           ) : summary.error ? (
             <ErrorState error={summary.error} retry={() => void summary.refetch()} />
           ) : (
@@ -137,57 +116,85 @@ export function StatementsScreen({ clientId }: { clientId: string }) {
         </section>
       )}
 
-      <section className="grid gap-2" aria-labelledby="st-accounts">
-        <h2 id="st-accounts" className="text-[15px] font-semibold text-heading">
-          Bank accounts
-        </h2>
-        {accounts.error ? (
-          <ErrorState error={accounts.error} retry={() => void accounts.refetch()} />
-        ) : (
-          <DataTable
-            caption="Bank accounts"
-            columns={accountColumns}
-            rows={accounts.data?.results}
-            loading={accounts.isPending}
-            rowKey={(a) => a.id}
-            empty={<EmptyState title="No bank accounts yet">An account is set up from the first statement uploaded for it.</EmptyState>}
-          />
-        )}
-      </section>
+      {accounts.error ? (
+        <ErrorState error={accounts.error} retry={() => void accounts.refetch()} />
+      ) : stmts.error ? (
+        <ErrorState error={stmts.error} retry={() => void stmts.refetch()} />
+      ) : accounts.isPending || stmts.isPending ? (
+        <Spinner label="Loading bank accounts and statements…" />
+      ) : (accounts.data?.results.length ?? 0) === 0 && (stmts.data?.results.length ?? 0) === 0 ? (
+        <EmptyState
+          title="No statements yet"
+          action={
+            can('document.upload') && (
+              <Button onClick={upload.open}>
+                <FileUp /> Upload bank statement
+              </Button>
+            )
+          }
+        >
+          Upload the PDF from net banking, any bank. Everything in the books starts from a bank statement. An account is set up from the first statement uploaded for it.
+        </EmptyState>
+      ) : (
+        <div className="grid gap-5">
+          {groups.map(({ account: a, statements: list }) => (
+            <section key={a.id} aria-labelledby={`st-acct-${a.id}`} className="grid gap-4 rounded-xl border border-border-strong bg-surface-2 p-6">
+              <div className="flex flex-wrap items-start justify-between gap-x-6 gap-y-3">
+                <div className="min-w-0">
+                  <h2 id={`st-acct-${a.id}`} className="text-[22px] font-semibold leading-tight text-heading">
+                    {a.label}
+                  </h2>
+                  <p className="mt-0.5 text-[13px] text-muted-foreground">
+                    {a.ifsc && <span className="num">{a.ifsc} · </span>}Ledger in Tally: {a.ledger_name}
+                  </p>
+                </div>
+                <div className="grid gap-1 sm:justify-items-end">
+                  <div className="sm:text-right">
+                    <p className="text-xs text-muted-foreground">
+                      Opening balance{a.has_opening_balance ? ` as at ${formatDate(a.opening_as_of)}` : ''}
+                    </p>
+                    <p className="font-mono text-3xl font-semibold text-heading">
+                      {a.has_opening_balance ? <Money display={a.opening_balance_display} /> : <Badge tone="attention">Not confirmed</Badge>}
+                    </p>
+                  </div>
+                  {can('ledger.manage') && (
+                    <span className="flex gap-1">
+                      <Button size="sm" variant={a.has_opening_balance ? 'link' : 'primary'} className={a.has_opening_balance ? 'h-auto px-0 font-semibold underline' : undefined} onClick={() => setOpening(a)}>
+                        {a.has_opening_balance ? 'Change opening' : 'Confirm opening'}
+                      </Button>
+                      <Button size="sm" variant="ghost" onClick={() => setRenaming(a)} aria-label={`Rename ledger for ${a.label}`}>
+                        <Pencil />
+                      </Button>
+                    </span>
+                  )}
+                </div>
+              </div>
+              {list.length === 0 ? (
+                <p className="rounded-md border border-dashed px-3 py-4 text-sm text-muted-foreground">No statement is on file for this account yet.</p>
+              ) : (
+                <DataTable
+                  caption={`Statements of ${a.label}`}
+                  columns={statementColumns}
+                  rows={list}
+                  rowKey={(s) => s.id}
+                  defaultSort={{ key: 'period', dir: 'desc' }}
+                  className="border-0 bg-transparent [&_td]:py-3"
+                />
+              )}
+            </section>
+          ))}
+          {orphans.length > 0 && (
+            <section aria-labelledby="st-other" className="grid gap-2">
+              <h2 id="st-other" className="text-[15px] font-semibold text-heading">
+                Other statements on file
+              </h2>
+              <DataTable caption="Other statements on file" columns={statementColumns} rows={orphans} rowKey={(s) => s.id} defaultSort={{ key: 'period', dir: 'desc' }} />
+            </section>
+          )}
+        </div>
+      )}
 
       <PartiesFound clientId={clientId} />
-
-      <section className="grid gap-2" aria-labelledby="st-files">
-        <h2 id="st-files" className="text-[15px] font-semibold text-heading">
-          Statements on file
-        </h2>
-        {stmts.error ? (
-          <ErrorState error={stmts.error} retry={() => void stmts.refetch()} />
-        ) : (
-          <DataTable
-            caption="Statements on file"
-            columns={statementColumns}
-            rows={stmts.data?.results}
-            loading={stmts.isPending}
-            rowKey={(s) => s.id}
-            defaultSort={{ key: 'period', dir: 'desc' }}
-            empty={
-              <EmptyState
-                title="No statements yet"
-                action={
-                  can('document.upload') && (
-                    <Button onClick={upload.open}>
-                      <FileUp /> Upload bank statement
-                    </Button>
-                  )
-                }
-              >
-                Upload the PDF from net banking, any bank. Everything in the books starts from a bank statement.
-              </EmptyState>
-            }
-          />
-        )}
-      </section>
 
       <Dialog open={!!opening} onOpenChange={(o) => !o && setOpening(null)}>
         <DialogContent aria-describedby={undefined}>

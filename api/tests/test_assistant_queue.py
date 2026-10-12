@@ -296,6 +296,12 @@ def test_the_summary_says_why_the_assistant_is_not_reading(api, client_record, m
 @pytest.mark.django_db
 def test_worker_finds_the_firms_with_no_one_signed_in(client_record):
     """The worker has no user, so it cannot read the platform admin's gated views. Its own lookup must still list the firm."""
+    from django.db import connection
+
     from classify.management.commands.run_assistant import firm_ids
 
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT to_regprocedure('app.active_firm_ids()') IS NOT NULL")
+        if not cursor.fetchone()[0]:
+            pytest.skip("autoca_platform_reader is not set up on this Postgres cluster")
     assert client_record.firm_id in firm_ids()

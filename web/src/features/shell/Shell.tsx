@@ -4,6 +4,7 @@
 // is the firm's, a path inside it is that client's. Under 1024px the rail and panel become a drawer, and
 // a client's five most-used screens a strip under the top bar. One of the two layouts is mounted at a time.
 
+import { Listbox } from '@/components/ui/listbox'
 import { Link, Outlet, useNavigate, useRouterState, useSearch } from '@tanstack/react-router'
 import { Menu, Search, Sparkles, X } from 'lucide-react'
 import { Dialog as Drawer } from 'radix-ui'
@@ -80,20 +81,13 @@ function FySelect({ className }: { className?: string }) {
   // A year that has not begun has no books to show, so the list starts at the current one.
   const years = new Set([...Array.from({ length: 8 }, (_, i) => now - i), ...dataYears, fy])
   return (
-    <select
+    <Listbox
       aria-label="Financial year"
-      value={fy}
-      onChange={(e) => setFy(Number(e.target.value))}
-      className={cn('h-9 shrink-0 rounded-md border border-input bg-card px-2.5 text-sm font-medium text-foreground', className)}
-    >
-      {[...years]
-        .sort((a, b) => b - a)
-        .map((year) => (
-          <option key={year} value={year}>
-            FY {fyLabel(year)}
-          </option>
-        ))}
-    </select>
+      value={String(fy)}
+      onValueChange={(v) => setFy(Number(v))}
+      options={[...years].sort((a, b) => b - a).map((year) => ({ value: String(year), label: `FY ${fyLabel(year)}` }))}
+      className={cn('h-9 w-auto min-w-32 shrink-0 gap-2 rounded-md px-2.5 text-sm font-medium', className)}
+    />
   )
 }
 

@@ -34,6 +34,7 @@
   --accent-edge: #dcc488;
   --hover: #f1eee5;
   --border: #e4e0d2;
+  --border-strong: #d6d1bf;
   --input: #8a8574;
   --ring: #2f6f62;
   --link: #1f4840;
@@ -69,26 +70,27 @@
 
 .dark {
   --background: #0f1113;
-  --foreground: #e9ecea;
-  --heading: #f4f6f4;
+  --foreground: #e6eae8;
+  --heading: #e6eae8;
   --card: #131618;
-  --card-foreground: #e9ecea;
+  --card-foreground: #e6eae8;
   --popover: #1a1f22;
-  --popover-foreground: #e9ecea;
+  --popover-foreground: #e6eae8;
   --surface-2: #161a1c;
   --primary: #4fb3a0;
   --primary-hover: #86d2c1;
-  --primary-foreground: #0f1113;
+  --primary-foreground: #06201b;
   --secondary: #1e2528;
-  --secondary-foreground: #e9ecea;
+  --secondary-foreground: #e6eae8;
   --muted: #1e2528;
-  --muted-foreground: #a3acb3;
+  --muted-foreground: #98a39e;
   --faint: #8b959c;
-  --accent: #352a0e;
-  --accent-foreground: #f0c24f;
+  --accent: #2a220d;
+  --accent-foreground: #e8bb55;
   --accent-edge: #5c4a1c;
   --hover: #1a2023;
   --border: #1d2326;
+  --border-strong: #2b3236;
   --input: #6e7a82;
   --ring: #86d2c1;
   --link: #86d2c1;
@@ -139,6 +141,7 @@
   --color-accent-edge: var(--accent-edge);
   --color-hover: var(--hover);
   --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
   --color-input: var(--input);
   --color-ring: var(--ring);
   --color-link: var(--link);
@@ -180,12 +183,10 @@
   body {
     @apply bg-background text-foreground font-sans text-[14px] antialiased;
   }
-  /* The one serif: page titles. Never on a figure, a table, a badge or a button. */
+  /* Page titles: the same sans as the rest, set large and bold. */
   h1 {
-    font-family: var(--font-display);
-    font-optical-sizing: auto;
-    font-weight: 600;
-    letter-spacing: -0.01em;
+    font-weight: 700;
+    letter-spacing: -0.02em;
     color: var(--heading);
   }
   a {

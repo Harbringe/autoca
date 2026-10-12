@@ -29,6 +29,7 @@ export function Listbox({
   disabled?: boolean
   className?: string
   id?: string
+  'aria-label'?: string
   'aria-invalid'?: boolean
   'aria-describedby'?: string
 }) {
@@ -37,7 +38,7 @@ export function Listbox({
       <Primitive.Trigger
         {...aria}
         className={cn(
-          'flex h-12 w-full items-center justify-between gap-3 rounded-lg border border-input bg-card px-4 text-left text-base text-heading outline-none transition-colors hover:bg-hover focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive data-[state=open]:border-ring',
+          'flex h-12 w-full items-center justify-between gap-3 rounded-lg border border-input bg-card px-4 dark:border-border-strong dark:bg-background text-left text-base text-heading outline-none transition-colors hover:bg-hover focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive data-[state=open]:border-ring',
           className,
         )}
       >
@@ -53,7 +54,7 @@ export function Listbox({
           position="popper"
           sideOffset={6}
           collisionPadding={8}
-          className="z-50 max-h-72 w-(--radix-select-trigger-width) min-w-48 overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-[var(--shadow-float)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-[120ms]"
+          className="z-50 max-h-72 w-(--radix-select-trigger-width) min-w-48 overflow-hidden rounded-lg border border-border-strong bg-popover text-popover-foreground shadow-[var(--shadow-float)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-[120ms]"
         >
           <Primitive.Viewport className="p-1.5">
             {options.map((o) => (

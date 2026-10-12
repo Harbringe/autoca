@@ -73,7 +73,7 @@ export function People({ clientId, justCreated, split = false }: { clientId: str
   }
 
   return (
-    <section aria-labelledby="ct-people" className={split ? 'grid gap-6 rounded-xl border bg-card p-6' : 'grid gap-5 rounded-lg border bg-card p-5'}>
+    <section aria-labelledby="ct-people" className={split ? 'grid gap-6 rounded-xl border border-border-strong bg-surface-2 p-6' : 'grid gap-5 rounded-lg border bg-card p-5'}>
       <h2 id="ct-people" className={split ? 'sr-only' : 'text-[15px] font-semibold text-heading'}>
         Senior CA and team
       </h2>

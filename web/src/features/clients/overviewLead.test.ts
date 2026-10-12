@@ -11,5 +11,6 @@ describe('leadSentence', () => {
   })
   it('says so when nothing is waiting', () => {
     expect(leadSentence({ unresolved: 0, pending: 0, invoices: 0, fixes: 0 })).toBe('Nothing is waiting on this client.')
+    expect(leadSentence({ unresolved: 6, pending: 6, invoices: 0, fixes: 0, assistant: 6 })).toBe('12 items need you: sort 6, then record 6. The assistant is working on 6 rows now.')
   })
 })

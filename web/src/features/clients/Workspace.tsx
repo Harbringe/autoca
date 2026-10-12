@@ -6,15 +6,17 @@
 // purchases or GST page has its own way of adding things. `u` does it from anywhere.
 
 import { useQuery } from '@tanstack/react-query'
-import { Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
+import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { Lock } from 'lucide-react'
 import { booksStatus, clientDetail } from '@/api/queries/clients'
+import { firmOverview } from '@/api/queries/overview'
 import type { AlertModule } from '@/api/types'
 import { ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Spinner } from '@/components/ui/spinner'
 import { TabNav, type TabItem } from '@/components/ui/tabs'
+import { STAGE_LABEL, STAGE_TONE } from '@/lib/overview'
 import { lockLabel } from '@/features/books/state'
 import { useAssistantLoop } from '@/features/assistant/useAssistant'
 import { UploadProvider, useUpload } from '@/features/statements/UploadDialog'
@@ -47,6 +49,7 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
   const client = useQuery(clientDetail(clientId))
   const books = useQuery({ ...booksStatus(clientId), enabled: can('report.view') })
   const summary = useQuery({ ...reviewSummary(clientId), enabled: can('transaction.view') })
+  const overview = useQuery({ ...firmOverview(), enabled: can('client.view') })
   const { fy, setFy, explicit, ready, dataYears } = useFy()
   const latestYear = dataYears[dataYears.length - 1]
   // While this client is open, the assistant reads the rows waiting for it, a few at a time.
@@ -66,6 +69,7 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
   if (client.error) return <ErrorState error={client.error} retry={() => void client.refetch()} />
 
   const lock = books.data ? lockLabel(books.data) : null
+  const stage = overview.data?.clients.find((c) => c.id === clientId)?.stage
 
   const module = moduleOf(path)
   const p = { clientId }
@@ -85,7 +89,7 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
   const alertModule = module && module !== 'clients' ? (module as AlertModule) : undefined
   const title = clientScreenName(path) ?? client.data.name
   // Uploading is the point of the Statements screen; elsewhere it is a quiet second action.
-  const upload_primary = screen === 'statements'
+  const upload_primary = screen === 'statements' || screen === '' || screen === 'pipeline'
   const showsUpload = UPLOAD_SCREENS.has(screen ?? '')
   // One purchase or sale on its own page has its own back link and its own alerts; the section tabs and the module's
   // alerts would only repeat them.
@@ -95,8 +99,20 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
     <div className="grid gap-4 [&>*]:min-w-0">
       <header className="no-print flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 max-sm:w-full">
-          <div className="truncate text-[13px] text-muted-foreground">{client.data.name}</div>
-          <h1 className="text-[26px] leading-8 xl:text-[28px] xl:leading-[34px]">{title}</h1>
+          <nav aria-label="Breadcrumb" className="truncate text-sm text-muted-foreground">
+            <Link to="/clients" className="hover:text-heading hover:underline">
+              Clients
+            </Link>{' '}
+            / {client.data.name} · FY {fyLabel(fy)}
+          </nav>
+          <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-2">
+            <h1 className="text-[32px] leading-tight lg:text-[40px]">{title}</h1>
+            {screen === '' && stage && (
+              <Badge tone={STAGE_TONE[stage]} icon={false} className="h-8 rounded-full px-3.5 text-sm font-semibold">
+                {STAGE_LABEL[stage]}
+              </Badge>
+            )}
+          </div>
           {/* The books' state and the year are in the client panel and the top bar already; only what they do not say is here. */}
           {lock && (
             <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1.5 text-sm text-muted-foreground">

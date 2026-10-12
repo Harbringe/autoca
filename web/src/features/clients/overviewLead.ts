@@ -6,6 +6,8 @@ export interface Waiting {
   pending: number
   invoices: number
   fixes: number
+  /** Rows the assistant is reading right now. */
+  assistant?: number
 }
 
 const noun = (n: number, one: string, many: string) => (n === 1 ? one : many)
@@ -18,5 +20,6 @@ export function leadSentence(w: Waiting): string {
   if (w.fixes > 0) parts.push(`tie out ${w.fixes} ${noun(w.fixes, 'item', 'items')}`)
   if (parts.length === 0) return 'Nothing is waiting on this client.'
   const total = w.unresolved + w.pending + w.invoices + w.fixes
-  return `${total} ${noun(total, 'item needs', 'items need')} you: ${parts.join(', then ')}.`
+  const working = w.assistant ? ` The assistant is working on ${w.assistant} ${noun(w.assistant, 'row', 'rows')} now.` : ''
+  return `${total} ${noun(total, 'item needs', 'items need')} you: ${parts.join(', then ')}.${working}`
 }

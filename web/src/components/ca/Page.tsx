@@ -23,7 +23,7 @@ export function PageHeader({
     <div className={cn('mb-5 flex flex-wrap items-start justify-between gap-3', className)}>
       <div className="min-w-0">
         {level === 1 ? (
-          <h1 className="text-[26px] leading-8 xl:text-[28px] xl:leading-[34px]">{title}</h1>
+          <h1 className="text-[32px] leading-tight lg:text-[40px]">{title}</h1>
         ) : (
           <h2 className="text-xl font-semibold leading-7 text-heading">{title}</h2>
         )}

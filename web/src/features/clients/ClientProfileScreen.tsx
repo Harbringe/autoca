@@ -39,6 +39,7 @@ export function ClientProfileScreen({ clientId }: { clientId: string }) {
     pending: summary.data?.pending_approval ?? 0,
     invoices: (readings.data ?? []).filter((r) => r.status === 'OPEN').length,
     fixes: fixes.data?.count ?? 0,
+    assistant: summary.data?.assistant_waiting ?? 0,
   }
   const loading = summary.isPending && can('transaction.view')
 

@@ -28,7 +28,7 @@ export function ClientPipeline({ clientId }: { clientId: string }) {
   const action = nextActionLabel(c.next_step.code)
   return (
     <div className="grid max-w-[96rem] gap-5">
-      <Card className="grid gap-6 rounded-xl p-6 sm:px-8">
+      <Card className="grid gap-6 rounded-xl border-border-strong bg-surface-2 p-6 sm:px-8">
         <ol aria-label={`Pipeline stages, step ${at + 1} of ${STAGES.length}`} className="flex gap-3 max-sm:flex-col sm:gap-0">
           {STAGES.map((stage, i) => {
             const done = i < at
@@ -36,15 +36,15 @@ export function ClientPipeline({ clientId }: { clientId: string }) {
             return (
               <li key={stage} aria-current={current ? 'step' : undefined} title={STAGE_HINT[stage]} className="relative flex min-w-0 flex-1 items-center gap-2 sm:flex-col sm:gap-2">
                 {i < STAGES.length - 1 && (
-                  <span aria-hidden className={cn('absolute left-1/2 top-4 hidden h-0.5 w-full sm:block', done ? 'bg-primary' : 'bg-border')} />
+                  <span aria-hidden className={cn('absolute left-1/2 top-4 hidden h-0.5 w-full sm:block', done ? 'bg-primary' : 'bg-border-strong')} />
                 )}
                 <span
                   aria-hidden
                   className={cn(
                     'relative z-10 grid size-8 shrink-0 place-items-center rounded-full border-2 bg-card text-[13px] font-semibold text-heading',
                     done && 'border-primary bg-primary text-primary-foreground',
-                    current && 'border-accent-edge bg-accent text-accent-foreground',
-                    !done && !current && 'border-border',
+                    current && 'border-accent-foreground bg-accent text-accent-foreground',
+                    !done && !current && 'border-border-strong bg-background',
                   )}
                 >
                   {done ? <Check className="size-4" /> : i + 1}
@@ -58,7 +58,7 @@ export function ClientPipeline({ clientId }: { clientId: string }) {
             )
           })}
         </ol>
-        <div className="flex flex-wrap items-center justify-between gap-5 border-t pt-6">
+        <div className="flex flex-wrap items-center justify-between gap-5 border-t border-border-strong pt-6">
           <div className="min-w-0">
             <h2 className="text-sm text-muted-foreground">
               Next step · {c.lead ? `Senior CA ${c.lead.name}` : 'No Senior CA yet'}

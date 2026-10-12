@@ -16,7 +16,7 @@ export function SettingsLayout() {
   ]
   return (
     <div className="grid gap-5 [&>*]:min-w-0">
-      <h1 className="text-[26px] leading-8 xl:text-[28px] xl:leading-[34px]">Settings</h1>
+      <h1 className="text-[32px] leading-tight lg:text-[40px]">Settings</h1>
       <TabNav label="Settings sections" items={tabs} />
       <HeadingLevel.Provider value={2}>
         <Outlet />

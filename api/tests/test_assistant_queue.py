@@ -291,3 +291,11 @@ def test_the_summary_says_why_the_assistant_is_not_reading(api, client_record, m
     summary = api.get(f"{V1}/clients/{client_record.pk}/review-queue/summary/").json()
 
     assert summary["assistant_reason"] == "rate_limit" and 100 <= summary["assistant_retry_seconds"] <= 120
+
+
+@pytest.mark.django_db
+def test_worker_finds_the_firms_with_no_one_signed_in(client_record):
+    """The worker has no user, so it cannot read the platform admin's gated views. Its own lookup must still list the firm."""
+    from classify.management.commands.run_assistant import firm_ids
+
+    assert client_record.firm_id in firm_ids()

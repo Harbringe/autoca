@@ -17,6 +17,7 @@ import signal
 import time
 
 from django.core.management.base import BaseCommand
+from django.db import connection
 
 from classify.models import ModelState, TransactionClassification
 from classify.queue import process_next_batch
@@ -27,10 +28,11 @@ logger = logging.getLogger("autoca.assistant")
 
 
 def firm_ids() -> list:
-    """Every firm, from the platform's read-only view: the worker has no tenant until it enters one."""
-    from superadmin.models import PlatformFirm
-
-    return list(PlatformFirm.objects.filter(is_active=True).values_list("pk", flat=True))
+    """Every active firm's id. The worker has no tenant until it enters one, and the platform admin's views are gated on a
+    signed-in person (they return nothing here), so it asks a database function that hands out only the ids."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT id FROM app.active_firm_ids()")
+        return [row[0] for row in cursor.fetchall()]
 
 
 def clients_waiting(firm_id) -> list[Client]:

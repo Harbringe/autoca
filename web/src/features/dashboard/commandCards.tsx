@@ -16,6 +16,7 @@ import { CountColumns, ColumnsSkeleton } from '@/components/charts/CountColumns'
 import { HealthDonut, HealthSkeleton } from '@/components/charts/HealthDonut'
 import { PipelineBar, PipelineSkeleton } from '@/components/charts/PipelineBar'
 import { RowsSkeleton } from '@/components/charts/StackedRows'
+import { GrowFill } from '@/components/charts/ProgressBar'
 import { segmentStyle } from '@/components/charts/StackedBar'
 import {
   booksInReview,
@@ -349,7 +350,7 @@ export function StaffListCard({ title = 'How is the team doing?' }: { title?: st
                   aria-valuenow={share}
                   className="mt-1.5 block h-1.5 overflow-hidden rounded-full bg-muted"
                 >
-                  <span className="block h-full rounded-full" style={{ ...segmentStyle(late ? 'watch' : 'good'), width: `${share}%` }} />
+                  <GrowFill id={`person-${p.name}`} percent={share} className="rounded-full" style={segmentStyle(late ? 'watch' : 'good')} />
                 </span>
               </Link>
             </li>

@@ -9,6 +9,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { CheckCircle2, FileUp, Loader2, UploadCloud, XCircle } from 'lucide-react'
+import { GrowFill } from '@/components/charts/ProgressBar'
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
@@ -243,7 +244,7 @@ function Reading({ file, job }: { file: File; job?: Job }) {
         aria-valuenow={progress ?? undefined}
         className="h-2 overflow-hidden rounded-full bg-muted"
       >
-        <div className="h-full rounded-full bg-primary" style={{ width: `${progress ?? 0}%` }} />
+        <GrowFill id="upload-progress" percent={progress ?? 0} className="rounded-full bg-primary" />
       </div>
       <p className="text-[13px] text-muted-foreground">
         {progress === null ? 'Sending the file.' : `${progress}%`} Every row is checked against the running balance, then the client’s rules

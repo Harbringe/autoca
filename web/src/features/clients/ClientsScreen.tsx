@@ -9,6 +9,7 @@ import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { Search, X } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 import { EmptyState, ErrorState, PageHeader } from '@/components/ca/Page'
+import { GrowFill } from '@/components/charts/ProgressBar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DataTable, type Column } from '@/components/ui/table'
@@ -164,10 +165,7 @@ export function ClientsScreen() {
               </span>
             </span>
             <span aria-hidden className="block h-1.5 rounded-full bg-muted">
-              <span
-                className={cn('block h-1.5 rounded-full', r.unresolved > 0 ? 'bg-accent-foreground' : 'bg-primary')}
-                style={{ width: `${barPercent(r.unresolved + r.ready, busiest)}%` }}
-              />
+              <GrowFill id={`client-${r.client.id}`} percent={barPercent(r.unresolved + r.ready, busiest)} className={cn('h-1.5 rounded-full', r.unresolved > 0 ? 'bg-accent-foreground' : 'bg-primary')} />
             </span>
           </div>
         ) : (

@@ -13,6 +13,7 @@ import { firmMetrics } from '@/api/queries/metrics'
 import { isApiError } from '@/api/errors'
 import type { PersonWork } from '@/api/types'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
+import { GrowFill } from '@/components/charts/ProgressBar'
 import { segmentStyle } from '@/components/charts/StackedBar'
 import { initials } from '@/features/dashboard/commandCards'
 import { pct } from '@/lib/pct'
@@ -112,7 +113,7 @@ export function PersonCard({
           aria-valuenow={share}
           className="mt-1 block h-2 overflow-hidden rounded-full bg-muted"
         >
-          <span className="block h-full rounded-full" style={{ ...segmentStyle(s.bar), width: `${share}%` }} />
+          <GrowFill id={`person-${p.name}`} percent={share} className="rounded-full" style={segmentStyle(s.bar)} />
         </span>
       </div>
 

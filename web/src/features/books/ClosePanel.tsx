@@ -1,12 +1,11 @@
-// Before you approve or seal: every control and open item for this client, on one panel.
+// Open items for this client that the checks do not cover. The controls themselves (rows posted, assistant entries checked,
+// nothing in Suspense, each bank account against its statement) are on SignOffChecklist.
 //
-// Controls (rows posted, assistant entries checked, nothing in Suspense, each bank account against its statement) show as
-// passing or failing. Open items where the books and a document or the bank disagree block sign-off until they are fixed or
+// Open items where the books and a document or the bank disagree block sign-off until they are fixed or
 // a senior writes why they can stand; that reason is kept with the item. The rest are listed so they are seen, not gated.
 
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { CircleCheck, CircleX } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { messageOf } from '@/api/errors'
@@ -30,10 +29,10 @@ export function ClosePanel({ clientId, maySignOff }: { clientId: string; maySign
 
   if (report.isPending) return <Spinner label="Checking what is open…" />
   if (report.isError) return <ErrorState error={report.error} retry={() => void report.refetch()} />
-  const { checks, items, unexplained_blocking: unexplained } = report.data
+  const { items } = report.data
   const blocking = items.filter((i) => i.blocking)
   const others = items.filter((i) => !i.blocking)
-  const failing = checks.filter((c) => !c.ok)
+  if (blocking.length === 0 && others.length === 0) return null
 
   async function save(item: CloseItem) {
     try {
@@ -56,30 +55,7 @@ export function ClosePanel({ clientId, maySignOff }: { clientId: string; maySign
   }
 
   return (
-    <Card className="grid gap-4 p-5" aria-labelledby="close-heading">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 id="close-heading" className="text-base font-semibold">Before you approve or seal</h2>
-        <Badge tone={report.data.ready ? 'done' : 'attention'}>
-          {report.data.ready
-            ? 'Everything ties out'
-            : failing.length
-              ? `${plural(failing.length, 'control')} failing`
-              : `${plural(unexplained, 'blocking item')} to fix or explain`}
-        </Badge>
-      </div>
-
-      <ul className="grid gap-1 text-sm">
-        {checks.map((c) => (
-          <li key={c.name} className={c.ok ? 'flex items-start gap-2 text-success' : 'flex items-start gap-2 text-destructive'}>
-            {c.ok ? <CircleCheck className="mt-0.5 size-4 shrink-0" aria-hidden /> : <CircleX className="mt-0.5 size-4 shrink-0" aria-hidden />}
-            <span>
-              {c.title}
-              {!c.ok && c.detail && <span className="block text-muted-foreground">{c.detail}</span>}
-            </span>
-          </li>
-        ))}
-      </ul>
-
+    <Card className="grid gap-4 p-5" aria-label="Open items">
       {blocking.length > 0 && (
         <div className="grid gap-2">
           <h3 className="text-sm font-medium">Open items that block sign-off</h3>

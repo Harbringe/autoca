@@ -1,3 +1,4 @@
+import { GrowFill } from '@/components/charts/ProgressBar'
 import { Sparkles } from '@/components/ui/sparkles'
 import { cn } from '@/lib/utils'
 import { useAssistantLine } from './useAssistant'
@@ -33,7 +34,7 @@ export function AssistantStrip({ clientId, className }: { clientId: string; clas
           aria-valuenow={done}
           className="h-1.5 w-32 overflow-hidden rounded-full bg-card/70 max-sm:w-full"
         >
-          <span className="block h-full rounded-full bg-info" style={{ width: `${Math.max(4, Math.round((done / status.total) * 100))}%` }} />
+          <GrowFill id="assistant-progress" percent={Math.max(4, Math.round((done / status.total) * 100))} className="rounded-full bg-info" />
         </span>
       )}
     </div>

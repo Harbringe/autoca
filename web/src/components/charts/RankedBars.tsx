@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import { pct } from '@/lib/pct'
+import { GrowFill } from './ProgressBar'
 import { cn } from '@/lib/utils'
 
 export interface RankedRow {
@@ -38,7 +39,7 @@ export function RankedBars({ rows, max, className }: { rows: RankedRow[]; max?: 
               <span className={cn('num shrink-0 text-sm', r.tone === 'danger' ? 'font-semibold text-destructive' : 'text-heading')}>{r.valueLabel}</span>
             </span>
             <span className="block h-2 overflow-hidden rounded-full bg-muted" aria-hidden>
-              <span className={cn('block h-full rounded-full', FILL[r.tone ?? 'primary'])} style={{ width: `${r.value > 0 ? Math.max(pct(r.value, top), 2) : 0}%` }} />
+              <GrowFill id={`ranked-${r.label}`} percent={r.value > 0 ? Math.max(pct(r.value, top), 2) : 0} className={cn('rounded-full', FILL[r.tone ?? 'primary'])} />
             </span>
             {r.note && <span className="block text-xs text-muted-foreground">{r.note}</span>}
           </>

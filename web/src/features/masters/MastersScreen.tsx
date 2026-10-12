@@ -853,24 +853,32 @@ function Rules({ clientId }: { clientId: string }) {
   const queryClient = useQueryClient()
   const [creating, setCreating] = useState(false)
   const listRef = useRef<HTMLUListElement>(null)
+  const [chosen, setChosen] = useState<Record<string, boolean>>({})
+  const queue = useRef<Record<string, Promise<void>>>({})
   const manage = can('suggestion.edit')
 
   if (list.isPending) return <Spinner />
   if (list.error) return <ErrorState error={list.error} retry={() => void list.refetch()} />
 
-  // The switch moves at once; the server is told in the background and the switch goes back if it refuses.
-  async function toggle(r: Rule) {
-    const key = rulesQuery(clientId).queryKey
-    const next = !r.is_active
-    const set = (on: boolean) => queryClient.setQueryData<Rule[]>(key, (rows) => rows?.map((x) => (x.id === r.id ? { ...x, is_active: on } : x)))
-    set(next)
-    try {
-      await raw.patch(`${V1}/clients/${clientId}/rules/${r.id}/`, { is_active: next })
-      void invalidate()
-    } catch (e) {
-      set(!next)
-      toast.error(messageOf(e))
-    }
+  // The switch is drawn from what you last chose, not from the server, so it moves on the click itself. The change is sent in
+  // the background, one request at a time per rule so quick clicks cannot arrive out of order, and the server's answer is
+  // read back afterwards; if it refuses, the switch returns to what the server holds.
+  const isOn = (r: Rule) => chosen[r.id] ?? !!r.is_active
+  function toggle(r: Rule) {
+    const next = !isOn(r)
+    setChosen((c) => ({ ...c, [r.id]: next }))
+    const settle = () => setChosen((c) => (c[r.id] === next ? Object.fromEntries(Object.entries(c).filter(([k]) => k !== r.id)) : c))
+    queue.current[r.id] = (queue.current[r.id] ?? Promise.resolve()).then(async () => {
+      try {
+        await raw.patch(`${V1}/clients/${clientId}/rules/${r.id}/`, { is_active: next })
+        await queryClient.invalidateQueries({ queryKey: rulesQuery(clientId).queryKey })
+        void invalidate()
+      } catch (e) {
+        toast.error(messageOf(e))
+      } finally {
+        settle()
+      }
+    })
   }
   async function remove(r: Rule) {
     const key = rulesQuery(clientId).queryKey
@@ -908,7 +916,7 @@ function Rules({ clientId }: { clientId: string }) {
             const words = `${MATCH_LABEL[r.match_type ?? ''] ?? r.match_type} ${r.pattern}, ${DIRECTION_LABEL[r.direction ?? 'ANY']}, to ${r.ledger_name}`
             return (
               <li key={r.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-4 transition-colors hover:bg-hover">
-                <div className={cn('min-w-0 flex-1 basis-80 transition-opacity duration-200', !r.is_active && 'opacity-60')}>
+                <div className={cn('min-w-0 flex-1 basis-80 transition-opacity duration-200', !isOn(r) && 'opacity-60')}>
                   <p className="text-[15px]">
                     <RuleSentence rule={r} />
                   </p>
@@ -923,7 +931,7 @@ function Rules({ clientId }: { clientId: string }) {
                       <Trash2 /> Delete
                     </Button>
                   )}
-                  <Switch checked={!!r.is_active} disabled={!manage} label={`Active: ${words}`} onChange={() => void toggle(r)} />
+                  <Switch checked={isOn(r)} disabled={!manage} label={`Active: ${words}`} onChange={() => toggle(r)} />
                 </div>
               </li>
             )

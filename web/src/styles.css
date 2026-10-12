@@ -221,6 +221,12 @@
   a[class*='justify-center']:active {
     transform: scale(0.98);
   }
+  /* Navigation is for pressing, not copying: a double-click or a drag across the tabs and menus does not highlight their words. */
+  nav,
+  [role='tablist'] {
+    -webkit-user-select: none;
+    user-select: none;
+  }
   /* The page heading takes focus after a click so a screen reader starts at the top; a mouse user sees no ring for it. */
   [data-pointer-focus]:focus,
   [data-pointer-focus]:focus-visible {

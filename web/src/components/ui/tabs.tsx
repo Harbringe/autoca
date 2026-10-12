@@ -52,7 +52,7 @@ export function TabNav({
   const more = overflowing ? items.slice(maxVisible) : []
   const moreActive = more.some((t) => isCurrent(t, location.pathname, location.search))
   return (
-    <div className={cn('no-print flex items-end justify-between gap-3 border-b', className)}>
+    <div className={cn('no-print flex select-none items-end justify-between gap-3 border-b', className)}>
       <nav aria-label={label} className="-mb-px flex min-w-0 gap-1 overflow-x-auto [scrollbar-width:none]">
         {shown.map((tab) => (
           <Link

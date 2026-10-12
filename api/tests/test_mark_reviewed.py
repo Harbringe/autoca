@@ -32,12 +32,15 @@ def test_only_the_named_entries_are_marked_as_checked(api, client_record, statem
     first, second = _marked_entries(api, client_record, firm)
     response = api.post(f"{V1}/clients/{client_record.pk}/books/mark-reviewed/", {"entries": [str(first)]}, format="json")
     assert response.status_code == 200, response.content
+    assert response.json()["marked"] == 1
     assert _marked(firm, [first, second]) == {second}
 
 
 def test_without_a_list_every_entry_is_marked_as_checked(api, client_record, statement, firm):
     ids = _marked_entries(api, client_record, firm)
-    assert api.post(f"{V1}/clients/{client_record.pk}/books/mark-reviewed/", {}, format="json").status_code == 200
+    response = api.post(f"{V1}/clients/{client_record.pk}/books/mark-reviewed/", {}, format="json")
+    assert response.status_code == 200
+    assert response.json()["marked"] == len(ids)
     assert _marked(firm, ids) == set()
 
 
@@ -46,3 +49,11 @@ def test_an_empty_list_is_refused_rather_than_clearing_everything(api, client_re
     response = api.post(f"{V1}/clients/{client_record.pk}/books/mark-reviewed/", {"entries": []}, format="json")
     assert response.status_code == 400
     assert _marked(firm, ids) == set(ids)
+
+
+def test_an_entry_that_is_not_marked_is_not_counted(api, client_record, statement, firm):
+    first, second = _marked_entries(api, client_record, firm)
+    url = f"{V1}/clients/{client_record.pk}/books/mark-reviewed/"
+    assert api.post(url, {"entries": [str(first)]}, format="json").json()["marked"] == 1
+    # The same entry again: already checked, so nothing is marked and the request says so.
+    assert api.post(url, {"entries": [str(first)]}, format="json").json()["marked"] == 0

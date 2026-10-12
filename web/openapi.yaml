@@ -1336,7 +1336,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/BooksStatus'
+                $ref: '#/components/schemas/MarkedStatus'
           description: ''
   /api/v1/clients/{client_id}/books/reopen/:
     post:
@@ -10548,6 +10548,8 @@ components:
       - lead
     LedgerAccount:
       type: object
+      description: 'For a ModelSerializer: ``version`` on the way out, ``expected_version``
+        checked on the way in.'
       properties:
         id:
           type: string
@@ -10593,6 +10595,11 @@ components:
         nce_section:
           type: string
           maxLength: 80
+        version:
+          type: string
+          readOnly: true
+          description: Changes whenever the fields a person can edit change. Send
+            it back as expected_version when saving.
       required:
       - awaiting_look
       - created_at
@@ -10602,8 +10609,11 @@ components:
       - proposal_reason
       - row_count
       - status
+      - version
     LedgerAccountRequest:
       type: object
+      description: 'For a ModelSerializer: ``version`` on the way out, ``expected_version``
+        checked on the way in.'
       properties:
         name:
           type: string
@@ -10878,6 +10888,95 @@ components:
           description: Clear the marker on only these entries. Omit to clear every
             entry's.
           maxItems: 500
+    MarkedStatus:
+      type: object
+      properties:
+        signed_off_through:
+          type: string
+          format: date
+          nullable: true
+        review_pending:
+          type: boolean
+        requested_by:
+          type: string
+        requested_at:
+          type: string
+          format: date-time
+          nullable: true
+        returned_note:
+          type: string
+        approved_through:
+          type: string
+          format: date
+          nullable: true
+          description: The senior has approved the books through this date. Locks
+            nothing.
+        approved_by:
+          type: string
+        approved_at:
+          type: string
+          format: date-time
+          nullable: true
+        changed_since_approval:
+          type: integer
+          description: Entries inside the approved period added, changed or removed
+            since the approval. Sealing waits for zero.
+        close_period:
+          type: string
+          description: 'How often the books are sealed: QUARTERLY, HALF_YEARLY or
+            YEARLY.'
+        sealable_dates:
+          type: array
+          items:
+            type: string
+            format: date
+          description: 'Dates the books could be sealed through now: scheduled, passed,
+            and covered by the approval.'
+        next_seal_date:
+          type: string
+          format: date
+          nullable: true
+          description: The next date on the client's schedule after the last seal.
+        waiting:
+          type: integer
+          description: Rows still needing a decision or a posting.
+        ai_posted:
+          type: integer
+          description: Entries the AI posted that nobody has yet looked at.
+        ai_revised:
+          type: integer
+          description: Entries the AI changed after a correction, unlooked-at.
+        can_request:
+          type: boolean
+        can_sign_off:
+          type: boolean
+        history:
+          type: array
+          items:
+            $ref: '#/components/schemas/BooksEvent'
+        marked:
+          type: integer
+          description: How many entries had their marker cleared by this request.
+      required:
+      - ai_posted
+      - ai_revised
+      - approved_at
+      - approved_by
+      - approved_through
+      - can_request
+      - can_sign_off
+      - changed_since_approval
+      - close_period
+      - history
+      - marked
+      - next_seal_date
+      - requested_at
+      - requested_by
+      - returned_note
+      - review_pending
+      - sealable_dates
+      - signed_off_through
+      - waiting
     MatchTypeEnum:
       enum:
       - PARTY_EQUALS
@@ -13009,6 +13108,8 @@ components:
       - withdrawals_paise
     Party:
       type: object
+      description: 'For a ModelSerializer: ``version`` on the way out, ``expected_version``
+        checked on the way in.'
       properties:
         id:
           type: string
@@ -13054,6 +13155,11 @@ components:
           type: string
           format: date-time
           readOnly: true
+        version:
+          type: string
+          readOnly: true
+          description: Changes whenever the fields a person can edit change. Send
+            it back as expected_version when saving.
       required:
       - alias_token
       - canonical_name
@@ -13062,6 +13168,7 @@ components:
       - ledger
       - ledger_name
       - role_display
+      - version
     PartyHint:
       type: object
       properties:
@@ -13086,6 +13193,8 @@ components:
       - name
     PartyRequest:
       type: object
+      description: 'For a ModelSerializer: ``version`` on the way out, ``expected_version``
+        checked on the way in.'
       properties:
         canonical_name:
           type: string
@@ -13401,6 +13510,8 @@ components:
           maxLength: 255
     PatchedLedgerAccountRequest:
       type: object
+      description: 'For a ModelSerializer: ``version`` on the way out, ``expected_version``
+        checked on the way in.'
       properties:
         name:
           type: string
@@ -13437,6 +13548,8 @@ components:
           default: false
     PatchedPartyRequest:
       type: object
+      description: 'For a ModelSerializer: ``version`` on the way out, ``expected_version``
+        checked on the way in.'
       properties:
         canonical_name:
           type: string

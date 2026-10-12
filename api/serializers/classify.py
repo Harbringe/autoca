@@ -13,6 +13,7 @@ import re
 from drf_spectacular.utils import extend_schema_field
 from rest_framework import serializers
 
+from api.concurrency import VersionedMixin
 from api.fields import PaiseField
 from api.serializers.banking import StatementTransactionSerializer
 from api.serializers.settlement import RowSettlementSerializer
@@ -33,7 +34,11 @@ from core.money import format_inr
 MAX_RULE_PATTERN_LENGTH = 200
 
 
-class LedgerAccountSerializer(serializers.ModelSerializer):
+class LedgerAccountSerializer(VersionedMixin, serializers.ModelSerializer):
+    VERSION_FIELDS = ("name", "group", "is_active", "nce_line", "nce_section")
+    version = serializers.SerializerMethodField(
+        help_text="Changes whenever the fields a person can edit change. Send it back as expected_version when saving."
+    )
     is_bank_or_cash = serializers.BooleanField(read_only=True)
     row_count = serializers.IntegerField(
         read_only=True, default=0, help_text="Classifications currently placed in this ledger."
@@ -47,9 +52,9 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
         model = LedgerAccount
         fields = [
             "id", "name", "group", "is_bank_or_cash", "is_active",
-            "status", "proposal_reason", "awaiting_look", "row_count", "created_at", "nce_line", "nce_section",
+            "status", "proposal_reason", "awaiting_look", "row_count", "created_at", "nce_line", "nce_section", "version",
         ]
-        read_only_fields = ["id", "is_bank_or_cash", "status", "proposal_reason", "awaiting_look", "row_count", "created_at"]
+        read_only_fields = ["id", "is_bank_or_cash", "status", "proposal_reason", "awaiting_look", "row_count", "created_at", "version"]
         extra_kwargs = {
             "name": {
                 "help_text": (
@@ -134,8 +139,15 @@ class LedgerAccountSerializer(serializers.ModelSerializer):
             )
         return attrs
 
+    def update(self, instance, validated_data):
+        return self.checked_update(instance, lambda ledger: super(LedgerAccountSerializer, self).update(ledger, validated_data))
 
-class PartySerializer(serializers.ModelSerializer):
+
+class PartySerializer(VersionedMixin, serializers.ModelSerializer):
+    VERSION_FIELDS = ("canonical_name", "role", "gstin", "rcm_default", "tds_section", "msme", "udyam_no", "is_active")
+    version = serializers.SerializerMethodField(
+        help_text="Changes whenever the fields a person can edit change. Send it back as expected_version when saving."
+    )
     gstin = serializers.CharField(
         required=False,
         allow_blank=True,
@@ -161,8 +173,9 @@ class PartySerializer(serializers.ModelSerializer):
             "udyam_no",
             "is_active",
             "created_at",
+            "version",
         ]
-        read_only_fields = ["id", "ledger", "alias_token", "created_at"]
+        read_only_fields = ["id", "ledger", "alias_token", "created_at", "version"]
 
     def validate_role(self, value):
         """A supplier cannot become a customer under bills already booked to it: they would be on the wrong side."""
@@ -214,12 +227,15 @@ class PartySerializer(serializers.ModelSerializer):
         return party
 
     def update(self, instance, validated_data):
-        if "gstin" in validated_data:
-            instance.set_gstin(validated_data.pop("gstin"))
-        for field, value in validated_data.items():
-            setattr(instance, field, value)
-        instance.save()
-        return instance
+        def apply(party):
+            if "gstin" in validated_data:
+                party.set_gstin(validated_data.pop("gstin"))
+            for field, value in validated_data.items():
+                setattr(party, field, value)
+            party.save()
+            return party
+
+        return self.checked_update(instance, apply)
 
 
 class ClassificationRuleSerializer(serializers.ModelSerializer):

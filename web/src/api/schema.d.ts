@@ -4949,6 +4949,7 @@ export interface components {
             id: string;
             lead: components["schemas"]["Person"] | null;
         };
+        /** @description For a ModelSerializer: ``version`` on the way out, ``expected_version`` checked on the way in. */
         LedgerAccount: {
             /** Format: uuid */
             readonly id: string;
@@ -4970,7 +4971,10 @@ export interface components {
             readonly created_at: string;
             nce_line?: string;
             nce_section?: string;
+            /** @description Changes whenever the fields a person can edit change. Send it back as expected_version when saving. */
+            readonly version: string;
         };
+        /** @description For a ModelSerializer: ``version`` on the way out, ``expected_version`` checked on the way in. */
         LedgerAccountRequest: {
             /** @description The ledger's name in this client's books. Unique per client, ignoring case and spacing: "Advance Tax" and "Advance tax" would split a year across two ledgers, so the second is refused. */
             name: string;
@@ -5106,6 +5110,45 @@ export interface components {
             marker?: components["schemas"]["MarkReviewedMarkerEnum"];
             /** @description Clear the marker on only these entries. Omit to clear every entry's. */
             entries?: string[];
+        };
+        MarkedStatus: {
+            /** Format: date */
+            signed_off_through: string | null;
+            review_pending: boolean;
+            requested_by: string;
+            /** Format: date-time */
+            requested_at: string | null;
+            returned_note: string;
+            /**
+             * Format: date
+             * @description The senior has approved the books through this date. Locks nothing.
+             */
+            approved_through: string | null;
+            approved_by: string;
+            /** Format: date-time */
+            approved_at: string | null;
+            /** @description Entries inside the approved period added, changed or removed since the approval. Sealing waits for zero. */
+            changed_since_approval: number;
+            /** @description How often the books are sealed: QUARTERLY, HALF_YEARLY or YEARLY. */
+            close_period: string;
+            /** @description Dates the books could be sealed through now: scheduled, passed, and covered by the approval. */
+            sealable_dates: string[];
+            /**
+             * Format: date
+             * @description The next date on the client's schedule after the last seal.
+             */
+            next_seal_date: string | null;
+            /** @description Rows still needing a decision or a posting. */
+            waiting: number;
+            /** @description Entries the AI posted that nobody has yet looked at. */
+            ai_posted: number;
+            /** @description Entries the AI changed after a correction, unlooked-at. */
+            ai_revised: number;
+            can_request: boolean;
+            can_sign_off: boolean;
+            history: components["schemas"]["BooksEvent"][];
+            /** @description How many entries had their marker cleared by this request. */
+            marked: number;
         };
         /**
          * @description * `PARTY_EQUALS` - Counterparty is exactly
@@ -6221,6 +6264,7 @@ export interface components {
              */
             closing_paise: number;
         };
+        /** @description For a ModelSerializer: ``version`` on the way out, ``expected_version`` checked on the way in. */
         Party: {
             /** Format: uuid */
             readonly id: string;
@@ -6240,6 +6284,8 @@ export interface components {
             is_active?: boolean;
             /** Format: date-time */
             readonly created_at: string;
+            /** @description Changes whenever the fields a person can edit change. Send it back as expected_version when saving. */
+            readonly version: string;
         };
         PartyHint: {
             /** Format: uuid */
@@ -6251,6 +6297,7 @@ export interface components {
             id: string;
             name: string;
         };
+        /** @description For a ModelSerializer: ``version`` on the way out, ``expected_version`` checked on the way in. */
         PartyRequest: {
             canonical_name: string;
             role?: components["schemas"]["Role2a3Enum"];
@@ -6409,6 +6456,7 @@ export interface components {
         PatchedFirmSettingsRequest: {
             name?: string;
         };
+        /** @description For a ModelSerializer: ``version`` on the way out, ``expected_version`` checked on the way in. */
         PatchedLedgerAccountRequest: {
             /** @description The ledger's name in this client's books. Unique per client, ignoring case and spacing: "Advance Tax" and "Advance tax" would split a year across two ledgers, so the second is refused. */
             name?: string;
@@ -6426,6 +6474,7 @@ export interface components {
             /** @default false */
             keep_client_assignments: boolean;
         };
+        /** @description For a ModelSerializer: ``version`` on the way out, ``expected_version`` checked on the way in. */
         PatchedPartyRequest: {
             canonical_name?: string;
             role?: components["schemas"]["Role2a3Enum"];
@@ -9657,7 +9706,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["BooksStatus"];
+                    "application/json": components["schemas"]["MarkedStatus"];
                 };
             };
         };

@@ -152,6 +152,11 @@ def approve(classification, *, membership, narration: str | None = None, settlem
             f"of the transaction."
         )
 
+    # Two people posting the same row at once: the second waits on this lock until the first has committed, then finds the
+    # first's entry below and is refused. Without it both pass the check and the voucher-number lock only queues them, so the
+    # row would be posted twice.
+    list(type(classification).objects.select_for_update().filter(pk=classification.pk).values_list("pk", flat=True))
+
     if classification.mirrored_entry_id or _live_entry_for(transaction_row) is not None:
         raise AlreadyPostedError(
             f"Transaction on {transaction_row.value_date:%d-%m-%Y} for "

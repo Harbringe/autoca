@@ -109,6 +109,10 @@ class BooksStatusSerializer(serializers.Serializer):
     history = BooksEventSerializer(many=True)
 
 
+class MarkedStatusSerializer(BooksStatusSerializer):
+    marked = serializers.IntegerField(help_text="How many entries had their marker cleared by this request.")
+
+
 @extend_schema(tags=["books"])
 class BooksView(viewsets.GenericViewSet):
     """Where a client's books stand, and the steps that move them along."""
@@ -276,7 +280,7 @@ class BooksView(viewsets.GenericViewSet):
             "that are not yet signed off, once a CA has checked them."
         ),
         request=MarkReviewedSerializer,
-        responses={200: BooksStatusSerializer},
+        responses={200: MarkedStatusSerializer},
     )
     def mark_reviewed(self, request, client_id=None):
         client = self._client(request, client_id)
@@ -303,7 +307,7 @@ class BooksView(viewsets.GenericViewSet):
         if only:
             entries = entries.filter(pk__in=only)
         with transaction.atomic():
-            entries.update(marker=EntryMarker.NONE)
+            marked = entries.update(marker=EntryMarker.NONE)
             from classify.models import TransactionClassification
 
             if not only and wanted in (None, EntryMarker.AI_REVISED):
@@ -312,4 +316,4 @@ class BooksView(viewsets.GenericViewSet):
                     transaction__bank_account__client=client,
                     ai_revised=True,
                 ).update(ai_revised=False)
-        return self._respond(request, client)
+        return Response({**BooksStatusSerializer(self._status(request, client)).data, "marked": marked})

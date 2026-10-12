@@ -15,7 +15,8 @@ export function GlideChips<T extends string>({
   label,
   className,
 }: {
-  options: { value: T; label: string }[]
+  /** `disabled` dims a chip that has nothing behind it; it cannot be chosen. */
+  options: { value: T; label: string; disabled?: boolean }[]
   value: T
   onChange: (value: T) => void
   label: string
@@ -58,10 +59,11 @@ export function GlideChips<T extends string>({
             }}
             type="button"
             aria-pressed={on}
+            disabled={o.disabled && !on}
             onClick={() => onChange(o.value)}
             className={cn(
               'relative z-10 rounded-full border px-2.5 py-0.5 text-sm transition-colors duration-200',
-              on ? (glides ? 'border-transparent text-primary-foreground' : 'border-primary bg-primary text-primary-foreground') : 'hover:bg-hover',
+              on ? (glides ? 'border-transparent text-primary-foreground' : 'border-primary bg-primary text-primary-foreground') : o.disabled ? 'cursor-not-allowed text-faint opacity-60' : 'hover:bg-hover',
             )}
           >
             {o.label}

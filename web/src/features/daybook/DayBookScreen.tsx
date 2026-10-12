@@ -146,7 +146,7 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
           label="Voucher type"
           value={type}
           onChange={setType}
-          options={['', ...TYPES].map((t) => ({ value: t, label: t || 'All' }))}
+          options={['', ...TYPES].map((t) => ({ value: t, label: t || 'All', disabled: !!t && !inYear.some((e) => e.voucher_type === t) }))}
         />
         {targets.length > 0 && (mayMark || mayUnpost) && (
           <div className="flex flex-wrap items-center gap-2">

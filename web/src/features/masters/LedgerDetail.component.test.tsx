@@ -69,7 +69,7 @@ describe('a ledger with rows placed but nothing under it', () => {
     expect(await screen.findByText('No posted entries for this ledger in FY 2026-27.')).toBeInTheDocument()
     expect(screen.getByText('1 row placed here has not been posted to the books yet.')).toBeInTheDocument()
     expect(screen.getByText('2 rows are dated in FY 2025-26.')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Open Review to check and post them' })).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'Open Review to check and post them' })).toBeInTheDocument()
   })
 
   it('lists the placed rows with whether each is in the books', async () => {

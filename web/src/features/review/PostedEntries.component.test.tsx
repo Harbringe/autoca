@@ -89,7 +89,7 @@ describe('Posted tab', () => {
     await userEvent.click(first)
     expect(first).toHaveAttribute('aria-expanded', 'true')
     expect(await screen.findByText('The entry')).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Open in Day Book' })).toBeInTheDocument()
+    expect(await screen.findByRole('link', { name: 'Open in Day Book' })).toBeInTheDocument()
   })
 
   it('says so when nothing has been posted, and points to where posting happens', async () => {

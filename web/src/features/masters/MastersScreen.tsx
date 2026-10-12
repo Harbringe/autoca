@@ -7,8 +7,8 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Bot, Plus, Trash2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { Bot, ChevronRight, Plus, Trash2 } from 'lucide-react'
+import { Fragment, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
@@ -19,6 +19,7 @@ import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Collapse, useClosing } from '@/components/ui/collapse'
 import { Checkbox, Select } from '@/components/ui/controls'
 import { Money } from '@/components/ca/Money'
 import { DataTable } from '@/components/ui/table'
@@ -89,9 +90,11 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
   const [showInactive, setShowInactive] = useState(false)
   const [selectedLedger, setSelectedLedger] = useState<string | null>(openLedger ?? null)
   const [entrySearch, setEntrySearch] = useState('')
+  const closingId = useClosing(selectedLedger)
+  const detailId = selectedLedger ?? closingId
   // Rows placed in the open ledger, in every year and posted or not: the ledger list counts these,
   // while the entries below are only what has been posted, in the year on screen.
-  const placed = useQuery({ ...ledgerRows(clientId, selectedLedger ?? ''), enabled: !!selectedLedger && can('transaction.view') })
+  const placed = useQuery({ ...ledgerRows(clientId, detailId ?? ''), enabled: !!detailId && can('transaction.view') })
 
   // Arriving from a report line: open that ledger and bring its entries into view.
   useEffect(() => {
@@ -126,7 +129,7 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
     }
   }
   const grouped = LEDGER_GROUPS.flatMap(([group]) => active.filter((l) => l.group === group))
-  const selected = all.data.find((ledger) => ledger.id === selectedLedger) ?? null
+  const selected = all.data.find((ledger) => ledger.id === detailId) ?? null
   const q = entrySearch.trim().toLowerCase()
   const selectedEntries = selected
     ? ledgerEntries.filter((entry) => entry.lines.some((line) => line.ledger_account === selected.id) &&
@@ -137,6 +140,8 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
   const placedRows = (placed.data ?? []).filter(
     (r) => !q || r.narration.toLowerCase().includes(q) || r.book_narration.toLowerCase().includes(q) || r.counterparty.toLowerCase().includes(q),
   )
+
+  const headCell = 'whitespace-nowrap px-4 py-4 text-xs font-semibold text-muted-foreground'
 
   async function remove(l: LedgerAccount) {
     try {
@@ -199,52 +204,73 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
         </div>
       </div>
 
-      <DataTable
-        caption="Ledgers by Tally group"
-        rows={grouped}
-        rowKey={(l) => l.id}
-        groupOf={(l) => LEDGER_GROUP_LABEL.get(l.group ?? '') ?? l.group ?? 'Other'}
-        empty={<EmptyState title="No ledgers to show">Tick “Show inactive” or add a ledger.</EmptyState>}
-        columns={[
-          {
-            key: 'name',
-            header: 'Ledger',
-            className: 'pl-6',
-            cell: (l) => (
-              <>
-                <button type="button" className="font-medium text-link underline-offset-2 hover:underline" onClick={() => setSelectedLedger(l.id)}>
-                  {l.name}
-                </button>
-                {!l.is_active && <Badge className="ml-2">Inactive</Badge>}
-              </>
-            ),
-          },
-          { key: 'placed', header: 'Rows placed (all years)', align: 'right', priority: 2, cell: (l) => l.row_count },
-          { key: 'entries', header: `FY ${fyLabel(fy)} entries`, align: 'right', cell: (l) => entryStats.get(l.id)?.count ?? 0 },
-          {
-            key: 'act',
-            header: <span className="sr-only">Actions</span>,
-            align: 'right',
-            cell: (l) =>
-              manage &&
-              l.group !== 'BANK' && (
-                <span className="flex justify-end gap-1">
-                  <Button size="sm" variant="ghost" onClick={() => setEditing(l)} aria-label={`Edit ${l.name}`}>
-                    Edit
-                  </Button>
-                  {l.row_count === 0 && (
-                    <Button size="sm" variant="ghost" onClick={() => void remove(l)} aria-label={`Delete ${l.name}`}>
-                      <Trash2 />
-                    </Button>
-                  )}
-                </span>
-              ),
-          },
-        ]}
-      />
-
-      {selected && (
-        <Card id="ledger-detail" className="grid gap-4 p-4" aria-label={`${selected.name} ledger details`}>
+      <div role="region" aria-label="Ledgers by Tally group" className="overflow-x-auto rounded-xl border border-border-strong bg-card">
+        {grouped.length === 0 ? (
+          <EmptyState title="No ledgers to show">Tick “Show inactive” or add a ledger.</EmptyState>
+        ) : (
+          <table className="w-full text-left text-sm">
+            <caption className="sr-only">Ledgers by Tally group. Select a ledger to open its entries.</caption>
+            <thead className="border-b border-border-strong">
+              <tr>
+                <th scope="col" className={headCell}>Ledger</th>
+                <th scope="col" className={cn(headCell, 'text-right max-sm:hidden')}>Rows placed (all years)</th>
+                <th scope="col" className={cn(headCell, 'text-right')}>FY {fyLabel(fy)} entries</th>
+                <th scope="col" className={headCell}><span className="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody>
+              {grouped.map((l, index) => {
+                const groupLabel = LEDGER_GROUP_LABEL.get(l.group ?? '') ?? l.group ?? 'Other'
+                const newGroup = index === 0 || grouped[index - 1]!.group !== l.group
+                const isOpen = selectedLedger === l.id
+                const toggle = () => setSelectedLedger(isOpen ? null : l.id)
+                return (
+                  <Fragment key={l.id}>
+                    {newGroup && (
+                      <tr className="border-b border-border-strong bg-surface-2">
+                        <th scope="rowgroup" colSpan={4} className="px-4 py-2.5 text-left text-xs font-semibold text-muted-foreground">
+                          {groupLabel}
+                        </th>
+                      </tr>
+                    )}
+                    <tr
+                      onClick={(ev) => {
+                        if ((ev.target as HTMLElement).closest('a, button, input, label')) return
+                        toggle()
+                      }}
+                      className={cn('cursor-pointer border-b border-border-strong hover:bg-hover', isOpen && 'bg-surface-2')}
+                    >
+                      <td className="w-full px-4 py-4">
+                        <button type="button" onClick={toggle} aria-expanded={isOpen} className="inline-flex items-center gap-2 rounded-sm text-left font-medium text-heading">
+                          <ChevronRight aria-hidden className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform duration-200', isOpen && 'rotate-90')} />
+                          {l.name}
+                        </button>
+                        {!l.is_active && <Badge className="ml-2">Inactive</Badge>}
+                      </td>
+                      <td className="num px-4 py-4 text-right max-sm:hidden">{l.row_count}</td>
+                      <td className="num px-4 py-4 text-right">{entryStats.get(l.id)?.count ?? 0}</td>
+                      <td className="whitespace-nowrap px-4 py-2 text-right">
+                        {manage && l.group !== 'BANK' && (
+                          <span className="inline-flex justify-end gap-1">
+                            <Button size="sm" variant="ghost" onClick={() => setEditing(l)} aria-label={`Edit ${l.name}`}>
+                              Edit
+                            </Button>
+                            {l.row_count === 0 ? (
+                              <Button size="sm" variant="ghost" onClick={() => void remove(l)} aria-label={`Delete ${l.name}`}>
+                                <Trash2 />
+                              </Button>
+                            ) : (
+                              <span aria-hidden className="inline-block w-10" />
+                            )}
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                    {selected && l.id === detailId && (
+                      <tr className="border-b border-border-strong bg-surface-2 last:border-b-0">
+                        <td colSpan={4} className="max-w-0 overflow-hidden p-0">
+                          <Collapse open={isOpen}>
+                            <div id="ledger-detail" aria-label={`${selected.name} ledger details`} className="grid gap-5 px-5 py-6 sm:pl-10 sm:pr-6 [&>*]:min-w-0">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
               <div className="text-xs font-medium text-muted-foreground">Ledger detail, FY {fyLabel(fy)}</div>
@@ -256,7 +282,7 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
               <Button size="sm" variant="ghost" onClick={() => setSelectedLedger(null)}>Close</Button>
             </div>
           </div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid max-w-xl gap-3 sm:grid-cols-2">
             <Card className="p-3"><div className="text-xs text-muted-foreground">Debits in FY {fyLabel(fy)}</div><Money paise={entryStats.get(selected.id)?.debit ?? 0} /></Card>
             <Card className="p-3"><div className="text-xs text-muted-foreground">Credits in FY {fyLabel(fy)}</div><Money paise={entryStats.get(selected.id)?.credit ?? 0} /></Card>
           </div>
@@ -333,8 +359,18 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
               )}
             </div>
           )}
-        </Card>
-      )}
+                            </div>
+                          </Collapse>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
 
       {editing && <LedgerForm clientId={clientId} ledger={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
       {deciding && (

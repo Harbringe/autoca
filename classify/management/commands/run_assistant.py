@@ -31,7 +31,7 @@ def firm_ids() -> list:
     """Every active firm's id. The worker has no tenant until it enters one, and the platform admin's views are gated on a
     signed-in person (they return nothing here), so it asks a database function that hands out only the ids."""
     with connection.cursor() as cursor:
-        cursor.execute("SELECT id FROM app.active_firm_ids()")
+        cursor.execute("SELECT t.id FROM app.active_firm_ids() AS t(id)")
         return [row[0] for row in cursor.fetchall()]
 
 

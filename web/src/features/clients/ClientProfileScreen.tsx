@@ -94,31 +94,31 @@ export function ClientProfileScreen({ clientId }: { clientId: string }) {
         <h2 id="profile-title" className="sr-only">
           Client profile
         </h2>
-        <Card className="flex flex-wrap items-center justify-between gap-x-8 gap-y-4 p-5">
-          <dl className="flex flex-wrap gap-x-8 gap-y-3">
+        <Card className="flex flex-wrap items-center justify-between gap-x-10 gap-y-5 rounded-xl border-border-strong bg-surface-2 p-6">
+          <dl className="flex flex-wrap gap-x-10 gap-y-4">
             <div>
-              <dt className="text-xs text-muted-foreground">Senior CA</dt>
-              <dd className="mt-0.5 text-sm font-medium text-heading">{client.data.lead?.name ?? <Badge tone="attention">Not assigned</Badge>}</dd>
+              <dt className="text-sm text-muted-foreground">Senior CA</dt>
+              <dd className="mt-1 text-base font-semibold text-heading">{client.data.lead?.name ?? <Badge tone="attention">Not assigned</Badge>}</dd>
             </div>
             <div>
-              <dt className="text-xs text-muted-foreground">Year starts</dt>
-              <dd className="num mt-0.5 text-sm font-medium text-heading">{formatDate(client.data.fy_start)}</dd>
+              <dt className="text-sm text-muted-foreground">Year starts</dt>
+              <dd className="num mt-1 text-base font-semibold text-heading">{formatDate(client.data.fy_start)}</dd>
             </div>
             <div>
-              <dt className="text-xs text-muted-foreground">Bank accounts</dt>
-              <dd className="num mt-0.5 text-sm font-medium text-heading">{accounts.data?.count ?? '—'}</dd>
+              <dt className="text-sm text-muted-foreground">Bank accounts</dt>
+              <dd className="num mt-1 text-base font-semibold text-heading">{accounts.data?.count ?? '—'}</dd>
             </div>
             <div>
-              <dt className="text-xs text-muted-foreground">GSTIN</dt>
-              <dd className="mt-0.5 flex flex-wrap items-center gap-x-2 text-sm font-medium text-heading">
+              <dt className="text-sm text-muted-foreground">GSTIN</dt>
+              <dd className="mt-1 flex flex-wrap items-center gap-x-2 text-base font-semibold text-heading">
                 {(registrations.data ?? []).map((r) => (
                   <span key={r.id} className="num">
                     {r.gstin}
                   </span>
                 ))}
-                {registrations.data?.length === 0 && <Badge tone="attention">Not added</Badge>}
+                {registrations.data?.length === 0 && <Badge tone="attention" className="h-7 rounded-full px-3 text-[13px]">Not added</Badge>}
                 {can('journal.approve') && (
-                  <Button size="sm" variant="ghost" className="px-1" onClick={() => setAddingGstin(true)}>
+                  <Button size="sm" variant="link" className="px-1 text-sm font-semibold text-link" onClick={() => setAddingGstin(true)}>
                     {registrations.data?.length ? 'Add another' : 'Add GSTIN'}
                   </Button>
                 )}
@@ -126,15 +126,15 @@ export function ClientProfileScreen({ clientId }: { clientId: string }) {
             </div>
             {client.data.business_profile && (
               <div className="min-w-0 max-w-xs">
-                <dt className="text-xs text-muted-foreground">Business profile</dt>
-                <dd className="mt-0.5 line-clamp-1 text-sm font-medium text-heading" title={client.data.business_profile}>
+                <dt className="text-sm text-muted-foreground">Business profile</dt>
+                <dd className="mt-1 line-clamp-1 text-base font-semibold text-heading" title={client.data.business_profile}>
                   {client.data.business_profile}
                 </dd>
               </div>
             )}
           </dl>
           {(can('team.view') || can('client.update')) && (
-            <Button asChild variant="secondary" size="sm">
+            <Button asChild variant="outline" size="lg" className="rounded-lg font-semibold text-heading dark:border-border-strong dark:bg-background dark:hover:bg-hover">
               <Link to="/clients/$clientId/team" params={{ clientId }}>
                 <Users /> Edit client settings and team
               </Link>

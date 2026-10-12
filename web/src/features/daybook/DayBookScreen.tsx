@@ -87,7 +87,7 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
   type Row = (typeof rows)[number]
   const dash = <span className="text-faint" aria-hidden>–</span>
   const columns: Column<Row>[] = [
-    { key: 'date', header: 'Date', align: 'right', cell: ({ e }) => formatDate(e.entry_date) },
+    { key: 'date', header: 'Date', cell: ({ e }) => <span className="num font-medium text-heading">{formatDate(e.entry_date)}</span> },
     {
       key: 'particulars',
       header: 'Particulars',
@@ -100,13 +100,13 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
             {e.marker && <Badge tone="assistant">{e.marker === 'AI_POSTED' ? 'Assistant posted' : 'Assistant changed'}</Badge>}
             {e.is_locked && <Lock className="size-3.5 shrink-0 text-muted-foreground" aria-label="Sealed" />}
           </span>
-          <div className="truncate text-xs text-muted-foreground" title={e.narration}>
+          <div className="mt-1 line-clamp-2 whitespace-normal text-[13px] leading-snug text-muted-foreground" title={e.narration}>
             {e.narration}
           </div>
         </>
       ),
     },
-    { key: 'type', header: 'Vch type', priority: 2, cell: ({ e }) => e.voucher_type },
+    { key: 'type', header: 'Vch type', priority: 2, cell: ({ e }) => <span className="text-muted-foreground">{e.voucher_type}</span> },
     { key: 'no', header: 'Vch no.', priority: 2, align: 'right', cell: ({ e }) => e.entry_no },
     { key: 'debit', header: 'Debit', align: 'right', cell: ({ line, isDr }) => (isDr ? <Money display={line.amount_display} /> : dash) },
     { key: 'credit', header: 'Credit', align: 'right', cell: ({ line, isDr }) => (!isDr ? <Money display={line.amount_display} /> : dash) },
@@ -153,6 +153,7 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
         rows={rows}
         loading={entries.isPending || accounts.isPending}
         rowKey={(r) => r.e.id}
+        roomy
         onRowClick={(r) => setOpen(r.e)}
         scrollHeight="calc(100svh - 17rem)"
         empty={
@@ -174,11 +175,11 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
         }
         footer={
           <tr>
-            <td className="px-3 py-2" colSpan={4}>
+            <td className="px-4 py-4" colSpan={4}>
               Total ({plural(shown.length, 'voucher')})
             </td>
-            <td className="num px-3 py-2 text-right">{formatPaise(debit)}</td>
-            <td className="num px-3 py-2 text-right">{formatPaise(credit)}</td>
+            <td className="num px-4 py-4 text-right">{formatPaise(debit)}</td>
+            <td className="num px-4 py-4 text-right">{formatPaise(credit)}</td>
           </tr>
         }
       />

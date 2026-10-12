@@ -165,7 +165,7 @@ class ClientProfileSerializer(serializers.ModelSerializer):
     def validate_pan(self, value: str) -> str:
         value = value.strip().upper()
         if value and not is_valid_pan(value):
-            raise serializers.ValidationError("A PAN is ten characters, like ABCDE1234F.")
+            raise serializers.ValidationError("A PAN is ten characters, like ABCPE1234F.")
         return value
 
     def validate_tan(self, value: str) -> str:

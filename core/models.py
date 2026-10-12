@@ -148,30 +148,30 @@ class Client(UUIDModel, FirmScopedModel):
 
     # --- the client's profile: who they are, how to reach them, what they are registered as -----------------------
     #: None of this reaches the model tier. Only ``business_profile`` does, and it is masked first.
-    trade_name = models.CharField(max_length=255, blank=True, default="")
-    constitution = models.CharField(max_length=16, choices=Constitution.choices, blank=True, default="")
+    trade_name = models.CharField(max_length=255, blank=True, default="", db_default="")
+    constitution = models.CharField(max_length=16, choices=Constitution.choices, blank=True, default="", db_default="")
     incorporated_on = models.DateField(null=True, blank=True)
     #: When the firm began acting for this client; entered by a person, not the day the row was made.
     client_since = models.DateField(null=True, blank=True)
-    address = models.TextField(blank=True, default="", max_length=1000)
-    contact_name = models.CharField(max_length=255, blank=True, default="")
-    contact_email = models.EmailField(blank=True, default="")
-    contact_phone = models.CharField(max_length=32, blank=True, default="")
-    contact2_name = models.CharField(max_length=255, blank=True, default="")
-    contact2_email = models.EmailField(blank=True, default="")
-    contact2_phone = models.CharField(max_length=32, blank=True, default="")
-    msme_category = models.CharField(max_length=8, choices=MsmeCategory.choices, blank=True, default="")
+    address = models.TextField(blank=True, default="", db_default="", max_length=1000)
+    contact_name = models.CharField(max_length=255, blank=True, default="", db_default="")
+    contact_email = models.EmailField(blank=True, default="", db_default="")
+    contact_phone = models.CharField(max_length=32, blank=True, default="", db_default="")
+    contact2_name = models.CharField(max_length=255, blank=True, default="", db_default="")
+    contact2_email = models.EmailField(blank=True, default="", db_default="")
+    contact2_phone = models.CharField(max_length=32, blank=True, default="", db_default="")
+    msme_category = models.CharField(max_length=8, choices=MsmeCategory.choices, blank=True, default="", db_default="")
     #: The firm's own notes about the client: for people only. Never read by the classifier or sent anywhere.
-    notes = models.TextField(blank=True, default="", max_length=4000)
+    notes = models.TextField(blank=True, default="", db_default="", max_length=4000)
     #: Registration numbers, encrypted per firm like a GSTIN. ``pan_hash`` is a blind index so two clients sharing a
     #: PAN can be noticed without decrypting every row.
     pan_enc = models.BinaryField(blank=True, null=True)
-    pan_hash = models.CharField(max_length=64, blank=True, db_index=True, default="")
+    pan_hash = models.CharField(max_length=64, blank=True, db_index=True, default="", db_default="")
     tan_enc = models.BinaryField(blank=True, null=True)
     cin_enc = models.BinaryField(blank=True, null=True)
     udyam_enc = models.BinaryField(blank=True, null=True)
     profile_updated_at = models.DateTimeField(null=True, blank=True)
-    profile_updated_by = models.CharField(max_length=255, blank=True, default="")
+    profile_updated_by = models.CharField(max_length=255, blank=True, default="", db_default="")
 
     class Meta:
         db_table = "core_client"

@@ -14,7 +14,7 @@ from core.provisioning import create_client
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("fixture_adapters")]
 
 V1 = "/api/v1"
-PAN = "ABCDE1234F"
+PAN = "ABCPE1234F"
 CIN = "U12345MH2020PTC123456"
 
 

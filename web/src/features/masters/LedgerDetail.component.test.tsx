@@ -63,13 +63,20 @@ describe('a ledger with rows placed but nothing under it', () => {
     expect(await screen.findByRole('columnheader', { name: 'Rows placed (all years)' })).toBeInTheDocument()
   })
 
-  it('says why there are no entries, instead of only saying there are none', async () => {
+  it('says nothing extra when nothing is posted: the tags on the rows say so', async () => {
     renderLedgers(rows)
     await userEvent.click(await screen.findByRole('button', { name: 'Investments - Shares & Mutual Funds' }))
-    expect(await screen.findByText('No posted entries for this ledger in FY 2026-27.')).toBeInTheDocument()
-    expect(screen.getByText('1 row placed here has not been posted to the books yet.')).toBeInTheDocument()
-    expect(screen.getByText('2 rows are dated in FY 2025-26.')).toBeInTheDocument()
-    expect(await screen.findByRole('link', { name: 'Open Review to check and post them' })).toBeInTheDocument()
+    await screen.findByRole('table', { name: 'Investments - Shares & Mutual Funds: rows placed, all years' })
+    expect(screen.queryByText(/No posted entries for this ledger/)).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Search ledger entries' })).toBeInTheDocument()
+  })
+
+  it('shows no search box for a ledger with nothing in it', async () => {
+    renderLedgers([])
+    await userEvent.click(await screen.findByRole('button', { name: 'Investments - Shares & Mutual Funds' }))
+    await screen.findByText(/Ledger detail/)
+    expect(screen.queryByRole('textbox', { name: 'Search ledger entries' })).not.toBeInTheDocument()
+    expect(screen.queryByText(/No rows are placed/)).not.toBeInTheDocument()
   })
 
   it('lists the placed rows with whether each is in the books', async () => {

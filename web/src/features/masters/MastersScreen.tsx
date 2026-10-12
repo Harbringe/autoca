@@ -29,7 +29,7 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDate, fyLabel, plural } from '@/lib/format'
 import { NCE_LINES } from '@/lib/nce'
-import { summariseRows, whyNoEntries } from '@/lib/ledgerRows'
+import { summariseRows } from '@/lib/ledgerRows'
 import { TidyNames, proposals } from './TidyNames'
 import { useFy } from '@/features/shell/useFy'
 import { cn } from '@/lib/utils'
@@ -137,6 +137,7 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
         .sort((a, b) => b.entry_date.localeCompare(a.entry_date) || b.entry_no - a.entry_no)
     : []
   const rowSummary = placed.data ? summariseRows(placed.data) : null
+  const hasEntries = !!selected && ledgerEntries.some((entry) => entry.lines.some((line) => line.ledger_account === selected.id))
   const placedRows = (placed.data ?? []).filter(
     (r) => !q || r.narration.toLowerCase().includes(q) || r.book_narration.toLowerCase().includes(q) || r.counterparty.toLowerCase().includes(q),
   )
@@ -301,19 +302,12 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
               </div>
             </div>
           )}
-          <Input aria-label="Search ledger entries" placeholder="Search narration or voucher number" value={entrySearch} onChange={(e) => setEntrySearch(e.target.value)} />
+          {(hasEntries || (rowSummary?.total ?? 0) > 0) && (
+            <Input aria-label="Search ledger entries" placeholder="Search narration or voucher number" value={entrySearch} onChange={(e) => setEntrySearch(e.target.value)} />
+          )}
           {selectedEntries.length === 0 ? (
-            <div className="grid gap-1 py-5 text-center text-sm text-muted-foreground">
-              <p>No posted entries for this ledger in FY {fyLabel(fy)}{q ? ' match this search.' : '.'}</p>
-              {!q && rowSummary && whyNoEntries(rowSummary, fy).map((reason) => <p key={reason}>{reason}</p>)}
-              {!q && rowSummary && rowSummary.awaiting > 0 && (
-                <p>
-                  <Link to="/clients/$clientId/review" params={{ clientId }} search={{ stage: 'pending_approval' }} className="underline">
-                    Open Review to check and post them
-                  </Link>
-                </p>
-              )}
-            </div>
+            // With nothing posted the tags on the placed rows say so; only a search that finds nothing needs words.
+            q && hasEntries && <p className="py-5 text-center text-sm text-muted-foreground">No posted entries for this ledger in FY {fyLabel(fy)} match this search.</p>
           ) : (
             <DataTable
               caption={`${selected.name}: posted entries`}

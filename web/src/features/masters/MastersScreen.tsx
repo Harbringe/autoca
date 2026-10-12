@@ -8,7 +8,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Bot, ChevronRight, Plus, Trash2 } from 'lucide-react'
-import { Fragment, useEffect, useState } from 'react'
+import { Fragment, useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
@@ -19,7 +19,9 @@ import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Collapse, useClosing } from '@/components/ui/collapse'
+import { Collapse, Reveal, useClosing } from '@/components/ui/collapse'
+import { GlideChips } from '@/components/ui/glide-chips'
+import { Switch } from '@/components/ui/switch'
 import { Checkbox, Select } from '@/components/ui/controls'
 import { Money } from '@/components/ca/Money'
 import { DataTable } from '@/components/ui/table'
@@ -34,6 +36,7 @@ import { TidyNames, proposals } from './TidyNames'
 import { useFy } from '@/features/shell/useFy'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
+import { initials } from '@/features/clients/clientsView'
 
 const LEDGER_GROUP_LABEL = new Map<string, string>(LEDGER_GROUPS)
 
@@ -46,9 +49,11 @@ function sideOf(entry: JournalEntry, ledgerId: string, side: 'DR' | 'CR') {
 export type MasterTab = 'ledgers' | 'parties' | 'rules'
 
 export function MastersScreen({ clientId, tab, ledgerId }: { clientId: string; tab: MasterTab; ledgerId?: string }) {
-  const tabs: { tab: MasterTab; label: string }[] = [
-    { tab: 'parties', label: 'Parties' },
-    { tab: 'rules', label: 'Rules' },
+  const partyList = useQuery({ ...partiesQuery(clientId), enabled: tab !== 'ledgers' })
+  const ruleList = useQuery({ ...rulesQuery(clientId), enabled: tab !== 'ledgers' })
+  const tabs: { tab: MasterTab; label: string; count?: number }[] = [
+    { tab: 'parties', label: 'Parties', count: partyList.data?.length },
+    { tab: 'rules', label: 'Rules', count: ruleList.data?.length },
   ]
   // Ledgers is a tab of Bookkeeping in its own right; Parties and Rules share the "Parties & rules" tab.
   return (
@@ -62,16 +67,19 @@ export function MastersScreen({ clientId, tab, ledgerId }: { clientId: string; t
               params={{ clientId }}
               search={{ tab: t.tab }}
               aria-current={tab === t.tab ? 'page' : undefined}
-              className={cn('rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground max-lg:py-3', tab === t.tab && 'bg-card text-foreground shadow-xs')}
+              className={cn('rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-[background-color,color,box-shadow] duration-200 max-lg:py-3', tab === t.tab && 'bg-card text-foreground shadow-xs')}
             >
               {t.label}
+              {t.count !== undefined && <span className="num ml-1.5 text-xs text-muted-foreground">{t.count}</span>}
             </Link>
           ))}
         </nav>
       )}
-      {tab === 'ledgers' && <Ledgers clientId={clientId} openLedger={ledgerId} />}
-      {tab === 'parties' && <Parties clientId={clientId} />}
-      {tab === 'rules' && <Rules clientId={clientId} />}
+      <div key={tab} className={tab === 'ledgers' ? undefined : 'page-in'}>
+        {tab === 'ledgers' && <Ledgers clientId={clientId} openLedger={ledgerId} />}
+        {tab === 'parties' && <Parties clientId={clientId} />}
+        {tab === 'rules' && <Rules clientId={clientId} />}
+      </div>
     </div>
   )
 }
@@ -539,89 +547,214 @@ export function ProposalDecision({ clientId, proposal, existing, onClose }: { cl
 
 // --- Parties ------------------------------------------------------------------------------------
 
+const PARTY_ROLES: [string, string][] = [
+  ['VENDOR', 'Supplier'],
+  ['CUSTOMER', 'Customer'],
+  ['BOTH', 'Both supplier and customer'],
+  ['OTHER', 'Other (lender, employee, related party)'],
+]
+
+type RoleFilter = 'all' | 'VENDOR' | 'CUSTOMER' | 'inactive'
+const ROLE_FILTERS: [RoleFilter, string][] = [
+  ['all', 'All'],
+  ['VENDOR', 'Suppliers'],
+  ['CUSTOMER', 'Customers'],
+  ['inactive', 'Inactive'],
+]
+
+const DIRECTION_WORDS: Record<string, string> = { ANY: 'paid or received', DEBIT: 'money out', CREDIT: 'money in' }
+
+/** A rule read as one sentence: "Payee is X, money out → place in Purchases". */
+function RuleSentence({ rule }: { rule: Rule }) {
+  return (
+    <span>
+      {MATCH_LABEL[rule.match_type ?? ''] ?? rule.match_type} <strong className="font-semibold text-heading">{rule.pattern}</strong>, {DIRECTION_WORDS[rule.direction ?? 'ANY']}{' '}
+      <span aria-hidden className="text-muted-foreground">→</span> place in <strong className="font-semibold text-heading">{rule.ledger_name}</strong>
+    </span>
+  )
+}
+
 function Parties({ clientId }: { clientId: string }) {
   const { can } = useSession()
   const list = useQuery(partiesQuery(clientId))
-  const [editing, setEditing] = useState<Party | 'new' | null>(null)
+  const rules = useQuery(rulesQuery(clientId))
+  const [open, setOpen] = useState<string | null>(null)
+  const closing = useClosing(open)
+  const body = useRef<HTMLTableSectionElement>(null)
+  const [adding, setAdding] = useState(false)
   const [tidying, setTidying] = useState(false)
   const [text, setText] = useState('')
+  const [role, setRole] = useState<RoleFilter>('all')
+  const manage = can('party.manage')
+  const q = text.trim().toLowerCase()
+  // A search or a filter changes what is listed; a short fade says so without remounting the rows.
+  useEffect(() => {
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+    body.current?.animate?.([{ opacity: 0.35 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' })
+  }, [role, q])
 
   if (list.isPending) return <Spinner />
   if (list.error) return <ErrorState error={list.error} retry={() => void list.refetch()} />
-  const q = text.trim().toLowerCase()
-  const shown = list.data.filter((p) => !q || p.canonical_name.toLowerCase().includes(q) || (p.gstin ?? '').toLowerCase().includes(q))
+  const shown = list.data.filter(
+    (p) =>
+      (!q || p.canonical_name.toLowerCase().includes(q) || (p.gstin ?? '').toLowerCase().includes(q)) &&
+      (role === 'all' || (role === 'inactive' ? p.is_active === false : p.role === role)),
+  )
+  const rulesOf = (id: string) => (rules.data ?? []).filter((r) => r.party === id)
+  const tidy = proposals(list.data).length
 
   return (
     <div className="grid gap-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <Input aria-label="Search parties" placeholder="Search by name or GSTIN" className="max-w-xs" value={text} onChange={(e) => setText(e.target.value)} />
-        {can('party.manage') && (
+        <div className="flex flex-wrap items-center gap-3">
+          <Input aria-label="Search parties" placeholder="Search by name or GSTIN" className="w-72 max-w-full" value={text} onChange={(e) => setText(e.target.value)} />
+          <GlideChips label="Role" value={role} onChange={setRole} options={ROLE_FILTERS.map(([value, label]) => ({ value, label }))} />
+        </div>
+        {manage && (
           <div className="flex gap-2">
-            {proposals(list.data).length > 0 && (
-              <Button variant="outline" onClick={() => setTidying(true)}>Tidy names ({proposals(list.data).length})</Button>
+            {tidy > 0 && (
+              <Button variant="outline" onClick={() => setTidying(true)}>
+                Tidy names ({tidy})
+              </Button>
             )}
-            <Button onClick={() => setEditing('new')}>
+            <Button
+              onClick={() => {
+                setOpen(null)
+                setAdding(true)
+              }}
+            >
               <Plus /> New party
             </Button>
           </div>
         )}
       </div>
       {tidying && <TidyNames clientId={clientId} parties={list.data} onClose={() => setTidying(false)} />}
+      <Reveal open={adding}>
+        <Card className="mb-3 grid gap-3 p-5">
+          <h2 className="text-[15px] font-semibold text-heading">New party</h2>
+          <PartyEditor clientId={clientId} party={null} onClose={() => setAdding(false)} />
+        </Card>
+      </Reveal>
       {list.data.length === 0 ? (
         <EmptyState title="No parties yet">Parties are the people and businesses the client pays or is paid by. They are added as you confirm payees in Review.</EmptyState>
+      ) : shown.length === 0 ? (
+        <EmptyState title="No party matches">Clear the search box or the filter to see them all.</EmptyState>
       ) : (
-        <DataTable
-          caption="Parties"
-          rows={shown}
-          rowKey={(p) => p.id}
-          empty={<EmptyState title="No party matches">Clear the search box to see them all.</EmptyState>}
-          columns={[
-            {
-              key: 'name',
-              header: 'Name',
-              sortValue: (p) => p.canonical_name.toLowerCase(),
-              cell: (p) => (
-                <>
-                  <span className="font-medium text-heading">{p.canonical_name}</span>
-                  {p.is_active === false && <Badge className="ml-2">Inactive</Badge>}
-                </>
-              ),
-            },
-            { key: 'gstin', header: 'GSTIN', priority: 2, className: 'font-mono text-xs', cell: (p) => p.gstin || '—' },
-            { key: 'tds', header: 'TDS', priority: 2, cell: (p) => p.tds_section || '—' },
-            { key: 'rcm', header: 'RCM', priority: 3, cell: (p) => (p.rcm_default ? 'Yes' : '—') },
-            {
-              key: 'act',
-              header: <span className="sr-only">Actions</span>,
-              align: 'right',
-              cell: (p) =>
-                can('party.manage') && (
-                  <Button size="sm" variant="ghost" onClick={() => setEditing(p)} aria-label={`Edit ${p.canonical_name}`}>
-                    Edit
-                  </Button>
-                ),
-            },
-          ]}
-        />
+        <div role="region" aria-label="Parties" className="overflow-x-auto rounded-xl border border-border-strong bg-card">
+          <table className="w-full text-left text-sm">
+            <caption className="sr-only">Parties. Select a party to open its details and rules.</caption>
+            <thead className="border-b border-border-strong text-xs text-muted-foreground">
+              <tr>
+                <th scope="col" className="px-4 py-4 font-semibold">Party</th>
+                <th scope="col" className="px-4 py-4 font-semibold max-sm:hidden">Role</th>
+                <th scope="col" className="px-4 py-4 font-semibold max-md:hidden">Tax defaults</th>
+                <th scope="col" className="px-4 py-4 text-right font-semibold max-sm:hidden">Rules</th>
+                <th scope="col" className="px-4 py-4"><span className="sr-only">Actions</span></th>
+              </tr>
+            </thead>
+            <tbody ref={body}>
+              {shown.map((p) => {
+                const isOpen = open === p.id
+                const detailShown = isOpen || closing === p.id
+                const mine = rulesOf(p.id)
+                const toggle = () => {
+                  setAdding(false)
+                  setOpen(isOpen ? null : p.id)
+                }
+                return (
+                  <Fragment key={p.id}>
+                    <tr
+                      onClick={(ev) => {
+                        if (!manage || (ev.target as HTMLElement).closest('a, button, input, label')) return
+                        toggle()
+                      }}
+                      className={cn('border-b border-border-strong', manage && 'cursor-pointer', isOpen ? 'bg-surface-2' : 'hover:bg-hover', !detailShown && 'last:border-b-0')}
+                    >
+                      <td className="px-4 py-4">
+                        <span className="flex items-center gap-3">
+                          <span aria-hidden className="grid size-9 shrink-0 place-items-center rounded-full border bg-muted text-xs font-semibold text-muted-foreground">
+                            {initials(p.canonical_name)}
+                          </span>
+                          <span className="min-w-0">
+                            <span className="font-medium text-heading">{p.canonical_name}</span>
+                            {p.is_active === false && <Badge className="ml-2">Inactive</Badge>}
+                            <span className="num block text-xs text-muted-foreground">{p.gstin || 'No GSTIN'}</span>
+                          </span>
+                        </span>
+                      </td>
+                      <td className="px-4 py-4 max-sm:hidden">{p.role_display}</td>
+                      <td className="px-4 py-4 max-md:hidden">
+                        <span className="flex flex-wrap gap-1.5">
+                          {p.tds_section && <Badge>TDS {p.tds_section}</Badge>}
+                          {p.rcm_default && <Badge>RCM</Badge>}
+                          {p.msme && <Badge>MSME</Badge>}
+                          {!p.tds_section && !p.rcm_default && !p.msme && <span className="text-faint">—</span>}
+                        </span>
+                      </td>
+                      <td className="num px-4 py-4 text-right max-sm:hidden">{rules.isPending ? '…' : mine.length}</td>
+                      <td className="px-4 py-3 text-right">
+                        {manage && (
+                          <Button size="sm" variant="outline" aria-expanded={isOpen} aria-label={`${isOpen ? 'Close' : 'Edit'} ${p.canonical_name}`} onClick={toggle}>
+                            {isOpen ? 'Close' : 'Edit'}
+                          </Button>
+                        )}
+                      </td>
+                    </tr>
+                    {detailShown && (
+                      <tr className="border-b border-border-strong bg-surface-2 last:border-b-0">
+                        <td colSpan={5} className="max-w-0 overflow-hidden p-0">
+                          <Collapse open={isOpen}>
+                            <div className="grid gap-6 px-5 py-6 sm:pl-[3.75rem] sm:pr-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:gap-12 [&>*]:min-w-0">
+                              <PartyEditor clientId={clientId} party={p} onClose={() => setOpen(null)} />
+                              <div className="grid content-start gap-2">
+                                <h3 className="text-sm text-muted-foreground">Rules for this payee</h3>
+                                {mine.length === 0 ? (
+                                  <p className="text-sm text-muted-foreground">No rule yet. Place a row from this payee in Review with “Remember this” ticked to make one.</p>
+                                ) : (
+                                  <ul className="divide-y divide-border-strong rounded-lg border border-border-strong bg-card text-sm">
+                                    {mine.map((r) => (
+                                      <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 px-4 py-3">
+                                        <RuleSentence rule={r} />
+                                        <span className="num text-xs text-muted-foreground">used {r.hit_count}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            </div>
+                          </Collapse>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
-      {editing && <PartyForm clientId={clientId} party={editing === 'new' ? null : editing} onClose={() => setEditing(null)} />}
     </div>
   )
 }
 
-function PartyForm({ clientId, party, onClose }: { clientId: string; party: Party | null; onClose: () => void }) {
+/** The party's fields with Save and Cancel, in place of a dialog: opened under its row, or as a new party above the list. */
+function PartyEditor({ clientId, party, onClose }: { clientId: string; party: Party | null; onClose: () => void }) {
   const invalidate = useInvalidateClient(clientId)
   const [name, setName] = useState(party?.canonical_name ?? '')
   const [gstin, setGstin] = useState(party?.gstin ?? '')
+  const [role, setRole] = useState<string>(party?.role ?? 'VENDOR')
   const [tds, setTds] = useState<string>(party?.tds_section ?? '')
   const [rcm, setRcm] = useState(party?.rcm_default ?? false)
   const [msme, setMsme] = useState(party?.msme ?? false)
   const [udyam, setUdyam] = useState(party?.udyam_no ?? '')
   const [active, setActive] = useState(party?.is_active ?? true)
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [saving, setSaving] = useState(false)
 
   async function save() {
-    const body = { canonical_name: name.trim(), gstin: gstin.trim().toUpperCase(), tds_section: tds, rcm_default: rcm, msme, udyam_no: udyam.trim().toUpperCase(), is_active: active }
+    const body = { canonical_name: name.trim(), role, gstin: gstin.trim().toUpperCase(), tds_section: tds, rcm_default: rcm, msme, udyam_no: udyam.trim().toUpperCase(), is_active: active }
+    setSaving(true)
+    setErrors({})
     try {
       if (party) await raw.patch(`${V1}/clients/${clientId}/parties/${party.id}/`, body)
       else await raw.post(`${V1}/clients/${clientId}/parties/`, body)
@@ -631,51 +764,72 @@ function PartyForm({ clientId, party, onClose }: { clientId: string; party: Part
     } catch (e) {
       if (isApiError(e) && Object.keys(e.fields).length) setErrors(Object.fromEntries(Object.entries(e.fields).map(([k, v]) => [k, v[0] ?? ''])))
       else setErrors({ root: messageOf(e) })
+    } finally {
+      setSaving(false)
     }
   }
 
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent aria-describedby={undefined}>
-        <DialogHeader>
-          <DialogTitle>{party ? `Edit ${party.canonical_name}` : 'New party'}</DialogTitle>
-        </DialogHeader>
+    <form
+      className="grid content-start gap-3"
+      noValidate
+      onSubmit={(e) => {
+        e.preventDefault()
+        if (name.trim().length >= 2) void save()
+      }}
+    >
+      <div className="grid items-start gap-3 sm:grid-cols-2">
         <Field label="Name" error={errors.canonical_name}>
-          {(p) => <Input {...p} autoFocus value={name} onChange={(e) => setName(e.target.value)} />}
+          {(p) => <Input {...p} autoFocus={!party} value={name} onChange={(e) => setName(e.target.value)} />}
         </Field>
         <Field label="GSTIN (optional)" hint="15 characters, for example 27ABCDE1234F1Z5." error={errors.gstin}>
           {(p) => <Input {...p} className="font-mono uppercase" maxLength={15} value={gstin} onChange={(e) => setGstin(e.target.value)} />}
         </Field>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <Field label="TDS normally deducted">
-            {(p) => (
-              <Select {...p} value={tds} onChange={(e) => setTds(e.target.value)}>
-                {TDS_SECTIONS.map(([v, l]) => (
-                  <option key={v} value={v}>{l}</option>
-                ))}
-              </Select>
-            )}
-          </Field>
-          <div className="flex items-end pb-2">
-            <Checkbox label="Reverse charge by default" checked={rcm} onChange={(e) => setRcm(e.target.checked)} />
-          </div>
-        </div>
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="flex items-end pb-2">
-            <Checkbox label="Micro or small enterprise (MSMED Act)" checked={msme} onChange={(e) => setMsme(e.target.checked)} />
-          </div>
-          <Field label="Udyam number (optional)" hint="Like UDYAM-MH-12-0001234. Splits their dues out of Trade payables." error={errors.udyam_no}>
-            {(p) => <Input {...p} className="font-mono uppercase" maxLength={19} value={udyam} onChange={(e) => setUdyam(e.target.value)} />}
-          </Field>
-        </div>
-        {party && <Checkbox label="Active" checked={active} onChange={(e) => setActive(e.target.checked)} />}
-        {errors.root && <p role="alert" className="text-sm text-destructive">{errors.root}</p>}
-        <DialogFooter>
-          <Button variant="ghost" onClick={onClose}>Cancel</Button>
-          <Button onClick={() => void save()} disabled={name.trim().length < 2}>Save</Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+      </div>
+      <div className="grid items-start gap-3 sm:grid-cols-2">
+        <Field label="Role" error={errors.role}>
+          {(p) => (
+            <Select {...p} value={role} onChange={(e) => setRole(e.target.value)}>
+              {PARTY_ROLES.map(([v, l]) => (
+                <option key={v} value={v}>{l}</option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        <Field label="TDS normally deducted">
+          {(p) => (
+            <Select {...p} value={tds} onChange={(e) => setTds(e.target.value)}>
+              {TDS_SECTIONS.map(([v, l]) => (
+                <option key={v} value={v}>{l}</option>
+              ))}
+            </Select>
+          )}
+        </Field>
+      </div>
+      <div className="flex flex-wrap gap-x-6 gap-y-2">
+        <Checkbox label="Reverse charge by default" checked={rcm} onChange={(e) => setRcm(e.target.checked)} />
+        <Checkbox label="Micro or small enterprise (MSMED Act)" checked={msme} onChange={(e) => setMsme(e.target.checked)} />
+      </div>
+      <div className="grid items-start gap-3 sm:grid-cols-2">
+        <Field label="Udyam number (optional)" hint="Like UDYAM-MH-12-0001234. Splits their dues out of Trade payables." error={errors.udyam_no}>
+          {(p) => <Input {...p} className="font-mono uppercase" maxLength={19} value={udyam} onChange={(e) => setUdyam(e.target.value)} />}
+        </Field>
+      </div>
+      {party && <Checkbox label="Active" checked={active} onChange={(e) => setActive(e.target.checked)} />}
+      {errors.root && (
+        <p role="alert" className="text-sm text-destructive">
+          {errors.root}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <Button type="submit" disabled={saving || name.trim().length < 2}>
+          {saving ? 'Saving…' : 'Save'}
+        </Button>
+        <Button type="button" variant="ghost" onClick={onClose}>
+          Cancel
+        </Button>
+      </div>
+    </form>
   )
 }
 
@@ -697,6 +851,7 @@ function Rules({ clientId }: { clientId: string }) {
   const ledgers = useQuery(ledgersQuery(clientId))
   const invalidate = useInvalidateClient(clientId)
   const [creating, setCreating] = useState(false)
+  const listRef = useRef<HTMLUListElement>(null)
   const manage = can('suggestion.edit')
 
   if (list.isPending) return <Spinner />
@@ -734,54 +889,36 @@ function Rules({ clientId }: { clientId: string }) {
           </Button>
         )}
       </div>
-      <DataTable
-        caption="Rules"
-        rows={sorted}
-        rowKey={(r) => r.id}
-        rowClassName={(r) => (r.is_active ? undefined : 'text-muted-foreground')}
-        empty={<EmptyState title="No rules yet">Rules appear here as you place rows in Review with “Remember this” ticked.</EmptyState>}
-        columns={[
-          {
-            key: 'when',
-            header: 'When',
-            cell: (r) => (
-              <>
-                <span className="text-muted-foreground">{MATCH_LABEL[r.match_type ?? ''] ?? r.match_type} </span>
-                <span className="font-medium">{r.pattern}</span>
-              </>
-            ),
-          },
-          { key: 'dir', header: 'Direction', priority: 2, cell: (r) => DIRECTION_LABEL[r.direction ?? 'ANY'] },
-          { key: 'ledger', header: 'Place in', cell: (r) => r.ledger_name },
-          { key: 'source', header: 'Source', priority: 3, cell: (r) => SOURCE_LABEL[r.source] ?? r.source },
-          { key: 'used', header: 'Used', align: 'right', priority: 2, cell: (r) => r.hit_count },
-          { key: 'last', header: 'Last used', align: 'right', priority: 3, cell: (r) => (r.last_hit_at ? formatDate(r.last_hit_at.slice(0, 10)) : '—') },
-          {
-            key: 'active',
-            header: 'Active',
-            cell: (r) => (
-              <Checkbox
-                aria-label={`Active: ${MATCH_LABEL[r.match_type ?? ''] ?? r.match_type} ${r.pattern}, ${DIRECTION_LABEL[r.direction ?? 'ANY']}, to ${r.ledger_name}`}
-                checked={!!r.is_active}
-                disabled={!manage}
-                onChange={() => void toggle(r)}
-              />
-            ),
-          },
-          {
-            key: 'act',
-            header: <span className="sr-only">Actions</span>,
-            align: 'right',
-            cell: (r) =>
-              manage &&
-              r.source !== 'SEED' && (
-                <Button size="sm" variant="ghost" onClick={() => void remove(r)} aria-label={`Delete rule: ${MATCH_LABEL[r.match_type ?? ''] ?? r.match_type} ${r.pattern} to ${r.ledger_name}`}>
-                  <Trash2 />
-                </Button>
-              ),
-          },
-        ]}
-      />
+      {sorted.length === 0 ? (
+        <EmptyState title="No rules yet">Rules appear here as you place rows in Review with “Remember this” ticked.</EmptyState>
+      ) : (
+        <ul ref={listRef} aria-label="Rules" className="divide-y divide-border-strong overflow-hidden rounded-xl border border-border-strong bg-card">
+          {sorted.map((r) => {
+            const words = `${MATCH_LABEL[r.match_type ?? ''] ?? r.match_type} ${r.pattern}, ${DIRECTION_LABEL[r.direction ?? 'ANY']}, to ${r.ledger_name}`
+            return (
+              <li key={r.id} className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-4 transition-colors hover:bg-hover">
+                <div className={cn('min-w-0 flex-1 basis-80 transition-opacity duration-200', !r.is_active && 'opacity-60')}>
+                  <p className="text-[15px]">
+                    <RuleSentence rule={r} />
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {SOURCE_LABEL[r.source] ?? r.source} · used <span className="num">{r.hit_count}</span>
+                    {r.last_hit_at ? ` · last ${formatDate(r.last_hit_at.slice(0, 10))}` : ''}
+                  </p>
+                </div>
+                <div className="flex items-center gap-3">
+                  {manage && r.source !== 'SEED' && (
+                    <Button size="sm" variant="ghost" onClick={() => void remove(r)} aria-label={`Delete rule: ${words}`}>
+                      <Trash2 /> Delete
+                    </Button>
+                  )}
+                  <Switch checked={!!r.is_active} disabled={!manage} label={`Active: ${words}`} onChange={() => void toggle(r)} />
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
       {creating && <RuleForm clientId={clientId} ledgers={(ledgers.data ?? []).filter((l) => l.status === 'ACTIVE' && l.is_active)} onClose={() => setCreating(false)} />}
     </div>
   )

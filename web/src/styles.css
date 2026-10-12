@@ -312,54 +312,15 @@
   }
 }
 
-/* Motion that tells you something is happening (the assistant reading, a list arriving). All of it stops under reduced motion. */
-@keyframes sweep {
-  from {
-    transform: translateX(-120%) skewX(-18deg);
-  }
-  to {
-    transform: translateX(320%) skewX(-18deg);
-  }
-}
-@keyframes ring {
-  0% {
-    transform: scale(0.7);
-    opacity: 0.55;
-  }
-  100% {
-    transform: scale(1.9);
-    opacity: 0;
-  }
-}
-@keyframes stripes {
-  to {
-    background-position: 28px 0;
-  }
-}
-@keyframes rise {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
+/* One small motion, for the assistant's icon while it works. It moves only a transform, which is cheap on an old machine, and stops under reduced motion. */
 @keyframes twinkle {
   0%,
   100% {
-    opacity: 0.35;
-    transform: scale(0.8) rotate(0deg);
+    transform: scale(0.9) rotate(0deg);
   }
   50% {
-    opacity: 1;
-    transform: scale(1.15) rotate(18deg);
+    transform: scale(1.15) rotate(14deg);
   }
-}
-.rise-in {
-  animation: rise 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
-  animation-delay: calc(var(--i, 0) * 28ms);
 }
 
 /* Tables are read for their figures: static skeleton blocks, no shimmer. */

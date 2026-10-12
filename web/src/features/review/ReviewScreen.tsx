@@ -236,7 +236,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
           <span>
             <Bot className="mr-1.5 inline size-4 text-info" aria-hidden />
             The assistant added {plural(proposed.length, 'new ledger')} ({proposed.slice(0, 3).map((l) => l.name).join(', ')}
-            {proposed.length > 3 ? '…' : ''}). Check each name: keep it, rename it to match Tally, or merge it into a ledger the client already has.
+            {proposed.length > 3 ? '…' : ''}). Check each name.
           </span>
           <Button asChild size="sm" variant="outline">
             <Link to="/clients/$clientId/masters" params={{ clientId }} search={{ tab: 'ledgers' }}>
@@ -340,7 +340,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
             </label>
           )}
           <ul ref={listRef} aria-label="Rows waiting" className="divide-y divide-border-strong">
-            {rows.map((r, i) => {
+            {rows.map((r) => {
               const isOpen = r.id === openId
               const showBody = isOpen || closing === r.id
               const tickable = canPost && stage !== 'unresolved' && postable(r)
@@ -348,8 +348,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
                 <li
                   key={r.id}
                   data-open={isOpen}
-                  style={{ '--i': Math.min(i, 14) } as React.CSSProperties}
-                  className={cn('rise-in relative transition-colors duration-200', isOpen ? 'bg-hover shadow-[inset_3px_0_0_var(--primary)]' : 'hover:bg-hover/60')}
+                  className={cn('relative transition-colors duration-200', isOpen ? 'bg-hover shadow-[inset_3px_0_0_var(--primary)]' : 'hover:bg-hover/60')}
                 >
                   <div className="flex items-stretch">
                     {canPost && stage !== 'unresolved' && (
@@ -428,7 +427,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
                   {showBody && (
                     <div id={`decision-${r.id}`}>
                       <Collapse open={isOpen}>
-                        <div className="max-w-2xl px-5 pb-5 pt-1">
+                        <div className="max-w-5xl px-5 pb-5 pt-1">
                           <Decision
                             key={r.id}
                             clientId={clientId}
@@ -667,22 +666,33 @@ function Decision({
   const legs = (row.entry_legs ?? []).map((leg) => (leg.is_bank ? leg : { ...leg, ledger: chosenLedger?.name ?? null }))
   const extras = [chosenParty?.canonical_name, tds && `TDS ${tds}`, rcm && 'Reverse charge'].filter(Boolean).join(' · ')
   return (
-    <Card className={cn('grid content-start gap-4 p-4', flat ? 'border-0 bg-transparent p-0 shadow-none' : 'xl:sticky xl:top-20 xl:max-h-[calc(100svh-6rem)] xl:overflow-auto xl:overscroll-contain')}>
+    <Card className={cn('grid content-start gap-4 p-4', flat ? 'border-0 bg-transparent p-0 shadow-none lg:grid-cols-2 lg:items-start lg:gap-x-10' : 'xl:sticky xl:top-20 xl:max-h-[calc(100svh-6rem)] xl:overflow-auto xl:overscroll-contain')}>
+      <div className="grid content-start gap-4">
+      {flat ? (
+        (row.channel && row.channel !== 'UNKNOWN') || row.counterparty || row.is_self_transfer ? (
+          <div className="flex flex-wrap gap-1.5 text-xs">
+            {row.channel && row.channel !== 'UNKNOWN' && <Badge>{row.channel}</Badge>}
+            {row.counterparty && <Badge tone="outline">{row.counterparty}</Badge>}
+            {row.is_self_transfer && <Badge tone="info">Between the client’s own accounts</Badge>}
+          </div>
+        ) : null
+      ) : (
       <div>
-        <div className="flex items-baseline justify-between gap-3">
-          <span className="num text-sm text-muted-foreground">{formatDate(t.value_date)}</span>
-          <span className={cn('num text-lg font-semibold', t.is_debit ? 'text-foreground' : 'text-success')}>
-            {t.is_debit ? 'Paid ' : 'Received '}
-            {t.amount_display}
-          </span>
+          <div className="flex items-baseline justify-between gap-3">
+            <span className="num text-sm text-muted-foreground">{formatDate(t.value_date)}</span>
+            <span className={cn('num text-lg font-semibold', t.is_debit ? 'text-foreground' : 'text-success')}>
+              {t.is_debit ? 'Paid ' : 'Received '}
+              {t.amount_display}
+            </span>
+          </div>
+          <p className="mt-1 break-words font-mono text-[13px]">{t.narration}</p>
+          <div className="mt-1.5 flex flex-wrap gap-1.5 text-xs">
+            {row.channel && row.channel !== 'UNKNOWN' && <Badge>{row.channel}</Badge>}
+            {row.counterparty && <Badge tone="outline">{row.counterparty}</Badge>}
+            {row.is_self_transfer && <Badge tone="info">Between the client’s own accounts</Badge>}
+          </div>
         </div>
-        <p className="mt-1 break-words font-mono text-[13px]">{t.narration}</p>
-        <div className="mt-1.5 flex flex-wrap gap-1.5 text-xs">
-          {row.channel && row.channel !== 'UNKNOWN' && <Badge>{row.channel}</Badge>}
-          {row.counterparty && <Badge tone="outline">{row.counterparty}</Badge>}
-          {row.is_self_transfer && <Badge tone="info">Between the client’s own accounts</Badge>}
-        </div>
-      </div>
+      )}
 
       {row.open_question && (
         <div className="flex gap-2 rounded-md border border-accent-edge bg-accent p-2.5 text-sm">
@@ -745,6 +755,7 @@ function Decision({
         </div>
       )}
       {deciding && proposal && <ProposalDecision clientId={clientId} proposal={proposal} existing={ledgers} onClose={() => setDeciding(false)} />}
+      </div>
 
       {canPlace ? (
         <div className="grid gap-3">

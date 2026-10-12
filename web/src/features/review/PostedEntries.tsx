@@ -99,15 +99,14 @@ export function PostedEntries({ clientId }: { clientId: string }) {
           ) : (
             <div className="overflow-hidden rounded-xl border border-border-strong bg-surface-2">
               <ul aria-label="Posted entries, newest first" className="divide-y divide-border-strong">
-                {rows.map((e, i) => {
+                {rows.map((e) => {
                   const isOpen = e.id === openId
                   const showBody = isOpen || closing === e.id
                   const { debit, credit } = particulars(e)
                   return (
                     <li
                       key={e.id}
-                      style={{ '--i': Math.min(i, 14) } as React.CSSProperties}
-                      className={cn('rise-in relative transition-colors duration-200', isOpen ? 'bg-hover shadow-[inset_3px_0_0_var(--primary)]' : 'hover:bg-hover/60')}
+                          className={cn('relative transition-colors duration-200', isOpen ? 'bg-hover shadow-[inset_3px_0_0_var(--primary)]' : 'hover:bg-hover/60')}
                     >
                       <button
                         type="button"

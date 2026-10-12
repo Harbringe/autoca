@@ -69,8 +69,8 @@ export function assistantLine(status: AssistantStatus, now: number): string | nu
   if (status.reason === 'provider_down') return `The assistant is not answering. Trying again in ${secondsLeft(status, now)} s`
   // Waiting between batches (a rate limit, or the next batch not yet asked for) is still processing.
   const done = Math.max(0, status.total - status.waiting)
-  const progress = done > 0 ? ` ${done} of ${plural(status.total, 'row')} done` : ` ${plural(status.waiting, 'row')} in line`
-  return `The assistant is working on your statements in the background, so you can leave this page: ${phaseAt(now)}…${progress}`
+  const progress = done > 0 ? `${done} of ${plural(status.total, 'row')} done` : `${plural(status.waiting, 'row')} in line`
+  return `Assistant at work: ${phaseAt(now)} · ${progress}`
 }
 
 /** The short form for the top bar, or null when there is nothing to show there. */

@@ -31,7 +31,7 @@ describe('statusFromSummary', () => {
 
 describe('the words', () => {
   it('says the assistant is processing, with how far it has got', () => {
-    expect(assistantLine(status(), 0)).toBe('The assistant is working on your statements in the background, so you can leave this page: reading the narrations… 40 of 120 rows done')
+    expect(assistantLine(status(), 0)).toBe('Assistant at work: reading the narrations · 40 of 120 rows done')
     expect(assistantLine(status({ waiting: 120 }), 0)).toContain('120 rows in line')
     expect(assistantShort(status(), 0)).toBe('Assistant processing 80 rows')
   })

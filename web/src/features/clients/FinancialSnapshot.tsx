@@ -121,7 +121,7 @@ export function MonthlyCard({ query, clientId }: { query: Q; clientId: string })
       seeAll="Open the entries"
       skeleton="h-72"
     >
-      {s && <MonthBars trend={s.trend} className="h-64 lg:h-[24rem]" />}
+      {s && <MonthBars trend={s.trend} className="h-64 lg:h-72" />}
     </DashCard>
   )
 }

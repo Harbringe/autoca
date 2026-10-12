@@ -1,7 +1,11 @@
+// A client's overview: one sentence saying what is waiting, the work as counted cards that each open the
+// exact screen where it is done, the year in figures, then the client's profile as one strip. Work comes
+// first because that is what a person opening a client is there to do.
+
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { Building2, Users } from 'lucide-react'
+import { Users } from 'lucide-react'
 import { invoiceReadings, openItems } from '@/api/queries/bills'
 import { gstRegistrations } from '@/api/queries/gst'
 import { AddGstinDialog } from '@/features/gst/ClientGst'
@@ -11,8 +15,11 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
-import { formatDate, plural } from '@/lib/format'
+import { formatDate } from '@/lib/format'
+import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
+import { OverviewReports } from './OverviewReports'
+import { leadSentence } from './overviewLead'
 
 export function ClientProfileScreen({ clientId }: { clientId: string }) {
   const { can } = useSession()
@@ -27,60 +34,133 @@ export function ClientProfileScreen({ clientId }: { clientId: string }) {
   if (client.isPending) return <Spinner label="Loading client details…" />
   if (client.error) return <ErrorState error={client.error} retry={() => void client.refetch()} />
 
+  const waiting = {
+    unresolved: summary.data?.unresolved ?? 0,
+    pending: summary.data?.pending_approval ?? 0,
+    invoices: (readings.data ?? []).filter((r) => r.status === 'OPEN').length,
+    fixes: fixes.data?.count ?? 0,
+  }
+  const loading = summary.isPending && can('transaction.view')
+
   return (
-    <div className="grid max-w-6xl gap-5">
-      <section aria-labelledby="profile-title" className="grid gap-3">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2"><Building2 className="size-4 text-muted-foreground" /><h2 id="profile-title" className="text-[15px] font-semibold text-heading">Client profile</h2></div>
-          {(can('team.view') || can('client.update')) && <Button asChild variant="secondary" size="sm"><Link to="/clients/$clientId/team" params={{ clientId }}><Users /> Edit client settings and team</Link></Button>}
-        </div>
-        <Card className="p-5">
-          <dl className="grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-5">
-            <div><dt className="text-xs text-muted-foreground">Senior CA in charge</dt><dd className="mt-1 text-sm font-medium text-heading">{client.data.lead?.name ?? <Badge tone="attention">Not assigned</Badge>}</dd></div>
-            <div><dt className="text-xs text-muted-foreground">Financial year starts</dt><dd className="num mt-1 text-sm font-medium text-heading">{formatDate(client.data.fy_start)}</dd></div>
+    <div className="grid max-w-[96rem] gap-6">
+      <section aria-labelledby="next-title" className="grid gap-4">
+        <h2 id="next-title" className="sr-only">
+          What needs you
+        </h2>
+        {!loading && <p className="max-w-[64ch] text-lg text-heading">{leadSentence(waiting)}</p>}
+        <Work
+          clientId={clientId}
+          loading={loading}
+          cards={[
+            {
+              n: waiting.unresolved,
+              label: (n) => (n === 1 ? 'entry to sort into accounts' : 'entries to sort into accounts'),
+              action: 'Sort entries',
+              tone: 'attention',
+              to: '/clients/$clientId/review',
+              search: { stage: 'unresolved' },
+            },
+            {
+              n: waiting.pending,
+              label: (n) => (n === 1 ? 'sorted entry ready to record' : 'sorted entries ready to record'),
+              action: 'Record entries',
+              tone: 'ready',
+              to: '/clients/$clientId/review',
+              search: { stage: 'pending_approval' },
+            },
+            {
+              n: waiting.invoices,
+              label: (n) => (n === 1 ? 'invoice waiting to be booked' : 'invoices waiting to be booked'),
+              action: 'Book invoices',
+              tone: 'plain',
+              to: '/clients/$clientId/bills',
+            },
+            {
+              n: waiting.fixes,
+              label: (n) => (n === 1 ? 'item that does not tie out' : 'items that do not tie out'),
+              action: 'See the items',
+              tone: 'plain',
+              to: '/clients/$clientId/open-items',
+            },
+          ]}
+        />
+      </section>
+
+      <OverviewReports clientId={clientId} />
+
+      <section aria-labelledby="profile-title">
+        <h2 id="profile-title" className="sr-only">
+          Client profile
+        </h2>
+        <Card className="flex flex-wrap items-center justify-between gap-x-8 gap-y-4 p-5">
+          <dl className="flex flex-wrap gap-x-8 gap-y-3">
+            <div>
+              <dt className="text-xs text-muted-foreground">Senior CA</dt>
+              <dd className="mt-0.5 text-sm font-medium text-heading">{client.data.lead?.name ?? <Badge tone="attention">Not assigned</Badge>}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Year starts</dt>
+              <dd className="num mt-0.5 text-sm font-medium text-heading">{formatDate(client.data.fy_start)}</dd>
+            </div>
+            <div>
+              <dt className="text-xs text-muted-foreground">Bank accounts</dt>
+              <dd className="num mt-0.5 text-sm font-medium text-heading">{accounts.data?.count ?? '—'}</dd>
+            </div>
             <div>
               <dt className="text-xs text-muted-foreground">GSTIN</dt>
-              <dd className="mt-1 grid gap-1 text-sm font-medium text-heading">
-                {(registrations.data ?? []).map((r) => <span key={r.id} className="num">{r.gstin}</span>)}
+              <dd className="mt-0.5 flex flex-wrap items-center gap-x-2 text-sm font-medium text-heading">
+                {(registrations.data ?? []).map((r) => (
+                  <span key={r.id} className="num">
+                    {r.gstin}
+                  </span>
+                ))}
                 {registrations.data?.length === 0 && <Badge tone="attention">Not added</Badge>}
-                {can('journal.approve') && <Button size="sm" variant="ghost" className="justify-self-start px-0" onClick={() => setAddingGstin(true)}>{registrations.data?.length ? 'Add another' : 'Add GSTIN'}</Button>}
+                {can('journal.approve') && (
+                  <Button size="sm" variant="ghost" className="px-1" onClick={() => setAddingGstin(true)}>
+                    {registrations.data?.length ? 'Add another' : 'Add GSTIN'}
+                  </Button>
+                )}
               </dd>
             </div>
-            <div><dt className="text-xs text-muted-foreground">Bank accounts</dt><dd className="num mt-1 text-sm font-medium text-heading">{accounts.data?.count ?? '—'}</dd></div>
-            <div><dt className="text-xs text-muted-foreground">Business profile</dt><dd className="mt-1 line-clamp-2 text-sm font-medium text-heading">{client.data.business_profile || 'Not added'}</dd></div>
+            {client.data.business_profile && (
+              <div className="min-w-0 max-w-xs">
+                <dt className="text-xs text-muted-foreground">Business profile</dt>
+                <dd className="mt-0.5 line-clamp-1 text-sm font-medium text-heading" title={client.data.business_profile}>
+                  {client.data.business_profile}
+                </dd>
+              </div>
+            )}
           </dl>
+          {(can('team.view') || can('client.update')) && (
+            <Button asChild variant="secondary" size="sm">
+              <Link to="/clients/$clientId/team" params={{ clientId }}>
+                <Users /> Edit client settings and team
+              </Link>
+            </Button>
+          )}
         </Card>
         {addingGstin && <AddGstinDialog clientId={clientId} onClose={() => setAddingGstin(false)} />}
         {accounts.error && <ErrorState error={accounts.error} retry={() => void accounts.refetch()} />}
-      </section>
-
-      <section aria-labelledby="next-title" className="grid gap-3">
-        <h2 id="next-title" className="text-[15px] font-semibold text-heading">What needs you</h2>
-        <Next
-          clientId={clientId}
-          loading={summary.isPending && can('transaction.view')}
-          rows={[
-            { n: summary.data?.unresolved ?? 0, text: (n) => `${plural(n, 'entry', 'entries')} to sort into accounts`, to: '/clients/$clientId/review', search: { stage: 'unresolved' } },
-            { n: summary.data?.pending_approval ?? 0, text: (n) => `${plural(n, 'sorted entry', 'sorted entries')} ready to record`, to: '/clients/$clientId/review', search: { stage: 'pending_approval' } },
-            { n: (readings.data ?? []).filter((r) => r.status === 'OPEN').length, text: (n) => `${plural(n, 'invoice')} waiting to be booked`, to: '/clients/$clientId/bills' },
-            { n: fixes.data?.count ?? 0, text: (n) => `${plural(n, 'item')} that do not tie out`, to: '/clients/$clientId/open-items' },
-          ]}
-        />
       </section>
     </div>
   )
 }
 
-interface NextRow {
+interface WorkCard {
   n: number
-  text: (n: number) => string
+  label: (n: number) => string
+  action: string
+  tone: 'attention' | 'ready' | 'plain'
   to: string
   search?: Record<string, string>
 }
 
-/** The client's open work as a short list, each line the exact screen where it is done; or, when there is none, where to go. */
-function Next({ clientId, rows, loading }: { clientId: string; rows: NextRow[]; loading: boolean }) {
-  const waiting = rows.filter((r) => r.n > 0)
+const NUMBER_TONE = { attention: 'text-accent-foreground', ready: 'text-success', plain: 'text-heading' } as const
+
+/** The client's open work as counted cards, each one button to the exact screen where it is done; or, when there is none, where to go. */
+function Work({ clientId, cards, loading }: { clientId: string; cards: WorkCard[]; loading: boolean }) {
+  const waiting = cards.filter((c) => c.n > 0)
   if (loading) return <Spinner label="Looking at what is waiting…" />
   if (waiting.length === 0) {
     return (
@@ -98,19 +178,20 @@ function Next({ clientId, rows, loading }: { clientId: string; rows: NextRow[]; 
     )
   }
   return (
-    <Card className="divide-y p-0">
-      {waiting.map((row) => (
-        <Link
-          key={row.text(row.n)}
-          to={row.to as never}
-          params={{ clientId } as never}
-          search={row.search as never}
-          className="flex items-center justify-between gap-3 px-4 py-3 text-sm hover:bg-hover"
-        >
-          <span>{row.text(row.n)}</span>
-          <span className="font-medium text-link">Open</span>
-        </Link>
+    <div className="grid gap-4 [grid-template-columns:repeat(auto-fit,minmax(15rem,1fr))] [&>*]:min-w-0">
+      {waiting.map((c, i) => (
+        <Card key={c.action} className="flex flex-col gap-4 p-5">
+          <div className="flex items-baseline gap-3">
+            <span className={cn('num text-5xl font-semibold leading-none', NUMBER_TONE[c.tone])}>{c.n}</span>
+            <span className="text-base text-heading">{c.label(c.n)}</span>
+          </div>
+          <Button asChild variant={i === 0 ? 'primary' : 'secondary'}>
+            <Link to={c.to as never} params={{ clientId } as never} search={c.search as never}>
+              {c.action}
+            </Link>
+          </Button>
+        </Card>
       ))}
-    </Card>
+    </div>
   )
 }

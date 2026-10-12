@@ -54,7 +54,7 @@ export function DashCard({
   const id = useId()
   if (state === 'error' && isApiError(error) && error.status === 403) return null
   return (
-    <Card className={cn('h-full min-w-0 p-5', className)} role="region" aria-labelledby={id} aria-busy={state === 'loading' || undefined}>
+    <Card className={cn('h-full min-w-0 p-5', state === 'empty' && 'py-4', className)} role="region" aria-labelledby={id} aria-busy={state === 'loading' || undefined}>
       <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 id={id} className="text-[15px] font-semibold leading-snug text-heading">
@@ -74,7 +74,7 @@ export function DashCard({
           </Link>
         )}
       </div>
-      <div className="mt-3">
+      <div className={state === 'empty' ? 'mt-1.5' : 'mt-3'}>
         {state === 'loading' ? (
           skeletonShape ? (
             <div>

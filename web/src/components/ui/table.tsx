@@ -44,6 +44,7 @@ export function DataTable<T>({
   defaultSort,
   scrollHeight,
   className,
+  roomy,
 }: {
   /** Names the table for screen readers; not shown. */
   caption: string
@@ -64,6 +65,8 @@ export function DataTable<T>({
   /** Make the table its own scroll box with a sticky header, e.g. '70vh'. Off: the page scrolls. */
   scrollHeight?: string
   className?: string
+  /** A calmer, taller list: bigger cells, a rounder card, sort arrows only on the sorted column. For lists read more than worked in. */
+  roomy?: boolean
 }) {
   const [sort, setSort] = useState(defaultSort)
   const sorted = useMemo(() => {
@@ -89,12 +92,12 @@ export function DataTable<T>({
       aria-label={caption}
       aria-busy={loading || undefined}
       tabIndex={0}
-      className={cn('relative overflow-auto rounded-lg border bg-card', scrollHeight && 'overscroll-contain', className)}
+      className={cn('relative overflow-auto border bg-card', roomy ? 'rounded-xl' : 'rounded-lg', scrollHeight && 'overscroll-contain', className)}
       style={scrollHeight ? { maxHeight: scrollHeight } : undefined}
     >
       <table className="w-full text-left text-sm">
         <caption className="sr-only">{loading ? `Loading ${caption}` : caption}</caption>
-        <thead className="border-b bg-surface-2 text-xs text-muted-foreground">
+        <thead className={cn('border-b text-xs text-muted-foreground', roomy ? 'bg-card' : 'bg-surface-2')}>
           <tr>
             {columns.map((col) => {
               const active = sort?.key === col.key
@@ -105,7 +108,7 @@ export function DataTable<T>({
                   aria-sort={active ? (sort.dir === 'asc' ? 'ascending' : 'descending') : col.sortValue ? 'none' : undefined}
                   style={col.width ? { width: col.width } : undefined}
                   className={cn(
-                    'whitespace-nowrap px-3 py-2 text-xs font-semibold',
+                    'whitespace-nowrap text-xs font-semibold', roomy ? 'px-4 py-4' : 'px-3 py-2',
                     scrollHeight && 'sticky top-0 z-10 bg-surface-2',
                     col.sticky && 'sticky left-0 z-20 bg-surface-2',
                     col.align === 'right' ? 'text-right' : 'text-left',
@@ -122,7 +125,7 @@ export function DataTable<T>({
                       {active ? (
                         sort.dir === 'asc' ? <ArrowUp className="size-3" aria-hidden /> : <ArrowDown className="size-3" aria-hidden />
                       ) : (
-                        <ChevronsUpDown className="size-3 opacity-60" aria-hidden />
+                        <ChevronsUpDown className={cn('size-3 opacity-60', roomy && 'hidden')} aria-hidden />
                       )}
                     </button>
                   ) : (
@@ -166,7 +169,15 @@ export function DataTable<T>({
                     </tr>
                   )}
                   <tr
-                    onClick={onRowClick ? () => onRowClick(row) : undefined}
+                    onClick={
+                      onRowClick
+                        ? (e) => {
+                            // A link or button inside the row does its own job; the row opens only when the click is on the row.
+                            if (roomy && (e.target as HTMLElement).closest('a, button')) return
+                            onRowClick(row)
+                          }
+                        : undefined
+                    }
                     onKeyDown={onKey}
                     tabIndex={onRowClick ? 0 : undefined}
                     aria-selected={selectedKey !== undefined ? key === selectedKey : undefined}
@@ -181,7 +192,7 @@ export function DataTable<T>({
                       <td
                         key={col.key}
                         className={cn(
-                          'whitespace-nowrap px-3 py-1',
+                          'whitespace-nowrap', roomy ? 'px-4 py-3' : 'px-3 py-1',
                           col.align === 'right' ? 'num text-right' : 'text-left',
                           PRIORITY_HIDE[col.priority ?? 1],
                           col.sticky && 'sticky-col sticky left-0 z-[1] bg-card' + (onRowClick ? ' group-hover:bg-hover' : ''),

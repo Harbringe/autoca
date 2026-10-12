@@ -74,10 +74,10 @@ describe('sign-off checklist', () => {
   it('lets assistant entries be ticked one at a time and marked as checked', async () => {
     renderIt()
     fireEvent.click(await screen.findByRole('button', { name: /Entries the assistant posted are checked/ }))
-    const first = screen.getByRole('checkbox', { name: 'Mark Payment 1 as checked' })
-    const button = screen.getByRole('button', { name: /Mark selected as checked/ })
+    const first = await screen.findByRole('checkbox', { name: 'Mark Payment 1 as checked' })
+    const button = await screen.findByRole('button', { name: /Mark selected as checked/ })
     expect(button).toBeDisabled()
     fireEvent.click(first)
-    expect(screen.getByRole('button', { name: 'Mark 1 as checked' })).toBeEnabled()
+    expect(await screen.findByRole('button', { name: 'Mark 1 as checked' })).toBeEnabled()
   })
 })

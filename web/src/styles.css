@@ -241,6 +241,77 @@
   }
 }
 
+/*
+ * Every dropdown in the app is a real <select>, so keyboards, forms, phones and screen readers behave as they always did.
+ * Where the browser can draw the open list itself (Chromium's customizable select) it is drawn in the app's own
+ * colours; elsewhere the browser's own list shows, which is the same choices in a plainer coat.
+ */
+@supports (appearance: base-select) {
+  select,
+  select::picker(select) {
+    appearance: base-select;
+  }
+  select {
+    display: inline-flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    cursor: pointer;
+  }
+  select::picker-icon {
+    content: '';
+    display: block;
+    width: 7px;
+    height: 7px;
+    margin-top: -3px;
+    border: solid var(--muted-foreground);
+    border-width: 0 2px 2px 0;
+    rotate: 45deg;
+    transition: rotate 120ms;
+  }
+  select:open::picker-icon {
+    margin-top: 3px;
+    rotate: 225deg;
+  }
+  select::picker(select) {
+    box-sizing: border-box;
+    margin-block: 6px;
+    padding: 6px;
+    max-height: min(22rem, 60vh);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    background: var(--popover);
+    color: var(--popover-foreground);
+    box-shadow: var(--shadow-float);
+    font-size: 14px;
+  }
+  select option {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 2.5rem;
+    padding: 0.5rem 0.75rem;
+    border-radius: var(--radius-md);
+    cursor: pointer;
+  }
+  select option:hover,
+  select option:focus-visible {
+    background: var(--hover);
+  }
+  select option:checked {
+    font-weight: 600;
+    color: var(--heading);
+  }
+  select option::checkmark {
+    order: -1;
+    color: var(--primary);
+  }
+  select option:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
 /* Tables are read for their figures: static skeleton blocks, no shimmer. */
 .skeleton {
   background: var(--hover);

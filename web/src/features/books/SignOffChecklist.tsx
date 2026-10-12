@@ -4,11 +4,12 @@
 // pass fold into a single line.
 
 import { Link } from '@tanstack/react-router'
-import { Check, ChevronDown, ChevronRight } from 'lucide-react'
+import { Check, ChevronRight } from 'lucide-react'
 import { useState } from 'react'
 import type { CloseReport, JournalEntry } from '@/api/types'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
+import { Reveal } from '@/components/ui/collapse'
 import { Checkbox } from '@/components/ui/controls'
 import { formatDate, plural } from '@/lib/format'
 import { cn } from '@/lib/utils'
@@ -198,7 +199,7 @@ export function SignOffChecklist({
           const isOpen = open === c.name || (open === null && current === c.name)
           const figure = checkFigure(c)
           return (
-            <li key={c.name} className={cn(current === c.name && 'bg-surface-2')}>
+            <li key={c.name} className={cn('transition-colors duration-300', current === c.name && 'bg-surface-2')}>
               <button
                 type="button"
                 aria-expanded={isOpen}
@@ -213,9 +214,11 @@ export function SignOffChecklist({
                   <span className="block text-[13px] text-muted-foreground">{firstSentence(c.detail)}</span>
                 </span>
                 <span className="num text-sm font-medium text-destructive">{figure}</span>
-                {isOpen ? <ChevronDown className="size-4 text-muted-foreground" aria-hidden /> : <ChevronRight className="size-4 text-muted-foreground" aria-hidden />}
+                <ChevronRight className={cn('size-4 text-muted-foreground transition-transform duration-200', isOpen && 'rotate-90')} aria-hidden />
               </button>
-              {isOpen && <div className="grid gap-3 px-5 pb-4 pl-[3.75rem] text-sm">{detail(c)}</div>}
+              <Reveal open={isOpen}>
+                <div className="grid gap-3 px-5 pb-4 pl-[3.75rem] text-sm">{detail(c)}</div>
+              </Reveal>
             </li>
           )
         })}
@@ -233,9 +236,9 @@ export function SignOffChecklist({
               <span className="text-sm text-muted-foreground">
                 {plural(passed.length, 'check')} {passed.length === 1 ? 'passes' : 'pass'}
               </span>
-              {showPassed ? <ChevronDown className="size-4 text-muted-foreground" aria-hidden /> : <ChevronRight className="size-4 text-muted-foreground" aria-hidden />}
+              <ChevronRight className={cn('size-4 text-muted-foreground transition-transform duration-200', showPassed && 'rotate-90')} aria-hidden />
             </button>
-            {showPassed && (
+            <Reveal open={showPassed}>
               <ul className="grid gap-1 px-5 pb-3 pl-[3.75rem] text-sm">
                 {passed.map((c) => (
                   <li key={c.name}>
@@ -243,7 +246,7 @@ export function SignOffChecklist({
                   </li>
                 ))}
               </ul>
-            )}
+            </Reveal>
           </li>
         )}
       </ul>

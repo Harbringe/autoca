@@ -1584,6 +1584,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/profile/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A client's profile
+         * @description Registration numbers (PAN, TAN, CIN or LLPIN, Udyam) are shown in full to people who may edit the profile and masked to everyone else. Reading the profile is recorded in the audit log.
+         */
+        get: operations["clients_profile_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Change a client's profile
+         * @description Send only what changed. An empty string clears a field. Needs `client.profile`.
+         */
+        patch: operations["clients_profile_partial_update"];
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/reports/balance-sheet/": {
         parameters: {
             query?: never;
@@ -4063,6 +4087,43 @@ export interface components {
              */
             close_period?: components["schemas"]["ClosePeriodEnum"];
         };
+        /**
+         * @description Who the client is: registrations, contacts, notes.
+         *
+         *     The registration numbers are kept encrypted. A person who may edit the profile sees them in full; anyone else who
+         *     can open the client sees them masked. None of this is sent to the model tier.
+         */
+        ClientProfile: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly name: string;
+            trade_name?: string;
+            constitution?: components["schemas"]["ConstitutionEnum"] | components["schemas"]["BlankEnum"];
+            /** Format: date */
+            incorporated_on?: string | null;
+            /** Format: date */
+            client_since?: string | null;
+            address?: string;
+            contact_name?: string;
+            /** Format: email */
+            contact_email?: string;
+            contact_phone?: string;
+            contact2_name?: string;
+            /** Format: email */
+            contact2_email?: string;
+            contact2_phone?: string;
+            msme_category?: components["schemas"]["MsmeCategoryEnum"] | components["schemas"]["BlankEnum"];
+            notes?: string;
+            pan?: string;
+            tan?: string;
+            cin?: string;
+            udyam?: string;
+            readonly pan_shared_with: string[];
+            readonly can_edit: boolean;
+            /** Format: date-time */
+            readonly profile_updated_at: string | null;
+            readonly profile_updated_by: string;
+        };
         ClientRequest: {
             name: string;
             /**
@@ -4218,6 +4279,19 @@ export interface components {
             /** Format: double */
             gst_rate?: number | null;
         };
+        /**
+         * @description * `INDIVIDUAL` - Individual or sole proprietor
+         *     * `PARTNERSHIP` - Partnership firm
+         *     * `LLP` - Limited liability partnership
+         *     * `PRIVATE_LIMITED` - Private limited company
+         *     * `PUBLIC_LIMITED` - Public limited company
+         *     * `HUF` - Hindu undivided family
+         *     * `TRUST` - Trust or society
+         *     * `AOP` - Association of persons
+         *     * `OTHER` - Other
+         * @enum {string}
+         */
+        ConstitutionEnum: "INDIVIDUAL" | "PARTNERSHIP" | "LLP" | "PRIVATE_LIMITED" | "PUBLIC_LIMITED" | "HUF" | "TRUST" | "AOP" | "OTHER";
         /**
          * @description Correct a posted entry.
          *
@@ -5272,6 +5346,13 @@ export interface components {
          * @enum {string}
          */
         ModuleEnum: "bank" | "bookkeeping" | "reports" | "gst" | "documents";
+        /**
+         * @description * `MICRO` - Micro
+         *     * `SMALL` - Small
+         *     * `MEDIUM` - Medium
+         * @enum {string}
+         */
+        MsmeCategoryEnum: "MICRO" | "SMALL" | "MEDIUM";
         MyClient: {
             /** Format: uuid */
             id: string;
@@ -6271,6 +6352,35 @@ export interface components {
             /** Format: double */
             confidence?: number;
             is_active?: boolean;
+        };
+        /**
+         * @description Who the client is: registrations, contacts, notes.
+         *
+         *     The registration numbers are kept encrypted. A person who may edit the profile sees them in full; anyone else who
+         *     can open the client sees them masked. None of this is sent to the model tier.
+         */
+        PatchedClientProfileRequest: {
+            trade_name?: string;
+            constitution?: components["schemas"]["ConstitutionEnum"] | components["schemas"]["BlankEnum"];
+            /** Format: date */
+            incorporated_on?: string | null;
+            /** Format: date */
+            client_since?: string | null;
+            address?: string;
+            contact_name?: string;
+            /** Format: email */
+            contact_email?: string;
+            contact_phone?: string;
+            contact2_name?: string;
+            /** Format: email */
+            contact2_email?: string;
+            contact2_phone?: string;
+            msme_category?: components["schemas"]["MsmeCategoryEnum"] | components["schemas"]["BlankEnum"];
+            notes?: string;
+            pan?: string;
+            tan?: string;
+            cin?: string;
+            udyam?: string;
         };
         PatchedClientRequest: {
             name?: string;
@@ -11250,6 +11360,54 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    clients_profile_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientProfile"];
+                };
+            };
+        };
+    };
+    clients_profile_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedClientProfileRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedClientProfileRequest"];
+                "multipart/form-data": components["schemas"]["PatchedClientProfileRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ClientProfile"];
+                };
             };
         };
     };

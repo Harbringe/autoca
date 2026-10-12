@@ -62,6 +62,8 @@ _LEAD = {
     "team.assign",
     "member.invite",
     "member.deactivate",
+    # Who the client is: contacts, registrations, notes. Naming the client and moving its year stay with "client.update".
+    "client.profile",
 }
 
 PERMISSIONS = {

@@ -74,6 +74,30 @@ class ClosePeriod(models.TextChoices):
     YEARLY = "YEARLY", "Yearly (31 Mar)"
 
 
+class Constitution(models.TextChoices):
+    """What kind of person or body the client is. Decides which registrations make sense (a CIN for a company, an LLPIN for an LLP)."""
+
+    INDIVIDUAL = "INDIVIDUAL", "Individual or sole proprietor"
+    PARTNERSHIP = "PARTNERSHIP", "Partnership firm"
+    LLP = "LLP", "Limited liability partnership"
+    PRIVATE_LIMITED = "PRIVATE_LIMITED", "Private limited company"
+    PUBLIC_LIMITED = "PUBLIC_LIMITED", "Public limited company"
+    HUF = "HUF", "Hindu undivided family"
+    TRUST = "TRUST", "Trust or society"
+    AOP = "AOP", "Association of persons"
+    OTHER = "OTHER", "Other"
+
+
+class MsmeCategory(models.TextChoices):
+    MICRO = "MICRO", "Micro"
+    SMALL = "SMALL", "Small"
+    MEDIUM = "MEDIUM", "Medium"
+
+
+#: The identifiers a client carries, each kept encrypted under its own purpose so a ciphertext for one cannot be read as another.
+CLIENT_IDENTIFIERS = ("pan", "tan", "cin", "udyam")
+
+
 class Client(UUIDModel, FirmScopedModel):
     """A client of a firm. The firm's customer -- one level below the tenant root."""
 
@@ -122,6 +146,33 @@ class Client(UUIDModel, FirmScopedModel):
         max_length=12, choices=ClosePeriod.choices, default=ClosePeriod.QUARTERLY, db_default=ClosePeriod.QUARTERLY
     )
 
+    # --- the client's profile: who they are, how to reach them, what they are registered as -----------------------
+    #: None of this reaches the model tier. Only ``business_profile`` does, and it is masked first.
+    trade_name = models.CharField(max_length=255, blank=True, default="")
+    constitution = models.CharField(max_length=16, choices=Constitution.choices, blank=True, default="")
+    incorporated_on = models.DateField(null=True, blank=True)
+    #: When the firm began acting for this client; entered by a person, not the day the row was made.
+    client_since = models.DateField(null=True, blank=True)
+    address = models.TextField(blank=True, default="", max_length=1000)
+    contact_name = models.CharField(max_length=255, blank=True, default="")
+    contact_email = models.EmailField(blank=True, default="")
+    contact_phone = models.CharField(max_length=32, blank=True, default="")
+    contact2_name = models.CharField(max_length=255, blank=True, default="")
+    contact2_email = models.EmailField(blank=True, default="")
+    contact2_phone = models.CharField(max_length=32, blank=True, default="")
+    msme_category = models.CharField(max_length=8, choices=MsmeCategory.choices, blank=True, default="")
+    #: The firm's own notes about the client: for people only. Never read by the classifier or sent anywhere.
+    notes = models.TextField(blank=True, default="", max_length=4000)
+    #: Registration numbers, encrypted per firm like a GSTIN. ``pan_hash`` is a blind index so two clients sharing a
+    #: PAN can be noticed without decrypting every row.
+    pan_enc = models.BinaryField(blank=True, null=True)
+    pan_hash = models.CharField(max_length=64, blank=True, db_index=True, default="")
+    tan_enc = models.BinaryField(blank=True, null=True)
+    cin_enc = models.BinaryField(blank=True, null=True)
+    udyam_enc = models.BinaryField(blank=True, null=True)
+    profile_updated_at = models.DateTimeField(null=True, blank=True)
+    profile_updated_by = models.CharField(max_length=255, blank=True, default="")
+
     class Meta:
         db_table = "core_client"
         ordering = ["name"]
@@ -131,6 +182,21 @@ class Client(UUIDModel, FirmScopedModel):
 
     def __str__(self) -> str:
         return self.name
+
+    def identifier(self, kind: str) -> str:
+        """A registration number in the clear; empty when none is on file."""
+        from core.crypto import decrypt_text_for_firm
+
+        blob = getattr(self, f"{kind}_enc")
+        return decrypt_text_for_firm(bytes(blob), self.firm_id, f"core.client.{kind}") if blob else ""
+
+    def set_identifier(self, kind: str, value: str) -> None:
+        from core.crypto import blind_index, encrypt_for_firm
+
+        value = (value or "").strip().upper()
+        setattr(self, f"{kind}_enc", encrypt_for_firm(value, self.firm_id, f"core.client.{kind}") if value else None)
+        if kind == "pan":
+            self.pan_hash = blind_index(value, self.firm_id, "core.client.pan") if value else ""
 
 
 # ---------------------------------------------------------------------------

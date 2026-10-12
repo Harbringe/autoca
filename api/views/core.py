@@ -15,10 +15,15 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.pagination import DefaultPagination
-from api.permissions import IsFirmMember
-from api.serializers.core import ClientSerializer, JobSerializer, MeSerializer
+from api.permissions import HasFirmPermission, IsFirmMember
+from api.serializers.core import (
+    ClientProfileSerializer,
+    ClientSerializer,
+    JobSerializer,
+    MeSerializer,
+)
 from api.views.base import FirmScopedViewSet
-from core.access import visible_clients
+from core.access import get_visible_client, visible_clients
 from core.db.session import firm_context
 from core.models import Client, Job, JobStatus, Role
 
@@ -96,6 +101,40 @@ class ClientViewSet(FirmScopedViewSet):
                 status=409,
             )
         return super().destroy(request, *args, **kwargs)
+
+
+@extend_schema(tags=["clients"])
+class ClientProfileView(viewsets.GenericViewSet):
+    """Who a client is: registrations, contacts, notes. Separate from the client's name and year, which stay with administrators."""
+
+    permission_classes = [HasFirmPermission]
+    required_permission = {"GET": "client.view", "PATCH": "client.profile"}
+    serializer_class = ClientProfileSerializer
+
+    @extend_schema(
+        summary="A client's profile",
+        description=(
+            "Registration numbers (PAN, TAN, CIN or LLPIN, Udyam) are shown in full to people who may edit the profile "
+            "and masked to everyone else. Reading the profile is recorded in the audit log."
+        ),
+        responses={200: ClientProfileSerializer},
+    )
+    def retrieve(self, request, client_id=None):
+        client = get_visible_client(request, client_id)
+        return Response(ClientProfileSerializer(client, context={"request": request}).data)
+
+    @extend_schema(
+        summary="Change a client's profile",
+        description="Send only what changed. An empty string clears a field. Needs `client.profile`.",
+        request=ClientProfileSerializer,
+        responses={200: ClientProfileSerializer},
+    )
+    def partial_update(self, request, client_id=None):
+        client = get_visible_client(request, client_id)
+        serializer = ClientProfileSerializer(client, data=request.data, partial=True, context={"request": request})
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
 
 
 @extend_schema(tags=["jobs"])

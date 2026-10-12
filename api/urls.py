@@ -35,7 +35,7 @@ from api.views.classify import (
     RuleViewSet,
 )
 from api.views.close import CloseView
-from api.views.core import ClientViewSet, JobViewSet, MeView
+from api.views.core import ClientProfileView, ClientViewSet, JobViewSet, MeView
 from api.views.dashboard import ClientAlertsView, ClientSnapshotView, FirmAlertsView, PortfolioView
 from api.views.documents import (
     DocumentDownloadView,
@@ -136,6 +136,11 @@ urlpatterns = [
         "clients/<uuid:client_id>/assistant/next-batch/",
         NextBatchView.as_view(),
         name="assistant-next-batch",
+    ),
+    path(
+        "clients/<uuid:client_id>/profile/",
+        ClientProfileView.as_view({"get": "retrieve", "patch": "partial_update"}),
+        name="client-profile",
     ),
     path("clients/<uuid:client_id>/books/", BooksView.as_view({"get": "retrieve"}), name="books"),
     path(

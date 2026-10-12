@@ -19,6 +19,7 @@ DOC_ID = "11111111-1111-1111-1111-111111111111"
         f"/api/v1/documents/{DOC_ID}/preview/",
         f"/api/v1/documents/{DOC_ID}/preview/1/",
         f"/api/v1/documents/{DOC_ID}/preview/42/",
+        f"/api/v1/clients/{DOC_ID}/profile/",
     ],
 )
 def test_a_sensitive_read_matches_one_of_the_patterns(path):

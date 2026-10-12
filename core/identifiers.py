@@ -11,6 +11,12 @@ from __future__ import annotations
 import re
 
 PAN_RE = re.compile(r"^[A-Z]{3}[ABCFGHLJPT][A-Z]\d{4}[A-Z]$")
+TAN_RE = re.compile(r"^[A-Z]{4}\d{5}[A-Z]$")
+#: A company's CIN (21 characters) or an LLP's LLPIN (three letters, a hyphen, four digits).
+CIN_RE = re.compile(r"^[LU]\d{5}[A-Z]{2}\d{4}[A-Z]{3}\d{6}$")
+LLPIN_RE = re.compile(r"^[A-Z]{3}-\d{4}$")
+#: Udyam registration: UDYAM, a state code, a district code, then seven digits.
+UDYAM_RE = re.compile(r"^UDYAM-[A-Z]{2}-\d{2}-\d{7}$")
 GSTIN_RE = re.compile(r"^\d{2}[A-Z]{5}\d{4}[A-Z][1-9A-Z]Z[0-9A-Z]$")
 
 _ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
@@ -18,6 +24,20 @@ _ALPHABET = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ"
 
 def is_valid_pan(value: str) -> bool:
     return bool(PAN_RE.match((value or "").strip().upper()))
+
+
+def is_valid_tan(value: str) -> bool:
+    return bool(TAN_RE.match((value or "").strip().upper()))
+
+
+def is_valid_cin(value: str) -> bool:
+    """A company's CIN or an LLP's LLPIN."""
+    v = (value or "").strip().upper()
+    return bool(CIN_RE.match(v) or LLPIN_RE.match(v))
+
+
+def is_valid_udyam(value: str) -> bool:
+    return bool(UDYAM_RE.match((value or "").strip().upper()))
 
 
 def gstin_check_character(first_fourteen: str) -> str:

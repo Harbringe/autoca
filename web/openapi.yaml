@@ -3542,6 +3542,64 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/clients/{client_id}/profile/:
+    get:
+      operationId: clients_profile_retrieve
+      description: Registration numbers (PAN, TAN, CIN or LLPIN, Udyam) are shown
+        in full to people who may edit the profile and masked to everyone else. Reading
+        the profile is recorded in the audit log.
+      summary: A client's profile
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - clients
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientProfile'
+          description: ''
+    patch:
+      operationId: clients_profile_partial_update
+      description: Send only what changed. An empty string clears a field. Needs `client.profile`.
+      summary: Change a client's profile
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - clients
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedClientProfileRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedClientProfileRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedClientProfileRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ClientProfile'
+          description: ''
   /api/v1/clients/{client_id}/reports/balance-sheet/:
     get:
       operationId: clients_reports_balance_sheet_retrieve
@@ -8604,6 +8662,101 @@ components:
       - id
       - lead
       - name
+    ClientProfile:
+      type: object
+      description: |-
+        Who the client is: registrations, contacts, notes.
+
+        The registration numbers are kept encrypted. A person who may edit the profile sees them in full; anyone else who
+        can open the client sees them masked. None of this is sent to the model tier.
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          readOnly: true
+        trade_name:
+          type: string
+          maxLength: 255
+        constitution:
+          oneOf:
+          - $ref: '#/components/schemas/ConstitutionEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        incorporated_on:
+          type: string
+          format: date
+          nullable: true
+        client_since:
+          type: string
+          format: date
+          nullable: true
+        address:
+          type: string
+          maxLength: 1000
+        contact_name:
+          type: string
+          maxLength: 255
+        contact_email:
+          type: string
+          format: email
+          maxLength: 254
+        contact_phone:
+          type: string
+          maxLength: 32
+        contact2_name:
+          type: string
+          maxLength: 255
+        contact2_email:
+          type: string
+          format: email
+          maxLength: 254
+        contact2_phone:
+          type: string
+          maxLength: 32
+        msme_category:
+          oneOf:
+          - $ref: '#/components/schemas/MsmeCategoryEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        notes:
+          type: string
+          maxLength: 4000
+        pan:
+          type: string
+          maxLength: 10
+        tan:
+          type: string
+          maxLength: 10
+        cin:
+          type: string
+          maxLength: 21
+        udyam:
+          type: string
+          maxLength: 24
+        pan_shared_with:
+          type: array
+          items:
+            type: string
+          readOnly: true
+        can_edit:
+          type: boolean
+          readOnly: true
+        profile_updated_at:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
+        profile_updated_by:
+          type: string
+          readOnly: true
+      required:
+      - can_edit
+      - id
+      - name
+      - pan_shared_with
+      - profile_updated_at
+      - profile_updated_by
     ClientRequest:
       type: object
       properties:
@@ -8935,6 +9088,28 @@ components:
           nullable: true
       required:
       - description
+    ConstitutionEnum:
+      enum:
+      - INDIVIDUAL
+      - PARTNERSHIP
+      - LLP
+      - PRIVATE_LIMITED
+      - PUBLIC_LIMITED
+      - HUF
+      - TRUST
+      - AOP
+      - OTHER
+      type: string
+      description: |-
+        * `INDIVIDUAL` - Individual or sole proprietor
+        * `PARTNERSHIP` - Partnership firm
+        * `LLP` - Limited liability partnership
+        * `PRIVATE_LIMITED` - Private limited company
+        * `PUBLIC_LIMITED` - Public limited company
+        * `HUF` - Hindu undivided family
+        * `TRUST` - Trust or society
+        * `AOP` - Association of persons
+        * `OTHER` - Other
     CorrectionRequest:
       type: object
       description: |-
@@ -11257,6 +11432,16 @@ components:
         * `reports` - reports
         * `gst` - gst
         * `documents` - documents
+    MsmeCategoryEnum:
+      enum:
+      - MICRO
+      - SMALL
+      - MEDIUM
+      type: string
+      description: |-
+        * `MICRO` - Micro
+        * `SMALL` - Small
+        * `MEDIUM` - Medium
     MyClient:
       type: object
       properties:
@@ -13100,6 +13285,71 @@ components:
           format: double
         is_active:
           type: boolean
+    PatchedClientProfileRequest:
+      type: object
+      description: |-
+        Who the client is: registrations, contacts, notes.
+
+        The registration numbers are kept encrypted. A person who may edit the profile sees them in full; anyone else who
+        can open the client sees them masked. None of this is sent to the model tier.
+      properties:
+        trade_name:
+          type: string
+          maxLength: 255
+        constitution:
+          oneOf:
+          - $ref: '#/components/schemas/ConstitutionEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        incorporated_on:
+          type: string
+          format: date
+          nullable: true
+        client_since:
+          type: string
+          format: date
+          nullable: true
+        address:
+          type: string
+          maxLength: 1000
+        contact_name:
+          type: string
+          maxLength: 255
+        contact_email:
+          type: string
+          format: email
+          maxLength: 254
+        contact_phone:
+          type: string
+          maxLength: 32
+        contact2_name:
+          type: string
+          maxLength: 255
+        contact2_email:
+          type: string
+          format: email
+          maxLength: 254
+        contact2_phone:
+          type: string
+          maxLength: 32
+        msme_category:
+          oneOf:
+          - $ref: '#/components/schemas/MsmeCategoryEnum'
+          - $ref: '#/components/schemas/BlankEnum'
+        notes:
+          type: string
+          maxLength: 4000
+        pan:
+          type: string
+          maxLength: 10
+        tan:
+          type: string
+          maxLength: 10
+        cin:
+          type: string
+          maxLength: 21
+        udyam:
+          type: string
+          maxLength: 24
     PatchedClientRequest:
       type: object
       properties:

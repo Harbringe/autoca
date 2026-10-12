@@ -41,6 +41,8 @@ ACTIONS: list[tuple[str, str, str]] = [
     ("PATCH", rf"^/api/v1/clients/(?P<client>{UUID})/$", "Changed the details of {client}"),
     ("PUT", rf"^/api/v1/clients/(?P<client>{UUID})/$", "Changed the details of {client}"),
     ("DELETE", rf"^/api/v1/clients/(?P<client>{UUID})/$", "Deleted a client"),
+    ("GET", rf"^/api/v1/clients/(?P<client>{UUID})/profile/$", "Opened the profile of {client}, registration numbers shown"),
+    ("PATCH", rf"^/api/v1/clients/(?P<client>{UUID})/profile/$", "Changed the profile of {client}"),
     ("POST", rf"^/api/v1/clients/(?P<client>{UUID})/statements/upload/$", "Uploaded a statement for {client}"),
     ("POST", rf"^/api/v1/clients/(?P<client>{UUID})/approvals/$", "Approved entries for {client}"),
     ("POST", rf"^/api/v1/clients/(?P<client>{UUID})/review-queue/suggest/$", "Asked the model about {client}'s rows"),

@@ -38,6 +38,7 @@ SENSITIVE_READS = (
     re.compile(rf"^/api/v1/clients/{_UUID}/bank-accounts/{_UUID}/$"),
     re.compile(rf"^/api/v1/documents/{_UUID}/preview/$"),
     re.compile(rf"^/api/v1/documents/{_UUID}/preview/\d+/$"),
+    re.compile(rf"^/api/v1/clients/{_UUID}/profile/$"),
 )
 
 

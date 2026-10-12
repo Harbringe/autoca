@@ -5104,6 +5104,8 @@ export interface components {
              *     * `AI_REVISED` - AI_REVISED
              */
             marker?: components["schemas"]["MarkReviewedMarkerEnum"];
+            /** @description Clear the marker on only these entries. Omit to clear every entry's. */
+            entries?: string[];
         };
         /**
          * @description * `PARTY_EQUALS` - Counterparty is exactly

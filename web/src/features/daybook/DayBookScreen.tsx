@@ -8,8 +8,8 @@
 
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
-import { Lock, Search, Undo2 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { Check, ChevronRight, Lock, Search, Undo2 } from 'lucide-react'
+import { Fragment, useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
 import { messageOf } from '@/api/errors'
@@ -21,9 +21,10 @@ import { Money } from '@/components/ca/Money'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Collapse, useClosing } from '@/components/ui/collapse'
+import { GlideChips } from '@/components/ui/glide-chips'
 import { Checkbox, Textarea } from '@/components/ui/controls'
-import { DataTable, type Column } from '@/components/ui/table'
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { DataTable } from '@/components/ui/table'
 import { DateInput } from '@/components/ui/date-input'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
@@ -58,7 +59,12 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
   const [type, setType] = useState<string>('')
   const [text, setText] = useState('')
   const [onlyAi, setOnlyAi] = useState(false)
-  const [open, setOpen] = useState<JournalEntry | null>(null)
+  const [openId, setOpenId] = useState<string | null>(null)
+  const closingId = useClosing(openId)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [marking, setMarking] = useState(false)
+  const invalidate = useInvalidateClient(clientId)
+  const queryClient = useQueryClient()
 
   const bankNames = useMemo(() => new Set((accounts.data?.results ?? []).map((a) => a.ledger_name ?? '')), [accounts.data])
   const inYear = useMemo(() => (entries.data ?? []).filter((e) => e.financial_year === fy), [entries.data, fy])
@@ -84,131 +90,240 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
   if (entries.error) return <ErrorState error={entries.error} retry={() => void entries.refetch()} />
 
   const otherYears = (entries.data ?? []).length - inYear.length
-  type Row = (typeof rows)[number]
-  const dash = <span className="text-faint" aria-hidden>–</span>
-  const columns: Column<Row>[] = [
-    { key: 'date', header: 'Date', cell: ({ e }) => <span className="num font-medium text-heading">{formatDate(e.entry_date)}</span> },
-    {
-      key: 'particulars',
-      header: 'Particulars',
-      className: 'max-w-0 w-full',
-      cell: ({ e, line }) => (
-        <>
-          <span className="flex items-center gap-1.5">
-            <span className="truncate font-medium text-heading">{line.ledger_name}</span>
-            {line.party_name && <span className="truncate text-muted-foreground">· {line.party_name}</span>}
-            {e.marker && <Badge tone="assistant">{e.marker === 'AI_POSTED' ? 'Assistant posted' : 'Assistant changed'}</Badge>}
-            {e.is_locked && <Lock className="size-3.5 shrink-0 text-muted-foreground" aria-label="Sealed" />}
-          </span>
-          <div className="mt-1 line-clamp-2 whitespace-normal text-[13px] leading-snug text-muted-foreground" title={e.narration}>
-            {e.narration}
-          </div>
-        </>
-      ),
-    },
-    { key: 'type', header: 'Vch type', priority: 2, cell: ({ e }) => <span className="text-muted-foreground">{e.voucher_type}</span> },
-    { key: 'no', header: 'Vch no.', priority: 2, align: 'right', cell: ({ e }) => e.entry_no },
-    { key: 'debit', header: 'Debit', align: 'right', cell: ({ line, isDr }) => (isDr ? <Money display={line.amount_display} /> : dash) },
-    { key: 'credit', header: 'Credit', align: 'right', cell: ({ line, isDr }) => (!isDr ? <Money display={line.amount_display} /> : dash) },
-  ]
   const mayUnpost = can('journal.approve') && !!client.data?.can_post
+  const mayMark = can('journal.correct') && !!client.data?.can_post
   const assistantEntries = inYear.filter(isAssistantEntry)
+  const selectable = mayMark || mayUnpost ? shown.filter(isAssistantEntry) : []
+  const chosen = selectable.filter((e) => picked.has(e.id))
+  // With some ticked, the buttons act on those; with none, on every assistant entry of the year.
+  const targets = chosen.length ? chosen : assistantEntries
+  const targetWord = chosen.length ? 'selected' : 'assistant-posted'
+  const withBox = selectable.length > 0
+  const columnCount = 6 + (withBox ? 1 : 0)
+  const allPicked = selectable.length > 0 && chosen.length === selectable.length
+  const toggle = (id: string) =>
+    setPicked((was) => {
+      const next = new Set(was)
+      if (!next.delete(id)) next.add(id)
+      return next
+    })
+
+  async function markChecked(list: JournalEntry[]) {
+    setMarking(true)
+    try {
+      const ids = list.map((e) => e.id)
+      for (let i = 0; i < ids.length; i += 500) await raw.post(`${V1}/clients/${clientId}/books/mark-reviewed/`, { entries: ids.slice(i, i + 500) })
+      await Promise.all([invalidate(), queryClient.invalidateQueries({ queryKey: clientKeys.part(clientId, 'journal') })])
+      setPicked(new Set())
+      toast.success(list.length === 1 ? 'Marked as checked' : `${plural(list.length, 'entry', 'entries')} marked as checked`)
+    } catch (e) {
+      toast.error(messageOf(e))
+    } finally {
+      setMarking(false)
+    }
+  }
+
+  const numCell = 'num px-4 py-4 text-right align-top'
+  const dash = <span className="text-faint" aria-hidden>–</span>
+  const headCell = 'whitespace-nowrap px-4 py-4 text-xs font-semibold text-muted-foreground'
   return (
-    <div className="grid gap-3 [&>*]:min-w-0">
+    <div className="grid gap-4 [&>*]:min-w-0">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-muted-foreground">
           FY {fyLabel(fy)} · {plural(inYear.length, 'voucher')}
           {otherYears > 0 && ` · ${otherYears} in other years (change the year at the top)`}
         </div>
-        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-2">
+        <div className="flex min-w-0 max-w-full flex-wrap items-center gap-3">
           <div className="relative">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-            <Input aria-label="Search the Day Book" placeholder="Ledger, party or narration" className="w-60 pl-8" value={text} onChange={(e) => setText(e.target.value)} />
-          </div>
-          <div className="flex max-w-full gap-1 overflow-x-auto rounded-lg bg-muted p-1 text-sm [scrollbar-width:none]">
-            {['', ...TYPES].map((t) => (
-              <button
-                key={t || 'all'}
-                type="button"
-                onClick={() => setType(t)}
-                aria-pressed={type === t}
-                className={cn('shrink-0 whitespace-nowrap rounded-md px-2.5 py-1 text-muted-foreground max-sm:min-h-10', type === t && 'bg-card text-foreground shadow-xs')}
-              >
-                {t || 'All'}
-              </button>
-            ))}
+            <Input aria-label="Search the Day Book" placeholder="Ledger, party or narration" className="w-64 pl-8" value={text} onChange={(e) => setText(e.target.value)} />
           </div>
           <Checkbox label="Assistant entries only" checked={onlyAi} onChange={(e) => setOnlyAi(e.target.checked)} />
-          {mayUnpost && assistantEntries.length > 0 && (
-            <Button variant="outline" size="sm" onClick={() => setBulk(true)}>
-              <Undo2 /> Unpost {assistantEntries.length} assistant-posted
-            </Button>
-          )}
         </div>
       </div>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <GlideChips
+          label="Voucher type"
+          value={type}
+          onChange={setType}
+          options={['', ...TYPES].map((t) => ({ value: t, label: t || 'All' }))}
+        />
+        {targets.length > 0 && (mayMark || mayUnpost) && (
+          <div className="flex flex-wrap items-center gap-2">
+            {mayMark && (
+              <Button variant="outline" size="sm" disabled={marking} onClick={() => void markChecked(targets)}>
+                <Check /> Mark {targets.length} {targetWord} as checked
+              </Button>
+            )}
+            {mayUnpost && (
+              <Button variant="outline" size="sm" onClick={() => setBulk(true)}>
+                <Undo2 /> Unpost {targets.length} {targetWord}
+              </Button>
+            )}
+          </div>
+        )}
+      </div>
 
-      <DataTable
-        caption={`Day Book, FY ${fyLabel(fy)}`}
-        columns={columns}
-        rows={rows}
-        loading={entries.isPending || accounts.isPending}
-        rowKey={(r) => r.e.id}
-        roomy
-        onRowClick={(r) => setOpen(r.e)}
-        scrollHeight="calc(100svh - 17rem)"
-        empty={
-          inYear.length === 0 ? (
-            <EmptyState title={`No vouchers in FY ${fyLabel(fy)}`}>
-              Post rows from{' '}
-              <Link to="/clients/$clientId/review" params={{ clientId }} search={{ stage: 'unresolved' }} className="underline">
-                Review
-              </Link>
-              {otherYears > 0 ? `, or pick another financial year at the top (${otherYears} entries are in other years).` : '.'}
-            </EmptyState>
-          ) : (
-            <EmptyState title="No voucher matches">
-              <button type="button" className="underline" onClick={() => { setText(''); setType(''); setOnlyAi(false) }}>
-                Clear the filters
-              </button>
-            </EmptyState>
-          )
-        }
-        footer={
-          <tr>
-            <td className="px-4 py-4" colSpan={4}>
-              Total ({plural(shown.length, 'voucher')})
-            </td>
-            <td className="num px-4 py-4 text-right">{formatPaise(debit)}</td>
-            <td className="num px-4 py-4 text-right">{formatPaise(credit)}</td>
-          </tr>
-        }
-      />
-
-      {open && <EntryDialog clientId={clientId} entry={open} onClose={() => setOpen(null)} />}
+      {entries.isPending || accounts.isPending ? (
+        <Spinner label="Reading the Day Book…" />
+      ) : rows.length === 0 ? (
+        inYear.length === 0 ? (
+          <EmptyState title={`No vouchers in FY ${fyLabel(fy)}`}>
+            Post rows from{' '}
+            <Link to="/clients/$clientId/review" params={{ clientId }} search={{ stage: 'unresolved' }} className="underline">
+              Review
+            </Link>
+            {otherYears > 0 ? `, or pick another financial year at the top (${otherYears} entries are in other years).` : '.'}
+          </EmptyState>
+        ) : (
+          <EmptyState title="No voucher matches">
+            <button type="button" className="underline" onClick={() => { setText(''); setType(''); setOnlyAi(false) }}>
+              Clear the filters
+            </button>
+          </EmptyState>
+        )
+      ) : (
+        <div role="region" aria-label={`Day Book, FY ${fyLabel(fy)}`} className="overflow-x-auto rounded-xl border border-border-strong bg-card">
+          <table className="w-full text-left text-sm max-sm:table-fixed">
+            <caption className="sr-only">Day Book, FY {fyLabel(fy)}. Select a voucher to open it.</caption>
+            <thead className="border-b border-border-strong">
+              <tr>
+                {withBox && (
+                  <th scope="col" className="w-12 py-4 pl-4 pr-0 align-middle sm:pl-5">
+                    <Checkbox
+                      aria-label="Select every assistant entry shown"
+                      checked={allPicked}
+                      onChange={() => setPicked(allPicked ? new Set() : new Set(selectable.map((e) => e.id)))}
+                    />
+                  </th>
+                )}
+                <th scope="col" className={cn(headCell, 'max-sm:hidden')}>Date</th>
+                <th scope="col" className={cn(headCell, 'w-full')}>Particulars</th>
+                <th scope="col" className={cn(headCell, 'max-sm:hidden')}>Vch type</th>
+                <th scope="col" className={cn(headCell, 'text-right max-sm:hidden')}>Vch no.</th>
+                <th scope="col" className={cn(headCell, 'w-32 text-right sm:hidden')}>Amount</th>
+                <th scope="col" className={cn(headCell, 'text-right max-sm:hidden')}>Debit</th>
+                <th scope="col" className={cn(headCell, 'text-right max-sm:hidden')}>Credit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(({ e, line, isDr }) => {
+                const isOpen = openId === e.id
+                const detailShown = isOpen || closingId === e.id
+                const toggleOpen = () => setOpenId(isOpen ? null : e.id)
+                return (
+                  <Fragment key={e.id}>
+                    <tr
+                      onClick={(ev) => {
+                        if ((ev.target as HTMLElement).closest('a, button, input, label')) return
+                        toggleOpen()
+                      }}
+                      className={cn('cursor-pointer border-b border-border-strong hover:bg-hover', isOpen && 'bg-surface-2', !detailShown && 'last:border-b-0')}
+                    >
+                      {withBox && (
+                        <td className="w-12 py-4 pl-4 pr-0 align-top sm:pl-5">
+                          {isAssistantEntry(e) && <Checkbox aria-label={`Select ${e.voucher_type} ${e.entry_no}`} checked={picked.has(e.id)} onChange={() => toggle(e.id)} />}
+                        </td>
+                      )}
+                      <td className="num whitespace-nowrap px-4 py-4 align-top font-medium text-heading max-sm:hidden">{formatDate(e.entry_date)}</td>
+                      <td className="w-full max-w-0 px-4 py-4 align-top">
+                        <button
+                          type="button"
+                          onClick={toggleOpen}
+                          aria-expanded={isOpen}
+                          className="flex w-full min-w-0 flex-col gap-1 rounded-sm text-left focus-visible:outline-offset-4"
+                        >
+                          <span className="num pl-[22px] text-xs font-medium text-heading sm:hidden">{formatDate(e.entry_date)}</span>
+                          <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                            <ChevronRight aria-hidden className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform duration-200', isOpen && 'rotate-90')} />
+                            <span className="truncate font-medium text-heading">{line.ledger_name}</span>
+                            {line.party_name && <span className="truncate text-muted-foreground">· {line.party_name}</span>}
+                            {e.marker && <Badge tone="assistant">{e.marker === 'AI_POSTED' ? 'Assistant posted' : 'Assistant changed'}</Badge>}
+                            {e.is_locked && <Lock className="size-3.5 shrink-0 text-muted-foreground" aria-label="Sealed" />}
+                          </span>
+                          {!isOpen && (
+                            <span className="line-clamp-2 pl-[22px] text-[13px] leading-snug text-muted-foreground" title={e.narration}>
+                              {e.narration}
+                            </span>
+                          )}
+                        </button>
+                      </td>
+                      <td className="whitespace-nowrap px-4 py-4 align-top text-muted-foreground max-sm:hidden">{e.voucher_type}</td>
+                      <td className={cn(numCell, 'max-sm:hidden')}>{e.entry_no}</td>
+                      <td className={cn(numCell, 'sm:hidden')}>
+                        <Money display={line.amount_display} />
+                        <div className="text-xs font-normal text-muted-foreground">{isDr ? 'Dr' : 'Cr'}</div>
+                      </td>
+                      <td className={cn(numCell, 'max-sm:hidden')}>{isDr ? <Money display={line.amount_display} /> : dash}</td>
+                      <td className={cn(numCell, 'max-sm:hidden')}>{!isDr ? <Money display={line.amount_display} /> : dash}</td>
+                    </tr>
+                    {detailShown && (
+                      <tr className="border-b border-border-strong bg-surface-2 last:border-b-0">
+                        <td colSpan={columnCount} className="max-w-0 overflow-hidden p-0">
+                          <Collapse open={isOpen}>
+                            <EntryDetail clientId={clientId} entry={e} onClose={() => setOpenId(null)} onMark={() => markChecked([e])} marking={marking} />
+                          </Collapse>
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                )
+              })}
+            </tbody>
+            <tfoot className="border-t-2 border-foreground bg-surface-2 font-semibold">
+              <tr>
+                <td className="px-4 py-4 max-sm:hidden" colSpan={columnCount - 2}>
+                  Total ({plural(shown.length, 'voucher')})
+                </td>
+                <td className="px-4 py-4 sm:hidden" colSpan={withBox ? 2 : 1}>
+                  Total ({plural(shown.length, 'voucher')})
+                </td>
+                <td className="num px-4 py-4 text-right max-sm:hidden">{formatPaise(debit)}</td>
+                <td className="num px-4 py-4 text-right max-sm:hidden">{formatPaise(credit)}</td>
+                <td className="px-4 py-4 text-right text-xs font-normal text-muted-foreground sm:hidden">Dr {formatPaise(debit)}<br />Cr {formatPaise(credit)}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      )}
 
       <Confirm
         open={bulk}
         onOpenChange={setBulk}
-        title={`Unpost ${plural(assistantEntries.length, 'assistant-posted entry', 'assistant-posted entries')}?`}
-        confirmLabel={`Unpost ${assistantEntries.length}`}
+        title={`Unpost ${plural(targets.length, 'assistant-posted entry', 'assistant-posted entries')}?`}
+        confirmLabel={`Unpost ${targets.length}`}
         note="optional"
         noteLabel="Why (kept in each entry's change log)"
         onConfirm={async (note) => {
-          const { done, failed } = await unpostMany(assistantEntries, note || 'Unposted: posted by the assistant without review.')
+          const { done, failed } = await unpostMany(targets, note || 'Unposted: posted by the assistant without review.')
+          setPicked(new Set())
           if (failed.length) toast.warning(`Unposted ${done}; ${failed.length} could not be`, { description: failed.slice(0, 3).join(' · ') })
           else toast.success(`Unposted ${plural(done, 'entry', 'entries')}; the transactions are back in Review`)
         }}
       >
         <p>
-          Every entry in FY {fyLabel(fy)} that rules posted without a person looking leaves the books, and its transaction goes back to
-          Review to be decided. What each entry was is kept in its change log. Entries you have already corrected are not included.
+          {chosen.length ? 'The entries you ticked' : `Every entry in FY ${fyLabel(fy)} that rules posted without a person looking`} leave the books, and each
+          transaction goes back to Review to be decided. What each entry was is kept in its change log. Entries you have already corrected are not included.
         </p>
       </Confirm>
     </div>
   )
 }
 
-function EntryDialog({ clientId, entry, onClose }: { clientId: string; entry: JournalEntry; onClose: () => void }) {
+/** An opened voucher, laid out in one column under its row: what it is, both sides, who posted it, what to do next. */
+function EntryDetail({
+  clientId,
+  entry,
+  onClose,
+  onMark,
+  marking,
+}: {
+  clientId: string
+  entry: JournalEntry
+  onClose: () => void
+  onMark: () => void
+  marking: boolean
+}) {
   const { can } = useSession()
   const client = useQuery(clientDetail(clientId))
   const queryClient = useQueryClient()
@@ -268,22 +383,35 @@ function EntryDialog({ clientId, entry, onClose }: { clientId: string; entry: Jo
     }
   }
 
+  const total = entry.lines.filter((l) => l.direction === 'DR').reduce((sum, l) => sum + l.amount_paise, 0)
+  const mayMark = !!entry.marker && !entry.is_locked && can('journal.correct') && !!client.data?.can_post
+
   return (
-    <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent
-        className="sm:left-auto sm:right-0 sm:top-0 sm:h-svh sm:max-h-none sm:w-full sm:max-w-xl sm:translate-x-0 sm:translate-y-0 sm:content-start sm:rounded-none sm:border-y-0 sm:border-r-0"
-        aria-describedby={undefined}
-      >
-        <DialogHeader>
-          <DialogTitle>
-            {entry.voucher_type} No. {entry.entry_no} · {formatDate(entry.entry_date)}
-          </DialogTitle>
-          <DialogDescription>
-            FY {entry.fy_label}
-            {entry.approved_by_email ? ` · Posted by ${entry.approved_by_email}, ${formatDateTime(entry.approved_at)}` : ' · Posted automatically by a rule'}
+    <div className="grid max-w-3xl gap-5 px-5 py-6 sm:pl-[3.75rem] sm:pr-6 [&>*]:min-w-0">
+        <div className="grid gap-1">
+          <div className="text-sm text-muted-foreground">
+            {entry.voucher_type} No. {entry.entry_no} · {formatDate(entry.entry_date)} · FY {entry.fy_label}
             {entry.is_locked && ' · In signed-off books'}
-          </DialogDescription>
-        </DialogHeader>
+          </div>
+          <div className="num text-[26px] font-semibold leading-tight text-heading">{formatPaise(total)}</div>
+          <div className="text-sm text-muted-foreground">
+            {entry.approved_by_email ? `Posted by ${entry.approved_by_email}, ${formatDateTime(entry.approved_at)}` : 'Posted automatically by a rule'}
+          </div>
+        </div>
+        {entry.marker && (
+          <p className="rounded-lg border bg-info-bg p-3.5 text-sm leading-relaxed">
+            {entry.marker === 'AI_POSTED' ? (
+              <>
+                <strong className="font-semibold">Nobody has looked at this entry yet.</strong> A rule posted it, so the books cannot be signed off
+                until it is checked. If it is right, mark it checked. If it is wrong, unpost it and decide it in Review.
+              </>
+            ) : (
+              <>
+                <strong className="font-semibold">The assistant changed this entry</strong> after a correction elsewhere. Check it, then mark it checked.
+              </>
+            )}
+          </p>
+        )}
 
         <DataTable
           caption={`Lines of ${entry.voucher_type} No. ${entry.entry_no}`}
@@ -311,17 +439,32 @@ function EntryDialog({ clientId, entry, onClose }: { clientId: string; entry: Jo
             { key: 'credit', header: 'Credit', align: 'right', cell: (l) => (l.direction === 'CR' ? <Money display={l.amount_display} /> : <span className="text-faint" aria-hidden>–</span>) },
           ]}
         />
-        <p className="text-sm">
-          <span className="text-muted-foreground">Narration: </span>
-          {entry.narration}
-        </p>
-        {entry.marker && (
-          <p className="rounded-md bg-info-bg p-2.5 text-sm">
-            {entry.marker === 'AI_POSTED'
-              ? 'Posted by a rule without anyone looking. If it is wrong, unpost it below and decide it in Review; if it is right, clear the marker on the Books tab.'
-              : 'Changed by the assistant after a correction elsewhere. Check it.'}
-          </p>
-        )}
+        <div className="grid gap-1 text-sm">
+          <span className="text-muted-foreground">Narration</span>
+          <span className="leading-relaxed">{entry.narration}</span>
+        </div>
+        <div className="grid gap-1.5 text-sm">
+          <div className="text-muted-foreground">History</div>
+          {changes.isPending ? (
+            <Spinner className="p-2" />
+          ) : (changes.data ?? []).length === 0 ? (
+            <p className="text-sm text-muted-foreground">No changes since it was posted.</p>
+          ) : (
+            <ul className="grid gap-1 text-sm">
+              {changes.data!.map((c) => (
+                <li key={c.id} className="flex justify-between gap-3">
+                  <span>
+                    {c.action_display}
+                    {c.note && <span className="text-muted-foreground"> · {c.note}</span>}
+                  </span>
+                  <span className="shrink-0 text-muted-foreground">
+                    {c.actor_email ?? 'the assistant'} · {formatDateTime(c.created_at)}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
 
         {correcting ? (
           <div className="grid gap-3 rounded-md border p-3">
@@ -358,16 +501,24 @@ function EntryDialog({ clientId, entry, onClose }: { clientId: string; entry: Jo
               </Button>
             </div>
           ) : (
-          mayEdit && (
-            <div className="flex justify-end gap-2">
-              {!entry.is_locked && (
-                <Button variant="outline" onClick={() => setRemoving(true)}>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">
+            <div>
+              {mayEdit && !entry.is_locked && (
+                <Button variant="outline" className="border-destructive/50 text-destructive" onClick={() => setRemoving(true)}>
                   <Undo2 /> Unpost (back to Review)
                 </Button>
               )}
-              <Button onClick={() => setCorrecting(true)}>Correct</Button>
             </div>
-          )
+            <div className="flex flex-wrap items-center gap-2">
+              <Button variant="ghost" onClick={onClose}>Close</Button>
+              {mayEdit && <Button variant="outline" onClick={() => setCorrecting(true)}>Correct</Button>}
+              {mayMark && (
+                <Button onClick={onMark} disabled={marking}>
+                  <Check /> It is right: mark as checked
+                </Button>
+              )}
+            </div>
+          </div>
           )
         )}
 
@@ -402,29 +553,6 @@ function EntryDialog({ clientId, entry, onClose }: { clientId: string; entry: Jo
           )
         )}
 
-        <div>
-          <div className="mb-1 text-[13px] font-medium">History</div>
-          {changes.isPending ? (
-            <Spinner className="p-2" />
-          ) : (changes.data ?? []).length === 0 ? (
-            <p className="text-sm text-muted-foreground">No changes since it was posted.</p>
-          ) : (
-            <ul className="grid gap-1 text-sm">
-              {changes.data!.map((c) => (
-                <li key={c.id} className="flex justify-between gap-3">
-                  <span>
-                    {c.action_display}
-                    {c.note && <span className="text-muted-foreground"> · {c.note}</span>}
-                  </span>
-                  <span className="shrink-0 text-muted-foreground">
-                    {c.actor_email ?? 'the assistant'} · {formatDateTime(c.created_at)}
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-
         <Confirm
           open={removing}
           onOpenChange={setRemoving}
@@ -452,7 +580,6 @@ function EntryDialog({ clientId, entry, onClose }: { clientId: string; entry: Jo
             it again. What the entry was is kept in its change log. Voucher numbers close up when the books are sealed.
           </p>
         </Confirm>
-      </DialogContent>
-    </Dialog>
+    </div>
   )
 }

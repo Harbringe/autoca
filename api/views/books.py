@@ -63,6 +63,13 @@ class MarkReviewedSerializer(serializers.Serializer):
         required=False,
         help_text="Clear only this kind of marker. Omit to clear both.",
     )
+    entries = serializers.ListField(
+        child=serializers.UUIDField(),
+        required=False,
+        allow_empty=False,
+        max_length=500,
+        help_text="Clear the marker on only these entries. Omit to clear every entry's.",
+    )
 
 
 class BooksEventSerializer(serializers.ModelSerializer):
@@ -292,11 +299,14 @@ class BooksView(viewsets.GenericViewSet):
             entries = entries.filter(entry_date__gt=through)
         if wanted:
             entries = entries.filter(marker=wanted)
+        only = payload.validated_data.get("entries")
+        if only:
+            entries = entries.filter(pk__in=only)
         with transaction.atomic():
             entries.update(marker=EntryMarker.NONE)
             from classify.models import TransactionClassification
 
-            if wanted in (None, EntryMarker.AI_REVISED):
+            if not only and wanted in (None, EntryMarker.AI_REVISED):
                 TransactionClassification.objects.filter(
                     firm_id=client.firm_id,
                     transaction__bank_account__client=client,

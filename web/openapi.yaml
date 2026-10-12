@@ -10870,6 +10870,14 @@ components:
 
             * `AI_POSTED` - AI_POSTED
             * `AI_REVISED` - AI_REVISED
+        entries:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: Clear the marker on only these entries. Omit to clear every
+            entry's.
+          maxItems: 500
     MatchTypeEnum:
       enum:
       - PARTY_EQUALS

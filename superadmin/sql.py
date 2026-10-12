@@ -55,14 +55,28 @@ FUNCTIONS = (
     "app.superadmin_can_read()",
     "app.superadmin_assert()",
     "app.superadmin_firms()",
+    "app.active_firm_ids()",
     "app.superadmin_members(uuid)",
     "app.superadmin_clients(uuid)",
     "app.superadmin_member_clients(uuid, uuid)",
 )
 
+# The ids of the active firms and nothing else, for the background assistant, which has no signed-in person (so the gated views
+# above give it nothing) and needs to know which firms to enter. Like the others it runs as the reader role, which is how it can
+# see core_firm; it is not gated on a user, so what it hands out is limited to ids.
+ACTIVE_FIRM_IDS_SQL = """
+CREATE OR REPLACE FUNCTION app.active_firm_ids()
+RETURNS SETOF uuid {header} AS $$
+BEGIN
+    RETURN QUERY SELECT f.id FROM core_firm f WHERE f.is_active;
+END;
+$$;
+"""
+
 # pg_temp is listed last on purpose: PostgreSQL searches it FIRST unless it is named, so a session that could create a
 # temporary table called core_user would otherwise be read by these functions instead of the real one.
 _HEADER = "LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = pg_catalog, public, pg_temp"
+ACTIVE_FIRM_IDS_SQL = ACTIVE_FIRM_IDS_SQL.format(header=_HEADER)
 
 # ruff: noqa: S608 -- DDL from module constants only.
 FUNCTIONS_SQL = f"""
@@ -118,6 +132,7 @@ BEGIN
 END;
 $$;
 
+{ACTIVE_FIRM_IDS_SQL}
 CREATE OR REPLACE FUNCTION app.superadmin_members(target_firm uuid)
 RETURNS TABLE (
     membership_id uuid, user_id uuid, email text, full_name text, role text,

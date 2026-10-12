@@ -108,15 +108,21 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
       return next
     })
 
+  // The markers disappear at once; the server is told in the background and they come back if it refuses.
   async function markChecked(list: JournalEntry[]) {
+    const key = journal(clientId).queryKey
+    const before = queryClient.getQueryData<JournalEntry[]>(key)
+    const ids = new Set(list.map((e) => e.id))
+    queryClient.setQueryData<JournalEntry[]>(key, (rows) => rows?.map((e) => (ids.has(e.id) ? { ...e, marker: '', marker_display: '' } : e)))
+    setPicked(new Set())
     setMarking(true)
     try {
-      const ids = list.map((e) => e.id)
-      for (let i = 0; i < ids.length; i += 500) await raw.post(`${V1}/clients/${clientId}/books/mark-reviewed/`, { entries: ids.slice(i, i + 500) })
-      await Promise.all([invalidate(), queryClient.invalidateQueries({ queryKey: clientKeys.part(clientId, 'journal') })])
-      setPicked(new Set())
+      const all = [...ids]
+      for (let i = 0; i < all.length; i += 500) await raw.post(`${V1}/clients/${clientId}/books/mark-reviewed/`, { entries: all.slice(i, i + 500) })
+      void Promise.all([invalidate(), queryClient.invalidateQueries({ queryKey: clientKeys.part(clientId, 'journal') })])
       toast.success(list.length === 1 ? 'Marked as checked' : `${plural(list.length, 'entry', 'entries')} marked as checked`)
     } catch (e) {
+      queryClient.setQueryData(key, before)
       toast.error(messageOf(e))
     } finally {
       setMarking(false)

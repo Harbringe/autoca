@@ -5,7 +5,7 @@
 // name), merge into one that exists, or reject. Parties carry the GSTIN and TDS defaults.
 // Rules are mostly learned from decisions in Review; they can be switched off or written by hand.
 
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Bot, ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { Fragment, useEffect, useRef, useState } from 'react'
@@ -37,6 +37,14 @@ import { useFy } from '@/features/shell/useFy'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { initials } from '@/features/clients/clientsView'
+
+/**
+ * Puts what the server just answered into a cached list at once, so a save shows on screen without waiting for the whole
+ * client's data to be fetched again. The refetch still follows, in the background, to catch anything else that changed.
+ */
+function upsertInCache<T extends { id: string }>(queryClient: QueryClient, key: readonly unknown[], item: T) {
+  queryClient.setQueryData<T[]>(key, (rows) => (rows ? (rows.some((r) => r.id === item.id) ? rows.map((r) => (r.id === item.id ? item : r)) : [...rows, item]) : rows))
+}
 
 const LEDGER_GROUP_LABEL = new Map<string, string>(LEDGER_GROUPS)
 
@@ -88,6 +96,7 @@ export function MastersScreen({ clientId, tab, ledgerId }: { clientId: string; t
 
 function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: string }) {
   const { can } = useSession()
+  const queryClient = useQueryClient()
   const { fy, setFy } = useFy()
   const client = useQuery(clientDetail(clientId))
   const all = useQuery(ledgersQuery(clientId))
@@ -153,11 +162,15 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
   const headCell = 'whitespace-nowrap px-4 py-4 text-xs font-semibold text-muted-foreground'
 
   async function remove(l: LedgerAccount) {
+    const key = ledgersQuery(clientId).queryKey
+    const before = queryClient.getQueryData<LedgerAccount[]>(key)
+    queryClient.setQueryData<LedgerAccount[]>(key, (rows) => rows?.filter((x) => x.id !== l.id))
     try {
       await raw.delete(`${V1}/clients/${clientId}/ledgers/${l.id}/`)
-      await invalidate()
+      void invalidate()
       toast.success(`Ledger “${l.name}” deleted`)
     } catch (e) {
+      queryClient.setQueryData(key, before)
       toast.error(isApiError(e) && e.code === 'in_use' ? `“${l.name}” has posted entries, so it cannot be deleted. Edit it and untick Active instead.` : messageOf(e))
     }
   }
@@ -394,6 +407,7 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
 
 function LedgerForm({ clientId, ledger, onClose }: { clientId: string; ledger: LedgerAccount | null; onClose: () => void }) {
   const invalidate = useInvalidateClient(clientId)
+  const queryClient = useQueryClient()
   const [name, setName] = useState(ledger?.name ?? '')
   const [group, setGroup] = useState<string>(ledger?.group || 'INDIRECT_EXPENSE')
   const [active, setActive] = useState(ledger?.is_active ?? true)
@@ -403,9 +417,11 @@ function LedgerForm({ clientId, ledger, onClose }: { clientId: string; ledger: L
   async function save() {
     try {
       const body = { name: name.trim(), group, is_active: active, nce_line: line }
-      if (ledger) await raw.patch(`${V1}/clients/${clientId}/ledgers/${ledger.id}/`, body)
-      else await raw.post(`${V1}/clients/${clientId}/ledgers/`, body)
-      await invalidate()
+      const saved = ledger
+        ? await raw.patch<LedgerAccount>(`${V1}/clients/${clientId}/ledgers/${ledger.id}/`, body)
+        : await raw.post<LedgerAccount>(`${V1}/clients/${clientId}/ledgers/`, body)
+      if (saved?.id) upsertInCache(queryClient, ledgersQuery(clientId).queryKey, saved)
+      void invalidate()
       toast.success(ledger ? 'Ledger saved' : `Ledger “${body.name}” created`)
       onClose()
     } catch (e) {
@@ -740,6 +756,7 @@ function Parties({ clientId }: { clientId: string }) {
 /** The party's fields with Save and Cancel, in place of a dialog: opened under its row, or as a new party above the list. */
 function PartyEditor({ clientId, party, onClose }: { clientId: string; party: Party | null; onClose: () => void }) {
   const invalidate = useInvalidateClient(clientId)
+  const queryClient = useQueryClient()
   const [name, setName] = useState(party?.canonical_name ?? '')
   const [gstin, setGstin] = useState(party?.gstin ?? '')
   const [role, setRole] = useState<string>(party?.role ?? 'VENDOR')
@@ -756,9 +773,11 @@ function PartyEditor({ clientId, party, onClose }: { clientId: string; party: Pa
     setSaving(true)
     setErrors({})
     try {
-      if (party) await raw.patch(`${V1}/clients/${clientId}/parties/${party.id}/`, body)
-      else await raw.post(`${V1}/clients/${clientId}/parties/`, body)
-      await invalidate()
+      const saved = party
+        ? await raw.patch<Party>(`${V1}/clients/${clientId}/parties/${party.id}/`, body)
+        : await raw.post<Party>(`${V1}/clients/${clientId}/parties/`, body)
+      if (saved?.id) upsertInCache(queryClient, partiesQuery(clientId).queryKey, saved)
+      void invalidate()
       toast.success('Party saved')
       onClose()
     } catch (e) {
@@ -945,6 +964,7 @@ function Rules({ clientId }: { clientId: string }) {
 
 function RuleForm({ clientId, ledgers, onClose }: { clientId: string; ledgers: LedgerAccount[]; onClose: () => void }) {
   const invalidate = useInvalidateClient(clientId)
+  const queryClient = useQueryClient()
   const [matchType, setMatchType] = useState('NARRATION_CONTAINS')
   const [pattern, setPattern] = useState('')
   const [direction, setDirection] = useState('ANY')
@@ -953,8 +973,9 @@ function RuleForm({ clientId, ledgers, onClose }: { clientId: string; ledgers: L
 
   async function save() {
     try {
-      await raw.post(`${V1}/clients/${clientId}/rules/`, { match_type: matchType, pattern: pattern.trim(), direction, ledger })
-      await invalidate()
+      const saved = await raw.post<Rule>(`${V1}/clients/${clientId}/rules/`, { match_type: matchType, pattern: pattern.trim(), direction, ledger })
+      if (saved?.id) upsertInCache(queryClient, rulesQuery(clientId).queryKey, saved)
+      void invalidate()
       toast.success('Rule created; it applies to rows uploaded from now on')
       onClose()
     } catch (e) {

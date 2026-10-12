@@ -387,7 +387,9 @@ function EntryDetail({
   const mayMark = !!entry.marker && !entry.is_locked && can('journal.correct') && !!client.data?.can_post
 
   return (
-    <div className="grid max-w-3xl gap-5 px-5 py-6 sm:pl-[3.75rem] sm:pr-6 [&>*]:min-w-0">
+    <div className="grid gap-6 px-5 py-6 sm:pl-[3.75rem] sm:pr-6 [&>*]:min-w-0">
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] lg:gap-12 [&>*]:min-w-0">
+      <div className="grid content-start gap-5 [&>*]:min-w-0">
         <div className="grid gap-1">
           <div className="text-sm text-muted-foreground">
             {entry.voucher_type} No. {entry.entry_no} · {formatDate(entry.entry_date)} · FY {entry.fy_label}
@@ -398,21 +400,6 @@ function EntryDetail({
             {entry.approved_by_email ? `Posted by ${entry.approved_by_email}, ${formatDateTime(entry.approved_at)}` : 'Posted automatically by a rule'}
           </div>
         </div>
-        {entry.marker && (
-          <p className="rounded-lg border bg-info-bg p-3.5 text-sm leading-relaxed">
-            {entry.marker === 'AI_POSTED' ? (
-              <>
-                <strong className="font-semibold">Nobody has looked at this entry yet.</strong> A rule posted it, so the books cannot be signed off
-                until it is checked. If it is right, mark it checked. If it is wrong, unpost it and decide it in Review.
-              </>
-            ) : (
-              <>
-                <strong className="font-semibold">The assistant changed this entry</strong> after a correction elsewhere. Check it, then mark it checked.
-              </>
-            )}
-          </p>
-        )}
-
         <DataTable
           caption={`Lines of ${entry.voucher_type} No. ${entry.entry_no}`}
           rows={entry.lines}
@@ -443,6 +430,23 @@ function EntryDetail({
           <span className="text-muted-foreground">Narration</span>
           <span className="leading-relaxed">{entry.narration}</span>
         </div>
+      </div>
+      <div className="grid content-start gap-5 [&>*]:min-w-0">
+        {entry.marker && (
+          <p className="rounded-lg border bg-info-bg p-3.5 text-sm leading-relaxed">
+            {entry.marker === 'AI_POSTED' ? (
+              <>
+                <strong className="font-semibold">Nobody has looked at this entry yet.</strong> A rule posted it, so the books cannot be signed off
+                until it is checked. If it is right, mark it checked. If it is wrong, unpost it and decide it in Review.
+              </>
+            ) : (
+              <>
+                <strong className="font-semibold">The assistant changed this entry</strong> after a correction elsewhere. Check it, then mark it checked.
+              </>
+            )}
+          </p>
+        )}
+
         <div className="grid gap-1.5 text-sm">
           <div className="text-muted-foreground">History</div>
           {changes.isPending ? (
@@ -465,6 +469,9 @@ function EntryDetail({
             </ul>
           )}
         </div>
+
+      </div>
+      </div>
 
         {correcting ? (
           <div className="grid gap-3 rounded-md border p-3">

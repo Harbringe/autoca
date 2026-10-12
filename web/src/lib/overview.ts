@@ -61,6 +61,24 @@ export function nextTarget(code: OverviewClient['next_step']['code']): NextTarge
   }
 }
 
+/** The verb on the button for a client's next step; null when there is nothing to do. */
+export function nextActionLabel(code: OverviewClient['next_step']['code']): string | null {
+  switch (code) {
+    case 'upload':
+      return 'Upload a statement'
+    case 'place':
+      return 'Sort entries'
+    case 'post':
+      return 'Record entries'
+    case 'send_for_review':
+      return 'Send for review'
+    case 'sign_off':
+      return 'Review and sign off'
+    default:
+      return null
+  }
+}
+
 /** Books status in the words of the spec, from what the overview knows. "Returned" is not in it. */
 export function booksWord(c: Pick<OverviewClient, 'review_pending'>): { label: string; tone: 'neutral' | 'info' } {
   return c.review_pending ? { label: 'Sent for review', tone: 'info' } : { label: 'Working draft', tone: 'neutral' }

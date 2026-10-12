@@ -1,5 +1,5 @@
 import type { OverviewClient } from '@/api/types'
-import { booksWord, monthsText, needsAttention, nextTarget, STAGES, STAGE_LABEL } from './overview'
+import { booksWord, monthsText, needsAttention, nextActionLabel, nextTarget, STAGES, STAGE_LABEL } from './overview'
 
 const c = (over: Partial<OverviewClient>): OverviewClient =>
   ({
@@ -51,4 +51,13 @@ describe('overview readings', () => {
     expect(needsAttention([c({ id: 'q' })])).toEqual([])
   })
   it('writes months', () => expect(monthsText(['2026-04', '2026-06'])).toBe('Apr 2026, Jun 2026'))
+})
+
+describe('nextActionLabel', () => {
+  it('names the action for each next step, and none when done', () => {
+    expect(nextActionLabel('place')).toBe('Sort entries')
+    expect(nextActionLabel('post')).toBe('Record entries')
+    expect(nextActionLabel('upload')).toBe('Upload a statement')
+    expect(nextActionLabel('none')).toBeNull()
+  })
 })

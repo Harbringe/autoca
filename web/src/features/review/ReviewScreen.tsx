@@ -3,8 +3,9 @@
 // Two stages, kept visibly apart because the server keeps them apart: a row is first PLACED
 // in a ledger (by a rule, the assistant, or you), and then POSTED, which writes the journal
 // entry. "Needs a ledger" is the work; "Ready to post" is the check before it enters the
-// books. The queue is on the left, the decision on the right, and the keyboard moves through
-// it as fast as a CA reads: J/K to move, L for the ledger, Enter to place, P to post.
+// books. The queue is one list and the decision opens inline under the selected row, so a phone
+// and a desktop read the same; the keyboard moves through it as fast as a CA reads: J/K to move,
+// L for the ledger, Enter to place, P to post.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
@@ -23,9 +24,8 @@ import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
-import { Dialog, DialogContent, DialogDescription, DialogTitle } from '@/components/ui/dialog'
+import { Collapse, useClosing } from '@/components/ui/collapse'
 import { AssistantStrip } from '@/features/assistant/AssistantStrip'
-import { useMediaQuery } from '@/lib/useMediaQuery'
 import { Checkbox, Select } from '@/components/ui/controls'
 import { Input } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
@@ -89,9 +89,9 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
   const [confirmTicked, setConfirmTicked] = useState(false)
   const [text, setText] = useState('')
   const [sort, setSort] = useState<Sort>(null)
-  const tableRef = useRef<HTMLTableElement>(null)
-  const phone = useMediaQuery('(max-width: 639px)')
-  const [sheet, setSheet] = useState(false)
+  const listRef = useRef<HTMLUListElement>(null)
+  // The open row can be shut again by pressing it, without losing which row the keys are on.
+  const [collapsed, setCollapsed] = useState(false)
 
   const rows = useMemo(() => {
     const q = text.trim().toLowerCase()
@@ -119,16 +119,33 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
     setSort((s) => (s?.key !== key ? { key, dir: 'asc' } : s.dir === 'asc' ? { key, dir: 'desc' } : null))
   const index = Math.max(0, rows.findIndex((r) => r.id === selectedId))
   const selected = rows[index] ?? null
+  const openId = selected && !collapsed ? selected.id : null
+  const closing = useClosing(openId)
+  const choose = (id: string) => {
+    if (id === selected?.id) setCollapsed((c) => !c)
+    else {
+      setSelectedId(id)
+      setCollapsed(false)
+    }
+  }
   // Keep a row selected: the first one on arrival, and the one now in the same place after a row leaves.
   useEffect(() => {
     if (rows.length && !rows.some((r) => r.id === selectedId)) setSelectedId(rows[Math.min(index, rows.length - 1)]!.id)
   }, [rows, selectedId, index])
   useEffect(() => setTicked(new Set()), [stage, band])
+  // The decision opens under its row; keep the whole of it on screen when the selection moves.
+  useEffect(() => {
+    if (!selectedId) return
+    // After it has finished opening, so the whole of it is measured.
+    const timer = setTimeout(() => document.getElementById(`decision-${selectedId}`)?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }), 300)
+    return () => clearTimeout(timer)
+  }, [selectedId])
 
   const canPost = can('journal.approve') && !!client.data?.can_post
   // A row on a party's account is never ticked or posted in bulk: a person says which bills it settles, one row at a time.
   const postable = (r: Classification) => !!r.ledger && !r.is_posted && !r.on_party_account
   const tickedRows = rows.filter((r) => ticked.has(r.id) && postable(r))
+  const postableCount = rows.filter(postable).length
   // Ledgers the assistant added: still waiting for a CA (PROPOSED), or live already but not yet looked at.
   const proposed = (ledgers.data ?? []).filter((l) => l.status === 'PROPOSED' || l.awaiting_look)
   const proposedIds = new Set(proposed.map((l) => l.id))
@@ -158,9 +175,10 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
     const next = rows[Math.min(Math.max(index + delta, 0), rows.length - 1)]
     if (next) {
       setSelectedId(next.id)
+      setCollapsed(false)
       const el = document.getElementById(`row-${next.id}`)
-      // The table is one Tab stop; when the person is in it, focus travels with the selection.
-      if (el && tableRef.current?.contains(document.activeElement)) el.focus({ preventScroll: true })
+      // When the person is in the list, focus travels with the selection.
+      if (el && listRef.current?.contains(document.activeElement)) el.focus({ preventScroll: true })
       el?.scrollIntoView({ block: 'nearest' })
     }
   }
@@ -193,7 +211,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
   return (
     <div className="grid gap-4">
       {needSettling > 0 && stage !== 'unresolved' && (
-        <p role="status" className="rounded-md border border-accent-edge bg-accent px-3 py-2 text-sm">
+        <p role="status" className="rounded-xl border border-accent-edge bg-accent px-4 py-3 text-sm text-accent-foreground">
           {plural(needSettling, 'row')} {needSettling === 1 ? 'is' : 'are'} on a supplier’s or customer’s own account. Each needs you to say which
           bills it settles, so {needSettling === 1 ? 'it is' : 'they are'} not part of “Post all”. Open the row to settle it.
         </p>
@@ -201,11 +219,6 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
       <div className="flex flex-wrap items-center justify-between gap-3">
         <StageNav clientId={clientId} active={stage} />
         <div className="flex flex-wrap gap-2">
-          {can('transaction.classify') && (
-            <Button variant="outline" onClick={() => suggest.mutate()} disabled={suggest.isPending || !summary.data?.unresolved}>
-              <Sparkles /> {suggest.isPending ? 'Asking the assistant…' : 'Ask assistant to suggest'}
-            </Button>
-          )}
           {canPost && highCount > 0 && (
             <Button variant={tickedRows.length ? 'outline' : 'primary'} onClick={askBulk}>
               <CheckCheck /> Post all high-confidence ({highCount})
@@ -219,7 +232,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
       <AssistantStrip clientId={clientId} />
 
       {proposed.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-info/30 bg-info-bg px-4 py-2.5 text-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-info/30 bg-info-bg px-4 py-3 text-sm text-info">
           <span>
             <Bot className="mr-1.5 inline size-4 text-info" aria-hidden />
             The assistant added {plural(proposed.length, 'new ledger')} ({proposed.slice(0, 3).map((l) => l.name).join(', ')}
@@ -251,20 +264,34 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
         ) : (
           <span />
         )}
-        {!queue.isPending && !queue.error && (queue.data?.length ?? 0) > 0 && (
-          <div className="relative w-full max-w-sm">
-            <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
-            <Input
-              id="review-search"
-              type="search"
-              aria-label="Search the queue by narration, payee, ledger or amount"
-              placeholder="Search narration, payee, ledger, amount"
-              className="pl-8"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-            />
-          </div>
-        )}
+        <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+          {can('transaction.classify') && (summary.data?.unresolved ?? 0) > 0 && (
+            <Button variant="outline" onClick={() => suggest.mutate()} disabled={suggest.isPending}>
+              <Sparkles /> {suggest.isPending ? 'Asking the assistant…' : `Suggest ledgers for ${plural(summary.data!.unresolved, 'row')}`}
+            </Button>
+          )}
+          {!queue.isPending && !queue.error && (queue.data?.length ?? 0) > 1 && (
+            <div className="flex items-center gap-1.5 text-sm" role="group" aria-label="Sort the rows">
+              <span className="text-muted-foreground">Sort</span>
+              <SortChip label="Date" sortKey="date" sort={sort} onSort={toggleSort} />
+              <SortChip label="Amount" sortKey="amount" sort={sort} onSort={toggleSort} />
+            </div>
+          )}
+          {!queue.isPending && !queue.error && (queue.data?.length ?? 0) > 0 && (
+            <div className="relative w-full min-w-56 max-w-sm flex-1">
+              <Search className="pointer-events-none absolute left-2.5 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+              <Input
+                id="review-search"
+                type="search"
+                aria-label="Search the queue by narration, payee, ledger or amount"
+                placeholder="Search narration, payee, ledger, amount"
+                className="pl-8"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+              />
+            </div>
+          )}
+        </div>
       </div>
 
       {queue.isPending ? (
@@ -290,71 +317,46 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
           ) : null}
         </EmptyState>
       ) : (
-        <div className="grid gap-4 xl:grid-cols-[minmax(0,1.7fr)_minmax(360px,1fr)]">
-          <Card className="relative max-h-[70vh] overflow-auto overscroll-contain">
-            {canPost && tickedRows.length > 0 && (
-              <div className="sticky top-0 z-20 flex items-center gap-3 border-b bg-accent px-3 py-1.5 text-[13px]" role="status">
-                <span className="font-semibold">{tickedRows.length} selected</span>
-                <Button size="sm" onClick={() => setConfirmTicked(true)}>
-                  <CheckCheck /> Post
-                </Button>
-                <Button size="sm" variant="ghost" onClick={() => setTicked(new Set())}>
-                  Clear
-                </Button>
-              </div>
-            )}
-            <table ref={tableRef} className="w-full text-left text-sm">
-              <thead className={cn('sticky z-10 border-b bg-surface-2 text-xs text-muted-foreground', canPost && tickedRows.length > 0 ? 'top-9' : 'top-0')}>
-                <tr>
-                  {canPost && stage !== 'unresolved' && (
-                    <th className="w-8 px-3 py-2">
-                      <Checkbox
-                        aria-label="Tick every row that can be posted"
-                        checked={rows.filter(postable).length > 0 && rows.filter(postable).every((r) => ticked.has(r.id))}
-                        onChange={(e) => setTicked(e.target.checked ? new Set(rows.filter(postable).map((r) => r.id)) : new Set())}
-                      />
-                    </th>
-                  )}
-                  <SortTh label="Date" sortKey="date" sort={sort} onSort={toggleSort} className="px-3" />
-                  <th className="px-3 py-2 font-semibold">Narration</th>
-                  <SortTh label="Withdrawal" sortKey="amount" sort={sort} onSort={toggleSort} className="w-px px-2 text-right" right />
-                  <th className="w-px px-2 py-2 text-right font-semibold">Deposit</th>
-                  <th className="w-44 px-3 py-2 font-semibold max-sm:hidden">Ledger</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map((r) => (
-                  <tr
-                    key={r.id}
-                    id={`row-${r.id}`}
-                    onClick={() => {
-                      setSelectedId(r.id)
-                      if (phone) setSheet(true)
-                    }}
-                    onFocus={(e) => e.target === e.currentTarget && setSelectedId(r.id)}
-                    onKeyDown={(e) => {
-                      // Space ticks the row from the row itself; typing in a control inside it is left alone.
-                      if (e.key === ' ' && e.target === e.currentTarget && canPost && stage !== 'unresolved' && postable(r)) {
-                        e.preventDefault()
-                        setTicked((t) => {
-                          const n = new Set(t)
-                          if (n.has(r.id)) n.delete(r.id)
-                          else n.add(r.id)
-                          return n
-                        })
-                      }
-                    }}
-                    // One Tab stop for the whole table: only the selected row can be tabbed to.
-                    tabIndex={r.id === selected?.id ? 0 : -1}
-                    aria-selected={r.id === selected?.id}
-                    className={cn('h-(--row-h) cursor-pointer border-b focus-visible:outline-offset-[-2px]', r.id === selected?.id ? 'bg-accent shadow-[inset_3px_0_0_var(--primary)]' : 'hover:bg-hover')}
-                  >
+        <div className="relative overflow-hidden rounded-xl border border-border-strong bg-surface-2">
+          {canPost && tickedRows.length > 0 && (
+            <div className="flex items-center gap-3 border-b border-border-strong bg-accent px-4 py-2 text-[13px] text-accent-foreground" role="status">
+              <span className="font-semibold">{tickedRows.length} selected</span>
+              <Button size="sm" onClick={() => setConfirmTicked(true)}>
+                <CheckCheck /> Post
+              </Button>
+              <Button size="sm" variant="ghost" onClick={() => setTicked(new Set())}>
+                Clear
+              </Button>
+            </div>
+          )}
+          {canPost && stage !== 'unresolved' && postableCount > 1 && (
+            <label className="flex items-center gap-3 border-b border-border-strong px-4 py-2 text-[13px] text-muted-foreground">
+              <Checkbox
+                aria-label="Tick every row that can be posted"
+                checked={rows.filter(postable).every((r) => ticked.has(r.id))}
+                onChange={(e) => setTicked(e.target.checked ? new Set(rows.filter(postable).map((r) => r.id)) : new Set())}
+              />
+              Select every row that can be posted
+            </label>
+          )}
+          <ul ref={listRef} aria-label="Rows waiting" className="divide-y divide-border-strong">
+            {rows.map((r, i) => {
+              const isOpen = r.id === openId
+              const showBody = isOpen || closing === r.id
+              const tickable = canPost && stage !== 'unresolved' && postable(r)
+              return (
+                <li
+                  key={r.id}
+                  data-open={isOpen}
+                  style={{ '--i': Math.min(i, 14) } as React.CSSProperties}
+                  className={cn('rise-in relative transition-colors duration-200', isOpen ? 'bg-hover shadow-[inset_3px_0_0_var(--primary)]' : 'hover:bg-hover/60')}
+                >
+                  <div className="flex items-stretch">
                     {canPost && stage !== 'unresolved' && (
-                      <td className="px-3" onClick={(e) => e.stopPropagation()}>
-                        {postable(r) && (
+                      <div className="grid w-12 shrink-0 place-items-center">
+                        {tickable && (
                           <Checkbox
                             aria-label={`Select ${rowName(r)}`}
-                            tabIndex={-1}
                             checked={ticked.has(r.id)}
                             onChange={(e) =>
                               setTicked((t) => {
@@ -366,80 +368,85 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
                             }
                           />
                         )}
-                      </td>
-                    )}
-                    <td className="num whitespace-nowrap px-3 py-1">{formatDate(r.transaction.value_date)}</td>
-                    <td className="min-w-40 max-w-0 px-3 py-1" title={r.transaction.narration}>
-                      <div className="truncate">
-                        {r.counterparty && <span className="font-medium text-heading">{r.counterparty} </span>}
-                        <span className="font-mono text-xs text-muted-foreground">{r.transaction.narration}</span>
                       </div>
-                      {r.ledger_name && <div className="truncate text-xs text-muted-foreground sm:hidden">{r.ledger_name}</div>}
-                    </td>
-                    <td className="num whitespace-nowrap px-2 py-1 text-right">{r.transaction.is_debit ? r.transaction.amount_display : ''}</td>
-                    <td className="num whitespace-nowrap px-2 py-1 text-right">{!r.transaction.is_debit ? r.transaction.amount_display : ''}</td>
-                    <td className="px-3 py-1 max-sm:hidden">
-                      {r.ledger_name ? (
-                        <span className="flex items-center gap-1.5">
-                          <span className="max-w-[14ch] truncate" title={r.ledger_name}>{r.ledger_name}</span>
-                          {r.memory && r.method !== 'REVIEWED' && (
-                            <span className="inline-flex shrink-0 text-info" title={r.memory.note}>
-                              <MemoryIcon kind={r.memory.kind} className="size-3.5" />
-                              <span className="sr-only">{r.memory.label}: {r.memory.note}</span>
-                            </span>
-                          )}
-                          {proposedIds.has(r.ledger ?? '') && (
-                            <span className="shrink-0 rounded-sm bg-info-bg px-1 text-xs font-medium text-info" title="A new ledger the assistant added. A senior CA keeps it, renames it or merges it into an existing one.">
-                              New
-                            </span>
-                          )}
-                          {DOT[r.review_band] && r.method !== 'REVIEWED' && (
-                            <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground" title={DOT[r.review_band]!.title}>
-                              <span aria-hidden className={cn('size-2 rounded-full', DOT[r.review_band]!.className)} />
-                              {DOT[r.review_band]!.word}
-                              <span className="sr-only"> confidence: {DOT[r.review_band]!.title}</span>
-                            </span>
+                    )}
+                    <button
+                      id={`row-${r.id}`}
+                      type="button"
+                      aria-expanded={isOpen}
+                      aria-controls={`decision-${r.id}`}
+                      onClick={() => choose(r.id)}
+                      className={cn(
+                        'grid min-w-0 flex-1 grid-cols-[6rem_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 py-4 pr-5 text-left max-sm:grid-cols-[minmax(0,1fr)_auto]',
+                        canPost && stage !== 'unresolved' ? 'pl-0' : 'pl-5',
+                      )}
+                    >
+                      <span className="num text-[13px] text-muted-foreground max-sm:col-span-2">{formatDate(r.transaction.value_date)}</span>
+                      <span className="min-w-0">
+                        <span className="block truncate" title={r.transaction.narration}>
+                          {r.counterparty && <span className="font-medium text-heading">{r.counterparty} </span>}
+                          <span className="font-mono text-xs text-muted-foreground">{r.transaction.narration}</span>
+                        </span>
+                        <span className="mt-0.5 flex items-center gap-1.5 text-[13px]">
+                          {r.ledger_name ? (
+                            <>
+                              <span className="truncate text-heading" title={r.ledger_name}>
+                                {r.ledger_name}
+                              </span>
+                              {r.memory && r.method !== 'REVIEWED' && (
+                                <span className="inline-flex shrink-0 text-info" title={r.memory.note}>
+                                  <MemoryIcon kind={r.memory.kind} className="size-3.5" />
+                                  <span className="sr-only">
+                                    {r.memory.label}: {r.memory.note}
+                                  </span>
+                                </span>
+                              )}
+                              {proposedIds.has(r.ledger ?? '') && (
+                                <span className="shrink-0 rounded-sm bg-info-bg px-1 text-xs font-medium text-info" title="A new ledger the assistant added. A senior CA keeps it, renames it or merges it into an existing one.">
+                                  New
+                                </span>
+                              )}
+                              {DOT[r.review_band] && r.method !== 'REVIEWED' && (
+                                <span className="inline-flex shrink-0 items-center gap-1 text-xs text-muted-foreground" title={DOT[r.review_band]!.title}>
+                                  <span aria-hidden className={cn('size-2 rounded-full', DOT[r.review_band]!.className)} />
+                                  {DOT[r.review_band]!.word}
+                                  <span className="sr-only"> confidence: {DOT[r.review_band]!.title}</span>
+                                </span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-muted-foreground">No ledger yet</span>
                           )}
                         </span>
-                      ) : (
-                        <span className="text-muted-foreground">—</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </Card>
-
-          {selected && !phone && (
-            <Decision
-              key={selected.id}
-              clientId={clientId}
-              row={selected}
-              ledgers={usableLedgers(ledgers.data, bankLedgerOf(selected))}
-              allLedgers={ledgers.data ?? []}
-              canPost={canPost}
-              onDone={() => move(0)}
-            />
-          )}
-          {selected && phone && (
-            <Dialog open={sheet} onOpenChange={setSheet}>
-              <DialogContent className="p-4" aria-describedby={undefined}>
-                <DialogTitle className="sr-only">Decide this row</DialogTitle>
-                <DialogDescription className="sr-only">Choose the ledger, then place and post the row.</DialogDescription>
-                <Decision
-                  key={selected.id}
-                  clientId={clientId}
-                  row={selected}
-                  ledgers={usableLedgers(ledgers.data, bankLedgerOf(selected))}
-                  allLedgers={ledgers.data ?? []}
-                  canPost={canPost}
-                  flat
-                  onDone={() => move(0)}
-                />
-              </DialogContent>
-            </Dialog>
-          )}
+                      </span>
+                      <span className="text-right">
+                        <span className={cn('num block font-medium', r.transaction.is_debit ? 'text-heading' : 'text-success')}>{r.transaction.amount_display}</span>
+                        <span className="block text-xs text-muted-foreground">{r.transaction.is_debit ? 'Withdrawal' : 'Deposit'}</span>
+                      </span>
+                    </button>
+                  </div>
+                  {showBody && (
+                    <div id={`decision-${r.id}`}>
+                      <Collapse open={isOpen}>
+                        <div className="max-w-2xl px-5 pb-5 pt-1">
+                          <Decision
+                            key={r.id}
+                            clientId={clientId}
+                            row={r}
+                            ledgers={usableLedgers(ledgers.data, bankLedgerOf(r))}
+                            allLedgers={ledgers.data ?? []}
+                            canPost={canPost}
+                            flat
+                            onDone={() => move(0)}
+                          />
+                        </div>
+                      </Collapse>
+                    </div>
+                  )}
+                </li>
+              )
+            })}
+          </ul>
         </div>
       )}
 
@@ -494,35 +501,23 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
   )
 }
 
-function SortTh({
-  label,
-  sortKey,
-  sort,
-  onSort,
-  className,
-  right,
-}: {
-  label: string
-  sortKey: SortKey
-  sort: Sort
-  onSort: (key: SortKey) => void
-  className?: string
-  right?: boolean
-}) {
+function SortChip({ label, sortKey, sort, onSort }: { label: string; sortKey: SortKey; sort: Sort; onSort: (key: SortKey) => void }) {
   const on = sort?.key === sortKey
   const Icon = !on ? ArrowUpDown : sort.dir === 'asc' ? ArrowUp : ArrowDown
   return (
-    <th className={cn('py-2 font-medium', className)} aria-sort={on ? (sort.dir === 'asc' ? 'ascending' : 'descending') : undefined}>
-      <button
-        type="button"
-        onClick={() => onSort(sortKey)}
-        className={cn('inline-flex items-center gap-1 rounded-sm hover:text-foreground', right && 'flex-row-reverse')}
-        title={sortKey === 'amount' ? 'Sort by amount (withdrawals and deposits together)' : `Sort by ${label.toLowerCase()}`}
-      >
-        {label}
-        <Icon className={cn('size-3', !on && 'opacity-50')} aria-hidden />
-      </button>
-    </th>
+    <button
+      type="button"
+      onClick={() => onSort(sortKey)}
+      aria-pressed={on}
+      title={sortKey === 'amount' ? 'Sort by amount (withdrawals and deposits together)' : `Sort by ${label.toLowerCase()}`}
+      className={cn(
+        'inline-flex items-center gap-1 rounded-full border px-3 py-0.5 text-[13px] transition-colors',
+        on ? 'border-foreground bg-foreground text-background' : 'hover:bg-hover',
+      )}
+    >
+      {label}
+      <Icon className={cn('size-3', !on && 'opacity-50')} aria-hidden />
+    </button>
   )
 }
 
@@ -544,7 +539,7 @@ function Decision({
   /** Every ledger including the proposed ones, so a proposal the row points at can be shown and decided here. */
   allLedgers: ReturnType<typeof usableLedgers>
   canPost: boolean
-  /** Inside a sheet: no card of its own, no sticky positioning. */
+  /** Inline under its row: no card of its own, no sticky positioning. */
   flat?: boolean
   onDone: () => void
 }) {
@@ -672,7 +667,7 @@ function Decision({
   const legs = (row.entry_legs ?? []).map((leg) => (leg.is_bank ? leg : { ...leg, ledger: chosenLedger?.name ?? null }))
   const extras = [chosenParty?.canonical_name, tds && `TDS ${tds}`, rcm && 'Reverse charge'].filter(Boolean).join(' · ')
   return (
-    <Card className={cn('grid content-start gap-4 p-4', flat ? 'border-0 p-0 shadow-none' : 'xl:sticky xl:top-20 xl:max-h-[calc(100svh-6rem)] xl:overflow-auto xl:overscroll-contain')}>
+    <Card className={cn('grid content-start gap-4 p-4', flat ? 'border-0 bg-transparent p-0 shadow-none' : 'xl:sticky xl:top-20 xl:max-h-[calc(100svh-6rem)] xl:overflow-auto xl:overscroll-contain')}>
       <div>
         <div className="flex items-baseline justify-between gap-3">
           <span className="num text-sm text-muted-foreground">{formatDate(t.value_date)}</span>
@@ -849,7 +844,7 @@ function Decision({
             <SettlementPanel clientId={clientId} row={row} onDone={onDone} />
           )}
 
-          <div className="sticky bottom-0 -mx-4 flex flex-wrap justify-end gap-2 border-t bg-card px-4 py-3 max-sm:[&>*]:flex-1">
+          <div className={cn('flex flex-wrap justify-end gap-2 max-sm:[&>*]:flex-1', flat ? 'pt-1' : 'sticky bottom-0 -mx-4 border-t bg-card px-4 py-3')}>
             {!alreadyPlacedByPerson && (
               <Button variant={row.ledger && unchanged ? 'outline' : 'primary'} onClick={() => void place()} disabled={busy || !ledger}>
                 {row.ledger && ledger === row.ledger ? 'Confirm ledger' : 'Place in ledger'} <Kbd className="ml-1 bg-transparent max-sm:hidden">Enter</Kbd>

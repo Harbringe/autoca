@@ -56,8 +56,8 @@ function renderTab(entries: JournalEntry[] = ENTRIES) {
 describe('Posted tab', () => {
   it('lists every posted entry, in every year, newest first', async () => {
     renderTab()
-    const table = await screen.findByRole('table', { name: 'Posted entries, newest first' })
-    const rows = within(table).getAllByRole('row').slice(1)
+    const list = await screen.findByRole('list', { name: 'Posted entries, newest first' })
+    const rows = within(list).getAllByRole('listitem')
     expect(rows).toHaveLength(3)
     expect(rows[0]).toHaveTextContent('Rajveer')
     expect(rows[2]).toHaveTextContent('sweep debit')
@@ -66,20 +66,30 @@ describe('Posted tab', () => {
 
   it('narrows to one financial year', async () => {
     renderTab()
-    await screen.findByRole('table')
+    await screen.findByRole('list', { name: 'Posted entries, newest first' })
     await userEvent.selectOptions(screen.getByLabelText('Financial year'), '2026')
-    const rows = within(screen.getByRole('table')).getAllByRole('row').slice(1)
+    const rows = within(screen.getByRole('list', { name: 'Posted entries, newest first' })).getAllByRole('listitem')
     expect(rows).toHaveLength(1)
     expect(rows[0]).toHaveTextContent('Rajveer')
   })
 
   it('searches the narration and the ledger names', async () => {
     renderTab()
-    await screen.findByRole('table')
+    await screen.findByRole('list', { name: 'Posted entries, newest first' })
     await userEvent.type(screen.getByLabelText('Search posted entries'), 'investments')
-    const rows = within(screen.getByRole('table')).getAllByRole('row').slice(1)
+    const rows = within(screen.getByRole('list', { name: 'Posted entries, newest first' })).getAllByRole('listitem')
     expect(rows).toHaveLength(1)
     expect(rows[0]).toHaveTextContent('Zerodha')
+  })
+
+  it('opens an entry to show its two sides and a way to the Day Book', async () => {
+    renderTab()
+    const list = await screen.findByRole('list', { name: 'Posted entries, newest first' })
+    const first = within(list).getAllByRole('button', { expanded: false })[0]!
+    await userEvent.click(first)
+    expect(first).toHaveAttribute('aria-expanded', 'true')
+    expect(await screen.findByText('The entry')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'Open in Day Book' })).toBeInTheDocument()
   })
 
   it('says so when nothing has been posted, and points to where posting happens', async () => {

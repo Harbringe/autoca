@@ -34,7 +34,8 @@ export function ClientTeamScreen({ clientId, justCreated }: { clientId: string; 
   )
 }
 
-export function People({ clientId, justCreated }: { clientId: string; justCreated: boolean }) {
+/** `split` is the roomy form used on the pipeline page: one card, the lead on the left and the team on the right. */
+export function People({ clientId, justCreated, split = false }: { clientId: string; justCreated: boolean; split?: boolean }) {
   const clients = useQuery(teamClients())
   const members = useQuery(teamMembers())
   const setLead = useSetLead()
@@ -71,8 +72,8 @@ export function People({ clientId, justCreated }: { clientId: string; justCreate
   }
 
   return (
-    <section aria-labelledby="ct-people" className="grid gap-5 rounded-lg border bg-card p-5">
-      <h2 id="ct-people" className="text-[15px] font-semibold text-heading">
+    <section aria-labelledby="ct-people" className={split ? 'grid gap-6 rounded-xl border bg-card p-6' : 'grid gap-5 rounded-lg border bg-card p-5'}>
+      <h2 id="ct-people" className={split ? 'sr-only' : 'text-[15px] font-semibold text-heading'}>
         Senior CA and team
       </h2>
       {needsLead && (
@@ -80,6 +81,7 @@ export function People({ clientId, justCreated }: { clientId: string; justCreate
           This client has no Senior CA yet. Choose who leads it: they sign off its books.
         </p>
       )}
+      <div className={split ? 'grid items-start gap-x-10 gap-y-6 lg:grid-cols-2' : 'contents'}>
       <Field
         label="Senior CA in charge"
         hint={canSetLead ? 'They sign off this client’s entries. Staff work under them.' : 'Only a firm administrator changes this.'}
@@ -106,9 +108,9 @@ export function People({ clientId, justCreated }: { clientId: string; justCreate
       </Field>
 
       <div>
-        <h3 className="mb-2 text-[13px] font-semibold text-heading">People working on this client</h3>
+        <h3 className={split ? 'mb-2 text-sm text-muted-foreground' : 'mb-2 text-[13px] font-semibold text-heading'}>People working on this client</h3>
         {row.team.length === 0 ? (
-          <p className="text-sm text-muted-foreground">Nobody is assigned yet. People with access to every client can still open it.</p>
+          <p className={split ? 'text-base text-heading' : 'text-sm text-muted-foreground'}>Nobody is assigned yet. People with access to every client can still open it.</p>
         ) : (
           <ul className="divide-y rounded-lg border bg-card text-sm">
             {row.team.map((p) => (
@@ -155,6 +157,7 @@ export function People({ clientId, justCreated }: { clientId: string; justCreate
             </Button>
           </form>
         )}
+      </div>
       </div>
       {error && (
         <p role="alert" className="text-sm text-destructive">

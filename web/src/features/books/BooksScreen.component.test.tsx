@@ -62,13 +62,12 @@ describe('sign-off checklist', () => {
     expect(screen.getByText('₹1,10,83,012.00')).toBeInTheDocument()
   })
 
-  it('opens the first failing check, and folds the passing one into a single line', async () => {
+  it('opens the first failing check, shows the passing one as passed, and counts them at the bottom', async () => {
     renderIt()
     expect(await screen.findByRole('link', { name: 'Open Review' })).toBeInTheDocument()
-    const fold = screen.getByRole('button', { name: /1 check passes/ })
-    expect(fold).toHaveAttribute('aria-expanded', 'false')
-    fireEvent.click(fold)
     expect(screen.getByText('Nothing is left in Suspense')).toBeInTheDocument()
+    expect(screen.getByText('Passed')).toBeInTheDocument()
+    expect(screen.getAllByRole('status').some((el) => el.textContent?.replace(/\s+/g, ' ').trim() === '1 of 4 checks passed')).toBe(true)
   })
 
   it('lets assistant entries be ticked one at a time and marked as checked', async () => {

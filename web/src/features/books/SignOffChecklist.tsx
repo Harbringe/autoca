@@ -1,4 +1,5 @@
-// What stands between the books and a review: one list of checks, the failing ones first and the next one open.
+// What stands between the books and a review: every check in its place, numbered 1, 2, 3. A check that passes turns its number
+// into a tick; the next one that still fails is open; a line at the bottom counts how many have passed.
 // Each check opens to its own reason and its own way to clear it (open Review, tick the assistant's entries,
 // look at the bank difference), so there is one place to act per line and each fact is said once. Checks that
 // pass fold into a single line.
@@ -16,6 +17,23 @@ import { cn } from '@/lib/utils'
 import { bankFigures, checkFigure, firstSentence, restAfterFirst } from './signOffChecks'
 
 type CloseCheck = CloseReport['checks'][number]
+
+/** The circle at the left of a check: its number while it fails, a tick once it passes. The two swap with a short fade. */
+function Badge1({ ok, n }: { ok: boolean; n: number }) {
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        'grid size-7 place-items-center rounded-full text-[13px] font-semibold transition-colors duration-300',
+        ok ? 'bg-success text-primary-foreground' : 'border-2 border-destructive text-destructive',
+      )}
+    >
+      <span key={String(ok)} className="fade-in grid place-items-center">
+        {ok ? <Check className="size-4" /> : n}
+      </span>
+    </span>
+  )
+}
 
 function Figure({ label, value, bad }: { label: string; value: string; bad?: boolean }) {
   return (
@@ -49,7 +67,6 @@ export function SignOffChecklist({
   const current = failing[0]?.name ?? null
   // null: the current check is open; '': everything shut; otherwise the one the person chose.
   const [open, setOpen] = useState<string | null>(null)
-  const [showPassed, setShowPassed] = useState(false)
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   // A long list is drawn a hundred at a time inside a scrolling box, so hundreds of entries neither push the page down nor slow it.
@@ -195,7 +212,16 @@ export function SignOffChecklist({
         Checks before the books are sent for review
       </h2>
       <ul className="divide-y">
-        {failing.map((c, i) => {
+        {checks.map((c, i) => {
+          if (c.ok) {
+            return (
+              <li key={c.name} className="grid grid-cols-[1.75rem_minmax(0,1fr)_auto] items-center gap-3 px-5 py-3.5">
+                <Badge1 ok n={i + 1} />
+                <span className="min-w-0 truncate text-sm text-muted-foreground">{c.title}</span>
+                <span className="text-sm font-medium text-success">Passed</span>
+              </li>
+            )
+          }
           const isOpen = open === c.name || (open === null && current === c.name)
           const figure = checkFigure(c)
           return (
@@ -206,9 +232,7 @@ export function SignOffChecklist({
                 onClick={() => setOpen(isOpen ? '' : c.name)}
                 className="grid w-full grid-cols-[1.75rem_minmax(0,1fr)_auto_1rem] items-center gap-3 px-5 py-3.5 text-left hover:bg-hover"
               >
-                <span aria-hidden className="grid size-7 place-items-center rounded-full border-2 border-destructive text-[13px] font-semibold text-destructive">
-                  {i + 1}
-                </span>
+                <Badge1 ok={false} n={i + 1} />
                 <span className="min-w-0">
                   <span className="block font-semibold text-heading">{c.title}</span>
                   <span className="block text-[13px] text-muted-foreground">{firstSentence(c.detail)}</span>
@@ -222,33 +246,12 @@ export function SignOffChecklist({
             </li>
           )
         })}
-        {passed.length > 0 && (
-          <li>
-            <button
-              type="button"
-              aria-expanded={showPassed}
-              onClick={() => setShowPassed(!showPassed)}
-              className="grid w-full grid-cols-[1.75rem_minmax(0,1fr)_1rem] items-center gap-3 px-5 py-3 text-left hover:bg-hover"
-            >
-              <span aria-hidden className="grid size-7 place-items-center rounded-full bg-success text-primary-foreground">
-                <Check className="size-4" />
-              </span>
-              <span className="text-sm text-muted-foreground">
-                {plural(passed.length, 'check')} {passed.length === 1 ? 'passes' : 'pass'}
-              </span>
-              <ChevronRight className={cn('size-4 text-muted-foreground transition-transform duration-200', showPassed && 'rotate-90')} aria-hidden />
-            </button>
-            <Reveal open={showPassed}>
-              <ul className="grid gap-1 px-5 pb-3 pl-[3.75rem] text-sm">
-                {passed.map((c) => (
-                  <li key={c.name}>
-                    <span className="font-medium text-heading">{c.title}</span>
-                  </li>
-                ))}
-              </ul>
-            </Reveal>
-          </li>
-        )}
+        <li className="flex items-center justify-between gap-3 bg-surface-2 px-5 py-3 text-sm" role="status">
+          <span className="text-muted-foreground">
+            <span className="num font-semibold text-heading">{passed.length}</span> of <span className="num">{checks.length}</span> {checks.length === 1 ? 'check' : 'checks'} passed
+          </span>
+          {failing.length === 0 && <span className="font-medium text-success">Ready to send</span>}
+        </li>
       </ul>
     </Card>
   )

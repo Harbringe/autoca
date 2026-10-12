@@ -10,6 +10,7 @@ import { useId, useState } from 'react'
 import { portfolio } from '@/api/queries/dashboard'
 import { EmptyState, ErrorState, PageHeader } from '@/components/ca/Page'
 import { Button } from '@/components/ui/button'
+import { Reveal } from '@/components/ui/collapse'
 import { layoutFor } from '@/lib/dashboard'
 import { formatDateLong } from '@/lib/format'
 import { isoOf } from '@/lib/period'
@@ -67,13 +68,15 @@ function LiveQueueSection() {
     <section aria-labelledby={`${id}-t`} className="no-print mt-2 border-t pt-4">
       <h2 id={`${id}-t`} className="text-[15px] font-semibold text-heading">
         <button type="button" aria-expanded={open} aria-controls={id} onClick={() => setOpen(!open)} className="-ml-2 inline-flex min-h-11 items-center gap-2 rounded-md px-2 hover:bg-hover sm:min-h-9">
-          <ChevronDown className={cn('size-4 text-muted-foreground', !open && '-rotate-90')} aria-hidden />
+          <ChevronDown className={cn('size-4 text-muted-foreground transition-transform duration-200', !open && '-rotate-90')} aria-hidden />
           Live work queue
           <span className="text-[13px] font-normal text-muted-foreground">{open ? 'Updates every 15 seconds' : 'Open to see what is waiting right now'}</span>
         </button>
       </h2>
-      <div id={id} hidden={!open} className="mt-3">
-        {open && <LiveQueue />}
+      <div id={id} className="mt-3">
+        <Reveal open={open}>
+          <LiveQueue />
+        </Reveal>
       </div>
     </section>
   )

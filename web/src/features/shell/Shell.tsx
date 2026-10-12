@@ -311,10 +311,10 @@ export function Shell() {
       {!desktop && (
         <Drawer.Root open={menuOpen} onOpenChange={setMenuOpen}>
           <Drawer.Portal>
-            <Drawer.Overlay className="fixed inset-0 z-40 bg-black/45 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-[120ms]" />
+            <Drawer.Overlay className="fixed inset-0 z-40 bg-black/45 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 duration-200" />
             <Drawer.Content
               aria-describedby={undefined}
-              className="fixed inset-y-0 left-0 z-50 w-80 max-w-[88vw] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-[120ms]"
+              className="fixed inset-y-0 left-0 z-50 w-80 max-w-[88vw] outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:slide-in-from-left data-[state=closed]:slide-out-to-left duration-200"
             >
               <Drawer.Title className="sr-only">Menu</Drawer.Title>
               <DrawerBody clientId={clientId} onClose={() => setMenuOpen(false)} onShortcuts={() => setShortcutsOpen(true)} />
@@ -358,7 +358,10 @@ export function Shell() {
         </header>
         {!desktop && clientId && <ClientStrip clientId={clientId} />}
         <main id="content" tabIndex={-1} className="mx-auto w-full max-w-[1920px] flex-1 p-4 outline-none md:p-6 2xl:px-10">
-          <Outlet />
+          {/* A new place fades in; moving between a client's own screens is handled inside the client, so its header stays put. */}
+          <div key={path.split('/')[1] ?? ''} className="page-in">
+            <Outlet />
+          </div>
         </main>
       </div>
 

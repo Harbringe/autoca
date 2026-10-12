@@ -14,7 +14,7 @@ export function PopoverContent({ className, sideOffset = 8, collisionPadding = 8
         sideOffset={sideOffset}
         collisionPadding={collisionPadding}
         className={cn(
-          'z-50 overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-[var(--shadow-float)] outline-none data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-[120ms]',
+          'z-50 overflow-hidden rounded-lg border bg-popover text-popover-foreground shadow-[var(--shadow-float)] outline-none data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-1 data-[side=top]:slide-in-from-bottom-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 duration-150',
           className,
         )}
         {...props}

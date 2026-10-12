@@ -50,3 +50,18 @@ export function useClosing(openId: string | null): string | null {
   }, [openId])
   return closing
 }
+
+/** Shows its content with the open and close animation, and holds nothing in the page while closed. */
+export function Reveal({ open, children }: { open: boolean; children: ReactNode }) {
+  const [mounted, setMounted] = useState(open)
+  useEffect(() => {
+    if (open) {
+      setMounted(true)
+      return
+    }
+    const timer = setTimeout(() => setMounted(false), COLLAPSE_MS + 60)
+    return () => clearTimeout(timer)
+  }, [open])
+  if (!open && !mounted) return null
+  return <Collapse open={open}>{children}</Collapse>
+}

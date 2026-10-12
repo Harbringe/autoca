@@ -142,7 +142,7 @@ export function LedgerPicker({
           id={`${clientId}-ledger-list`}
           ref={listRef}
           role="listbox"
-          className="absolute top-full z-40 mt-1 max-h-64 w-full overflow-y-auto rounded-md border bg-popover p-1 shadow-md"
+          className="absolute top-full z-40 mt-1 max-h-64 w-full overflow-y-auto rounded-md border bg-popover p-1 shadow-md motion-safe:animate-in motion-safe:fade-in-0 motion-safe:slide-in-from-top-1 duration-150"
         >
           {matches.map((l, i) => {
             const group = GROUP_LABEL[l.group ?? ''] ?? l.group ?? ''

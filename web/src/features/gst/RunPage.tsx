@@ -4,7 +4,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ArrowLeft, Check, ChevronDown, ChevronRight, Download, Upload } from 'lucide-react'
+import { ArrowLeft, Check, ChevronRight, Download, Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { errorTitle, isApiError, messageOf } from '@/api/errors'
@@ -24,6 +24,7 @@ import { DataTable, type Column } from '@/components/ui/table'
 import { saveFile } from '@/platform/download'
 import { formatDate, formatDateTime, plural } from '@/lib/format'
 import { usePageTitle } from '@/lib/title'
+import { Reveal } from '@/components/ui/collapse'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { DecisionDialog } from './DecisionDialog'
@@ -554,14 +555,16 @@ function GroupSection({ group, open, onToggle, canPrepare, onOpen }: { group: Gs
     <section id={`gst-${group.kind}`} aria-labelledby={`gst-h-${group.kind}`} className="grid scroll-mt-20 gap-2">
       <h4 id={`gst-h-${group.kind}`} className="text-sm">
         <button type="button" aria-expanded={open} aria-controls={bodyId} onClick={onToggle} className="flex min-h-8 w-full items-center gap-2 rounded-md text-left font-semibold text-heading hover:bg-hover">
-          {open ? <ChevronDown className="size-4 shrink-0" aria-hidden /> : <ChevronRight className="size-4 shrink-0" aria-hidden />}
+          <ChevronRight className={cn('size-4 shrink-0 transition-transform duration-200', open && 'rotate-90')} aria-hidden />
           {group.title}
           <span className="num font-normal text-muted-foreground">{group.count}</span>
           {undecided > 0 && <Badge tone="attention">{undecided} to decide</Badge>}
         </button>
       </h4>
-      <div id={bodyId} hidden={!open}>
-        {open && <DataTable caption={`${group.title}, ${plural(group.count, 'invoice')}`} columns={columns} rows={group.rows} rowKey={(r) => r.id} onRowClick={(r) => onOpen(r.id)} />}
+      <div id={bodyId}>
+        <Reveal open={open}>
+          <DataTable caption={`${group.title}, ${plural(group.count, 'invoice')}`} columns={columns} rows={group.rows} rowKey={(r) => r.id} onRowClick={(r) => onOpen(r.id)} />
+        </Reveal>
       </div>
     </section>
   )

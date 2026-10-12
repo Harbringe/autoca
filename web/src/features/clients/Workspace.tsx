@@ -142,7 +142,13 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
         </p>
       )}
 
-      {ready ? <Outlet /> : <Spinner label="Finding this client’s latest year…" />}
+      {ready ? (
+        <div key={path} className="page-in">
+          <Outlet />
+        </div>
+      ) : (
+        <Spinner label="Finding this client’s latest year…" />
+      )}
     </div>
   )
 }

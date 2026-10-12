@@ -54,14 +54,14 @@ export function Listbox({
           position="popper"
           sideOffset={6}
           collisionPadding={8}
-          className="z-50 max-h-72 w-(--radix-select-trigger-width) min-w-48 overflow-hidden rounded-lg border border-border-strong bg-popover text-popover-foreground shadow-[var(--shadow-float)] data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:duration-[120ms]"
+          className="z-50 max-h-72 w-(--radix-select-trigger-width) min-w-48 overflow-hidden rounded-lg border border-border-strong bg-popover text-popover-foreground shadow-[var(--shadow-float)] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=open]:fade-in-0 data-[state=closed]:fade-out-0 data-[state=open]:zoom-in-95 data-[state=closed]:zoom-out-95 data-[side=bottom]:slide-in-from-top-1 data-[side=top]:slide-in-from-bottom-1 data-[side=left]:slide-in-from-right-1 data-[side=right]:slide-in-from-left-1 duration-150"
         >
           <Primitive.Viewport className="p-1.5">
             {options.map((o) => (
               <Primitive.Item
                 key={o.value}
                 value={o.value === '' ? NONE : o.value}
-                className="relative flex min-h-10 cursor-pointer select-none items-center rounded-md py-2 pl-9 pr-3 text-[15px] outline-none data-[disabled]:opacity-50 data-[highlighted]:bg-hover data-[state=checked]:font-semibold data-[state=checked]:text-heading"
+                className="relative flex min-h-10 cursor-pointer select-none items-center rounded-md py-2 pl-9 pr-3 text-[15px] outline-none data-[disabled]:opacity-50 transition-colors duration-100 data-[highlighted]:bg-hover data-[state=checked]:font-semibold data-[state=checked]:text-heading"
               >
                 <Primitive.ItemIndicator className="absolute left-3 inline-flex">
                   <Check className="size-4 text-primary" aria-hidden />

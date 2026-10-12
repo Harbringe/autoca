@@ -200,6 +200,27 @@
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-ring;
   }
+  /*
+   * Things you press answer a little: colour changes ease over 120ms and a button dips a hair while held. Only colours and
+   * one transform, so it costs nothing on an old machine; under reduced motion the global rule below makes it instant.
+   */
+  a,
+  button,
+  summary,
+  input,
+  select,
+  textarea,
+  [role='tab'],
+  [role='option'],
+  [role='menuitem'] {
+    transition-property: color, background-color, border-color, box-shadow, opacity, transform;
+    transition-duration: 120ms;
+    transition-timing-function: ease-out;
+  }
+  button:not(:disabled):not([aria-expanded]):not([role='tab']):active,
+  a[class*='justify-center']:active {
+    transform: scale(0.98);
+  }
   /* The page heading takes focus after a click so a screen reader starts at the top; a mouse user sees no ring for it. */
   [data-pointer-focus]:focus,
   [data-pointer-focus]:focus-visible {
@@ -284,6 +305,24 @@
     color: var(--popover-foreground);
     box-shadow: var(--shadow-float);
     font-size: 14px;
+    /* Eases open and shut: a little fade and a few pixels of slide. */
+    opacity: 0;
+    transform: translateY(-4px);
+    transition:
+      opacity 140ms ease-out,
+      transform 140ms ease-out,
+      overlay 140ms allow-discrete,
+      display 140ms allow-discrete;
+  }
+  select::picker(select):popover-open {
+    opacity: 1;
+    transform: none;
+  }
+  @starting-style {
+    select::picker(select):popover-open {
+      opacity: 0;
+      transform: translateY(-4px);
+    }
   }
   select option {
     display: flex;
@@ -293,6 +332,7 @@
     padding: 0.5rem 0.75rem;
     border-radius: var(--radius-md);
     cursor: pointer;
+    transition: background-color 100ms ease-out;
   }
   select option:hover,
   select option:focus-visible {
@@ -323,6 +363,38 @@
     transform: scale(1);
     opacity: 1;
   }
+}
+
+/* A folded section (the <details> elements) opens and closes smoothly where the browser can animate it; elsewhere it just switches. */
+:root {
+  interpolate-size: allow-keywords;
+}
+@supports (selector(details::details-content)) {
+  details::details-content {
+    block-size: 0;
+    overflow: clip;
+    transition:
+      block-size 220ms ease-out,
+      content-visibility 220ms allow-discrete;
+  }
+  details[open]::details-content {
+    block-size: auto;
+  }
+}
+
+/* A new screen settles in rather than appearing: a short fade and a few pixels of rise. */
+@keyframes page-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.page-in {
+  animation: page-in 180ms ease-out both;
 }
 
 /* Tables are read for their figures: static skeleton blocks, no shimmer. */

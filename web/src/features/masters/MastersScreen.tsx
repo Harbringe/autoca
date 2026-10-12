@@ -5,7 +5,7 @@
 // name), merge into one that exists, or reject. Parties carry the GSTIN and TDS defaults.
 // Rules are mostly learned from decisions in Review; they can be switched off or written by hand.
 
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { Bot, ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { Fragment, useEffect, useRef, useState } from 'react'
@@ -850,6 +850,7 @@ function Rules({ clientId }: { clientId: string }) {
   const list = useQuery(rulesQuery(clientId))
   const ledgers = useQuery(ledgersQuery(clientId))
   const invalidate = useInvalidateClient(clientId)
+  const queryClient = useQueryClient()
   const [creating, setCreating] = useState(false)
   const listRef = useRef<HTMLUListElement>(null)
   const manage = can('suggestion.edit')
@@ -857,20 +858,30 @@ function Rules({ clientId }: { clientId: string }) {
   if (list.isPending) return <Spinner />
   if (list.error) return <ErrorState error={list.error} retry={() => void list.refetch()} />
 
+  // The switch moves at once; the server is told in the background and the switch goes back if it refuses.
   async function toggle(r: Rule) {
+    const key = rulesQuery(clientId).queryKey
+    const next = !r.is_active
+    const set = (on: boolean) => queryClient.setQueryData<Rule[]>(key, (rows) => rows?.map((x) => (x.id === r.id ? { ...x, is_active: on } : x)))
+    set(next)
     try {
-      await raw.patch(`${V1}/clients/${clientId}/rules/${r.id}/`, { is_active: !r.is_active })
-      await invalidate()
+      await raw.patch(`${V1}/clients/${clientId}/rules/${r.id}/`, { is_active: next })
+      void invalidate()
     } catch (e) {
+      set(!next)
       toast.error(messageOf(e))
     }
   }
   async function remove(r: Rule) {
+    const key = rulesQuery(clientId).queryKey
+    const before = queryClient.getQueryData<Rule[]>(key)
+    queryClient.setQueryData<Rule[]>(key, (rows) => rows?.filter((x) => x.id !== r.id))
     try {
       await raw.delete(`${V1}/clients/${clientId}/rules/${r.id}/`)
-      await invalidate()
+      void invalidate()
       toast.success('Rule deleted')
     } catch (e) {
+      queryClient.setQueryData(key, before)
       toast.error(messageOf(e))
     }
   }

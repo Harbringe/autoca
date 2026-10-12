@@ -26,7 +26,7 @@ export function Switch({
       disabled={disabled}
       onClick={() => onChange(!checked)}
       className={cn(
-        'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors duration-200 disabled:cursor-not-allowed disabled:opacity-60',
+        'relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-60',
         checked ? 'border-primary bg-primary' : 'border-border-strong bg-muted',
         className,
       )}
@@ -34,7 +34,7 @@ export function Switch({
       <span
         aria-hidden
         className={cn(
-          'block size-[18px] rounded-full transition-transform duration-200 ease-out',
+          'block size-[18px] rounded-full transition-transform duration-150 ease-out',
           checked ? 'translate-x-[22px] bg-white' : 'translate-x-[3px] bg-muted-foreground',
         )}
       />

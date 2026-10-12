@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
 /**
@@ -35,19 +35,19 @@ export function Collapse({ open, children, className }: { open: boolean; childre
   )
 }
 
-/** The id that was open a moment ago, kept for the length of the closing animation, so its content can finish closing before it unmounts. */
+/**
+ * The id that was open a moment ago, kept for the length of the closing animation so its content can finish closing before it
+ * unmounts. It is worked out while rendering, not in an effect, so the content never leaves the page for even one frame.
+ */
 export function useClosing(openId: string | null): string | null {
-  const [closing, setClosing] = useState<string | null>(null)
-  const last = useRef<string | null>(openId)
+  const [state, setState] = useState<{ last: string | null; closing: string | null }>({ last: openId, closing: null })
+  if (state.last !== openId) setState({ last: openId, closing: state.last })
+  const closing = state.closing
   useEffect(() => {
-    const before = last.current
-    last.current = openId
-    if (before && before !== openId) {
-      setClosing(before)
-      const timer = setTimeout(() => setClosing((c) => (c === before ? null : c)), COLLAPSE_MS + 60)
-      return () => clearTimeout(timer)
-    }
-  }, [openId])
+    if (!closing) return
+    const timer = setTimeout(() => setState((s) => (s.closing === closing ? { ...s, closing: null } : s)), COLLAPSE_MS + 60)
+    return () => clearTimeout(timer)
+  }, [closing])
   return closing
 }
 

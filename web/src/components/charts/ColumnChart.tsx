@@ -2,6 +2,7 @@ import { axisMoney } from '@/lib/chartFormat'
 import { formatPaise } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { ChartTable } from './ChartTable'
+import { useReveal } from './ProgressBar'
 import { segmentStyle, type SegmentTone } from './StackedBar'
 
 export interface ColumnPoint {
@@ -33,6 +34,7 @@ export function ColumnChart({
   caption,
   className,
   unit = 'money',
+  id,
 }: {
   points: ColumnPoint[]
   series: ColumnSeries[]
@@ -41,7 +43,11 @@ export function ColumnChart({
   className?: string
   /** `count` draws whole numbers on the axis and in the tooltip; `money` (default) takes whole paise. */
   unit?: 'money' | 'count'
+  /** What makes two showings "the same chart" for the first-time entrance. Defaults to the aria label. */
+  id?: string
 }) {
+  // The columns rise from the zero line the first time the chart is shown, one after another, and glide when their values change.
+  const { ready, first } = useReveal(`column-${id ?? ariaLabel}`)
   const fmt = (v: number) => (unit === 'count' ? String(v) : formatPaise(v))
   const axis = (v: number) => (unit === 'count' ? String(v) : axisMoney(v))
   const all = points.flatMap((p) => p.values)
@@ -73,17 +79,18 @@ export function ColumnChart({
           <span className="absolute inset-x-0 h-px bg-[var(--faint)]" style={{ top: `${zero}%` }} aria-hidden />
           <span className="absolute inset-x-0 top-0 h-px bg-[var(--chart-grid)]" aria-hidden />
           <div className="absolute inset-0 flex gap-1">
-            {points.map((p) => (
+            {points.map((p, pi) => (
               <div key={p.key} className="group relative flex h-full min-w-0 flex-1 justify-center gap-px">
                 {p.values.map((v, i) => {
                   const h = (Math.abs(v) / span) * 100
                   return (
                     <span
                       key={series[i]?.name ?? i}
-                      className="absolute block rounded-t-sm"
+                      className="absolute block rounded-t-sm transition-[height] duration-700 ease-out"
                       style={{
                         ...segmentStyle(series[i]?.tone ?? 'focus'),
-                        height: `${v === 0 ? 0 : Math.max(h, 1)}%`,
+                        height: ready ? `${v === 0 ? 0 : Math.max(h, 1)}%` : '0%',
+                        transitionDelay: first ? `${(pi * p.values.length + i) * 60}ms` : undefined,
                         ...(v >= 0 ? { bottom: `${100 - zero}%` } : { top: `${zero}%`, borderRadius: '0 0 2px 2px' }),
                         left: `${10 + (80 / p.values.length) * i}%`,
                         width: `${80 / p.values.length}%`,

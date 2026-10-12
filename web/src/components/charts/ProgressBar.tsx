@@ -21,6 +21,21 @@ export function useGrown(target: number, id: string): { value: number; first: bo
   return { value, first }
 }
 
+/**
+ * For a whole chart: `ready` is false on the first showing of `id` and flips on the next frame, so the shapes can grow from
+ * nothing; on every later showing it is true at once. `first` says whether this is the first showing, to stagger the entrance.
+ */
+export function useReveal(id: string): { ready: boolean; first: boolean } {
+  const [first] = useState(() => !seen.has(id))
+  const [ready, setReady] = useState(!first)
+  useEffect(() => {
+    seen.add(id)
+    const frame = requestAnimationFrame(() => setReady(true))
+    return () => cancelAnimationFrame(frame)
+  }, [id])
+  return { ready, first }
+}
+
 /** Bars with no `id` of their own are known by their label with the numbers taken out, so "7 of 12" and "8 of 12" are one bar. */
 const keyOf = (label: string) => label.replace(/[\d.,%₹]+/g, '#')
 

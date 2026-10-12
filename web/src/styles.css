@@ -393,6 +393,17 @@
     transform: none;
   }
 }
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+.fade-in {
+  animation: fade-in 260ms ease-out backwards;
+}
 .page-in {
   animation: page-in 180ms ease-out both;
 }

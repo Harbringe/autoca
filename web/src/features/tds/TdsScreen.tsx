@@ -4,8 +4,8 @@
 // department debits it. Deposits are matched to the oldest deduction of their section first. A deposit needs its challan
 // (the section, BSR code and serial number) recorded before the quarterly return can use it.
 
-import { useQuery } from '@tanstack/react-query'
-import { useState } from 'react'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
 import { messageOf } from '@/api/errors'
@@ -20,10 +20,12 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { ColumnChart, ColumnSkeleton, EmptyPlot } from '@/components/charts/ColumnChart'
+import { GlideChips } from '@/components/ui/glide-chips'
 import { tdsByMonth } from '@/lib/reportSeries'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDate, fyLabel, parseDate } from '@/lib/format'
 import { saveFile } from '@/platform/download'
+import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -45,47 +47,57 @@ function ReturnData({ clientId }: { clientId: string }) {
         due: string; deducted_paise: number; deposited_paise: number; interest_paise: number; fee_paise: number
         warnings: string[]; deductees?: unknown[]; employees?: unknown[]; challans: unknown[]
       }>(`${V1}/clients/${clientId}/tds/${form}/`, { fy, quarter }),
+    placeholderData: keepPreviousData,
   })
+  // Remounts (and so fades in) only when a new quarter has really arrived, not while the old one is held, dimmed, in its place.
+  const arrived = useRef(0)
+  if (pack.data && !pack.isPlaceholderData) arrived.current = pack.dataUpdatedAt
+  const [downloading, setDownloading] = useState(false)
   async function download() {
+    setDownloading(true)
     try {
       const { blob, filename } = await raw.blob(`${V1}/clients/${clientId}/tds/${form}/export/`, { fy, quarter })
       await saveFile(filename ?? `tds-${form === 'return' ? '26Q' : '24Q'}-FY${fy}-Q${quarter}.xlsx`, blob)
     } catch (e) {
       toast.error(messageOf(e))
+    } finally {
+      setDownloading(false)
     }
   }
   const rupees = (paise: number) => `₹${(paise / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`
   return (
     <section className="grid gap-2" aria-labelledby="tds-return">
       <h2 id="tds-return" className="text-[15px] font-semibold text-heading">Quarterly return data (Form 26Q and 24Q)</h2>
-      <div className="flex flex-wrap items-center gap-2 text-sm">
-        <label className="flex items-center gap-1.5">
-          Return
-          <select className="h-9 rounded-md border bg-background px-2" value={form} onChange={(e) => setForm(e.target.value as typeof form)}>
-            <option value="return">26Q (other than salary)</option>
-            <option value="salary-return">24Q (salary)</option>
-          </select>
-        </label>
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm">
+        <GlideChips
+          label="Return"
+          value={form}
+          onChange={setForm}
+          options={[
+            { value: 'return', label: '26Q (other than salary)' },
+            { value: 'salary-return', label: '24Q (salary)' },
+          ]}
+        />
         <label className="flex items-center gap-1.5">
           Financial year
           <select className="h-9 rounded-md border bg-background px-2" value={fy} onChange={(e) => setFy(Number(e.target.value))}>
             {[currentFy(), currentFy() - 1, currentFy() - 2].map((y) => <option key={y} value={y}>{fyLabel(y)}</option>)}
           </select>
         </label>
-        <label className="flex items-center gap-1.5">
-          Quarter
-          <select className="h-9 rounded-md border bg-background px-2" value={quarter} onChange={(e) => setQuarter(Number(e.target.value))}>
-            {[1, 2, 3, 4].map((q) => <option key={q} value={q}>Q{q}</option>)}
-          </select>
-        </label>
-        <Button variant="outline" onClick={() => void download()} disabled={!pack.data}>Download Excel</Button>
+        <GlideChips
+          label="Quarter"
+          value={`Q${quarter}`}
+          onChange={(q) => setQuarter(Number(q.slice(1)))}
+          options={[1, 2, 3, 4].map((q) => ({ value: `Q${q}`, label: `Q${q}` }))}
+        />
+        <Button variant="outline" onClick={() => void download()} loading={downloading} disabled={!pack.data}>Download Excel</Button>
       </div>
       {pack.isPending ? (
         <Spinner label="Reading the quarter…" />
       ) : pack.isError ? (
         <ErrorState error={pack.error} retry={() => void pack.refetch()} />
       ) : (
-        <div className="grid gap-2 rounded-lg border bg-card p-3 text-sm">
+        <div key={arrived.current} aria-busy={pack.isPlaceholderData || undefined} className={cn('fade-in grid gap-2 rounded-lg border bg-card p-3 text-sm transition-opacity duration-200', pack.isPlaceholderData && 'opacity-50')}>
           <p>
             {(pack.data.deductees ?? pack.data.employees ?? []).length} {form === 'return' ? 'deduction' : 'employee'}{(pack.data.deductees ?? pack.data.employees ?? []).length === 1 ? '' : 's'}, {rupees(pack.data.deducted_paise)} deducted,{' '}
             {rupees(pack.data.deposited_paise)} deposited. Return due {formatDate(pack.data.due)}.
@@ -140,8 +152,8 @@ export function TdsScreen({ clientId }: { clientId: string }) {
         <section className="grid gap-2" aria-labelledby="tds-loose">
           <h2 id="tds-loose" className="text-[15px] font-semibold text-heading">Payments to the tax department with no challan</h2>
           <ul className="grid gap-2">
-            {loose.map((p) => (
-              <li key={p.entry} className="flex flex-wrap items-center justify-between gap-3 rounded-md border bg-card p-3 text-sm">
+            {loose.map((p, i) => (
+              <li key={p.entry} className="fade-in flex flex-wrap items-center justify-between gap-3 rounded-md border bg-card p-3 text-sm" style={{ animationDelay: `${Math.min(i, 8) * 50}ms` }}>
                 <span>
                   <Money display={p.amount_display} /> paid on {formatDate(p.entry_date)}
                 </span>
@@ -187,8 +199,8 @@ export function TdsScreen({ clientId }: { clientId: string }) {
               </tr>
             </thead>
             <tbody>
-              {months.map((m) => (
-                <tr key={`${m.section}-${m.year}-${m.month}`} className="border-b last:border-0">
+              {months.map((m, i) => (
+                <tr key={`${m.section}-${m.year}-${m.month}`} className="fade-in border-b transition-colors last:border-0 hover:bg-hover" style={{ animationDelay: `${Math.min(i, 10) * 40}ms` }}>
                   <th scope="row" className="p-2 text-left font-medium">{m.section === '?' ? 'Not stated' : m.section}</th>
                   <td className="p-2">
                     {MONTHS[m.month - 1]} {m.year} <span className="text-xs text-muted-foreground">Q{m.quarter} FY {fyLabel(m.financial_year)}</span>
@@ -243,7 +255,7 @@ function ChallanDialog({ clientId, entry, onClose }: { clientId: string; entry: 
   }
 
   return (
-    <Dialog open onOpenChange={(open) => !open && onClose()}>
+    <Dialog open onOpenChange={(open) => !open && !record.isPending && onClose()}>
       <DialogContent className="sm:max-w-md" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>Record the challan</DialogTitle>
@@ -256,7 +268,7 @@ function ChallanDialog({ clientId, entry, onClose }: { clientId: string; entry: 
           <Field label="Date paid">{(p) => <DateInput {...p} value={paidOn} onChange={(e) => setPaidOn(e.target.value)} />}</Field>
           {problem && paidOn && <p role="alert" className="text-sm text-destructive">{problem}</p>}
           <div className="flex justify-end">
-            <Button onClick={save} disabled={!!problem || record.isPending}>{record.isPending ? 'Saving…' : 'Record'}</Button>
+            <Button onClick={save} loading={record.isPending} disabled={!!problem}>{record.isPending ? 'Saving…' : 'Record'}</Button>
           </div>
         </div>
       </DialogContent>

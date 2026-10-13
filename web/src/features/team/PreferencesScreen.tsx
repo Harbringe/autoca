@@ -89,6 +89,8 @@ const SAMPLE_ROWS: SampleRow[] = [
   ['22-09-2025', 'Paid To : TO AVANISH KHIYANIWAMY LAT', '₹50,00,000.00', 'Jul–Sep 2025'],
   ['29-08-2025', 'REJECT:4:REQUIRED INFORMATIO NOT LEGIBLE', '₹26,00,000.00', 'Jul–Sep 2025'],
   ['12-07-2025', 'SMS CHRG FOR:01-04-2025to30-06-2025', '₹1.47', 'Jul–Sep 2025'],
+  ['03-06-2025', 'UPI/ZERODHA BROKING/COLLECTION', '₹1,10,000.00', 'Apr–Jun 2025'],
+  ['21-05-2025', 'NEFT-RAJVEER TUSHAR PATIL', '₹30,000.00', 'Apr–Jun 2025'],
 ]
 
 function SampleRows({ rows, density, showStatement }: { rows: SampleRow[]; density: Density; showStatement?: boolean }) {
@@ -106,12 +108,77 @@ function SampleRows({ rows, density, showStatement }: { rows: SampleRow[]; densi
   )
 }
 
+/** The two palettes a theme card can show. A theme is drawn in its own colours, whatever theme the page is in now. */
+const PALETTE = {
+  dark: { bg: '#0f1113', card: '#161a1c', line: '#2b3236', fg: '#e6eae8', mute: '#98a39e', acc: '#4fb3a0', accInk: '#06201b', rail: '#0b0d0e', sel: '#1b2326' },
+  light: { bg: '#f4f5f3', card: '#ffffff', line: '#d6dad5', fg: '#14181a', mute: '#4f5753', acc: '#1e5b4f', accInk: '#ffffff', rail: '#0b0d0e', sel: '#eef4f1' },
+}
+
+function useResolvedTheme(theme: Theme): 'light' | 'dark' {
+  if (theme !== 'system') return theme
+  return typeof window !== 'undefined' && window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
+/**
+ * A small window of the app in the theme and row spacing chosen: the rail, the top bar, a heading with its tabs, and Review rows. It is
+ * drawn in the theme's own colours, so a card you have not chosen yet can be seen before you choose it, and spacing shows as it will fall.
+ */
+function AppPreview({ theme, density }: { theme: Theme; density: Density }) {
+  const c = PALETTE[useResolvedTheme(theme)]
+  const rows = SAMPLE_ROWS.slice(0, density === 'compact' ? 8 : 5)
+  const pad = density === 'compact' ? 6 : 14
+  return (
+    <div role="img" aria-label={`A preview of the app in the ${theme === 'system' ? 'device' : theme} theme with ${density} rows`} className="overflow-hidden rounded-xl border transition-colors duration-200" style={{ background: c.bg, color: c.fg, borderColor: c.line }}>
+      <div className="flex">
+        <div className="flex w-11 shrink-0 flex-col items-center gap-2 py-3" style={{ background: c.rail }}>
+          <span className="grid size-6 place-items-center rounded-md text-[9px] font-bold text-white" style={{ background: '#2f6f62' }}>CA</span>
+          {[0, 1, 2, 3].map((i) => (
+            <span key={i} className="size-5 rounded-md" style={{ background: i === 3 ? c.sel : '#1d2326', boxShadow: i === 3 ? `inset 2px 0 0 ${c.acc}` : undefined }} />
+          ))}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="relative flex h-9 items-center gap-2 border-b px-3 text-[11px]" style={{ borderColor: c.line, color: c.mute }}>
+            <span className="absolute inset-x-0 top-0 h-[2px]" style={{ background: '#2f6f62' }} />
+            <span>plant’s firm › Laxmi › </span>
+            <b style={{ color: c.fg }}>Review</b>
+            <span className="ml-auto h-5 w-32 rounded-md border px-2 text-[10px] leading-5" style={{ borderColor: c.line, background: c.card }}>Search or jump</span>
+          </div>
+          <div className="px-4 pb-4 pt-3">
+            <div className="text-lg font-semibold">Review</div>
+            <div className="mt-1 flex gap-1 text-[11px]">
+              {['Needs a ledger 3', 'Ready to post 46', 'All waiting 49'].map((x, i) => (
+                <span key={x} className="rounded-md px-2 py-1" style={i === 1 ? { background: c.sel, color: c.fg, fontWeight: 600 } : { color: c.mute }}>
+                  {x}
+                </span>
+              ))}
+              <span className="ml-auto rounded-md px-2 py-1 font-semibold" style={{ background: c.acc, color: c.accInk }}>
+                Post all (3)
+              </span>
+            </div>
+            <div className="mt-3 overflow-hidden rounded-lg border text-[12px]" style={{ background: c.card, borderColor: c.line }}>
+              {rows.map((r) => (
+                <div key={r[0] + r[1]} className="flex items-center gap-3 border-b px-3 last:border-b-0 transition-[padding] duration-200" style={{ borderColor: c.line, paddingBlock: pad }}>
+                  <span className="num w-20 shrink-0" style={{ color: c.mute }}>
+                    {r[0]}
+                  </span>
+                  <span className="min-w-0 flex-1 truncate">{r[1]}</span>
+                  <span className="num font-semibold">{r[2]}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function Look() {
   const { theme, setTheme, density, setDensity } = usePreferences()
   return (
     <>
       <Heading>Look</Heading>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,430px)_minmax(0,1fr)]">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,420px)_minmax(0,1fr)]">
         <div className="grid content-start gap-5">
           <div>
             <Label>Theme</Label>
@@ -141,44 +208,56 @@ function Look() {
             />
           </div>
         </div>
-        <div>
-          <Label>Sample: Review rows</Label>
-          <SampleRows rows={SAMPLE_ROWS.slice(0, density === 'compact' ? 6 : 4)} density={density} />
-          <p className="mt-1.5 text-[13px] text-muted-foreground">{density === 'compact' ? 'Compact fits more rows on a screen.' : 'Comfortable gives each row more room.'}</p>
+        <div className="min-w-0">
+          <Label>Preview: the app as you have chosen it</Label>
+          <AppPreview theme={theme} density={density} />
+          <p className="mt-1.5 text-[13px] text-muted-foreground" aria-live="polite">
+            {density === 'compact' ? 'Compact fits more rows on a screen.' : 'Comfortable gives each row more room.'}
+          </p>
         </div>
       </div>
     </>
   )
 }
 
+/** A search over Review's rows, as it reads with the setting off or on, so the two can be set side by side. */
+function SearchSample({ on, current, density }: { on: boolean; current: boolean; density: Density }) {
+  const rows = on ? SAMPLE_ROWS.slice(0, 5) : SAMPLE_ROWS.filter((r) => r[3] === 'Apr–Jun 2025')
+  return (
+    <div className={cn('rounded-xl border bg-card p-3 transition-colors duration-200', current && 'border-primary ring-1 ring-primary')}>
+      <div className="mb-2 flex items-center justify-between gap-2">
+        <b className="text-sm">{on ? 'On: every statement' : 'Off: this statement only'}</b>
+        {current && <span className="rounded-full bg-selected px-2 py-0.5 text-[11px] font-semibold text-heading">Your choice</span>}
+      </div>
+      <div className="mb-2 flex h-8 items-center gap-2 rounded-lg border bg-background px-2.5 text-[13px]">
+        <span aria-hidden>⌕</span>a<span className="text-xs text-muted-foreground"> · searching {on ? 'all 3 statements' : 'Apr–Jun 2025'}</span>
+      </div>
+      <SampleRows rows={rows} density={density} showStatement={on} />
+      <p className="mt-1.5 text-[13px] text-muted-foreground">
+        {on ? `${rows.length} rows found, each tagged with where it is from.` : `${rows.length} rows found, in the statement being reviewed only.`}
+      </p>
+    </div>
+  )
+}
+
 function ReviewTopic() {
   const searchAll = useSearchAllStatements()
   const { density } = usePreferences()
-  const shown = searchAll ? SAMPLE_ROWS.slice(0, 5) : SAMPLE_ROWS.filter((r) => r[3] === 'Apr–Jun 2025')
   return (
     <>
       <Heading>Review</Heading>
-      <div className="grid gap-6 lg:grid-cols-[minmax(0,430px)_minmax(0,1fr)]">
-        <div className="content-start rounded-xl border bg-card p-4">
-          <Checkbox
-            label={<b className="text-sm font-semibold">Search every bank statement</b>}
-            checked={searchAll}
-            onChange={(e) => setSearchAllStatements(e.target.checked)}
-          />
+      <div className="mb-5 flex items-start gap-4 rounded-xl border bg-card p-4">
+        <div className="flex-1">
+          <Checkbox label={<b className="text-sm font-semibold">Search every bank statement</b>} checked={searchAll} onChange={(e) => setSearchAllStatements(e.target.checked)} />
           <p className="ml-7 mt-1 text-[13px] text-muted-foreground">
             Review works through one statement at a time. With this on, its search box looks through all of the client’s statements, and shows where each row is from.
           </p>
         </div>
-        <div>
-          <Label>Sample: searching in Review</Label>
-          <div className="mb-2.5 flex h-9 items-center gap-2 rounded-lg border bg-background px-2.5 text-sm">
-            <span aria-hidden>⌕</span>a<span className="text-[13px] text-muted-foreground"> · statement Apr–Jun 2025 is open</span>
-          </div>
-          <SampleRows rows={shown} density={density} showStatement={searchAll} />
-          <p className="mt-1.5 text-[13px] text-muted-foreground" aria-live="polite">
-            {searchAll ? `${shown.length} rows found across all statements, each tagged with where it is from.` : `${shown.length} rows found, in the statement being reviewed only.`}
-          </p>
-        </div>
+      </div>
+      <Label>Preview: the same search, both ways</Label>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <SearchSample on={false} current={!searchAll} density={density} />
+        <SearchSample on current={searchAll} density={density} />
       </div>
     </>
   )

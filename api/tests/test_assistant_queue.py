@@ -305,3 +305,28 @@ def test_worker_finds_the_firms_with_no_one_signed_in(client_record):
         if not cursor.fetchone()[0]:
             pytest.skip("autoca_platform_reader is not set up on this Postgres cluster")
     assert client_record.firm_id in firm_ids()
+
+
+def test_tick_reads_several_batches_at_once_and_counts_them(monkeypatch):
+    """With parallel batches the pass fans out over threads; one failing batch does not lose the others' count."""
+    import threading
+    from types import SimpleNamespace
+
+    from classify.management.commands import run_assistant
+
+    seen = []
+    threads = set()
+
+    def fake_batch(client):
+        seen.append(client)
+        threads.add(threading.get_ident())
+        if len(seen) == 2:
+            raise RuntimeError("one batch failed")
+        return SimpleNamespace(processed=10)
+
+    monkeypatch.setattr(run_assistant, "firm_ids", lambda: ["f"])
+    monkeypatch.setattr(run_assistant, "clients_waiting", lambda firm_id: [SimpleNamespace(firm_id=firm_id, pk="c")])
+    monkeypatch.setattr(run_assistant, "process_next_batch", fake_batch)
+    monkeypatch.setattr(run_assistant, "connections", SimpleNamespace(close_all=lambda: None))
+    assert run_assistant.tick(parallel=4) == 30
+    assert len(seen) == 4

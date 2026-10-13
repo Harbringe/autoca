@@ -15,9 +15,10 @@ from __future__ import annotations
 import logging
 import signal
 import time
+from concurrent.futures import ThreadPoolExecutor
 
 from django.core.management.base import BaseCommand
-from django.db import connection
+from django.db import connection, connections
 
 from classify.models import ModelState, TransactionClassification
 from classify.queue import process_next_batch
@@ -45,15 +46,42 @@ def clients_waiting(firm_id) -> list[Client]:
         return list(Client.objects.filter(pk__in=ids)) if ids else []
 
 
-def tick() -> int:
-    """One pass over every firm. Returns how many rows were read."""
-    read = 0
-    for firm_id in firm_ids():
-        for client in clients_waiting(firm_id):
+def _one_batch(client):
+    """One batch on a worker thread, which has a database connection of its own and gives it back when done."""
+    try:
+        return process_next_batch(client)
+    finally:
+        connections.close_all()
+
+
+def tick(parallel: int = 1) -> int:
+    """One pass over every firm. Returns how many rows were read.
+
+    ``parallel`` batches are read at once for each client with rows waiting: a call to the model takes ten seconds or more,
+    so one at a time is the slowest way through a long statement. Several at once is what ``process_next_batch`` is built for
+    (rows are claimed with ``SKIP LOCKED``, and a pause is firm-wide), so they take different rows and stop together on a pause.
+    """
+    waiting = [client for firm_id in firm_ids() for client in clients_waiting(firm_id)]
+    if parallel <= 1:
+        read = 0
+        paused_firms = set()
+        for client in waiting:
+            if client.firm_id in paused_firms:
+                continue  # the pause is per firm; the rest of its clients would only be told the same
             outcome = process_next_batch(client)
             read += outcome.processed
             if outcome.state == "paused" or outcome.reason == "assistant_off":
-                break  # the pause is per firm; the rest of its clients would only be told the same
+                paused_firms.add(client.firm_id)
+        return read
+
+    read = 0
+    with ThreadPoolExecutor(max_workers=parallel) as pool:
+        jobs = [pool.submit(_one_batch, client) for client in waiting for _ in range(parallel)]
+        for job in jobs:
+            try:
+                read += job.result().processed
+            except Exception:  # one failed batch must not lose the others' count or end the pass
+                logger.exception("assistant batch failed")
     return read
 
 
@@ -64,8 +92,9 @@ class Command(BaseCommand):
         parser.add_argument("--once", action="store_true", help="Make one pass and exit.")
         parser.add_argument("--idle", type=float, default=8.0, help="Seconds between passes when nothing was read.")
         parser.add_argument("--busy", type=float, default=1.0, help="Seconds between passes while rows are being read.")
+        parser.add_argument("--parallel", type=int, default=4, help="Batches read at once for a client with rows waiting.")
 
-    def handle(self, *args, once=False, idle=8.0, busy=1.0, **options):
+    def handle(self, *args, once=False, idle=8.0, busy=1.0, parallel=4, **options):
         stopping = False
 
         def stop(*_):
@@ -76,7 +105,7 @@ class Command(BaseCommand):
         signal.signal(signal.SIGINT, stop)
         while not stopping:
             try:
-                read = tick()
+                read = tick(parallel)
             except Exception:  # never let one bad pass end the worker
                 logger.exception("assistant pass failed")
                 read = 0

@@ -1,11 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider } from '@tanstack/react-router'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, afterAll, beforeAll } from 'vitest'
 import { journal, ledgers, parties, reviewQueue } from '@/api/queries/books'
 import { bankAccounts, clientDetail, reviewSummary } from '@/api/queries/clients'
 import type { Classification } from '@/api/types'
 import { ReviewScreen } from './ReviewScreen'
+import { setAllPageSize } from '@/lib/pageSizes'
 
 vi.mock('@/session/session', () => ({ useSession: () => ({ me: { permissions: [] }, can: () => true }) }))
 
@@ -52,6 +53,10 @@ function renderReview(count: number) {
 }
 
 const rowsOnScreen = () => document.querySelectorAll('ul[aria-label="Rows waiting"] > li').length
+
+// These count on pages of 50; lists start at 10, so say so.
+beforeAll(() => setAllPageSize(50))
+afterAll(() => setAllPageSize(null))
 
 describe('a long review queue is shown a page at a time', () => {
   it('shows one page of rows and a pager when there are many', async () => {

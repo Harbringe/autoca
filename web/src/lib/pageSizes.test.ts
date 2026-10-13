@@ -8,11 +8,9 @@ async function fresh() {
 describe('rows per page', () => {
   beforeEach(() => localStorage.clear())
 
-  it('gives each list its own size until one is chosen, with a ledger at 10', async () => {
+  it('starts every list at 10 until a size is chosen', async () => {
     const p = await fresh()
-    expect(p.pageSizeOf('ledger')).toBe(10)
-    expect(p.pageSizeOf('review')).toBe(50)
-    expect(p.pageSizeOf('statements')).toBe(100)
+    for (const s of ['ledger', 'review', 'statements', 'daybook', 'parties', 'alerts', 'activity'] as const) expect(p.pageSizeOf(s)).toBe(10)
   })
 
   it('applies one size to every list, and a list on its own beats it', async () => {
@@ -33,7 +31,7 @@ describe('rows per page', () => {
     p.setAllPageSize(50)
     expect(p.pageSizeOf('review')).toBe(50)
     p.setAllPageSize(null)
-    expect(p.pageSizeOf('review')).toBe(50)
+    expect(p.pageSizeOf('review')).toBe(10)
     expect(p.pageSizeOf('alerts')).toBe(10)
   })
 
@@ -44,6 +42,6 @@ describe('rows per page', () => {
     expect(p.pageSizeOf('daybook')).toBe(25)
     localStorage.setItem('autoca.pageSizes', JSON.stringify({ all: 7, by: { review: 999 } }))
     p = await fresh()
-    expect(p.pageSizeOf('review')).toBe(50)
+    expect(p.pageSizeOf('review')).toBe(10)
   })
 })

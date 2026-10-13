@@ -7,13 +7,13 @@ import { useSyncExternalStore } from 'react'
 export type PageSection = 'review' | 'daybook' | 'statements' | 'ledger' | 'parties' | 'alerts' | 'activity' | 'firm'
 
 export const PAGE_SECTIONS: { id: PageSection; label: string; fallback: number }[] = [
-  { id: 'review', label: 'Review queue', fallback: 50 },
-  { id: 'daybook', label: 'Day Book', fallback: 50 },
-  { id: 'statements', label: 'Statement rows', fallback: 100 },
+  { id: 'review', label: 'Review queue', fallback: 10 },
+  { id: 'daybook', label: 'Day Book', fallback: 10 },
+  { id: 'statements', label: 'Statement rows', fallback: 10 },
   { id: 'ledger', label: 'A ledger’s entries', fallback: 10 },
   { id: 'parties', label: 'Parties found', fallback: 10 },
   { id: 'alerts', label: 'Alerts', fallback: 10 },
-  { id: 'activity', label: 'Activity log', fallback: 25 },
+  { id: 'activity', label: 'Activity log', fallback: 10 },
   { id: 'firm', label: 'Firm settings lists (people, clients)', fallback: 10 },
 ]
 

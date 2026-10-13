@@ -1,12 +1,13 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider, useSearch } from '@tanstack/react-router'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, afterAll, beforeAll } from 'vitest'
 import { journal, ledgers, parties, reviewQueue } from '@/api/queries/books'
 import { bankAccounts, clientDetail, reviewSummary, statements } from '@/api/queries/clients'
 import type { Classification } from '@/api/types'
 import { setSearchAllStatements } from '@/lib/reviewPrefs'
 import { ReviewScreen } from './ReviewScreen'
+import { setAllPageSize } from '@/lib/pageSizes'
 
 vi.mock('@/session/session', () => ({ useSession: () => ({ me: { permissions: [] }, can: () => true }) }))
 
@@ -73,6 +74,10 @@ function renderReview(rows: Classification[], { start = '/clients/c1/review', pr
 }
 
 const shown = () => [...document.querySelectorAll('ul[aria-label="Rows waiting"] > li')].map((li) => li.textContent ?? '')
+
+// These count on pages of 50; lists start at 10, so say so.
+beforeAll(() => setAllPageSize(50))
+afterAll(() => setAllPageSize(null))
 
 describe('the review, one bank statement at a time', () => {
   const rows = [row(1, 's2'), row(2, 's2'), row(3, 's2'), row(4, 's1'), row(5, 's1')]

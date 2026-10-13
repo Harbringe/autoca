@@ -1,6 +1,7 @@
 import { act, fireEvent, render, renderHook, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it, vi, afterAll, beforeAll } from 'vitest'
 import { PAGE_SIZE, PageJump, PagedList, Pager, pageNumbers, usePaged } from './Pager'
+import { setAllPageSize } from '@/lib/pageSizes'
 
 const items = (n: number) => Array.from({ length: n }, (_, i) => i + 1)
 
@@ -17,6 +18,10 @@ function Demo({ n, resetKey = 'a' }: { n: number; resetKey?: string }) {
     </>
   )
 }
+
+// These count on pages of 50; lists start at 10, so say so.
+beforeAll(() => setAllPageSize(50))
+afterAll(() => setAllPageSize(null))
 
 describe('the pager', () => {
   it('shows nothing extra for a list that fits on one page', () => {

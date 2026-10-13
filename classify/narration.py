@@ -180,12 +180,23 @@ def _bankish(field: str) -> bool:
     return _is_ifsc(field) or bool(_BANK_WORDS.search(field or ""))
 
 
+#: Words a bank prints in a payee's place: a direction, a mode, a scheme. Read as the payee they would become a rule key that
+#: places every row of that kind.
+_STRUCTURAL_WORDS = frozenset({
+    "CR", "DR", "IN", "OUT", "REV", "P2P", "P2A", "P2M", "P2V", "UPI", "IMPS", "NEFT", "RTGS", "ACH", "NACH", "APBS",
+    "MANDATE", "COLLECT", "PAY", "PAYMENT", "NA", "NIL", "NULL", "NONE", "SELF", "OTHERS", "OTHER", "TRANSFER",
+})
+
+
 def _name(field: str) -> str:
-    """A name as printed, without the ellipsis a truncated one ends in."""
+    """A name as printed, without the ellipsis a truncated one ends in. Empty when what is left cannot be a payee."""
     text = re.sub(r"\s+", " ", re.sub(r"[.\s]*\.\.\.\s*$", "", field or ""))
     # A long number after the name is a consumer, store or phone number, not part of who it is: it would leak, and it would make
     # the same payee a different key every month.
-    return re.sub(r"[\s.]*\d{4,}\W*$", "", text).strip(" /-.")
+    text = re.sub(r"[\s.]*\d{4,}\W*$", "", text).strip(" /-.")
+    if len(re.sub(r"[^A-Za-z]", "", text)) < 3 or text.upper() in _STRUCTURAL_WORDS:
+        return ""
+    return text
 
 
 def _digits(field: str) -> str:
@@ -300,10 +311,6 @@ def _auto_debit_or_credit(raw: str):
     return found
 
 
-def _atm(raw: str):
-    return {"counterparty": "ATM CASH WITHDRAWAL"} if re.match(r"^(?:NFS|VAT|MAT)/", raw, re.I) else None
-
-
 _MORE_PATTERNS: list[tuple[str, object]] = [
     # 004401000001:Int.Pd:31-12-2025 to 29-03-2026 -- the bank's own interest, with the account number in front
     (Channel.INTEREST, re.compile(r"^(?:SB:)?(?P<account>\d{6,})\s*:\s*Int\.?\s*(?P<kind>Pd|Coll)", re.I)),
@@ -325,19 +332,19 @@ _MORE_PATTERNS: list[tuple[str, object]] = [
     *[(channel, _dash_transfer(channel)) for channel in (Channel.NEFT, Channel.RTGS)],
     # ICICI cash at an ATM: CAM/<machine>/CASH WDL, and its reversal CASH WDL RVSL
     (Channel.CASH, re.compile(r"^CAM/[^/]*/(?P<counterparty>CASH\s*(?:WDL|DEP)(?:\s*RVSL)?)", re.I)),
-    (Channel.CASH, _atm),
     (Channel.CASH, re.compile(r"^(?P<counterparty>CASH\s*DEPOSIT)", re.I)),
 ]
 
 #: Rows read by position keep their text back from a model (see ``NarrationFacts.withhold_text``).
 _POSITIONAL = frozenset(id(matcher) for _, matcher in _MORE_PATTERNS)
 
-#: The leading word of a line no pattern read: enough to name the channel, never to name a payee.
+#: The leading word of a line no pattern read: enough to name the channel, never to name a payee. Never CASH: a seed rule posts
+#: cash rows to Cash-in-Hand unseen, so cash is only ever claimed by a shape that has been seen.
 _LEADING_CHANNEL = {
     "ACH": Channel.MANDATE, "NACH": Channel.MANDATE, "APBS": Channel.MANDATE,
     "UPI": Channel.UPI, "NEFT": Channel.NEFT, "RTGS": Channel.RTGS, "IMPS": Channel.IMPS, "MMT": Channel.IMPS,
     "POS": Channel.POS, "ECOM": Channel.POS, "VPS": Channel.POS, "VIN": Channel.POS,
-    "CAM": Channel.CASH, "NFS": Channel.CASH, "BIL": Channel.BILL,
+    "BIL": Channel.BILL,
     "CHQ": Channel.CHEQUE, "CLG": Channel.CHEQUE,
 }
 

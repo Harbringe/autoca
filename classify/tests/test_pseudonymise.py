@@ -220,3 +220,15 @@ def test_a_line_nobody_taught_still_sends_its_hints_without_any_text(client):
 def test_a_row_with_no_hints_has_no_hints_key(client):
     p = Pseudonymiser(client, parties=[])
     assert "hints" not in p.row(txn("UPI/P2M/100000000001/EXAMPLE TRADERS LIMITED/098336/HDFC BANK LTD")).as_prompt_dict()
+
+
+def test_rows_that_differ_only_in_their_hints_are_asked_about_separately(client):
+    """With no text sent, a fuel payment and a meal can read the same but for their hints; one answer must not cover both."""
+    from classify.llm import group_alike
+
+    p = Pseudonymiser(client, parties=[])
+    fuel = SimpleNamespace(transaction=txn("UPI/qa00000000@ybl/Car Diesel/EXAMPLE BANK/100000000002/ICI0001"))
+    meal = SimpleNamespace(transaction=txn("UPI/qa00000000@ybl/Dinner Bill/EXAMPLE BANK/100000000002/ICI0001"))
+    fuel_again = SimpleNamespace(transaction=txn("UPI/qa00000000@ybl/Car Diesel/EXAMPLE BANK/100000000009/ICI0009"))
+
+    assert group_alike([fuel, meal, fuel_again], p) == [[fuel, fuel_again], [meal]]

@@ -384,3 +384,26 @@ def test_lines_read_by_position_keep_their_text_back():
     assert analyse("ACH/EXAMPLE LTD/100001").withhold_text
     # the older, fully understood shapes still send their masked text as before
     assert not analyse("UPI/P2M/100000000001/ZERODHA BROKING LIMIT/098336/HDFC BANK LTD").withhold_text
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "UPI/DR/100000000001/DEMO NAME/EXAMPLE BANK/x@upi/note",
+        "UPI/CR/100000000001/DEMO NAME/EXAMPLE BANK/x@upi/note",
+        "ACH/DR/100001",
+        "ACH/MANDATE/100001",
+        "MMT/IMPS/100000000001/Rent/NA/SBIN0000001",
+    ],
+)
+def test_a_structural_word_is_never_read_as_the_payee(raw):
+    """A payee of "DR" would become a rule key, and one decision would place every UPI debit."""
+    found = analyse(raw)
+    assert found.is_recognised
+    assert found.counterparty == ""
+
+
+@pytest.mark.parametrize("raw", ["CAM/00001ABC/SOMETHING ELSE", "NFS/CASH WDL/0001", "VAT/100001/ATM", "MAT/100001/ATM", "ATM 100001 SOMEWHERE"])
+def test_cash_is_only_claimed_by_a_shape_that_has_been_seen(raw):
+    """A seed rule posts cash rows to Cash-in-Hand unseen, so a guess here would book bank rows as cash."""
+    assert analyse(raw).channel != Channel.CASH

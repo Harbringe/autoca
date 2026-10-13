@@ -359,21 +359,23 @@ html {
     color: var(--popover-foreground);
     box-shadow: var(--shadow-float);
     font-size: 14px;
-    /* Eases open and shut: a little fade and a few pixels of slide. */
-    opacity: 0;
-    transform: translateY(-4px);
+    /* The list is seen by default, and only a list that is shut is drawn faded out. (It used to be hidden by default and shown by
+       :popover-open, which newer Chrome no longer matches on the list, so the list opened and stayed invisible. It is the select's
+       own :open that says it is open.) A little fade and a few pixels of slide on the way in and out. */
+    opacity: 1;
+    transform: none;
     transition:
       opacity 140ms ease-out,
       transform 140ms ease-out,
       overlay 140ms allow-discrete,
       display 140ms allow-discrete;
   }
-  select::picker(select):popover-open {
-    opacity: 1;
-    transform: none;
+  select:not(:open)::picker(select) {
+    opacity: 0;
+    transform: translateY(-4px);
   }
   @starting-style {
-    select::picker(select):popover-open {
+    select:open::picker(select) {
       opacity: 0;
       transform: translateY(-4px);
     }

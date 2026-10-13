@@ -20,6 +20,8 @@ export interface AssistantStatus {
   total: number
   /** When it reads again (epoch ms), while paused. */
   resumeAt: number | null
+  /** When this run began (epoch ms): the first time rows were seen waiting after none were. */
+  startedAt?: number | null
 }
 
 export const IDLE_STATUS: AssistantStatus = { state: 'idle', reason: '', waiting: 0, total: 0, resumeAt: null }
@@ -40,22 +42,12 @@ export function statusFromSummary(
     waiting,
     total: waiting === 0 ? 0 : Math.max(previous.total, waiting),
     resumeAt: paused && summary.assistant_retry_seconds ? now + summary.assistant_retry_seconds * 1000 : null,
+    // A run starts when rows are first seen waiting after none were; it carries on until the queue empties.
+    startedAt: previous.waiting > 0 ? (previous.startedAt ?? now) : now,
   }
 }
 
 const secondsLeft = (status: AssistantStatus, now: number) => Math.max(0, Math.ceil(((status.resumeAt ?? now) - now) / 1000))
-
-/** What the assistant is doing, in turn. The line changes every few seconds so a long run reads as live work. */
-const PHASES = [
-  'reading the narrations',
-  'recognising the people and businesses paid',
-  'matching rows to this client’s ledgers',
-  'checking amounts against the rules',
-  'placing rows for your review',
-] as const
-const PHASE_MS = 3000
-
-export const phaseAt = (now: number): string => PHASES[Math.floor(now / PHASE_MS) % PHASES.length] ?? PHASES[0]
 
 /** True while the assistant is, or is about to be, at work on rows, so the line should keep moving. */
 export const isProcessing = (status: AssistantStatus): boolean =>
@@ -69,8 +61,13 @@ export function assistantLine(status: AssistantStatus, now: number): string | nu
   if (status.reason === 'provider_down') return `The assistant is not answering. Trying again in ${secondsLeft(status, now)} s`
   // Waiting between batches (a rate limit, or the next batch not yet asked for) is still processing.
   const done = Math.max(0, status.total - status.waiting)
-  const progress = done > 0 ? `${done} of ${plural(status.total, 'row')} done` : `${plural(status.waiting, 'row')} in line`
-  return `Assistant at work: ${phaseAt(now)} · ${progress}`
+  if (done > 0) return `Assistant at work: ${done} of ${plural(status.total, 'row')} done`
+  // Nothing has come back yet: a batch is a few dozen rows written out by the model, which takes a while. Say that, with the time so far,
+  // rather than a changing phrase that suggests steps that are not being reported.
+  const seconds = status.startedAt ? Math.max(0, Math.floor((now - status.startedAt) / 1000)) : 0
+  return seconds >= 3
+    ? `Assistant at work: waiting for the first answers (${seconds} s) · ${plural(status.waiting, 'row')} in line`
+    : `Assistant at work: ${plural(status.waiting, 'row')} in line`
 }
 
 /** The short form for the top bar, or null when there is nothing to show there. */

@@ -31,14 +31,23 @@ describe('statusFromSummary', () => {
 
 describe('the words', () => {
   it('says the assistant is processing, with how far it has got', () => {
-    expect(assistantLine(status(), 0)).toBe('Assistant at work: reading the narrations · 40 of 120 rows done')
+    expect(assistantLine(status(), 0)).toBe('Assistant at work: 40 of 120 rows done')
     expect(assistantLine(status({ waiting: 120 }), 0)).toContain('120 rows in line')
     expect(assistantShort(status(), 0)).toBe('Assistant processing 80 rows')
   })
-  it('keeps the line moving through the phases as time passes', () => {
-    const first = assistantLine(status(), 0)
-    const later = assistantLine(status(), 3000)
-    expect(later).not.toBe(first)
+  it('counts the seconds while nothing has come back yet, and says what it is waiting for', () => {
+    const none = status({ waiting: 120, total: 120, startedAt: 10_000 })
+    expect(assistantLine(none, 11_000)).toBe('Assistant at work: 120 rows in line')
+    expect(assistantLine(none, 47_000)).toBe('Assistant at work: waiting for the first answers (37 s) · 120 rows in line')
+    // once rows come back the count of rows is the news, not the clock
+    expect(assistantLine(status({ waiting: 100, total: 120, startedAt: 10_000 }), 47_000)).toBe('Assistant at work: 20 of 120 rows done')
+  })
+  it('starts the clock when rows are first seen waiting, and keeps it through the run', () => {
+    const first = statusFromSummary(IDLE_STATUS, summary({ assistant_waiting: 120 }), 5_000)
+    expect(first.startedAt).toBe(5_000)
+    expect(statusFromSummary(first, summary({ assistant_waiting: 90 }), 40_000).startedAt).toBe(5_000)
+    // a new run after the queue emptied starts again
+    expect(statusFromSummary(IDLE_STATUS, summary({ assistant_waiting: 10 }), 90_000).startedAt).toBe(90_000)
   })
   it('never says paused while it waits between batches', () => {
     const waiting = status({ state: 'paused', reason: 'rate_limit', resumeAt: 40_000 })

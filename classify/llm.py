@@ -300,7 +300,7 @@ def _suggest(client, classifications, *, batch_size, replace: bool) -> SuggestRe
     for row in rows:
         by_account.setdefault(row.transaction.bank_account, []).append(row)
 
-    size = batch_size or int(getattr(settings, "LLM_BATCH_SIZE", 25))
+    size = batch_size or int(getattr(settings, "LLM_BATCH_SIZE", 10))
     suggested = declined = confirmed = 0
     chart = _Chart(client, known, "")
     for account, account_rows in by_account.items():

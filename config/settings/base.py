@@ -545,7 +545,7 @@ INTEGRATION_OPTIONS = {
 
 # Rows per model call. Classification is not latency-sensitive; fewer, larger
 # calls share the system prompt and cost less.
-LLM_BATCH_SIZE = int(env("LLM_BATCH_SIZE", "25"))
+LLM_BATCH_SIZE = int(env("LLM_BATCH_SIZE", "10"))
 
 # Reading scanned or partly scanned statements by sending their page images to the model. OFF unless a firm
 # switches it on: page images cannot be masked the way narrations are, so the provider sees the whole page.

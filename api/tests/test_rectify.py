@@ -169,6 +169,43 @@ def test_item_wise_booking_posts_each_line_to_its_own_ledger_and_keeps_the_items
     assert len(item_ledgers) == 2 and any("Steel" in n for n in item_ledgers) and any("Cement" in n for n in item_ledgers)
 
 
+def test_item_wise_booking_takes_a_paisa_of_printed_rounding_on_the_largest_line(api, client_record, ravi, purchases):
+    body = voucher(ravi, purchases, bill_date="2025-05-10")
+    total = sum(h["amount_paise"] for h in body["heads"])
+    body["itemwise"] = True
+    # printed lines that miss the taxable value by one paisa (each line is rounded on its own)
+    body["items"] = [
+        {"description": "Sample Oil 1 LTR PP (12 PACK)", "unit": "nos", "amount_paise": 100},
+        {"description": "Sample Oil 15 LTR TIN", "unit": "nos", "amount_paise": total - 101},
+    ]
+
+    response = api.post(f"{base(client_record)}/bills/", body, format="json")
+
+    assert response.status_code == 201, response.content
+    lines = api.get(f"{V1}/journal-entries/{response.json()['entry']}/").json()["lines"]
+    debits = {line["ledger_name"]: line["amount_paise"] for line in lines if line["ledger_name"].startswith("Purchases - ")}
+    assert len(debits) == 2 and sum(debits.values()) == total
+    # the largest line took the paisa
+    assert debits["Purchases - Sample Oil 15 LTR TIN"] == total - 100
+
+
+def test_item_wise_ledger_names_are_long_enough_to_keep_two_products_apart(api, client_record, ravi, purchases):
+    body = voucher(ravi, purchases, bill_date="2025-05-10")
+    total = sum(h["amount_paise"] for h in body["heads"])
+    long_name = "KIRTI GOLD SOYABEAN REFINED OIL 15 LTR (A+) TIN PATTI PACK SPECIAL EDITION"
+    body["itemwise"] = True
+    body["items"] = [
+        {"description": long_name + " RED", "unit": "tin", "amount_paise": total // 2},
+        {"description": long_name + " BLUE", "unit": "tin", "amount_paise": total - total // 2},
+    ]
+
+    response = api.post(f"{base(client_record)}/bills/", body, format="json")
+
+    assert response.status_code == 201, response.content
+    names = {line["ledger_name"] for line in api.get(f"{V1}/journal-entries/{response.json()['entry']}/").json()["lines"]}
+    assert len({n for n in names if n.startswith("Purchases - ")}) == 2
+
+
 def test_item_wise_booking_that_does_not_add_up_is_refused_and_books_nothing(api, client_record, ravi, purchases):
     body = voucher(ravi, purchases, bill_date="2025-05-10")
     body["itemwise"] = True

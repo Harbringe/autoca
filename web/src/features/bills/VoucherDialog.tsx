@@ -82,6 +82,9 @@ export interface ReceiptFacts {
   discountPaise?: number | null
 }
 
+/** Printed lines are each rounded, so they can miss the taxable value by a paisa or two; the server takes that up on the largest line. */
+const ITEM_ROUNDING_PAISE = 5
+
 const DETAIL_LABELS: [string, string][] = [
   ['document_type', 'Document'], ['po_number', 'PO number'], ['po_date', 'PO date'], ['eway_bill_no', 'E-way bill'],
   ['vehicle_no', 'Vehicle'], ['irn', 'IRN'], ['ack_no', 'Ack no.'], ['ack_date', 'Ack date'], ['ship_to_name', 'Ship to'],
@@ -238,7 +241,8 @@ export function VoucherForm({
   const [rcm, setRcm] = useState(false)
   const [narration, setNarration] = useState(prefill?.narration ?? '')
   const [paidFrom, setPaidFrom] = useState('')
-  const [itemwise, setItemwise] = useState(false)
+  // Each line to a ledger of its own is the usual way for an invoice with lines; a person can switch it off.
+  const [itemwiseOff, setItemwiseOff] = useState(false)
   const [ownGstin, setOwnGstin] = useState(prefill?.ownGstin ?? '')
   const [matchedNote, setMatchedNote] = useState('')
   const clientQuery = useQuery(clientDetail(clientId))
@@ -256,7 +260,7 @@ export function VoucherForm({
   }
   const itemsSum = items.reduce((sum, i) => sum + (i.amount_paise ?? 0), 0)
   // The printed lines can stand in for the ledger lines only when they add up to the taxable value the form already has.
-  const itemsTie = items.length > 1 && items.every((i) => i.amount_paise != null) && itemsSum === (prefill?.taxablePaise ?? -1)
+  const itemsTie = items.length > 1 && items.every((i) => i.amount_paise != null) && Math.abs(itemsSum - (prefill?.taxablePaise ?? Number.NaN)) <= ITEM_ROUNDING_PAISE
 
   const suitable = useMemo(
     () =>
@@ -276,6 +280,10 @@ export function VoucherForm({
     roundOff: amountOf(roundOff),
     tds: amountOf(tds),
   }
+  // Each line to its own ledger: on unless switched off, and only where the lines are all there and add up to what the form is booking
+  // (to a few paise of rounding; the server puts that on the largest line). Otherwise the one general ledger, as before.
+  const headsTotal = amounts.heads.reduce((sum, h) => sum + h.paise, 0)
+  const itemwise = !itemwiseOff && items.length > 0 && items.every((i) => i.amount_paise != null) && Math.abs(itemsSum - headsTotal) <= ITEM_ROUNDING_PAISE
   const unreadable = [...amounts.heads, amounts.cgst, amounts.sgst, amounts.igst, amounts.cess, amounts.roundOff, amounts.tds].some((a) => !a.ok)
   // Only the lines something has been typed on, so an empty form shows no complaint.
   const typedHeads = amounts.heads.map((a) => a.paise).filter((_, i) => (heads[i]?.amount.trim() ?? '') !== '')
@@ -797,7 +805,7 @@ export function VoucherForm({
           <Checkbox
             label="Post each item to its own ledger and keep it as a stock item"
             checked={itemwise}
-            onChange={(e) => setItemwise(e.target.checked)}
+            onChange={(e) => setItemwiseOff(!e.target.checked)}
           />
           {!prefill?.reviseBill && (kind === 'PURCHASE' || kind === 'SALES') && (
             <Field label={kind === 'SALES' ? 'Received into' : 'Paid from'} hint="For a cash bill: it is booked as settled, with its payment. Leave empty to pay later from a bank statement.">

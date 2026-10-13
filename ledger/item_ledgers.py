@@ -16,6 +16,12 @@ from ledger.billing import BillingError
 from ledger.item_memory import similar
 from ledger.models import BillKind, StockItem
 
+#: Printed lines are each rounded, so they can miss the invoice's taxable value by a paisa or two. A miss of up to this many paise is
+#: put on the largest line; a bigger one is a misread line, and the request is refused as before.
+LINE_ROUNDING_PAISE = 5
+#: Long enough that two products whose names differ only late do not land on one ledger (a ledger's name is at most 255).
+LEDGER_NAME_LIMIT = 120
+
 PREFIX = {BillKind.PURCHASE: "Purchases", BillKind.SALES: "Sales", BillKind.DEBIT_NOTE: "Purchases", BillKind.CREDIT_NOTE: "Sales"}
 GROUP = {BillKind.PURCHASE: LedgerGroup.PURCHASE, BillKind.SALES: LedgerGroup.SALES}
 
@@ -35,7 +41,7 @@ def ledger_for(client, item: StockItem, kind: str) -> LedgerAccount:
     if existing is not None and existing.status == LedgerStatus.ACTIVE:
         return existing
     group = GROUP.get(BillKind.SALES if side == "sales_ledger" else BillKind.PURCHASE)
-    name = f"{PREFIX[kind]} - {item.name}"[:60]
+    name = f"{PREFIX[kind]} - {item.name}"[:LEDGER_NAME_LIMIT]
     ledger, _ = LedgerAccount.objects.get_or_create(
         firm_id=client.firm_id, client=client, name=name,
         defaults={"group": group, "status": LedgerStatus.ACTIVE, "proposal_reason": "Opened for an invoice item."},
@@ -54,11 +60,16 @@ def heads_from_items(client, kind: str, items: list[dict], taxable_paise: int) -
         raise BillingError("Item-wise booking needs the invoice's lines.")
     if any(not i.get("amount_paise") or i["amount_paise"] <= 0 for i in lines):
         raise BillingError("Every line needs an amount for item-wise booking.")
-    if sum(i["amount_paise"] for i in lines) != taxable_paise:
+    amounts = [i["amount_paise"] for i in lines]
+    gap = taxable_paise - sum(amounts)
+    if abs(gap) > LINE_ROUNDING_PAISE:
         raise BillingError("The lines do not add up to the taxable value, so they cannot be posted item by item.")
+    if gap:
+        # The invoice's own rounding: the largest line takes it, so the heads add to the taxable value exactly.
+        amounts[amounts.index(max(amounts))] += gap
     by_ledger: dict = {}
-    for line in lines:
+    for line, amount in zip(lines, amounts, strict=True):
         item = item_for(client, line["description"], line.get("unit", ""), line.get("hsn_sac", ""))
         ledger = ledger_for(client, item, kind)
-        by_ledger[ledger] = by_ledger.get(ledger, 0) + line["amount_paise"]
+        by_ledger[ledger] = by_ledger.get(ledger, 0) + amount
     return list(by_ledger.items())

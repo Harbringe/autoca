@@ -134,7 +134,9 @@ export function useHotkeyList(): Hotkey[] {
   return useMemo(() => reg?.list() ?? [], [reg, version]) // eslint-disable-line
 }
 
-/** "ctrl+k" -> ["Ctrl", "K"], for showing in a <Kbd>. */
+const KEY_NAMES: Record<string, string> = { arrowup: '↑', arrowdown: '↓', arrowleft: '←', arrowright: '→', enter: 'Enter', escape: 'Esc', ' ': 'Space' }
+
+/** "ctrl+k" -> ["Ctrl", "K"], for showing in a <Kbd>; arrows are drawn as arrows. */
 export function comboKeys(combo: string): string[] {
-  return combo.split(/[+ ]/).map((k) => (k.length === 1 ? k.toUpperCase() : k.charAt(0).toUpperCase() + k.slice(1)))
+  return combo.split(/[+ ]/).map((k) => KEY_NAMES[k] ?? (k.length === 1 ? k.toUpperCase() : k.charAt(0).toUpperCase() + k.slice(1)))
 }

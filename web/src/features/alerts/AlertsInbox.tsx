@@ -215,10 +215,8 @@ export function AlertsInbox({ alerts, filter, onFilter }: { alerts: Alert[]; fil
                           onClick={() => setSelectedKey(key)}
                           style={{ animationDelay: `${Math.min(i, 10) * 28}ms` }}
                           className={cn(
-                            'rise relative flex cursor-pointer items-center gap-3 border-b border-border-strong px-4 py-3 outline-none transition-colors duration-150 hover:bg-hover focus-visible:bg-hover',
-                            // The bar at the left grows in rather than appearing: a transform, which costs nothing to paint.
-                            'before:absolute before:inset-y-0 before:left-0 before:w-[3px] before:origin-center before:scale-y-0 before:bg-primary before:transition-transform before:duration-200',
-                            isSelected && 'bg-hover before:scale-y-100',
+                            // What is selected is drawn by the global rule for a selected option (tint and bar); the row only eases into it.
+                            'rise relative flex cursor-pointer items-center gap-3 border-b border-border-strong px-4 py-3 outline-none transition-[background-color,box-shadow] duration-200 hover:bg-hover focus-visible:bg-hover',
                           )}
                         >
                           <span className="min-w-0 flex-1">

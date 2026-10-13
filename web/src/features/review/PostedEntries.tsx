@@ -7,6 +7,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { journal } from '@/api/queries/books'
 import type { JournalEntry } from '@/api/types'
 import { Money } from '@/components/ca/Money'
+import { Pager, usePaged } from '@/components/ca/Pager'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Select } from '@/components/ui/controls'
@@ -15,6 +16,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { Button } from '@/components/ui/button'
 import { Collapse, useClosing } from '@/components/ui/collapse'
 import { formatDate, plural } from '@/lib/format'
+import { usePageSize } from '@/lib/pageSizes'
 import { cn } from '@/lib/utils'
 import { StageNav, STAGES } from './StageNav'
 
@@ -56,6 +58,8 @@ export function PostedEntries({ clientId }: { clientId: string }) {
         .sort((a, b) => b.entry_date.localeCompare(a.entry_date) || b.entry_no - a.entry_no),
     [entries.data, year, q],
   )
+  // A year of entries is hundreds: paged like the Day Book, which these are the same entries as, at the same size.
+  const pager = usePaged(rows, `${year}|${q}`, usePageSize('daybook'))
 
   return (
     <div className="grid gap-4">
@@ -105,7 +109,7 @@ export function PostedEntries({ clientId }: { clientId: string }) {
           ) : (
             <div className="overflow-hidden rounded-xl border border-border-strong bg-surface-2">
               <ul ref={listRef} aria-label="Posted entries, newest first" className="divide-y divide-border-strong">
-                {rows.map((e) => {
+                {pager.items.map((e) => {
                   const isOpen = e.id === openId
                   const showBody = isOpen || closing === e.id
                   const { debit, credit } = particulars(e)
@@ -173,6 +177,7 @@ export function PostedEntries({ clientId }: { clientId: string }) {
                   )
                 })}
               </ul>
+              <Pager paged={pager} label="Posted entries" className="flex flex-wrap items-center justify-between gap-3 border-t border-border-strong px-4 py-2.5 text-sm" />
             </div>
           )}
         </>

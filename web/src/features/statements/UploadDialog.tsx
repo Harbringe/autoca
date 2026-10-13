@@ -8,7 +8,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { CheckCircle2, FileUp, Loader2, UploadCloud, XCircle } from 'lucide-react'
+import { CheckCircle2, CircleAlert, Clock, FileUp, Loader2, UploadCloud, XCircle } from 'lucide-react'
 import { GrowFill } from '@/components/charts/ProgressBar'
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { raw } from '@/api/client'
@@ -23,6 +23,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { LayoutPicker } from './LayoutPicker'
+import { doneLine, isGapFailure, readingOrder, summariseBatch, type BatchItem, type Outcome } from './batchUpload'
 import { formatDate, formatPaise, parseDate, parseRupees, plural } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
@@ -64,6 +65,38 @@ type Phase =
   | { kind: 'failed'; file: File; job: Job }
   | { kind: 'layout'; file: File; job: Job }
   | { kind: 'password'; file: File; wrong: boolean }
+  | { kind: 'batch'; items: BatchItem[]; running: boolean }
+
+/** Sends one file and says how it came out. Used for a single upload and, one after another, for a batch. */
+async function uploadOne(
+  clientId: string,
+  file: File,
+  options: { allowGap?: boolean; layout?: Record<string, number>; password?: string; onJob?: (job: Job) => void } = {},
+): Promise<Outcome> {
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    if (options.allowGap) form.append('allow_gap', 'true')
+    if (options.layout) form.append('layout', JSON.stringify(options.layout))
+    if (options.password) form.append('password', options.password)
+    const created = await raw.post<Job>(`${V1}/clients/${clientId}/statements/upload/`, form)
+    options.onJob?.(created)
+    const job = await waitForJob(created, (update) => options.onJob?.(update))
+    if (job.status === 'FAILED') {
+      // A locked PDF is asked for its password; anything else is a failure to read.
+      if (isLockedCode(job.error_code)) return { kind: 'password', wrong: job.error_code === 'password_incorrect' }
+      return { kind: 'failed', job }
+    }
+    const result = job.result as IngestResult
+    const [statement, account] = await Promise.all([
+      raw.get<Statement>(`${V1}/clients/${clientId}/statements/${result.statement}/`).catch(() => null),
+      raw.get<BankAccount>(`${V1}/clients/${clientId}/bank-accounts/${result.bank_account}/`).catch(() => null),
+    ])
+    return { kind: 'done', result, statement, account }
+  } catch (error) {
+    return { kind: 'error', reason: isApiError(error) ? (error.field('file') ?? error.message) : messageOf(error) }
+  }
+}
 
 function UploadDialog({ clientId, onClose }: { clientId: string; onClose: () => void }) {
   const [phase, setPhase] = useState<Phase>({ kind: 'choose', file: null })
@@ -72,43 +105,56 @@ function UploadDialog({ clientId, onClose }: { clientId: string; onClose: () => 
 
   async function send(file: File, allowGap = false, layout?: Record<string, number>, password?: string) {
     setPhase({ kind: 'reading', file })
-    try {
-      const form = new FormData()
-      form.append('file', file)
-      if (allowGap) form.append('allow_gap', 'true')
-      if (layout) form.append('layout', JSON.stringify(layout))
-      if (password) form.append('password', password)
-      const created = await raw.post<Job>(`${V1}/clients/${clientId}/statements/upload/`, form)
-      setPhase({ kind: 'reading', file, job: created })
-      const job = await waitForJob(created, (update) => setPhase({ kind: 'reading', file, job: update }))
-      if (job.status === 'FAILED') {
-        // A locked PDF is asked for its password, here, with the file still chosen; anything else is a failure to read.
-        if (isLockedCode(job.error_code)) setPhase({ kind: 'password', file, wrong: job.error_code === 'password_incorrect' })
-        else setPhase({ kind: 'failed', file, job })
-        return
-      }
-      const result = job.result as IngestResult
-      const [statement, account] = await Promise.all([
-        raw.get<Statement>(`${V1}/clients/${clientId}/statements/${result.statement}/`).catch(() => null),
-        raw.get<BankAccount>(`${V1}/clients/${clientId}/bank-accounts/${result.bank_account}/`).catch(() => null),
-      ])
-      setPhase({ kind: 'done', file, result, statement, account })
+    const outcome = await uploadOne(clientId, file, { allowGap, layout, password, onJob: (job) => setPhase({ kind: 'reading', file, job }) })
+    if (outcome.kind === 'password') setPhase({ kind: 'password', file, wrong: outcome.wrong })
+    else if (outcome.kind === 'failed') setPhase({ kind: 'failed', file, job: outcome.job })
+    else if (outcome.kind === 'error') setPhase({ kind: 'choose', file: null, problem: outcome.reason })
+    else {
+      setPhase({ kind: 'done', file, result: outcome.result, statement: outcome.statement, account: outcome.account })
       await invalidate()
-    } catch (error) {
-      const reason = isApiError(error) ? (error.field('file') ?? error.message) : messageOf(error)
-      setPhase({ kind: 'choose', file: null, problem: reason })
     }
   }
 
-  const reading = phase.kind === 'reading'
+  /** Several files: read one after another (a statement is checked against the one before it, so they cannot run side by side). */
+  async function sendMany(chosen: File[]) {
+    let items: BatchItem[] = readingOrder(chosen).map((file) => ({ file, state: 'waiting' }))
+    const show = (running: boolean) => setPhase({ kind: 'batch', items: [...items], running })
+    const set = (index: number, change: Partial<BatchItem>) => {
+      items = items.map((item, i) => (i === index ? { ...item, ...change } : item))
+      show(true)
+    }
+    show(true)
+    const readAt = async (index: number) => {
+      set(index, { state: 'reading' })
+      const outcome = await uploadOne(clientId, items[index]!.file)
+      set(index, { state: 'finished', outcome })
+    }
+    for (let i = 0; i < items.length; i++) await readAt(i)
+    // A statement that was read before its neighbour is flagged as a gap; with the others in, it may now fit.
+    for (let i = 0; i < items.length; i++) if (isGapFailure(items[i]!.outcome)) await readAt(i)
+    show(false)
+    await invalidate()
+  }
+
+  /** One file of a batch that needs a person: carry on with it alone, in the same steps as a single upload. */
+  function openAlone(item: BatchItem) {
+    const o = item.outcome
+    if (o?.kind === 'password') setPhase({ kind: 'password', file: item.file, wrong: o.wrong })
+    else if (o?.kind === 'failed') setPhase({ kind: 'failed', file: item.file, job: o.job })
+  }
+
+  const busy = phase.kind === 'reading' || (phase.kind === 'batch' && phase.running)
   return (
-    <Dialog open onOpenChange={(next) => !next && !reading && onClose()}>
+    <Dialog open onOpenChange={(next) => !next && !busy && onClose()}>
       <DialogContent className="max-w-xl" aria-describedby={undefined}>
         <DialogHeader>
-          <DialogTitle>Upload bank statement</DialogTitle>
+          <DialogTitle>Upload bank statements</DialogTitle>
           <DialogDescription>{client.data?.name}</DialogDescription>
         </DialogHeader>
-        {phase.kind === 'choose' && <Chooser phase={phase} setPhase={setPhase} onSend={(f) => void send(f)} />}
+        {phase.kind === 'choose' && <Chooser phase={phase} setPhase={setPhase} onSend={(f) => void send(f)} onSendMany={(files) => void sendMany(files)} />}
+        {phase.kind === 'batch' && (
+          <Batch clientId={clientId} phase={phase} onOpenAlone={openAlone} onClose={onClose} onMore={() => setPhase({ kind: 'choose', file: null })} />
+        )}
         {phase.kind === 'reading' && <Reading file={phase.file} job={phase.job} />}
         {phase.kind === 'password' && (
           <PasswordForm
@@ -142,32 +188,52 @@ function UploadDialog({ clientId, onClose }: { clientId: string; onClose: () => 
   )
 }
 
+/** Why a file cannot be read, or null when it can. */
+function problemWith(file: File): string | null {
+  if (!ACCEPTED_NAME.test(file.name)) return 'That kind of file cannot be read. Upload a PDF, an Excel sheet (.xlsx), a CSV, a Word file (.docx) or a photo of the statement (JPG, PNG).'
+  if (file.size > MAX_BYTES) return 'That file is over 25 MB. Download one month or quarter at a time.'
+  if (file.size === 0) return 'That file is empty.'
+  return null
+}
+
 function Chooser({
   phase,
   setPhase,
   onSend,
+  onSendMany,
 }: {
   phase: Extract<Phase, { kind: 'choose' }>
   setPhase: (p: Phase) => void
   onSend: (file: File) => void
+  onSendMany: (files: File[]) => void
 }) {
   const input = useRef<HTMLInputElement>(null)
   const [over, setOver] = useState(false)
+  // Several files chosen at once. One file is the ordinary single upload, with all its steps.
+  const [many, setMany] = useState<File[]>([])
 
-  function take(file: File | undefined) {
-    if (!file) return
-    if (!ACCEPTED_NAME.test(file.name))
-      return setPhase({ kind: 'choose', file: null, problem: 'That kind of file cannot be read. Upload a PDF, an Excel sheet (.xlsx), a CSV, a Word file (.docx) or a photo of the statement (JPG, PNG).' })
-    if (file.size > MAX_BYTES)
-      return setPhase({ kind: 'choose', file: null, problem: 'That file is over 25 MB. Download one month or quarter at a time.' })
-    if (file.size === 0) return setPhase({ kind: 'choose', file: null, problem: 'That file is empty.' })
-    setPhase({ kind: 'choose', file })
+  function take(list: FileList | File[] | null | undefined) {
+    const files = Array.from(list ?? [])
+    if (files.length === 0) return
+    const usable = files.filter((f) => !problemWith(f))
+    const skipped = files.length - usable.length
+    if (usable.length === 0) {
+      setMany([])
+      return setPhase({ kind: 'choose', file: null, problem: problemWith(files[0]!) ?? undefined })
+    }
+    const note = skipped ? `${skipped} ${skipped === 1 ? 'file was' : 'files were'} left out: ${problemWith(files.find((f) => problemWith(f))!)}` : undefined
+    if (usable.length === 1) {
+      setMany([])
+      return setPhase({ kind: 'choose', file: usable[0]!, problem: note })
+    }
+    setMany(usable)
+    setPhase({ kind: 'choose', file: null, problem: note })
   }
 
   function drop(event: DragEvent) {
     event.preventDefault()
     setOver(false)
-    take(event.dataTransfer.files[0])
+    take(event.dataTransfer.files)
   }
 
   return (
@@ -187,26 +253,32 @@ function Chooser({
         )}
       >
         <UploadCloud className="size-8 text-muted-foreground" aria-hidden />
-        {phase.file ? (
+        {many.length > 1 ? (
+          <>
+            <span className="font-medium">{many.length} statements chosen</span>
+            <span className="max-w-full truncate text-xs text-muted-foreground">{many.slice(0, 3).map((f) => f.name).join(', ')}{many.length > 3 ? ` and ${many.length - 3} more` : ''}</span>
+            <span className="text-xs text-muted-foreground">Click to choose different files</span>
+          </>
+        ) : phase.file ? (
           <>
             <span className="font-medium">{phase.file.name}</span>
-            <span className="text-xs text-muted-foreground">{(phase.file.size / 1024).toFixed(0)} KB · click to choose a different file</span>
+            <span className="text-xs text-muted-foreground">{(phase.file.size / 1024).toFixed(0)} KB · click to choose different files</span>
           </>
         ) : (
           <>
-            <span className="font-medium">Drop the statement here, or click to choose</span>
-            <span className="text-xs text-muted-foreground">One file at a time</span>
+            <span className="font-medium">Drop the statements here, or click to choose</span>
+            <span className="text-xs text-muted-foreground">One or several files at once</span>
           </>
         )}
       </button>
-      <input ref={input} type="file" accept={ACCEPT} className="hidden" onChange={(e) => take(e.target.files?.[0])} />
+      <input ref={input} type="file" multiple accept={ACCEPT} className="hidden" aria-label="Choose statements" onChange={(e) => take(e.target.files)} />
 
       <div className="rounded-md bg-muted/60 p-3 text-[13px] text-muted-foreground">
         <div className="mb-1 font-medium text-foreground">What to upload</div>
         <ul className="list-disc space-y-0.5 pl-5">
           <li>The client’s <strong>bank account statement</strong>, as downloaded from net banking: a PDF, an Excel sheet (.xlsx), a CSV or a Word file. Any bank.</li>
           <li>A photo or scan (JPG, PNG, TIFF) is read by the assistant when that is switched on. A downloaded file is always more reliable than a photo.</li>
-          <li>Up to 25 MB. Upload months in order; a gap between statements is flagged.</li>
+          <li>Up to 25 MB each. Choose several at once and they are read one after another; a statement with a gap before it is tried again once the rest are in, and one that needs you (a password, say) is left for you to open.</li>
           <li>The account is recognised from the statement, so a new account is set up for you.</li>
         </ul>
       </div>
@@ -218,10 +290,139 @@ function Chooser({
       )}
 
       <div className="flex justify-end">
-        <Button onClick={() => phase.file && onSend(phase.file)} disabled={!phase.file}>
-          <FileUp /> Upload and read
+        <Button onClick={() => (many.length > 1 ? onSendMany(many) : phase.file && onSend(phase.file))} disabled={!phase.file && many.length < 2}>
+          <FileUp /> {many.length > 1 ? `Upload and read ${many.length} statements` : 'Upload and read'}
         </Button>
       </div>
+    </div>
+  )
+}
+
+function BatchRow({ clientId, item, onOpenAlone }: { clientId: string; item: BatchItem; onOpenAlone: (item: BatchItem) => void }) {
+  const o = item.outcome
+  const [confirming, setConfirming] = useState(false)
+  const [confirmed, setConfirmed] = useState(false)
+  const openingToConfirm = o?.kind === 'done' && o.result.needs_opening_confirmation && !confirmed && !!o.account
+  let icon = <Clock className="size-4 text-muted-foreground" aria-hidden />
+  let line = 'Waiting'
+  let tone = 'text-muted-foreground'
+  if (item.state === 'reading') {
+    icon = <Loader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />
+    line = 'Reading…'
+    tone = ''
+  } else if (o?.kind === 'done') {
+    icon = <CheckCircle2 className="size-4 text-success" aria-hidden />
+    const period = o.statement ? `${formatDate(o.statement.period_start)} to ${formatDate(o.statement.period_end)}` : ''
+    line = [o.account?.label, period, doneLine(o)].filter(Boolean).join(' · ')
+    tone = ''
+  } else if (o?.kind === 'password') {
+    icon = <CircleAlert className="size-4 text-warning" aria-hidden />
+    line = o.wrong ? 'The password did not open it' : 'Password-protected: needs its password'
+    tone = ''
+  } else if (o?.kind === 'failed') {
+    icon = <XCircle className="size-4 text-destructive" aria-hidden />
+    line = `${(UPLOAD_PROBLEMS[o.job.error_code] ?? { title: 'Not imported' }).title}. Nothing was imported.`
+    tone = ''
+  } else if (o?.kind === 'error') {
+    icon = <XCircle className="size-4 text-destructive" aria-hidden />
+    line = o.reason
+    tone = ''
+  }
+  return (
+    <li className="grid gap-2 px-4 py-3 text-sm">
+      <div className="flex items-start gap-3">
+        <span className="mt-0.5 shrink-0">{icon}</span>
+        <span className="min-w-0 flex-1">
+          <b className="block truncate font-medium text-heading">{item.file.name}</b>
+          <span className={cn('block [overflow-wrap:anywhere]', tone)}>{line}</span>
+        </span>
+        {(o?.kind === 'password' || o?.kind === 'failed') && (
+          <Button size="sm" variant="outline" className="shrink-0" onClick={() => onOpenAlone(item)}>
+            Open on its own
+          </Button>
+        )}
+        {openingToConfirm && (
+          <Button size="sm" variant="outline" className="shrink-0" onClick={() => setConfirming((c) => !c)}>
+            Confirm opening balance
+          </Button>
+        )}
+      </div>
+      {confirming && o?.kind === 'done' && o.account && (
+        <OpeningBalance
+          clientId={clientId}
+          account={o.account}
+          statement={o.statement}
+          onDone={() => {
+            setConfirmed(true)
+            setConfirming(false)
+          }}
+        />
+      )}
+    </li>
+  )
+}
+
+/** Several statements read one after another: each file's own line, then what to do next. */
+function Batch({
+  clientId,
+  phase,
+  onOpenAlone,
+  onClose,
+  onMore,
+}: {
+  clientId: string
+  phase: Extract<Phase, { kind: 'batch' }>
+  onOpenAlone: (item: BatchItem) => void
+  onClose: () => void
+  onMore: () => void
+}) {
+  const navigate = useNavigate()
+  const sum = summariseBatch(phase.items)
+  const attention = sum.needYou + sum.failed
+  return (
+    <div className="grid gap-4">
+      <p role="status" className="text-sm">
+        {phase.running ? (
+          <>
+            Reading <b>{sum.read + sum.needYou + sum.failed + 1 > sum.total ? sum.total : sum.read + sum.needYou + sum.failed + 1}</b> of {sum.total}. Every row is checked against the running balance.
+          </>
+        ) : (
+          <>
+            <b>{sum.read}</b> of {sum.total} read, {plural(sum.rowsRead, 'row')} in all
+            {attention > 0 ? `; ${attention} ${attention === 1 ? 'needs' : 'need'} you.` : '.'}
+          </>
+        )}
+      </p>
+      <ul className="max-h-[50vh] divide-y overflow-y-auto overscroll-contain rounded-lg border">
+        {phase.items.map((item, i) => (
+          <BatchRow key={`${item.file.name}-${i}`} clientId={clientId} item={item} onOpenAlone={onOpenAlone} />
+        ))}
+      </ul>
+      {!phase.running && (
+        <div className="flex flex-wrap justify-end gap-2">
+          <Button variant="ghost" onClick={onMore}>
+            Upload more
+          </Button>
+          <Button variant="outline" onClick={onClose}>
+            Close
+          </Button>
+          {sum.rowsToReview > 0 && (
+            <Button
+              onClick={() => {
+                onClose()
+                void navigate({
+                  to: '/clients/$clientId/review',
+                  params: { clientId },
+                  // Review opens on exactly the statements just read, so the counts and the rows are theirs.
+                  search: { statement: sum.statementIds.join(',') },
+                })
+              }}
+            >
+              Review {plural(sum.rowsToReview, 'row')}
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   )
 }

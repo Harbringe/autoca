@@ -218,3 +218,16 @@ def test_removing_a_gstin_needs_the_permission_to_prepare_and_a_gstin_that_exist
     assert reader.delete(f"{base}/registrations/{reg_id}/").status_code == 403
     assert api.get(f"{base}/registrations/").json()["count"] == 1
     assert api.delete(f"{base}/registrations/00000000-0000-4000-8000-000000000000/").status_code == 404
+
+
+def test_a_removed_gstin_cannot_have_its_run_signed_off_behind_its_back(api, client_record):
+    from gst.models import ReconRun
+
+    base, run = _start(api, client_record)
+    reg_id = api.get(f"{base}/registrations/").json()["results"][0]["id"]
+    assert api.delete(f"{base}/registrations/{reg_id}/").status_code == 204
+
+    refused = api.post(f"{base}/runs/{run}/sign-off/")
+    assert refused.status_code == 409 and "removed" in refused.json()["detail"]
+    assert ReconRun.objects.get(pk=run).status != "signed_off"
+

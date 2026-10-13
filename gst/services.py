@@ -81,11 +81,15 @@ def add_registration(
     return reg
 
 
+@transaction.atomic
 def remove_registration(reg: GstRegistration) -> GstRegistration:
     """Take a GSTIN off the client's list. It is hidden, not erased: its reconciliations stay on file and come back if it is added again.
 
-    Refused when a return for it has been signed off, because that is a finished piece of work the client's records rely on.
+    Refused when a return for it has been signed off, because that is a finished piece of work the client's records rely on. The
+    registration's row is locked while that is checked and the GSTIN hidden, and signing a run off takes the same lock, so a sign-off
+    cannot slip in between: one of the two goes first and the other sees the result.
     """
+    reg = GstRegistration.objects.select_for_update().get(pk=reg.pk)
     if ReconRun.objects.filter(registration=reg, status=RunStatus.SIGNED_OFF).exists():
         raise GstError("This GSTIN has a signed-off reconciliation, so it is kept. Reopen or leave it; it cannot be removed.")
     reg.is_active = False
@@ -438,6 +442,9 @@ def unresolved(run: ReconRun) -> int:
 @transaction.atomic
 def sign_off_run(run: ReconRun, user: User, membership: FirmMembership | None) -> ReconRun:
     require_sign_off(membership, run.client)
+    # Same lock as removing the GSTIN (see remove_registration): a GSTIN taken off the list is not signed off behind its back.
+    if not GstRegistration.objects.select_for_update().filter(pk=run.registration_id, is_active=True).exists():
+        raise GstError("This GSTIN has been removed from the client. Add it again to sign this reconciliation off.")
     _require_open(run)
     if not run.matches.exists():
         raise GstError("Run the reconciliation before signing it off.")

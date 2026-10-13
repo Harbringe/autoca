@@ -206,6 +206,23 @@ def test_item_wise_ledger_names_are_long_enough_to_keep_two_products_apart(api, 
     assert len({n for n in names if n.startswith("Purchases - ")}) == 2
 
 
+def test_each_invoice_line_is_given_a_ledger_of_its_own_before_anything_is_booked(api, client_record):
+    url = f"{base(client_record)}/bills/item-ledgers/"
+    body = {"kind": "PURCHASE", "items": [{"description": "Sample Oil 1 LTR PP (12 PACK)", "unit": "nos"}, {"description": "Sample Oil 15 LTR TIN"}]}
+
+    first = api.post(url, body, format="json")
+
+    assert first.status_code == 200, first.content
+    made = first.json()["ledgers"]
+    assert [m["ledger_name"] for m in made] == ["Purchases - Sample Oil 1 LTR PP (12 PACK)", "Purchases - Sample Oil 15 LTR TIN"]
+    assert all(m["created"] for m in made)
+    # asking again finds the same ledgers and opens nothing new
+    again = api.post(url, body, format="json").json()["ledgers"]
+    assert [a["ledger"] for a in again] == [m["ledger"] for m in made] and not any(a["created"] for a in again)
+    with firm_context(client_record.firm_id):
+        assert not JournalEntry.objects.filter(client=client_record).exists()
+
+
 def test_item_wise_booking_that_does_not_add_up_is_refused_and_books_nothing(api, client_record, ravi, purchases):
     body = voucher(ravi, purchases, bill_date="2025-05-10")
     body["itemwise"] = True

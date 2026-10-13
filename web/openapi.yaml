@@ -1139,6 +1139,45 @@ paths:
               schema:
                 $ref: '#/components/schemas/BillDetail'
           description: ''
+  /api/v1/clients/{client_id}/bills/item-ledgers/:
+    post:
+      operationId: clients_bills_item_ledgers_create
+      description: Finds or opens, for each line, the product's stock item and its
+        purchase (or sales) ledger, named for the product, so the form can fill each
+        line's ledger in. A line that matches a product the client already has (by
+        the words that identify it) goes to that product's ledger. Needs `journal.approve`;
+        nothing is booked.
+      summary: Give each invoice line a ledger of its own
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - bills
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ItemLedgerRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ItemLedgerRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ItemLedgerRequestRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ItemLedgerResponse'
+          description: ''
   /api/v1/clients/{client_id}/books/:
     get:
       operationId: clients_books_retrieve
@@ -7623,25 +7662,13 @@ components:
       - total_display
       - total_paise
       - voucher_type
-    BillCreateKindEnum:
-      enum:
-      - PURCHASE
-      - SALES
-      - DEBIT_NOTE
-      - CREDIT_NOTE
-      type: string
-      description: |-
-        * `PURCHASE` - Purchase invoice
-        * `SALES` - Sales invoice
-        * `DEBIT_NOTE` - Debit note (a purchase return)
-        * `CREDIT_NOTE` - Credit note (a sales return)
     BillCreateRequest:
       type: object
       description: The shape of a voucher request. The accounting rules are the domain's,
         and say why in words.
       properties:
         kind:
-          $ref: '#/components/schemas/BillCreateKindEnum'
+          $ref: '#/components/schemas/Kind487Enum'
         party:
           type: string
           format: uuid
@@ -10206,6 +10233,65 @@ components:
         * `blocked` - blocked
         * `not_eligible` - not_eligible
         * `rcm_on_payment` - rcm_on_payment
+    ItemLedger:
+      type: object
+      properties:
+        description:
+          type: string
+          description: The line, as it was sent.
+        ledger:
+          type: string
+          format: uuid
+          description: The ledger of its own that the line goes to.
+        ledger_name:
+          type: string
+        created:
+          type: boolean
+          description: The ledger did not exist before this call.
+      required:
+      - created
+      - description
+      - ledger
+      - ledger_name
+    ItemLedgerLineRequest:
+      type: object
+      properties:
+        description:
+          type: string
+          minLength: 1
+          maxLength: 200
+        unit:
+          type: string
+          default: ''
+          maxLength: 16
+        hsn_sac:
+          type: string
+          default: ''
+          maxLength: 8
+      required:
+      - description
+    ItemLedgerRequestRequest:
+      type: object
+      description: The invoice's lines, to be given a ledger each.
+      properties:
+        kind:
+          $ref: '#/components/schemas/Kind487Enum'
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemLedgerLineRequest'
+      required:
+      - items
+      - kind
+    ItemLedgerResponse:
+      type: object
+      properties:
+        ledgers:
+          type: array
+          items:
+            $ref: '#/components/schemas/ItemLedger'
+      required:
+      - ledgers
     Job:
       type: object
       description: |-
@@ -10524,6 +10610,18 @@ components:
         * `REGISTER` - Purchase or sales register
         * `TALLY_EXPORT` - Tally export
         * `OTHER` - Other
+    Kind487Enum:
+      enum:
+      - PURCHASE
+      - SALES
+      - DEBIT_NOTE
+      - CREDIT_NOTE
+      type: string
+      description: |-
+        * `PURCHASE` - Purchase invoice
+        * `SALES` - Sales invoice
+        * `DEBIT_NOTE` - Debit note (a purchase return)
+        * `CREDIT_NOTE` - Credit note (a sales return)
     Kind673Enum:
       enum:
       - BANK

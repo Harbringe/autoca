@@ -12,7 +12,7 @@ import { toast } from '@/lib/toast'
 import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
 import { ledgers as ledgersQuery, parties as partiesQuery } from '@/api/queries/books'
-import { usePostBill, useReviseBill } from '@/api/queries/bills'
+import { useItemLedgers, usePostBill, useReviseBill } from '@/api/queries/bills'
 import { clientDetail, useInvalidateClient, V1 } from '@/api/queries/clients'
 import type { BillCreateRequest, InvoiceReading, Party } from '@/api/types'
 import { Money } from '@/components/ca/Money'
@@ -330,10 +330,22 @@ export function VoucherForm({
     setRoundOff(diff === 0 ? '' : (diff / 100).toFixed(2))
   }
 
-  function splitByLines() {
-    const ledger = heads[0]?.ledger ?? null
-    setHeads(items.map((i) => ({ ...blankHead(), ledger, amount: asRupees(i.amount_paise), description: i.description })))
-    setTab('details')
+  const itemLedgers = useItemLedgers(clientId)
+  /** One row per line, each already in the ledger of its own: the product's ledger is found, or opened, and put in. */
+  async function splitByLines() {
+    const fallback = heads[0]?.ledger ?? null
+    try {
+      const made = await itemLedgers.mutateAsync({
+        kind: kind as 'PURCHASE' | 'SALES' | 'DEBIT_NOTE' | 'CREDIT_NOTE',
+        items: items.map((i) => ({ description: i.description, unit: i.unit ?? '', hsn_sac: (i.hsn_sac ?? '').replace(/\D/g, '').slice(0, 8) })),
+      })
+      setHeads(items.map((i, n) => ({ ...blankHead(), ledger: made.ledgers[n]?.ledger ?? fallback, amount: asRupees(i.amount_paise), description: i.description })))
+      const opened = made.ledgers.filter((l) => l.created).length
+      toast.success(`Each line is in a ledger of its own${opened ? `; ${opened} new ${opened === 1 ? 'ledger was' : 'ledgers were'} opened` : ''}`)
+      setTab('details')
+    } catch (error) {
+      toast.error('The ledgers for the lines could not be set up', { description: messageOf(error) })
+    }
   }
 
   function reset() {
@@ -647,7 +659,7 @@ export function VoucherForm({
               {itemsTie ? (
                 <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-accent-edge bg-accent p-2 text-sm">
                   <span>These lines add up to the taxable value. Give each its own ledger?</span>
-                  <Button type="button" size="sm" variant="outline" onClick={splitByLines}>Use one line per item</Button>
+                  <Button type="button" size="sm" variant="outline" loading={itemLedgers.isPending} onClick={() => void splitByLines()}>Use one line per item</Button>
                 </div>
               ) : (
                 <p className="text-sm text-muted-foreground">

@@ -5,7 +5,7 @@
 // same prefix every other change to the books uses) instead of patching one list, which is how two screens come to
 // disagree about the same voucher.
 
-import { queryOptions, useMutation } from '@tanstack/react-query'
+import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query'
 import { raw } from '@/api/client'
 import type { AssetSchedule, TdsSummary, Bill, CloseReport, FoundParties, InvoiceReading, BillCreateRequest, BillDetail, OpenItems, OpeningStanding, Outstanding, PartyStatement, SettlementContext } from '@/api/types'
 import { allPages } from './books'
@@ -157,6 +157,17 @@ export function useUploadInvoice(clientId: string) {
       return raw.post<InvoiceReading>(`${V1}/clients/${clientId}/invoices/upload/`, form)
     },
     onSuccess: invalidate,
+  })
+}
+
+/** Finds or opens the ledger each invoice line goes to (one per product), so the form can fill them in. Books nothing. */
+export function useItemLedgers(clientId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (body: { kind: 'PURCHASE' | 'SALES' | 'DEBIT_NOTE' | 'CREDIT_NOTE'; items: { description: string; unit?: string; hsn_sac?: string }[] }) =>
+      raw.post<{ ledgers: { description: string; ledger: string; ledger_name: string; created: boolean }[] }>(`${V1}/clients/${clientId}/bills/item-ledgers/`, body),
+    // The new ledgers are in the client's list from now on, so the pickers can name them.
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: clientKeys.part(clientId, 'ledgers') }),
   })
 }
 

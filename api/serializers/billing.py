@@ -96,6 +96,30 @@ class HeadSerializer(serializers.Serializer):
     amount_paise = PaiseField(min_value=1, help_text="The taxable value that goes to this ledger.")
 
 
+class ItemLedgerLineSerializer(serializers.Serializer):
+    description = serializers.CharField(max_length=200)
+    unit = serializers.CharField(max_length=16, required=False, allow_blank=True, default="")
+    hsn_sac = serializers.CharField(max_length=8, required=False, allow_blank=True, default="")
+
+
+class ItemLedgerRequestSerializer(serializers.Serializer):
+    """The invoice's lines, to be given a ledger each."""
+
+    kind = serializers.ChoiceField(choices=[(kind.value, kind.label) for kind in POSTABLE_KINDS])
+    items = ItemLedgerLineSerializer(many=True, allow_empty=False, max_length=100)
+
+
+class ItemLedgerSerializer(serializers.Serializer):
+    description = serializers.CharField(help_text="The line, as it was sent.")
+    ledger = serializers.UUIDField(help_text="The ledger of its own that the line goes to.")
+    ledger_name = serializers.CharField()
+    created = serializers.BooleanField(help_text="The ledger did not exist before this call.")
+
+
+class ItemLedgerResponseSerializer(serializers.Serializer):
+    ledgers = ItemLedgerSerializer(many=True)
+
+
 class ConfirmedLineSerializer(serializers.Serializer):
     """A line of the invoice as a person left it: kept so the next invoice from this party can be filled in the same way."""
 

@@ -561,6 +561,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/bills/item-ledgers/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Give each invoice line a ledger of its own
+         * @description Finds or opens, for each line, the product's stock item and its purchase (or sales) ledger, named for the product, so the form can fill each line's ledger in. A line that matches a product the client already has (by the words that identify it) goes to that product's ledger. Needs `journal.approve`; nothing is booked.
+         */
+        post: operations["clients_bills_item_ledgers_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/books/": {
         parameters: {
             query?: never;
@@ -3634,17 +3654,9 @@ export interface components {
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly open_display: string | null;
         };
-        /**
-         * @description * `PURCHASE` - Purchase invoice
-         *     * `SALES` - Sales invoice
-         *     * `DEBIT_NOTE` - Debit note (a purchase return)
-         *     * `CREDIT_NOTE` - Credit note (a sales return)
-         * @enum {string}
-         */
-        BillCreateKindEnum: "PURCHASE" | "SALES" | "DEBIT_NOTE" | "CREDIT_NOTE";
         /** @description The shape of a voucher request. The accounting rules are the domain's, and say why in words. */
         BillCreateRequest: {
-            kind: components["schemas"]["BillCreateKindEnum"];
+            kind: components["schemas"]["Kind487Enum"];
             /** Format: uuid */
             party: string;
             /** @description The invoice or note number printed on the document. */
@@ -4798,6 +4810,33 @@ export interface components {
          * @enum {string}
          */
         ItcStatusEnum: "eligible" | "blocked" | "not_eligible" | "rcm_on_payment";
+        ItemLedger: {
+            /** @description The line, as it was sent. */
+            description: string;
+            /**
+             * Format: uuid
+             * @description The ledger of its own that the line goes to.
+             */
+            ledger: string;
+            ledger_name: string;
+            /** @description The ledger did not exist before this call. */
+            created: boolean;
+        };
+        ItemLedgerLineRequest: {
+            description: string;
+            /** @default  */
+            unit: string;
+            /** @default  */
+            hsn_sac: string;
+        };
+        /** @description The invoice's lines, to be given a ledger each. */
+        ItemLedgerRequestRequest: {
+            kind: components["schemas"]["Kind487Enum"];
+            items: components["schemas"]["ItemLedgerLineRequest"][];
+        };
+        ItemLedgerResponse: {
+            ledgers: components["schemas"]["ItemLedger"][];
+        };
         /**
          * @description What a 202 hands back, and what polling returns.
          *
@@ -4930,6 +4969,14 @@ export interface components {
          * @enum {string}
          */
         Kind372Enum: "BANK_STATEMENT" | "PURCHASE_INVOICE" | "SALES_INVOICE" | "GSTR2B" | "REGISTER" | "TALLY_EXPORT" | "OTHER";
+        /**
+         * @description * `PURCHASE` - Purchase invoice
+         *     * `SALES` - Sales invoice
+         *     * `DEBIT_NOTE` - Debit note (a purchase return)
+         *     * `CREDIT_NOTE` - Credit note (a sales return)
+         * @enum {string}
+         */
+        Kind487Enum: "PURCHASE" | "SALES" | "DEBIT_NOTE" | "CREDIT_NOTE";
         /**
          * @description * `BANK` - Bank account
          *     * `LOAN` - Loan account
@@ -9623,6 +9670,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BillDetail"];
+                };
+            };
+        };
+    };
+    clients_bills_item_ledgers_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ItemLedgerRequestRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ItemLedgerRequestRequest"];
+                "multipart/form-data": components["schemas"]["ItemLedgerRequestRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ItemLedgerResponse"];
                 };
             };
         };

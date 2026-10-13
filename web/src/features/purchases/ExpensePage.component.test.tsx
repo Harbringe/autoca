@@ -130,9 +130,16 @@ describe('one purchase or sale on its own page', () => {
     expect(within(lines).getByDisplayValue('Biryani')).toBeInTheDocument()
     expect(within(lines).getAllByDisplayValue('9963')).toHaveLength(2)
 
+    // each line is given a ledger of its own by the server, and the form puts it in
+    vi.mocked(raw.post).mockResolvedValueOnce({
+      ledgers: [
+        { description: 'Biryani', ledger: 'l1', ledger_name: 'Purchases - Biryani', created: true },
+        { description: 'Biryani', ledger: 'l1', ledger_name: 'Purchases - Biryani', created: false },
+      ],
+    } as never)
     await userEvent.click(screen.getByRole('button', { name: 'Use one line per item' }))
 
-    expect(screen.getAllByRole('textbox', { name: 'Amount (₹)' })).toHaveLength(2)
+    expect(await screen.findAllByRole('textbox', { name: 'Amount (₹)' })).toHaveLength(2)
     expect(screen.getByText('Biryani')).toBeInTheDocument()
   })
 

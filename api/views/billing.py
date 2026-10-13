@@ -19,12 +19,14 @@ from api.serializers.billing import (
     BillCreateSerializer,
     BillDetailSerializer,
     BillSerializer,
+    ItemLedgerRequestSerializer,
+    ItemLedgerResponseSerializer,
     RemoveBillSerializer,
 )
 from api.views.base import ClientScopedMixin
 from classify.models import LedgerAccount, Party
 from documents.models import Document
-from ledger import billing, editing, invoice_intake, pay_now
+from ledger import billing, editing, invoice_intake, item_ledgers, pay_now
 from ledger.billing import BillInput
 from ledger.models import Bill, BillKind, InvoiceReading
 
@@ -218,6 +220,34 @@ class BillViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.RetrieveModel
         # The revised amount may now be exactly a payment that was waiting.
         invoice_intake.settle_payment(fresh)
         return Response(BillDetailSerializer(self.get_queryset().get(pk=fresh.pk)).data)
+
+    @extend_schema(
+        summary="Give each invoice line a ledger of its own",
+        description=(
+            "Finds or opens, for each line, the product's stock item and its purchase (or sales) ledger, named for the product, "
+            "so the form can fill each line's ledger in. A line that matches a product the client already has (by the words that "
+            "identify it) goes to that product's ledger. Needs `journal.approve`; nothing is booked."
+        ),
+        request=ItemLedgerRequestSerializer,
+        responses={200: ItemLedgerResponseSerializer},
+    )
+    @action(detail=False, methods=["post"], url_path="item-ledgers")
+    def give_item_ledgers(self, request, client_id=None):
+        payload = ItemLedgerRequestSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        kind = payload.validated_data["kind"]
+        out = []
+        with transaction.atomic():
+            for line in payload.validated_data["items"]:
+                item = item_ledgers.item_for(self.client, line["description"], line["unit"], line["hsn_sac"])
+                known = set(
+                    LedgerAccount.objects.filter(firm_id=request.firm.pk, client=self.client).values_list("pk", flat=True)
+                )
+                ledger = item_ledgers.ledger_for(self.client, item, kind)
+                out.append(
+                    {"description": line["description"], "ledger": ledger.pk, "ledger_name": ledger.name, "created": ledger.pk not in known}
+                )
+        return Response({"ledgers": out})
 
     @extend_schema(
         summary="Remove a bill and its voucher",

@@ -89,7 +89,7 @@ describe('pageNumbers', () => {
 describe('PagedList', () => {
   it('pages a list for a component that cannot hold a hook', () => {
     render(
-      <PagedList rows={items(75)} resetKey="k" label="Entries">
+      <PagedList section="review" rows={items(75)} resetKey="k" label="Entries">
         {(shown) => <p>{shown.length} shown</p>}
       </PagedList>,
     )
@@ -105,7 +105,7 @@ describe('turning the page', () => {
     Object.defineProperty(HTMLElement.prototype, 'animate', { value: animate, configurable: true })
     window.matchMedia = ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} })) as never
     render(
-      <PagedList rows={items(120)} resetKey="k" label="Entries">
+      <PagedList section="review" rows={items(120)} resetKey="k" label="Entries">
         {(shown) => <p>{shown.length} shown</p>}
       </PagedList>,
     )

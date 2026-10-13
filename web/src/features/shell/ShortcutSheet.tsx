@@ -176,7 +176,7 @@ export function ShortcutSheet({ open, onOpenChange }: { open: boolean; onOpenCha
                     setChosen(c.id)
                   }}
                   className={cn(
-                    'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-[15px] transition-colors duration-150 hover:bg-hover max-sm:w-auto max-sm:shrink-0',
+                    'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-[15px] outline-none transition-colors duration-150 hover:bg-hover focus-visible:bg-hover max-sm:w-auto max-sm:shrink-0',
                     on && 'font-semibold',
                     searching && count === 0 && 'opacity-40',
                   )}

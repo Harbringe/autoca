@@ -7,9 +7,9 @@ import { V1 } from './clients'
 
 export const AUDIT_PAGE = 25
 
-export const auditLog = (page: number, failedOnly: boolean) =>
+export const auditLog = (page: number, failedOnly: boolean, size = AUDIT_PAGE) =>
   queryOptions({
-    queryKey: ['audit', page, failedOnly],
-    queryFn: () => raw.get<Page<AuditRow>>(`${V1}/audit/`, { page, page_size: AUDIT_PAGE, failed: failedOnly ? 'true' : undefined }),
+    queryKey: ['audit', page, failedOnly, size],
+    queryFn: () => raw.get<Page<AuditRow>>(`${V1}/audit/`, { page, page_size: size, failed: failedOnly ? 'true' : undefined }),
     placeholderData: keepPreviousData,
   })

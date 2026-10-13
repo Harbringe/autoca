@@ -47,6 +47,7 @@ import { setSearchAllStatements, useSearchAllStatements } from '@/lib/reviewPref
 import { LedgerPicker, usableLedgers } from './LedgerPicker'
 import { NewAccountDialog } from './NewAccountDialog'
 import { ProposalDecision } from '@/features/masters/MastersScreen'
+import { usePageSize } from '@/lib/pageSizes'
 import { PostedEntries } from './PostedEntries'
 import { StageNav, STAGES } from './StageNav'
 
@@ -136,7 +137,7 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
     )
   }, [queue.data, statement, band, text, sort])
   // A long queue shows a page of rows at a time; what the list is of (stage, filter, search, sort) decides when it goes back to page 1.
-  const pager = usePaged(rows, `${stage}|${statement}|${band}|${text}|${sort?.key ?? ''}${sort?.dir ?? ''}`)
+  const pager = usePaged(rows, `${stage}|${statement}|${band}|${text}|${sort?.key ?? ''}${sort?.dir ?? ''}`, usePageSize('review'))
   const toggleSort = (key: SortKey) =>
     setSort((s) => (s?.key !== key ? { key, dir: 'asc' } : s.dir === 'asc' ? { key, dir: 'desc' } : null))
   const index = Math.max(0, rows.findIndex((r) => r.id === selectedId))

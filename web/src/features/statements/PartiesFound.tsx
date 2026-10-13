@@ -58,7 +58,7 @@ export function PartiesFound({ clientId }: { clientId: string }) {
       <p className="text-sm text-muted-foreground">
         Tick the ones that are real suppliers or customers. Their rows are attached to them and later statements recognise them. Nothing is created until you do.
       </p>
-      <PagedList rows={items} resetKey={`${oneOffs}`} label="Parties found" size={10}>
+      <PagedList rows={items} resetKey={`${oneOffs}`} label="Parties found" section="parties">
       {(shown) => (
       <ul className="grid gap-1">
         {shown.map((c) => (

@@ -4,7 +4,8 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
-import { AUDIT_PAGE, auditLog } from '@/api/queries/audit'
+import { auditLog } from '@/api/queries/audit'
+import { usePageSize } from '@/lib/pageSizes'
 import { PageJump } from '@/components/ca/Pager'
 import type { AuditRow } from '@/api/types'
 import { EmptyState, ErrorState, PageHeader } from '@/components/ca/Page'
@@ -42,12 +43,13 @@ const columns: Column<AuditRow>[] = [
 export function ActivityScreen() {
   usePageTitle('Activity log')
   const { can } = useSession()
+  const size = usePageSize('activity')
   const [page, setPage] = useState(1)
   const [failed, setFailed] = useState(false)
-  const log = useQuery({ ...auditLog(page, failed), enabled: can('audit.view') })
+  const log = useQuery({ ...auditLog(page, failed, size), enabled: can('audit.view') })
   if (!can('audit.view')) return <EmptyState title="Not available">The activity log is for firm administrators.</EmptyState>
   if (log.error) return <ErrorState error={log.error} retry={() => void log.refetch()} />
-  const pages = Math.max(1, Math.ceil((log.data?.count ?? 0) / AUDIT_PAGE))
+  const pages = Math.max(1, Math.ceil((log.data?.count ?? 0) / size))
   return (
     <div className="grid gap-3">
       <PageHeader title="Activity log" description="Who changed what, and when. It cannot be edited or deleted." className="mb-0" />
@@ -67,7 +69,7 @@ export function ActivityScreen() {
         rowKey={(r) => r.id}
         empty={<EmptyState title="Nothing recorded">{failed ? 'No refused requests.' : 'Changes made in the firm appear here.'}</EmptyState>}
       />
-      {log.data && log.data.count > AUDIT_PAGE && (
+      {log.data && log.data.count > size && (
         <nav aria-label="Activity log pages" className="flex items-center justify-between gap-3 text-sm">
           <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
             Newer

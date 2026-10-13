@@ -5,7 +5,7 @@
 import { Link, useRouterState } from '@tanstack/react-router'
 import { Activity, Bell, LayoutDashboard, Settings, Users } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { useAlertCount } from '@/features/alerts/AlertBell'
+import { AlertDot, useAlertDot } from '@/features/alerts/AlertBell'
 import { clientIdOf } from '@/lib/modules'
 import { useClientMemory } from '@/lib/recentClients'
 import { JUMP_KEYS } from '@/lib/jump'
@@ -39,8 +39,8 @@ export function Rail({ onShortcuts }: { onShortcuts: () => void }) {
   const clientId = clientIdOf(path)
   const items = railItems(can)
   const active = railActive(path)
-  // Alerts are shown inside a client (its bell and page banners), so the firm's pages carry no count.
-  const alertCount = useAlertCount(false)
+  // A dot on Alerts when anything is open (red, amber or the brand colour by how serious); a number would only be noise here.
+  const alertDot = useAlertDot()
 
   return (
     <div className="flex h-full w-20 flex-col items-center overflow-y-auto overscroll-contain border-r border-white/10 bg-sidebar py-3 text-sidebar-foreground [scrollbar-width:none]">
@@ -54,7 +54,7 @@ export function Rail({ onShortcuts }: { onShortcuts: () => void }) {
       <nav aria-label="Main" className="flex w-full flex-col items-center gap-1 px-2">
         {items.map((item) => {
           const isActive = active === item.id
-          const count = item.id === 'alerts' && alertCount ? alertCount : 0
+          const dot = item.id === 'alerts' ? alertDot : null
           return (
             <Link
               key={item.id}
@@ -69,12 +69,7 @@ export function Rail({ onShortcuts }: { onShortcuts: () => void }) {
               )}
             >
               {RAIL_ICONS[item.id]}
-              {count > 0 && (
-                <span className="num absolute right-1.5 top-1 grid min-w-4 place-items-center rounded-full bg-sidebar-chip px-1 text-xs font-semibold leading-4 text-sidebar-chip-foreground">
-                  {count > 99 ? '99+' : count}
-                  <span className="sr-only"> need attention</span>
-                </span>
-              )}
+              {dot && <AlertDot level={dot} className="absolute right-2 top-2" />}
             </Link>
           )
         })}

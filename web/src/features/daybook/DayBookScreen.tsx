@@ -33,6 +33,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { LedgerPicker, usableLedgers } from '@/features/review/LedgerPicker'
 import { formatDate, formatDateTime, formatPaise, fyLabel, parseRupees, plural } from '@/lib/format'
 import { useFy } from '@/features/shell/useFy'
+import { usePageSize } from '@/lib/pageSizes'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { isAssistantEntry, unpostEntry, useUnpostMany } from './unpost'
@@ -91,7 +92,7 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
   })
 
   // A long year is shown a page of vouchers at a time; the totals below still cover all of them.
-  const pager = usePaged(rows, `${fy}|${type}|${text}|${onlyAi}`)
+  const pager = usePaged(rows, `${fy}|${type}|${text}|${onlyAi}`, usePageSize('daybook'))
   const bodyRef = useRef<HTMLTableSectionElement>(null)
   useFadeOnChange(bodyRef, pager.page)
 

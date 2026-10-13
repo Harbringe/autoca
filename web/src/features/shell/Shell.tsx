@@ -15,7 +15,7 @@ import { useSavingMark } from '@/api/pending'
 import { isProcessing } from '@/features/assistant/queue'
 import { useAssistantShort, useAssistantStatus } from '@/features/assistant/useAssistant'
 import { Brand } from '@/features/auth/AuthLayout'
-import { AlertBell, useAlertCount } from '@/features/alerts/AlertBell'
+import { AlertBell, AlertDot, useAlertDot } from '@/features/alerts/AlertBell'
 import { clientScreenName, parentPath } from '@/lib/clientNav'
 import { useHotkey } from '@/lib/hotkeys'
 import { JUMP_KEYS, moduleHref, type JumpKey } from '@/lib/jump'
@@ -210,7 +210,7 @@ function DrawerBody({ clientId, onClose, onShortcuts }: { clientId?: string; onC
   const palette = usePalette()
   const path = useRouterState({ select: (s) => s.location.pathname })
   const active = railActive(path)
-  const alertCount = useAlertCount(false)
+  const alertDot = useAlertDot()
   return (
     <div className="flex h-full flex-col bg-sidebar text-sidebar-foreground">
       <div className="flex items-center justify-between py-1.5 pl-4 pr-1.5 text-white">
@@ -239,7 +239,7 @@ function DrawerBody({ clientId, onClose, onShortcuts }: { clientId?: string; onC
           <ul className="grid gap-0.5">
             {railItems(can).map((item) => {
               const isActive = active === item.id
-              const count = item.id === 'alerts' ? alertCount : 0
+              const dot = item.id === 'alerts' ? alertDot : null
               return (
                 <li key={item.id}>
                   <Link
@@ -254,12 +254,7 @@ function DrawerBody({ clientId, onClose, onShortcuts }: { clientId?: string; onC
                   >
                     {RAIL_ICONS[item.id]}
                     <span className="truncate">{item.long}</span>
-                    {count > 0 && (
-                      <span className="num ml-auto rounded-sm bg-sidebar-chip px-1.5 text-xs font-medium text-sidebar-chip-foreground">
-                        {count}
-                        <span className="sr-only"> need attention</span>
-                      </span>
-                    )}
+                    {dot && <AlertDot level={dot} className="ml-auto" />}
                   </Link>
                 </li>
               )
@@ -384,8 +379,8 @@ export function Shell() {
               <div className="flex min-w-0 shrink-0 items-center justify-end gap-2">
                 <SavingMark />
                 <AssistantIndicator />
-                <Button variant="ghost" size="icon" className="size-9 shrink-0" aria-label="Keyboard shortcuts" aria-keyshortcuts="?" title="Keyboard shortcuts (?)" onClick={() => setShortcutsOpen(true)}>
-                  <Keyboard className="size-[18px]" aria-hidden />
+                <Button variant="ghost" size="icon" className="size-10 shrink-0 rounded-md border border-border bg-card hover:bg-hover" aria-label="Keyboard shortcuts" aria-keyshortcuts="?" title="Keyboard shortcuts (?)" onClick={() => setShortcutsOpen(true)}>
+                  <Keyboard className="size-[21px]" aria-hidden />
                 </Button>
                 {clientId && <AlertBell key={`bell-${clientId}`} clientId={clientId} />}
                 <UserMenu onShortcuts={() => setShortcutsOpen(true)} />

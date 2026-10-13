@@ -349,7 +349,7 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
             // With nothing posted the tags on the placed rows say so; only a search that finds nothing needs words.
             q && hasEntries && <p className="py-5 text-center text-sm text-muted-foreground">No posted entries for this ledger in FY {fyLabel(fy)} match this search.</p>
           ) : (
-            <PagedList rows={selectedEntries} resetKey={`${selected.id}|${fy}|${q}`} label={`${selected.name} entries`}>
+            <PagedList rows={selectedEntries} resetKey={`${selected.id}|${fy}|${q}`} label={`${selected.name} entries`} section="ledger">
               {(items) => (
                 <DataTable
                   caption={`${selected.name}: posted entries`}
@@ -372,7 +372,7 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
               {placedRows.length === 0 ? (
                 <p className="py-3 text-center text-sm text-muted-foreground">No placed rows match this search.</p>
               ) : (
-                <PagedList rows={placedRows} resetKey={`${selected.id}|${q}`} label={`${selected.name} placed rows`}>
+                <PagedList rows={placedRows} resetKey={`${selected.id}|${q}`} label={`${selected.name} placed rows`} section="ledger">
                   {(items) => (
                 <DataTable
                   caption={`${selected.name}: rows placed, all years`}

@@ -32,6 +32,7 @@ import { formatDate, plural } from '@/lib/format'
 import { useSession } from '@/session/session'
 import { PartiesFound } from './PartiesFound'
 import { groupByAccount, rowsHeadline } from './statementGroups'
+import { usePageSize } from '@/lib/pageSizes'
 import { OpeningBalance, useUpload } from './UploadDialog'
 
 /** The Rows and Delete buttons at the end of a statement row. */
@@ -292,7 +293,7 @@ function RenameLedger({ clientId, account, onClose }: { clientId: string; accoun
 function StatementRows({ clientId, statement, onClose }: { clientId: string; statement: Statement; onClose: () => void }) {
   const rows = useQuery(statementRows(clientId, statement.id))
   // A year's statement has hundreds of rows: a hundred at a time keeps the window light.
-  const paged = usePaged(rows.data ?? [], statement.id, 100)
+  const paged = usePaged(rows.data ?? [], statement.id, usePageSize('statements'))
   const bodyRef = useRef<HTMLDivElement>(null)
   useFadeOnChange(bodyRef, paged.page)
   return (

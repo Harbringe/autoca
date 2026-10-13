@@ -18,6 +18,26 @@ export function useAlertCount(enabled = true): number {
   return enabled ? (feed.data?.counts.total ?? 0) : 0
 }
 
+/** A small dot for the sidebar: red when something is urgent, amber when important, the brand colour for to-dos. No number, no motion. */
+export function AlertDot({ level, className }: { level: 'critical' | 'high' | 'medium'; className?: string }) {
+  const word = { critical: 'urgent', high: 'important', medium: 'to do' }[level]
+  return (
+    <>
+      <span aria-hidden className={cn('size-2.5 rounded-full ring-2 ring-sidebar', level === 'critical' ? 'bg-destructive' : level === 'high' ? 'bg-warning' : 'bg-sidebar-bar', className)} />
+      <span className="sr-only"> {word} alerts open</span>
+    </>
+  )
+}
+
+/** The most serious kind of alert open across the firm, or null when nothing is: for a dot in the sidebar that says "something is open" without a number. */
+export function useAlertDot(): 'critical' | 'high' | 'medium' | null {
+  const { can } = useSession()
+  const feed = useQuery({ ...firmAlerts(), enabled: can('client.view') })
+  const by = feed.data?.counts.by_severity
+  if (!by) return null
+  return (['critical', 'high', 'medium'] as const).find((s) => (by[s] ?? 0) > 0) ?? null
+}
+
 const TABS: { id: SeverityFilter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'critical', label: SEVERITY_LABEL.critical },

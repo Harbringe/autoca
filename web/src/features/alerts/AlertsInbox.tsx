@@ -17,6 +17,7 @@ import { GlideChips } from '@/components/ui/glide-chips'
 import { Kbd } from '@/components/ui/kbd'
 import { useHotkey } from '@/lib/hotkeys'
 import { plural } from '@/lib/format'
+import { usePageSize } from '@/lib/pageSizes'
 import { initialsOf } from '@/lib/useDebounced'
 import { cn } from '@/lib/utils'
 import { actionLabel, adviceFor } from './alertAdvice'
@@ -28,9 +29,6 @@ export interface InboxFilter {
   module?: AlertModule
   client?: string
 }
-
-/** Alerts to a page: few enough that the list fits on the screen without scrolling. */
-const ALERTS_PER_PAGE = 10
 
 const MODULES = Object.keys(MODULE_LABEL) as AlertModule[]
 
@@ -48,6 +46,7 @@ function Initials({ name, className }: { name: string; className?: string }) {
 
 export function AlertsInbox({ alerts, filter, onFilter }: { alerts: Alert[]; filter: InboxFilter; onFilter: (next: InboxFilter) => void }) {
   const navigate = useNavigate()
+  const perPage = usePageSize('alerts')
   const [severity, setSeverity] = useState<SeverityFilter>('all')
   const [groupBy, setGroupBy] = useState<GroupBy>('severity')
   const [selectedKey, setSelectedKey] = useState<string | null>(null)
@@ -63,7 +62,7 @@ export function AlertsInbox({ alerts, filter, onFilter }: { alerts: Alert[]; fil
 
   const index = Math.max(0, flat.findIndex((a) => alertKey(a) === selectedKey))
   const selected = flat[index] ?? null
-  const pager = usePaged(flat, `${by}|${severity}|${filter.module ?? ''}|${filter.client ?? ''}`, ALERTS_PER_PAGE)
+  const pager = usePaged(flat, `${by}|${severity}|${filter.module ?? ''}|${filter.client ?? ''}`, perPage)
   const listRef = useRef<HTMLUListElement>(null)
   const listKey = `${by}|${severity}|${filter.module ?? ''}|${filter.client ?? ''}|${pager.page}`
   useFadeOnChange(listRef, listKey)
@@ -183,7 +182,7 @@ export function AlertsInbox({ alerts, filter, onFilter }: { alerts: Alert[]; fil
           )}
         </EmptyState>
       ) : (
-        <div className="grid max-h-[calc(100svh-15rem)] min-h-[22rem] overflow-hidden rounded-xl border border-border-strong bg-card lg:grid-cols-[minmax(0,1fr)_380px] max-lg:h-auto">
+        <div className="grid max-h-[calc(100svh-15rem)] min-h-[26rem] overflow-hidden rounded-xl border border-border-strong bg-card lg:grid-cols-[minmax(0,1fr)_380px] max-lg:h-auto">
           <div className="flex min-h-0 min-w-0 flex-col">
             <ul
               ref={listRef}
@@ -196,7 +195,7 @@ export function AlertsInbox({ alerts, filter, onFilter }: { alerts: Alert[]; fil
                 <li key={group.key} role="presentation">
                   <div
                     role="presentation"
-                    className="sticky top-0 z-[1] flex items-center gap-2.5 border-b border-border-strong bg-background px-4 py-2 text-xs font-bold uppercase tracking-wide text-muted-foreground"
+                    className="sticky top-0 z-[1] flex items-center gap-2.5 border-b border-border-strong bg-background px-6 py-3 text-xs font-bold uppercase tracking-wide text-muted-foreground"
                   >
                     {group.severity ? <SeverityMark severity={group.severity} className="text-xs" /> : group.client ? <><Initials name={group.client.name} />{' '}<span className="text-foreground">{group.label}</span></> : <span>{group.label}</span>}
                     <span className="num ml-auto font-mono">{group.items.length}</span>
@@ -216,21 +215,21 @@ export function AlertsInbox({ alerts, filter, onFilter }: { alerts: Alert[]; fil
                           style={{ animationDelay: `${Math.min(i, 10) * 28}ms` }}
                           className={cn(
                             // What is selected is drawn by the global rule for a selected option (tint and bar); the row only eases into it.
-                            'rise relative flex cursor-pointer items-center gap-3 border-b border-border-strong px-4 py-3 outline-none transition-[background-color,box-shadow] duration-200 hover:bg-hover focus-visible:bg-hover',
+                            'rise relative flex cursor-pointer items-center gap-3 border-b border-border-strong px-6 py-4 outline-none transition-[background-color,box-shadow] duration-200 hover:bg-hover focus-visible:bg-hover',
                           )}
                         >
                           <span className="min-w-0 flex-1">
-                            <span className="flex items-center gap-2">
+                            <span className="flex items-center gap-2.5">
                               {/* Under a severity heading the word would only repeat it. */}
                               {by !== 'severity' && <SeverityMark severity={alert.severity} />}
                               {many && by !== 'client' && (
                                 <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-                                  <Initials name={alert.client_name} className="size-5 text-[9px]" />
-                                  <b className="max-w-40 truncate font-semibold text-foreground">{alert.client_name}</b>
+                                  <Initials name={alert.client_name} className="size-6 text-[10px]" />
+                                  <b className="max-w-48 truncate text-sm font-semibold text-foreground">{alert.client_name}</b>
                                 </span>
                               )}
                             </span>
-                            <span className={cn('block font-medium text-heading', (by !== 'severity' || many) && 'mt-0.5')}>{alert.title}</span>
+                            <span className={cn('block text-[15px] font-medium leading-snug text-heading', (by !== 'severity' || many) && 'mt-2')}>{alert.title}</span>
                           </span>
                           {alert.amount_display && <Money display={alert.amount_display} className="num shrink-0 text-[13px] font-semibold" />}
                         </li>
@@ -244,7 +243,7 @@ export function AlertsInbox({ alerts, filter, onFilter }: { alerts: Alert[]; fil
           </div>
 
           {selected && (
-            <aside key={alertKey(selected)} aria-label="Alert detail" className="rise min-h-0 overflow-y-auto overscroll-contain border-l border-border-strong bg-background p-5 max-lg:border-l-0 max-lg:border-t">
+            <aside key={alertKey(selected)} aria-label="Alert detail" className="rise min-h-0 overflow-y-auto overscroll-contain border-l border-border-strong bg-background p-6 max-lg:border-l-0 max-lg:border-t">
               {many ? (
                 <div className="mb-2 flex items-center gap-2 text-sm text-muted-foreground">
                   <Initials name={selected.client_name} />

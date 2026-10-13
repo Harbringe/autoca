@@ -2,6 +2,7 @@
 // when the list is longer than one page, so a short list looks exactly as it did. A list renders one page of rows instead of
 // hundreds, which is what keeps a long statement light on an old machine.
 
+import { usePageSize, type PageSection } from '@/lib/pageSizes'
 import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Button } from '@/components/ui/button'
 
@@ -211,16 +212,17 @@ export function PagedList<T>({
   rows,
   resetKey,
   label,
-  size,
+  section,
   children,
 }: {
   rows: readonly T[]
   resetKey: string
   label: string
-  size?: number
+  /** Which list this is, so the rows per page the person chose for it (Preferences) apply. */
+  section: PageSection
   children: (items: T[]) => ReactNode
 }) {
-  const paged = usePaged(rows, resetKey, size)
+  const paged = usePaged(rows, resetKey, usePageSize(section))
   const body = useRef<HTMLDivElement>(null)
   useFadeOnChange(body, paged.page)
   return (

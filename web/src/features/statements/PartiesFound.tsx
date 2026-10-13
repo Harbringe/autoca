@@ -10,6 +10,7 @@ import { toast } from 'sonner'
 import { messageOf } from '@/api/errors'
 import { partyCandidates, useCreateFoundParties } from '@/api/queries/bills'
 import { Money } from '@/components/ca/Money'
+import { PagedList } from '@/components/ca/Pager'
 import { Button } from '@/components/ui/button'
 import { Checkbox, Select } from '@/components/ui/controls'
 import { formatDate, plural } from '@/lib/format'
@@ -57,8 +58,10 @@ export function PartiesFound({ clientId }: { clientId: string }) {
       <p className="text-sm text-muted-foreground">
         Tick the ones that are real suppliers or customers. Their rows are attached to them and later statements recognise them. Nothing is created until you do.
       </p>
+      <PagedList rows={items} resetKey={`${oneOffs}`} label="Parties found" size={10}>
+      {(shown) => (
       <ul className="grid gap-1">
-        {items.map((c) => (
+        {shown.map((c) => (
           <li key={c.name} className="flex flex-wrap items-center gap-3 rounded-md border bg-card p-2 text-sm">
             <Checkbox
               checked={!!ticked[c.name]}
@@ -90,6 +93,8 @@ export function PartiesFound({ clientId }: { clientId: string }) {
           </li>
         ))}
       </ul>
+      )}
+      </PagedList>
       {mayCreate && (
         <div className="flex justify-end">
           <Button disabled={chosen.length === 0 || create.isPending} onClick={() => void make()}>

@@ -2,6 +2,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { parties, rules } from '@/api/queries/books'
+import { partyCandidates } from '@/api/queries/bills'
 import type { Party, Rule } from '@/api/types'
 import { MastersScreen } from './MastersScreen'
 
@@ -17,10 +18,11 @@ const party = (over: Partial<Party>): Party =>
 const rule = (over: Partial<Rule>): Rule =>
   ({ id: 'r1', match_type: 'PARTY_EQUALS', pattern: 'Shree Ganesh Steel Traders', direction: 'DEBIT', ledger_name: 'Purchases', party: 'p1', source: 'LEARNED', hit_count: 3, last_hit_at: null, is_active: true, priority: 0, ...over }) as Rule
 
-function renderTab(tab: 'parties' | 'rules', ps: Party[], rs: Rule[]) {
+function renderTab(tab: 'parties' | 'rules', ps: Party[], rs: Rule[], found: unknown[] = []) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false } } })
   queryClient.setQueryData(parties('c1').queryKey, ps)
   queryClient.setQueryData(rules('c1').queryKey, rs)
+  queryClient.setQueryData(partyCandidates('c1', false).queryKey, { candidates: found } as never)
   render(
     <QueryClientProvider client={queryClient}>
       <MastersScreen clientId="c1" tab={tab} />
@@ -75,5 +77,22 @@ describe('rules, as sentences', () => {
     expect(screen.getByText(/money out/)).toBeInTheDocument()
     expect(screen.getByText(/Learned/)).toBeInTheDocument()
     expect(screen.getByRole('switch', { name: /Active: Payee is Shree Ganesh Steel Traders/ })).toBeChecked()
+  })
+})
+
+describe('parties found in the statements, on the Parties page', () => {
+  const candidate = { name: 'Kirti Oil Industries', count: 6, first: '2025-04-07', last: '2025-05-25', paid_paise: 100, received_paise: 0, paid_display: '₹1.00', received_display: '', suggested_role: 'VENDOR' }
+
+  it('lists who the statements name, to be ticked into real parties', async () => {
+    renderTab('parties', [], [], [candidate])
+    expect(await screen.findByText('Parties found in these statements')).toBeInTheDocument()
+    expect(screen.getByText('Kirti Oil Industries')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Create 0 parties/ })).toBeDisabled()
+  })
+
+  it('says nothing when the statements name nobody new', async () => {
+    renderTab('parties', [party({})], [], [])
+    await screen.findByText('Shree Ganesh Steel Traders')
+    expect(screen.queryByText('Parties found in these statements')).toBeNull()
   })
 })

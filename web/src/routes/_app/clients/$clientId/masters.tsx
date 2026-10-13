@@ -1,11 +1,13 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { MastersScreen, type MasterTab } from '@/features/masters/MastersScreen'
 
-const TABS: MasterTab[] = ['parties', 'rules']
+/** The tabs this page has. Ledgers is its own page (`/clients/$clientId/ledgers`), so a `?tab=ledgers` here would only fall back to Parties. */
+type MastersTab = Exclude<MasterTab, 'ledgers'>
+const TABS: MastersTab[] = ['parties', 'rules']
 
 export const Route = createFileRoute('/_app/clients/$clientId/masters')({
-  validateSearch: (search: Record<string, unknown>): { tab?: MasterTab } => ({
-    tab: TABS.includes(search.tab as MasterTab) ? (search.tab as MasterTab) : undefined,
+  validateSearch: (search: Record<string, unknown>): { tab?: MastersTab } => ({
+    tab: TABS.includes(search.tab as MastersTab) ? (search.tab as MastersTab) : undefined,
   }),
   component: Screen,
 })

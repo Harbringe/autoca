@@ -8,7 +8,7 @@
 // L for the ledger, Enter to place, P to post.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { AlertTriangle, ArrowUp, Bot, Brain, CheckCheck, Link2, Search, Sparkles } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
@@ -16,7 +16,7 @@ import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
 import { waitForJob } from '@/api/jobs'
 import { ledgers as ledgersQuery, parties as partiesQuery, reviewQueue, rules as rulesQuery, type ReviewTab, type Stage } from '@/api/queries/books'
-import { bankAccounts, clientDetail, reviewSummary, useInvalidateClient, V1 } from '@/api/queries/clients'
+import { bankAccounts, clientDetail, reviewSummary, statements as statementsQuery, useInvalidateClient, V1 } from '@/api/queries/clients'
 import { GROUP_LABEL, TDS_SECTIONS, type Classification, type Party, type Job, type JournalEntry, type PlacementResult } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
 import { Money } from '@/components/ca/Money'
@@ -41,6 +41,8 @@ import { useSession } from '@/session/session'
 import { summariseBulk, type BulkSummary } from './bulkPost'
 import { SettlementPanel } from './SettlementPanel'
 import { LedgerIdea } from './LedgerIdea'
+import { StatementPicker } from './StatementPicker'
+import { activeStatement, statementChoices } from './statementChoices'
 import { LedgerPicker, usableLedgers } from './LedgerPicker'
 import { NewAccountDialog } from './NewAccountDialog'
 import { ProposalDecision } from '@/features/masters/MastersScreen'
@@ -70,18 +72,23 @@ function rowName(r: Classification): string {
 }
 
 /** The review screen: the queues of waiting rows, or Posted, which lists the entries already in the books. */
-export function ReviewScreen({ clientId, stage }: { clientId: string; stage?: ReviewTab }) {
+export function ReviewScreen({ clientId, stage, statement }: { clientId: string; stage?: ReviewTab; statement?: string }) {
   if (stage === 'posted') return <PostedEntries clientId={clientId} />
-  return <ReviewQueue clientId={clientId} stage={stage} />
+  return <ReviewQueue clientId={clientId} stage={stage} statement={statement} />
 }
 
-function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Stage }) {
+function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { clientId: string; stage?: Stage; statement?: string }) {
   const { can } = useSession()
   const client = useQuery(clientDetail(clientId))
   const summary = useQuery(reviewSummary(clientId))
   // Opened without saying which stage: go where the work is.
   const stage: Stage = asked ?? (!summary.data?.unresolved && summary.data?.pending_approval ? 'pending_approval' : 'unresolved')
   const queue = useQuery(reviewQueue(clientId, stage))
+  const navigate = useNavigate()
+  const statementList = useQuery(statementsQuery(clientId))
+  // Reviewed one bank statement at a time: the statements with rows waiting in this stage, and the one shown.
+  const choices = useMemo(() => statementChoices(statementList.data?.results ?? [], queue.data ?? []), [statementList.data, queue.data])
+  const statement = activeStatement(askedStatement, choices)
   const ledgers = useQuery(ledgersQuery(clientId))
   const accounts = useQuery(bankAccounts(clientId))
   const invalidate = useInvalidateClient(clientId)
@@ -104,6 +111,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
     const q = text.trim().toLowerCase()
     const qa = plainAmount(q)
     const kept = (queue.data ?? [])
+      .filter((r) => !statement || r.transaction.statement === statement)
       .filter((r) => !band || r.review_band === band)
       .filter(
         (r) =>
@@ -121,9 +129,9 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
         ? sign * a.transaction.value_date.localeCompare(b.transaction.value_date)
         : sign * (a.transaction.amount_paise - b.transaction.amount_paise),
     )
-  }, [queue.data, band, text, sort])
+  }, [queue.data, statement, band, text, sort])
   // A long queue shows a page of rows at a time; what the list is of (stage, filter, search, sort) decides when it goes back to page 1.
-  const pager = usePaged(rows, `${stage}|${band}|${text}|${sort?.key ?? ''}${sort?.dir ?? ''}`)
+  const pager = usePaged(rows, `${stage}|${statement}|${band}|${text}|${sort?.key ?? ''}${sort?.dir ?? ''}`)
   const toggleSort = (key: SortKey) =>
     setSort((s) => (s?.key !== key ? { key, dir: 'asc' } : s.dir === 'asc' ? { key, dir: 'desc' } : null))
   const index = Math.max(0, rows.findIndex((r) => r.id === selectedId))
@@ -151,7 +159,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
     if (pager.items.length && !pager.items.some((r) => r.id === selectedId)) setSelectedId(pager.items[0]!.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pager.page])
-  useEffect(() => setTicked(new Set()), [stage, band])
+  useEffect(() => setTicked(new Set()), [stage, band, statement])
   // A filter or a sort changes what is listed; a short fade says so without remounting the rows.
   useEffect(() => {
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
@@ -253,6 +261,15 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
 
       <p className="text-sm text-muted-foreground">{STAGES.find((s) => s.stage === stage)?.hint}</p>
 
+      {choices.length > 1 && (
+        <StatementPicker
+          choices={choices}
+          active={statement}
+          total={queue.data?.length ?? 0}
+          onChange={(next) => void navigate({ to: '.', search: ((prev: Record<string, unknown>) => ({ ...prev, statement: next })) as never, replace: true })}
+        />
+      )}
+
       <AssistantStrip clientId={clientId} />
 
       {proposed.length > 0 && (
@@ -263,7 +280,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
             {proposed.length > 3 ? '…' : ''}). Check each name.
           </span>
           <Button asChild size="sm" variant="outline">
-            <Link to="/clients/$clientId/masters" params={{ clientId }} search={{ tab: 'ledgers' }}>
+            <Link to="/clients/$clientId/ledgers" params={{ clientId }}>
               Look at them
             </Link>
           </Button>

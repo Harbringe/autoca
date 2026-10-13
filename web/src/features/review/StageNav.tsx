@@ -85,7 +85,7 @@ export function StageNav({ clientId, active }: { clientId: string; active: Revie
             }}
             to="/clients/$clientId/review"
             params={{ clientId }}
-            search={{ stage: s.stage }}
+            search={((prev: Record<string, unknown>) => ({ ...prev, stage: s.stage })) as never}
             className={cn('relative z-10 rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors duration-200', active === s.stage && (glides ? 'text-foreground' : 'bg-card text-foreground shadow-xs'))}
           >
             {s.label} <span className="num ml-1 text-xs">{count ?? '…'}</span>

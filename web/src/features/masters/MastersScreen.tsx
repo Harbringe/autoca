@@ -25,6 +25,7 @@ import { Switch } from '@/components/ui/switch'
 import { Checkbox, Select } from '@/components/ui/controls'
 import { Money } from '@/components/ca/Money'
 import { PagedList } from '@/components/ca/Pager'
+import { PartiesFound } from '@/features/statements/PartiesFound'
 import { DataTable } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Field } from '@/components/ui/field'
@@ -60,7 +61,7 @@ export type MasterTab = 'ledgers' | 'parties' | 'rules'
 export function MastersScreen({ clientId, tab, ledgerId }: { clientId: string; tab: MasterTab; ledgerId?: string }) {
   const partyList = useQuery({ ...partiesQuery(clientId), enabled: tab !== 'ledgers' })
   const ruleList = useQuery({ ...rulesQuery(clientId), enabled: tab !== 'ledgers' })
-  const tabs: { tab: MasterTab; label: string; count?: number }[] = [
+  const tabs: { tab: Exclude<MasterTab, 'ledgers'>; label: string; count?: number }[] = [
     { tab: 'parties', label: 'Parties', count: partyList.data?.length },
     { tab: 'rules', label: 'Rules', count: ruleList.data?.length },
   ]
@@ -672,6 +673,7 @@ function Parties({ clientId }: { clientId: string }) {
           <PartyEditor clientId={clientId} party={null} onClose={() => setAdding(false)} />
         </Card>
       </Reveal>
+      <PartiesFound clientId={clientId} />
       {list.data.length === 0 ? (
         <EmptyState title="No parties yet">Parties are the people and businesses the client pays or is paid by. They are added as you confirm payees in Review.</EmptyState>
       ) : shown.length === 0 ? (

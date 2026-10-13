@@ -91,6 +91,12 @@ class CheckSerializer(serializers.Serializer):
 
 class ReadItemSerializer(serializers.Serializer):
     description = serializers.CharField()
+    item_code = serializers.CharField(allow_blank=True, default="", help_text="The supplier's item or sauda code, as printed.")
+    pack_size = serializers.CharField(allow_blank=True, default="", help_text="For example 12 x 1 LTR, as printed.")
+    batch_no = serializers.CharField(allow_blank=True, default="")
+    boxes = serializers.CharField(allow_blank=True, default="", help_text="The boxes or cartons on the line, when printed. `quantity` is the count the rate is charged on.")
+    pieces = serializers.CharField(allow_blank=True, default="", help_text="The pieces (nos) on the line, when printed.")
+    weight = serializers.CharField(allow_blank=True, default="", help_text="The weight or volume on the line (kilos, litres), when printed.")
     hsn_sac = serializers.CharField(allow_blank=True)
     quantity = serializers.CharField(allow_blank=True)
     unit = serializers.CharField(allow_blank=True)

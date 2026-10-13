@@ -14552,6 +14552,30 @@ components:
       properties:
         description:
           type: string
+        item_code:
+          type: string
+          default: ''
+          description: The supplier's item or sauda code, as printed.
+        pack_size:
+          type: string
+          default: ''
+          description: For example 12 x 1 LTR, as printed.
+        batch_no:
+          type: string
+          default: ''
+        boxes:
+          type: string
+          default: ''
+          description: The boxes or cartons on the line, when printed. `quantity`
+            is the count the rate is charged on.
+        pieces:
+          type: string
+          default: ''
+          description: The pieces (nos) on the line, when printed.
+        weight:
+          type: string
+          default: ''
+          description: The weight or volume on the line (kilos, litres), when printed.
         hsn_sac:
           type: string
         quantity:

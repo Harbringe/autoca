@@ -87,8 +87,24 @@ const DETAIL_LABELS: [string, string][] = [
   ['vehicle_no', 'Vehicle'], ['irn', 'IRN'], ['ack_no', 'Ack no.'], ['ack_date', 'Ack date'], ['ship_to_name', 'Ship to'],
   ['ship_to_address', 'Ship-to address'], ['buyer_pan', 'Buyer PAN'], ['supplier_email', 'Seller email'], ['supplier_phone', 'Seller phone'],
   ['bank_name', 'Seller bank'], ['bank_account_no', 'Account no.'], ['bank_ifsc', 'IFSC'], ['reverse_charge', 'Reverse charge'],
-  ['amount_in_words', 'In words'], ['notes', 'Notes'],
+  ['amount_in_words', 'In words'], ['notes', 'Notes'], ['supplier_fssai', 'Seller FSSAI'], ['buyer_fssai', 'Buyer FSSAI'],
+  ['supplier_state_code', 'Seller state code'], ['buyer_state_code', 'Buyer state code'], ['broker', 'Broker'], ['transport_name', 'Transport'],
+  ['transport_mode', 'Transport mode'], ['lr_no', 'LR no.'], ['do_no', 'DO no.'], ['contact_person', 'Contact person'], ['rounding_note', 'Rounding'],
 ]
+
+/** What else a line prints besides its quantity and rate, as one short line: its code, the boxes, pieces and weight, its pack. */
+function lineFacts(i: ReadItem): string {
+  return [
+    i.item_code ? `Code ${i.item_code}` : '',
+    i.boxes ? `${i.boxes} ${Number(i.boxes) === 1 ? 'box' : 'boxes'}` : '',
+    i.pieces ? `${i.pieces} pcs` : '',
+    i.weight ? `${i.weight} kg or litres` : '',
+    i.pack_size ? `Pack ${i.pack_size}` : '',
+    i.batch_no ? `Batch ${i.batch_no}` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
 
 /** A fact as a person reads it: `tax_invoice` is "Tax invoice", `yes` is "Yes". */
 function factValue(key: string, value: string): string {
@@ -560,6 +576,7 @@ export function VoucherForm({
                           value={i.description}
                           onChange={(e) => editLine(n, { description: e.target.value })}
                         />
+                        {lineFacts(i) && <div className="mt-0.5 text-xs text-muted-foreground">{lineFacts(i)}</div>}
                         {i.remembered && i.read_description && i.read_description !== i.description && (
                           <div className="mt-0.5 text-xs text-muted-foreground" title={i.read_description}>
                             Remembered wording; the invoice printed “{i.read_description.slice(0, 48)}{i.read_description.length > 48 ? '…' : ''}”

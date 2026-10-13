@@ -6923,6 +6923,33 @@ export interface components {
         };
         ReadItem: {
             description: string;
+            /**
+             * @description The supplier's item or sauda code, as printed.
+             * @default
+             */
+            item_code: string;
+            /**
+             * @description For example 12 x 1 LTR, as printed.
+             * @default
+             */
+            pack_size: string;
+            /** @default  */
+            batch_no: string;
+            /**
+             * @description The boxes or cartons on the line, when printed. `quantity` is the count the rate is charged on.
+             * @default
+             */
+            boxes: string;
+            /**
+             * @description The pieces (nos) on the line, when printed.
+             * @default
+             */
+            pieces: string;
+            /**
+             * @description The weight or volume on the line (kilos, litres), when printed.
+             * @default
+             */
+            weight: string;
             hsn_sac: string;
             quantity: string;
             unit: string;

@@ -111,7 +111,7 @@ def test_the_rest_of_the_form_is_read_cleaned_and_bounded():
     assert reading.expense_hint == "Food and beverages"
     assert reading.items[0] == {"description": "Biryani", "hsn_sac": "9963", "quantity": "2", "unit": "plate", "rate_paise": 25050, "amount_paise": 50100, "gst_rate": 5.0,
                                 "discount_paise": None, "cgst_paise": None, "sgst_paise": None, "igst_paise": None, "total_paise": None,
-                                "gst_rate_derived": False}
+                                "gst_rate_derived": False, "item_code": "", "pack_size": "", "batch_no": "", "boxes": "", "pieces": "", "weight": ""}
     assert len(reading.items) == 2  # the blank and the non-object are dropped
     assert reading.items[1]["quantity"] == "" and reading.items[1]["gst_rate"] is None and reading.items[1]["rate_paise"] == 10000
 
@@ -221,3 +221,72 @@ def test_the_client_is_named_in_the_instruction_and_the_models_answer_is_kept():
     assert reading_from_fields({**GOOD, "client_role": "Seller"}).client_role == "seller"
     assert reading_from_fields({**GOOD, "client_role": "unclear"}).client_role == ""
     assert reading_from_fields({**GOOD, "client_role": "owner"}).client_role == ""
+
+
+# A packaged-goods invoice of the kind an oil or FMCG distributor sends (invented figures and names): boxes, pieces and a weight
+# on each line, tax collected at source, transport and licence details, a broker.
+GOODS = {
+    **GOOD,
+    "supplier_name": "Sample Oils Industries Ltd", "buyer_name": "Acme Traders", "invoice_no": "SI/12/2526/00001",
+    "invoice_date": "2025-04-19", "taxable": 39000, "cgst": 975, "sgst": 975, "igst": None, "cess": None,
+    "tcs": 40, "freight": None, "other_charges": None, "round_off": 0, "total": 40990,
+    "supplier_fssai": "10013022002426", "buyer_fssai": "11516048000025", "supplier_state_code": "27", "buyer_state_code": "27",
+    "broker": "Direct Marketing Consultants", "transport_name": "Sample Roadlines", "transport_mode": "By Road",
+    "lr_no": "LR-77", "do_no": "2526KVET/DO/LTR/00001", "vehicle_no": "MH22AA0001", "eway_bill_no": "211946745777",
+    "contact_person": "A. Clerk",
+    "items": [
+        {"description": "Sample Gold Soya Oil 200 ML PP (60 PACK)", "item_code": "00121", "pack_size": "60 x 200 ML", "hsn_sac": "15079010",
+         "quantity": 600, "unit": "nos", "boxes": 10, "pieces": 600, "weight": None, "rate": 25, "amount": 15000, "gst_rate": 5},
+        {"description": "Sample Sunflower Oil 1 LTR PP (12 PACK)", "item_code": "00121", "pack_size": "12 x 1 LTR", "hsn_sac": "15121910",
+         "quantity": "240", "unit": "nos", "boxes": "20", "pieces": "240", "weight": 240, "rate": 100, "amount": 24000, "gst_rate": 5},
+    ],
+}
+
+
+def test_a_goods_invoice_keeps_the_licence_transport_broker_and_the_line_counts_it_prints():
+    reading = reading_from_fields(GOODS)
+
+    assert reading.proved, [c.detail for c in reading.failed]
+    assert reading.details["supplier_fssai"] == "10013022002426" and reading.details["buyer_fssai"] == "11516048000025"
+    assert reading.details["broker"] == "Direct Marketing Consultants"
+    assert (reading.details["transport_name"], reading.details["transport_mode"], reading.details["lr_no"]) == ("Sample Roadlines", "By Road", "LR-77")
+    assert reading.details["do_no"] == "2526KVET/DO/LTR/00001" and reading.details["supplier_state_code"] == "27"
+    first, second = reading.items
+    # the quantity is the count the rate is charged on; the boxes and the weight sit beside it
+    assert (first["quantity"], first["boxes"], first["pieces"], first["weight"]) == ("600", "10", "600", "")
+    assert (second["boxes"], second["pieces"], second["weight"]) == ("20", "240", "240")
+    assert first["item_code"] == "00121" and first["pack_size"] == "60 x 200 ML"
+    assert reading.tcs_paise == 40_00
+
+
+def test_tax_collected_at_source_and_a_round_off_are_part_of_the_proof():
+    assert reading_from_fields({**GOODS, "total": 40990.4, "round_off": 0.4}).proved
+    wrong = reading_from_fields({**GOODS, "tcs": 0})
+    assert not wrong.proved and [c.name for c in wrong.failed] == ["arithmetic"]
+
+
+def test_the_prompt_and_the_schema_ask_for_the_new_fields():
+    for key in ("supplier_fssai", "broker", "transport_name", "lr_no", "do_no"):
+        assert key in invoice_vision.INVOICE_SCHEMA["properties"] and f'"{key}"' in invoice_vision.INSTRUCTION
+    item = invoice_vision.INVOICE_SCHEMA["properties"]["items"]["items"]
+    for key in ("item_code", "pack_size", "batch_no", "boxes", "pieces", "weight"):
+        assert key in item["properties"] and key in item["required"]
+    # which of several counts is the quantity is said outright
+    assert "whose product with the rate gives the line's amount" in invoice_vision.INSTRUCTION
+
+
+def test_a_paisa_or_two_of_printed_rounding_is_entered_as_round_off_and_said_so():
+    # the printed figures sum to 40,990.01 against a printed total of 40,990.00
+    reading = reading_from_fields({**GOODS, "taxable": 39000.01})
+
+    assert reading.proved
+    assert reading.round_off_paise == -1
+    assert "1 paisa" in reading.details["rounding_note"]
+    assert "rounding_note" not in reading_from_fields(GOODS).details
+
+
+def test_a_bigger_miss_is_still_a_misread_figure():
+    reading = reading_from_fields({**GOODS, "taxable": 39000.10})
+
+    assert not reading.proved and [c.name for c in reading.failed] == ["arithmetic"]
+

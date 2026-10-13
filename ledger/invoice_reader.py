@@ -234,12 +234,36 @@ def reading_from_fields(fields: dict, *, today: datetime.date | None = None) -> 
     reading.other_charges_paise = (money("freight") or 0) + (money("other_charges") or 0)
     reading.discount_paise = money("discount")
     reading.details = _details(fields, reject)
+    _absorb_paise_rounding(reading)
     reading.rejected = rejected
     role = str(fields.get("client_role") or "").strip().lower()
     reading.client_role = role if role in ("seller", "buyer") else ""
     reading.as_read = _as_read(fields)
     reading.checks = _checks(reading, today)
     return reading
+
+
+#: The most the printed figures may differ from the printed total, in paise, and be taken as the invoice's own rounding.
+PAISE_ROUNDING = 5
+
+
+def _absorb_paise_rounding(reading: Reading) -> None:
+    """Invoices print each figure rounded, so taxable plus tax can miss the printed total by a paisa or two.
+
+    A miss of up to PAISE_ROUNDING paise is entered as round-off (so the entry still balances to the printed total) and said so
+    in the reading's details. A larger miss is left alone, because that is a misread figure and must fail the arithmetic.
+    """
+    if reading.taxable_paise is None or reading.total_paise is None:
+        return
+    gap = (
+        reading.taxable_paise + reading.cgst_paise + reading.sgst_paise + reading.igst_paise + reading.cess_paise
+        + reading.round_off_paise + reading.tcs_paise + reading.other_charges_paise - reading.total_paise
+    )
+    if gap and abs(gap) <= PAISE_ROUNDING:
+        reading.round_off_paise -= gap
+        reading.details["rounding_note"] = (
+            f"The printed figures miss the total by {abs(gap)} paisa{'' if abs(gap) == 1 else 's'}; it is entered as round-off."
+        )
 
 
 PAYMENT_MODES = ("cash", "card", "upi", "bank_transfer", "cheque", "credit")
@@ -249,6 +273,8 @@ DOCUMENT_TYPES = ("tax_invoice", "bill_of_supply", "credit_note", "debit_note", 
 _DETAIL_TEXT = {
     "irn": 70, "ack_no": 30, "eway_bill_no": 20, "vehicle_no": 20, "po_number": 60, "ship_to_name": 120, "ship_to_address": 300,
     "supplier_email": 80, "supplier_phone": 30, "bank_name": 80, "bank_account_no": 30, "amount_in_words": 200, "notes": 300,
+    "supplier_fssai": 20, "buyer_fssai": 20, "supplier_state_code": 2, "buyer_state_code": 2, "broker": 80, "transport_name": 80,
+    "transport_mode": 20, "lr_no": 30, "do_no": 40, "contact_person": 80,
 }
 
 
@@ -368,6 +394,14 @@ def _quantity(value):
     return value
 
 
+def _count(value) -> str:
+    """A count printed on a line (boxes, pieces, weight) as text for the screen: a plain number, or empty when there is none."""
+    number = _quantity(value)
+    if isinstance(number, bool) or not isinstance(number, int | float) or not 0 <= number < 10**9:
+        return ""
+    return f"{number:g}"
+
+
 def _items(raw) -> list[dict]:
     """The lines a scan listed, cleaned: text bounded, amounts as paise, a rate only if it is a percentage."""
     if not isinstance(raw, list):
@@ -382,9 +416,16 @@ def _items(raw) -> list[dict]:
         quantity = _quantity(entry.get("quantity"))
         rate_pct = entry.get("gst_rate")
         sac = re.sub(r"\D", "", str(entry.get("hsn_sac") or ""))[:8]
+        counts = {key: _count(entry.get(key)) for key in ("boxes", "pieces", "weight")}
         out.append(
             {
                 "description": description,
+                "item_code": " ".join(str(entry.get("item_code") or "").split())[:30],
+                "pack_size": " ".join(str(entry.get("pack_size") or "").split())[:30],
+                "batch_no": " ".join(str(entry.get("batch_no") or "").split())[:30],
+                "boxes": counts["boxes"],
+                "pieces": counts["pieces"],
+                "weight": counts["weight"],
                 "hsn_sac": sac,
                 "quantity": str(quantity) if isinstance(quantity, int | float) and not isinstance(quantity, bool) and 0 <= quantity < 10**9 else "",
                 "unit": " ".join(str(entry.get("unit") or "").split())[:16],

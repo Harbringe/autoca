@@ -57,11 +57,21 @@ INSTRUCTION = (
     "and \"bank_ifsc\" (the supplier's bank details printed for payment), \"amount_in_words\" (the total in words, as "
     "printed), \"notes\" (terms, declaration or remarks, one line). \"reverse_charge\": true or false as the page says, null if it "
     "does not.\n"
+    "Goods invoices often print more, each copied as printed, empty string if absent: \"supplier_fssai\" and \"buyer_fssai\" (FSSAI "
+    "licence numbers), \"supplier_state_code\" and \"buyer_state_code\" (the two digits), \"broker\" (the broker or agent named; "
+    "empty if the page says \"Direct\" or names none), \"transport_name\" and \"transport_mode\" (for example \"By Road\"), "
+    "\"lr_no\" (lorry or transport receipt number), \"do_no\" (delivery order number) and \"contact_person\".\n"
     "\"items\": the invoice's lines, in order, each an object with \"description\", \"hsn_sac\" (digits, or empty), "
     "\"quantity\" (a number), \"unit\", \"rate\" (price per unit, a number), \"amount\" (the line's taxable amount, a "
     "number), \"gst_rate\" (the GST percentage on the line, a number, or null), and when printed per line \"discount\", "
     "\"cgst\", \"sgst\", \"igst\" (amounts) and \"total\" (the line total), each a number or null. An empty list if there are "
     "no lines.\n"
+    "When a line prints several counts (boxes or cartons, pieces or nos, kilos or litres), \"quantity\" is the one the rate is "
+    "charged on: the count whose product with the rate gives the line's amount. Put the others in \"boxes\", \"pieces\" and "
+    "\"weight\" (numbers, null if not printed), with \"unit\" naming the unit of \"quantity\". Also per line, as printed: "
+    "\"item_code\" (the supplier's item or sauda code), \"pack_size\" (for example \"12 x 1 LTR\") and \"batch_no\". A charge "
+    "printed as \"less\" (less freight, a deduction) is a negative number; loading, hamali, packing and handling go in "
+    "\"other_charges\", and a rate printed \"incl. of GST\" is copied as printed.\n"
     "Doubt: \"unsure\" is a list of the key names above that you could not read clearly or had to guess; an empty list if "
     "you are sure of everything."
 )
@@ -76,11 +86,12 @@ _TEXT_KEYS = (
     "invoice_no", "place_of_supply", "payment_terms", "invoice_date", "due_date", "payment_mode", "currency", "expense_category",
     "document_type", "irn", "ack_no", "ack_date", "eway_bill_no", "vehicle_no", "po_number", "po_date", "ship_to_name",
     "ship_to_address", "supplier_email", "supplier_phone", "buyer_pan", "bank_name", "bank_account_no", "bank_ifsc",
-    "amount_in_words", "notes",
+    "amount_in_words", "notes", "supplier_fssai", "buyer_fssai", "supplier_state_code", "buyer_state_code", "broker", "transport_name",
+    "transport_mode", "lr_no", "do_no", "contact_person",
 )
 _AMOUNT_KEYS = ("taxable", "cgst", "sgst", "igst", "cess", "round_off", "total", "discount", "tcs", "freight", "other_charges")
-_ITEM_TEXT = ("description", "hsn_sac", "unit")
-_ITEM_NUMBERS = ("quantity", "rate", "amount", "gst_rate", "discount", "cgst", "sgst", "igst", "total")
+_ITEM_TEXT = ("description", "hsn_sac", "unit", "item_code", "pack_size", "batch_no")
+_ITEM_NUMBERS = ("quantity", "rate", "amount", "gst_rate", "discount", "cgst", "sgst", "igst", "total", "boxes", "pieces", "weight")
 
 #: What a complete reply looks like: every key present, with its type. Sent to the provider so it can enforce the shape
 #: (``LLM_STRICT_SCHEMA``); the reader above still checks every value whatever the provider did.

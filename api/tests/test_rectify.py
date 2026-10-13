@@ -185,25 +185,25 @@ def test_item_wise_booking_takes_a_paisa_of_printed_rounding_on_the_largest_line
     lines = api.get(f"{V1}/journal-entries/{response.json()['entry']}/").json()["lines"]
     debits = {line["ledger_name"]: line["amount_paise"] for line in lines if line["ledger_name"].startswith("Purchases - ")}
     assert len(debits) == 2 and sum(debits.values()) == total
-    # the largest line took the paisa
-    assert debits["Purchases - Sample Oil 15 LTR TIN"] == total - 100
+    # the largest line took the paisa (names are tidied to title case)
+    largest = next(amount for name, amount in debits.items() if "15 Ltr" in name)
+    assert largest == total - 100
 
 
-def test_item_wise_ledger_names_are_long_enough_to_keep_two_products_apart(api, client_record, ravi, purchases):
+def test_a_long_product_name_keeps_its_whole_name_in_the_ledger(api, client_record, ravi, purchases):
     body = voucher(ravi, purchases, bill_date="2025-05-10")
     total = sum(h["amount_paise"] for h in body["heads"])
     long_name = "KIRTI GOLD SOYABEAN REFINED OIL 15 LTR (A+) TIN PATTI PACK SPECIAL EDITION"
     body["itemwise"] = True
-    body["items"] = [
-        {"description": long_name + " RED", "unit": "tin", "amount_paise": total // 2},
-        {"description": long_name + " BLUE", "unit": "tin", "amount_paise": total - total // 2},
-    ]
+    body["items"] = [{"description": long_name, "unit": "tin", "amount_paise": total}]
 
     response = api.post(f"{base(client_record)}/bills/", body, format="json")
 
     assert response.status_code == 201, response.content
     names = {line["ledger_name"] for line in api.get(f"{V1}/journal-entries/{response.json()['entry']}/").json()["lines"]}
-    assert len({n for n in names if n.startswith("Purchases - ")}) == 2
+    (named,) = [n for n in names if n.startswith("Purchases - ")]
+    # it used to be cut at 60 characters, which could land two products on one ledger
+    assert len(named) > 60 and named.lower().endswith("special edition")
 
 
 def test_each_invoice_line_is_given_a_ledger_of_its_own_before_anything_is_booked(api, client_record):

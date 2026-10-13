@@ -422,6 +422,20 @@
   animation: page-in 180ms ease-out both;
 }
 
+/* The line along the top of the bar while the assistant reads a client's rows: a soft light travelling along it. Only a transform moves. */
+@keyframes ribbon-sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(520%);
+  }
+}
+.ribbon-sweep {
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.7), transparent);
+  animation: ribbon-sweep 1.8s ease-in-out infinite;
+}
+
 /* Tables are read for their figures: static skeleton blocks, no shimmer. */
 .skeleton {
   background: var(--hover);

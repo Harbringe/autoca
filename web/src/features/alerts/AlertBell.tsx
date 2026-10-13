@@ -63,14 +63,18 @@ export function AlertBell({ clientId }: { clientId?: string }) {
         <Button
           variant="ghost"
           size="icon"
-          className="relative max-sm:size-11"
+          className={cn(
+            'relative size-10 rounded-md border border-border bg-card hover:bg-hover max-sm:size-11',
+            open && 'bg-hover',
+            count > 0 && 'text-heading',
+          )}
           aria-haspopup="dialog"
           aria-label={`Alerts${scope ? ` for ${scope}` : ''}: ${count ? `${count} need attention` : 'nothing needs attention'}`}
           title="Alerts"
         >
-          <Bell className="size-[18px]" aria-hidden />
+          <Bell className="size-[21px]" aria-hidden />
           {count > 0 && (
-            <span className="num absolute right-0.5 top-0.5 grid min-w-4 place-items-center rounded-full bg-destructive px-1 text-xs font-semibold leading-4 text-white">
+            <span className="num absolute -right-1.5 -top-1.5 grid h-[18px] min-w-[18px] place-items-center rounded-full bg-destructive px-1 text-[11px] font-bold leading-none text-white ring-2 ring-background">
               {badgeText(count)}
             </span>
           )}

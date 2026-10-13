@@ -6,14 +6,15 @@
 
 import { Listbox } from '@/components/ui/listbox'
 import { Link, Outlet, useNavigate, useRouterState, useSearch } from '@tanstack/react-router'
-import { Loader2, Menu, Search, X } from 'lucide-react'
+import { ChevronDown, ChevronRight, Loader2, Menu, Search, X } from 'lucide-react'
 import { Sparkles } from '@/components/ui/sparkles'
 import { Dialog as Drawer } from 'radix-ui'
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Kbd } from '@/components/ui/kbd'
 import { useSavingMark } from '@/api/pending'
-import { useAssistantShort } from '@/features/assistant/useAssistant'
+import { isProcessing } from '@/features/assistant/queue'
+import { useAssistantShort, useAssistantStatus } from '@/features/assistant/useAssistant'
 import { Brand } from '@/features/auth/AuthLayout'
 import { AlertBell, useAlertCount } from '@/features/alerts/AlertBell'
 import { clientScreenName } from '@/lib/clientNav'
@@ -27,6 +28,8 @@ import { usePageTitle } from '@/lib/title'
 import { useMediaQuery } from '@/lib/useMediaQuery'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
+import { ClientSwitcher } from './ClientSwitcher'
+import { useClientHeader } from './clientHeader'
 import { usePalette } from './CommandPalette'
 import { ClientNavList, PanelHeader, ClientPanel } from './ClientPanel'
 import { PhoneClientButton, ClientStrip } from './PhoneChrome'
@@ -67,7 +70,7 @@ const FY_MODULES: ModuleId[] = ['dashboard', 'clients', 'pipeline', 'bookkeeping
  * that client's remembered year, written to `?fy=`. Under All clients it is a firm-level year, also
  * carried in `?fy=`, and picking a client afterwards keeps it.
  */
-function FySelect({ className }: { className?: string }) {
+function FySelect({ className, crumb = false }: { className?: string; crumb?: boolean }) {
   const path = useRouterState({ select: (s) => s.location.pathname })
   const { clientId, fy: clientFy, setFy: setClientFy, dataYears } = useFy()
   const search = useSearch({ strict: false }) as { fy?: unknown }
@@ -82,14 +85,77 @@ function FySelect({ className }: { className?: string }) {
     : (next: number) => void navigate({ to: '.', search: ((prev: Record<string, unknown>) => ({ ...prev, fy: next })) as never, replace: true })
   // A year that has not begun has no books to show, so the list starts at the current one.
   const years = new Set([...Array.from({ length: 8 }, (_, i) => now - i), ...dataYears, fy])
-  return (
+  const list = (
     <Listbox
       aria-label="Financial year"
       value={String(fy)}
       onValueChange={(v) => setFy(Number(v))}
       options={[...years].sort((a, b) => b - a).map((year) => ({ value: String(year), label: `FY ${fyLabel(year)}` }))}
-      className={cn('h-9 w-auto min-w-32 shrink-0 gap-2 rounded-md px-2.5 text-sm font-medium', className)}
+      className={cn(
+        'h-9 w-auto shrink-0 gap-2 rounded-md px-2.5 text-sm font-medium',
+        crumb ? 'min-w-0 border-transparent bg-transparent text-muted-foreground shadow-none hover:bg-hover hover:text-foreground dark:border-transparent dark:bg-transparent dark:hover:bg-hover' : 'min-w-32',
+        className,
+      )}
     />
+  )
+  return crumb ? (
+    <>
+      <ChevronRight className="size-3.5 shrink-0 text-faint" aria-hidden />
+      {list}
+    </>
+  ) : (
+    list
+  )
+}
+
+/**
+ * Where you are, as a path: the firm, then the client (a button that opens the client switcher), then the financial year in view.
+ * Under All clients the middle step names the place instead. It replaces the loose year menu that used to sit alone in the bar.
+ */
+function ClientCrumb({ clientId }: { clientId: string }) {
+  const { name } = useClientHeader(clientId)
+  return (
+    <ClientSwitcher currentId={clientId}>
+      <button
+        type="button"
+        aria-label={`${name ?? 'Client'}. Switch client`}
+        className="inline-flex h-9 max-w-[16rem] items-center gap-1.5 rounded-md px-2 font-semibold text-heading hover:bg-hover"
+      >
+        <span className="truncate">{name ?? '…'}</span>
+        <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
+      </button>
+    </ClientSwitcher>
+  )
+}
+
+function ContextBar({ clientId, firmName }: { clientId?: string; firmName?: string }) {
+  return (
+    <nav aria-label="Where you are" className="flex min-w-0 shrink-0 items-center gap-1.5 text-sm">
+      {firmName && (
+        <>
+          <Link to={moduleHref('dashboard') as never} className="max-w-[11rem] truncate rounded-md px-1.5 py-1 text-muted-foreground hover:bg-hover hover:text-foreground max-xl:hidden">
+            {firmName}
+          </Link>
+          <ChevronRight className="size-3.5 shrink-0 text-faint max-xl:hidden" aria-hidden />
+        </>
+      )}
+      {clientId ? (
+        <ClientCrumb clientId={clientId} />
+      ) : (
+        <span className="inline-flex h-9 items-center px-2 font-semibold text-heading">All clients</span>
+      )}
+      <FySelect crumb />
+    </nav>
+  )
+}
+
+/** The thin line along the top of the bar while a client is open. It sweeps while the assistant is reading that client's rows. */
+function Ribbon({ clientId }: { clientId: string }) {
+  const working = isProcessing(useAssistantStatus(clientId))
+  return (
+    <div className="absolute inset-x-0 top-0 h-[3px] overflow-hidden bg-brand" aria-hidden>
+      {working && <span className="ribbon-sweep absolute inset-y-0 left-0 w-1/5" />}
+    </div>
   )
 }
 
@@ -138,6 +204,9 @@ function AssistantIndicator() {
   const path = useRouterState({ select: (s) => s.location.pathname })
   const clientId = clientIdOf(path)
   const text = useAssistantShort(clientId)
+  const status = useAssistantStatus(clientId)
+  // Working or waiting is quiet (the rows show the work). A used allowance or an outage keeps its words, in amber, because a person should know.
+  const needsWords = status.reason === 'daily_limit' || status.reason === 'provider_down'
   return (
     <div role="status" aria-live="polite" className="max-md:hidden">
       {text && clientId && (
@@ -146,11 +215,20 @@ function AssistantIndicator() {
           params={{ clientId }}
           search={{ stage: 'all' }}
           title={text}
-          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium text-muted-foreground hover:bg-hover"
+          className={cn(
+            'inline-flex h-8 items-center gap-1.5 rounded-md border px-2.5 text-xs font-medium hover:bg-hover',
+            needsWords ? 'border-accent-edge bg-accent text-accent-foreground' : 'border-border bg-card text-muted-foreground',
+          )}
         >
-          <Sparkles working className="size-4 text-accent-foreground" />
-          Assistant
-          <span className="sr-only">: {text}</span>
+          <Sparkles working={status.state === 'working'} className="size-4 text-accent-foreground" />
+          {needsWords ? (
+            text
+          ) : (
+            <>
+              Assistant
+              <span className="sr-only">: {text}</span>
+            </>
+          )}
         </Link>
       )}
     </div>
@@ -347,15 +425,10 @@ export function Shell() {
       <div className="flex min-w-0 flex-1 flex-col">
         <OfflineStrip />
         <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background px-2 sm:px-3 md:gap-3 lg:px-6">
-          {clientId && <div className="absolute inset-x-0 top-0 h-[3px] bg-brand" aria-hidden />}
+          {clientId && <Ribbon clientId={clientId} />}
           {desktop ? (
             <>
-              {!clientId && (
-                <span className="hidden shrink-0 truncate text-[13px] font-medium text-muted-foreground xl:block">
-                  {firmName ? `${firmName} · All clients` : 'All clients'}
-                </span>
-              )}
-              <FySelect />
+              <ContextBar clientId={clientId} firmName={firmName} />
               <PaletteTrigger />
               <div className="ml-auto flex shrink-0 items-center gap-3">
                 <SavingMark />

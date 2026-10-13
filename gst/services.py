@@ -68,9 +68,28 @@ def add_registration(
         registration_type=registration_type,
     )
     reg.set_gstin(gstin)
-    if GstRegistration.objects.filter(client=client, gstin_hash=reg.gstin_hash).exists():
-        raise GstError(f"{gstin} is already registered for {client.name}.")
+    existing = GstRegistration.objects.filter(client=client, gstin_hash=reg.gstin_hash).first()
+    if existing is not None:
+        if existing.is_active:
+            raise GstError(f"{gstin} is already registered for {client.name}.")
+        # Removed earlier: adding it again brings it back with its history, rather than meeting its own unique row.
+        existing.is_active = True
+        existing.registration_type = registration_type
+        existing.save(update_fields=["is_active", "registration_type"])
+        return existing
     reg.save()
+    return reg
+
+
+def remove_registration(reg: GstRegistration) -> GstRegistration:
+    """Take a GSTIN off the client's list. It is hidden, not erased: its reconciliations stay on file and come back if it is added again.
+
+    Refused when a return for it has been signed off, because that is a finished piece of work the client's records rely on.
+    """
+    if ReconRun.objects.filter(registration=reg, status=RunStatus.SIGNED_OFF).exists():
+        raise GstError("This GSTIN has a signed-off reconciliation, so it is kept. Reopen or leave it; it cannot be removed.")
+    reg.is_active = False
+    reg.save(update_fields=["is_active"])
     return reg
 
 

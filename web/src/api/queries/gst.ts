@@ -51,6 +51,14 @@ export function useGstActions(clientId: string) {
         raw.post<GstRegistration>(`${base(clientId)}/registrations/`, body),
       onSuccess: () => void queryClient.invalidateQueries({ queryKey: gstKeys.registrations(clientId) }),
     }),
+    /** Take a GSTIN off the list. It is hidden, not erased: its runs come back if it is added again. */
+    removeRegistration: useMutation({
+      mutationFn: (id: string) => raw.delete(`${base(clientId)}/registrations/${id}/`),
+      onSuccess: () => {
+        void queryClient.invalidateQueries({ queryKey: gstKeys.registrations(clientId) })
+        void queryClient.invalidateQueries({ queryKey: gstKeys.runs(clientId) })
+      },
+    }),
     newRun: useMutation({
       mutationFn: (body: { registration: string; period: string }) => raw.post<GstReport>(`${base(clientId)}/runs/`, body),
       onSuccess: keep,

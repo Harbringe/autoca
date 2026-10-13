@@ -181,3 +181,40 @@ def test_the_schema_documents_the_gst_and_assistant_responses():
         assert ok["content"], (path, method)
     run_body = paths[f"{base}runs/"]["post"]["requestBody"]["content"]["application/json"]["schema"]["$ref"]
     assert run_body.endswith("RunCreateRequest")
+
+
+def test_a_gstin_can_be_removed_and_added_back_with_its_runs(api, client_record):
+    base, run = _start(api, client_record)
+    registrations = f"{base}/registrations/"
+    reg_id = api.get(registrations).json()["results"][0]["id"]
+
+    assert api.delete(f"{registrations}{reg_id}/").status_code == 204
+    assert api.get(registrations).json()["count"] == 0
+    # its reconciliations are hidden with it
+    assert api.get(f"{base}/runs/").json() == []
+
+    # the same GSTIN added again is the same registration, history and all
+    again = api.post(registrations, {"gstin": ME}, format="json")
+    assert again.status_code == 201 and again.json()["id"] == reg_id
+    assert [r["id"] for r in api.get(f"{base}/runs/").json()] == [run]
+
+
+def test_a_gstin_with_a_signed_off_return_cannot_be_removed(api, client_record):
+    from gst.models import ReconRun, RunStatus
+
+    base, run = _start(api, client_record)
+    reg_id = api.get(f"{base}/registrations/").json()["results"][0]["id"]
+    ReconRun.objects.filter(pk=run).update(status=RunStatus.SIGNED_OFF)
+
+    refused = api.delete(f"{base}/registrations/{reg_id}/")
+    assert refused.status_code == 409 and refused.json()["code"] == "gst_rule"
+    assert api.get(f"{base}/registrations/").json()["count"] == 1
+
+
+def test_removing_a_gstin_needs_the_permission_to_prepare_and_a_gstin_that_exists(firm, client_record, api):
+    base, _ = _start(api, client_record)
+    reg_id = api.get(f"{base}/registrations/").json()["results"][0]["id"]
+    reader = sign_in(member(firm, Role.READ_ONLY, email="viewer2@example.com").user)
+    assert reader.delete(f"{base}/registrations/{reg_id}/").status_code == 403
+    assert api.get(f"{base}/registrations/").json()["count"] == 1
+    assert api.delete(f"{base}/registrations/00000000-0000-4000-8000-000000000000/").status_code == 404

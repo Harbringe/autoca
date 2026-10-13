@@ -295,7 +295,7 @@ class RegistrationViewSet(viewsets.GenericViewSet):
     serializer_class = RegistrationSerializer
     permission_classes = [HasFirmPermission]
     pagination_class = DefaultPagination
-    required_permission = {"GET": "gst.view", "POST": "gst.prepare"}
+    required_permission = {"GET": "gst.view", "POST": "gst.prepare", "DELETE": "gst.prepare"}
 
     @extend_schema(
         summary="List the client's GSTINs",
@@ -326,6 +326,22 @@ class RegistrationViewSet(viewsets.GenericViewSet):
         )
         return Response(_registration_data(reg), status=status.HTTP_201_CREATED)
 
+    @extend_schema(
+        summary="Remove a GSTIN from the client",
+        description=(
+            "The GSTIN is hidden, not erased: its reconciliations stay on file and return if the same GSTIN is added again. "
+            "Refused (409) while a reconciliation for it is signed off. Requires `gst.prepare`." + _ERRORS + _RULE + "."
+        ),
+        responses={204: None, 403: GstErrorSerializer, 404: GstErrorSerializer, 409: GstErrorSerializer},
+    )
+    def destroy(self, request, client_id=None, pk=None):
+        client = get_visible_client(request, client_id)
+        reg = GstRegistration.objects.filter(client=client, is_active=True, pk=pk).first()
+        if reg is None:
+            raise NotFound("No such GST registration for this client.")
+        services.remove_registration(reg)
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
 
 @extend_schema(tags=["gst"])
 class RunViewSet(viewsets.GenericViewSet):
@@ -350,7 +366,8 @@ class RunViewSet(viewsets.GenericViewSet):
     )
     def list(self, request, client_id=None):
         client = get_visible_client(request, client_id)
-        runs = ReconRun.objects.filter(client=client).select_related("registration")
+        # The runs of a GSTIN that has been removed are not listed; they come back with it.
+        runs = ReconRun.objects.filter(client=client, registration__is_active=True).select_related("registration")
         if reg := request.query_params.get("registration"):
             runs = runs.filter(registration_id=reg)
         return Response(

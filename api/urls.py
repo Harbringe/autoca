@@ -245,6 +245,11 @@ urlpatterns = [
         name="gst-registrations",
     ),
     path(
+        "clients/<uuid:client_id>/gst/registrations/<uuid:pk>/",
+        RegistrationViewSet.as_view({"delete": "destroy"}),
+        name="gst-registration",
+    ),
+    path(
         "clients/<uuid:client_id>/gst/runs/",
         RunViewSet.as_view({"get": "list", "post": "create"}),
         name="gst-runs",

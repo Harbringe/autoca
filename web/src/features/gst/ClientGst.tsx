@@ -2,11 +2,12 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { Plus } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { toast } from '@/lib/toast'
 import { isApiError, messageOf } from '@/api/errors'
 import { gstRegistrations, gstRuns, useGstActions } from '@/api/queries/gst'
+import { Confirm } from '@/components/ca/Confirm'
 import type { GstRegistration, GstRun } from '@/api/types'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
@@ -40,6 +41,8 @@ function RunsAndRegistrations({ clientId }: { clientId: string }) {
   const runs = useQuery(gstRuns(clientId))
   const [adding, setAdding] = useState(false)
   const [starting, setStarting] = useState(false)
+  const [removing, setRemoving] = useState<GstRegistration | null>(null)
+  const { removeRegistration } = useGstActions(clientId)
   const canPrepare = can('gst.prepare')
   const regs = registrations.data ?? []
 
@@ -49,6 +52,17 @@ function RunsAndRegistrations({ clientId }: { clientId: string }) {
     { key: 'gstin', header: 'GSTIN', cell: (r) => <span className="num font-medium text-heading">{r.gstin}</span> },
     { key: 'state', header: 'State code', priority: 2, cell: (r) => <span className="num">{r.state_code}</span> },
     { key: 'type', header: 'Type', cell: (r) => TYPE_LABEL[r.registration_type] },
+    {
+      key: 'remove',
+      header: <span className="sr-only">Remove</span>,
+      align: 'right',
+      cell: (r) =>
+        canPrepare ? (
+          <Button variant="ghost" size="sm" aria-label={`Remove GSTIN ${r.gstin}`} onClick={() => setRemoving(r)}>
+            <Trash2 /> Remove
+          </Button>
+        ) : null,
+    },
   ]
   const runColumns: Column<GstRun>[] = [
     { key: 'period', header: 'Return month', sortValue: (r) => r.period_start, cell: (r) => <span className="font-medium text-heading">{periodName(r.period_start)}</span> },
@@ -117,6 +131,22 @@ function RunsAndRegistrations({ clientId }: { clientId: string }) {
           />
         )}
       </section>
+
+      <Confirm
+        open={!!removing}
+        onOpenChange={(next) => !next && setRemoving(null)}
+        title={removing ? `Remove GSTIN ${removing.gstin}?` : ''}
+        confirmLabel="Remove GSTIN"
+        destructive
+        onConfirm={async () => {
+          if (!removing) return
+          await removeRegistration.mutateAsync(removing.id)
+          toast.success(`GSTIN ${removing.gstin} removed`, { description: 'Its reconciliations are kept and come back if you add it again.' })
+        }}
+      >
+        <p>It leaves this client’s list, and its reconciliations are hidden with it.</p>
+        <p>Nothing is erased: add the same GSTIN again and they return. A GSTIN with a signed-off reconciliation cannot be removed.</p>
+      </Confirm>
 
       {regs.length > 0 && (
         <section aria-labelledby="gst-runs" className="grid gap-3">

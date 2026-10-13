@@ -848,6 +848,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/gst/registrations/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Remove a GSTIN from the client
+         * @description The GSTIN is hidden, not erased: its reconciliations stay on file and return if the same GSTIN is added again. Refused (409) while a reconciliation for it is signed off. Requires `gst.prepare`.
+         *
+         *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched).
+         */
+        delete: operations["clients_gst_registrations_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/gst/runs/": {
         parameters: {
             query?: never;
@@ -10018,6 +10040,51 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["GstError"];
                 };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+        };
+    };
+    clients_gst_registrations_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             403: {
                 headers: {

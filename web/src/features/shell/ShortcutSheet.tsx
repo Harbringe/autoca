@@ -1,5 +1,5 @@
 import { Search } from 'lucide-react'
-import { Fragment, useEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Kbd } from '@/components/ui/kbd'
 import { comboKeys, comboOf, useHotkeyList, type Hotkey } from '@/lib/hotkeys'
@@ -64,28 +64,23 @@ export function ShortcutList() {
 
 /**
  * The keyboard guide: a search over every key, the headings down the left with how many each holds (the screen you are on marked
- * "here"), and the keys of the one chosen on the right. Press a shortcut with it open and its row lights up, without doing what it does:
- * the registry leaves keys pressed inside a dialog alone.
+ * "here"), and the keys of the one chosen on the right. Press a shortcut and its row lights up, without doing what it does. In the dialog
+ * the registry already leaves keys pressed inside a dialog alone; shown on a page (`inline`) the guide holds the key itself, so trying one
+ * does not also run it.
+ *
+ * It returns two blocks (the search, then the lists) so the dialog can lay them out in its own grid; `inline` wraps them for a page.
  */
-export function ShortcutSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export function ShortcutGuide({ inline = false, searchRef }: { inline?: boolean; searchRef?: RefObject<HTMLInputElement | null> }) {
   const hotkeys = useHotkeyList()
   const categories = useMemo(() => shortcutCategories(hotkeys), [hotkeys])
   const [query, setQuery] = useState('')
   const [chosen, setChosen] = useState<string | null>(null)
   const [lit, setLit] = useState<Hotkey | null>(null)
-  const search = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    if (open) {
-      setQuery('')
-      setChosen(null)
-      setLit(null)
-    }
-  }, [open])
+  const own = useRef<HTMLInputElement>(null)
+  const search = searchRef ?? own
 
   // Light the row of the key just pressed. A two-key sequence ("g l") lights on its second key.
   useEffect(() => {
-    if (!open) return
     let lastKey: { combo: string; at: number } | null = null
     let timer: number | undefined
     const onKey = (e: KeyboardEvent) => {
@@ -105,6 +100,8 @@ export function ShortcutSheet({ open, onOpenChange }: { open: boolean; onOpenCha
       lastKey = { combo, at: Date.now() }
       if (!hit) return
       e.preventDefault()
+      // On a page the key would otherwise do its job (go to another screen, say) as well as light its row.
+      if (inline) e.stopPropagation()
       setQuery('')
       setChosen(categories.find((c) => c.items.includes(hit))?.id ?? null)
       setLit(hit)
@@ -116,7 +113,7 @@ export function ShortcutSheet({ open, onOpenChange }: { open: boolean; onOpenCha
       window.removeEventListener('keydown', onKey, true)
       window.clearTimeout(timer)
     }
-  }, [open, hotkeys, categories])
+  }, [hotkeys, categories, inline, search])
 
   const searching = query.trim() !== ''
   const found = searchCategories(categories, query)
@@ -124,23 +121,11 @@ export function ShortcutSheet({ open, onOpenChange }: { open: boolean; onOpenCha
   const shown = searching ? found : current ? [current] : []
   const total = found.reduce((n, c) => n + c.items.length, 0)
 
-  return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent
-        className="h-[min(44rem,calc(100svh-2rem))] max-w-4xl grid-rows-[auto_auto_minmax(0,1fr)] gap-4 overflow-hidden p-0 [&>*]:px-6 [&>*:first-child]:pt-6"
-        aria-describedby="shortcut-help"
-        onOpenAutoFocus={(e) => {
-          // The search is where a person starts typing; "/" brings it back.
-          e.preventDefault()
-          search.current?.focus()
-        }}
-      >
-        <DialogHeader>
-          <DialogTitle className="text-xl">Keyboard shortcuts</DialogTitle>
-          <DialogDescription id="shortcut-help">Press any shortcut to see its row light up.</DialogDescription>
-        </DialogHeader>
+  const blocks = (
+    <>
+      <div>
         <div className="relative">
-          <Search className="pointer-events-none absolute left-9 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
           <input
             ref={search}
             type="search"
@@ -156,58 +141,80 @@ export function ShortcutSheet({ open, onOpenChange }: { open: boolean; onOpenCha
             }}
             className="h-11 w-full rounded-lg border border-input bg-background pl-9 pr-12 text-sm outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40"
           />
-          <Kbd aria-hidden className="absolute right-9 top-1/2 -translate-y-1/2">
+          <Kbd aria-hidden className="absolute right-3 top-1/2 -translate-y-1/2">
             /
           </Kbd>
         </div>
-        <div className="grid min-h-0 grid-cols-[13rem_minmax(0,1fr)] border-t max-sm:grid-cols-1 max-sm:grid-rows-[auto_minmax(0,1fr)]">
-          <nav aria-label="Shortcut headings" className="overflow-y-auto border-r py-3 pr-3 max-sm:flex max-sm:gap-1 max-sm:overflow-x-auto max-sm:border-b max-sm:border-r-0 max-sm:py-2 max-sm:pr-0">
-            {categories.map((c) => {
-              const count = searching ? (found.find((f) => f.id === c.id)?.items.length ?? 0) : c.items.length
-              const on = !searching && c.id === current?.id
-              return (
-                <button
-                  key={c.id}
-                  type="button"
-                  aria-current={on ? 'true' : undefined}
-                  disabled={searching && count === 0}
-                  onClick={() => {
-                    setQuery('')
-                    setChosen(c.id)
-                  }}
-                  className={cn(
-                    'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-[15px] outline-none transition-colors duration-150 hover:bg-hover focus-visible:bg-hover max-sm:w-auto max-sm:shrink-0',
-                    on && 'font-semibold',
-                    searching && count === 0 && 'opacity-40',
-                  )}
-                >
-                  <span>
-                    {c.label}
-                    {c.here && <span className="ml-2 align-middle text-[10px] font-bold uppercase tracking-wide text-primary">here</span>}
-                  </span>
-                  <span className="num text-xs text-muted-foreground">{count}</span>
-                </button>
-              )
-            })}
-          </nav>
-          <div className="min-h-0 overflow-y-auto py-3 pl-4 max-sm:pl-0" aria-live="polite">
-            {searching && (
-              <p className="px-3 pb-2 text-xs text-muted-foreground">
-                {total === 0 ? 'No shortcut matches that.' : `${total} ${total === 1 ? 'shortcut matches' : 'shortcuts match'}`}
-              </p>
-            )}
-            {shown.map((c) => (
-              <section key={c.id} aria-label={c.label} className="mb-3">
-                {searching && <h3 className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{c.label}</h3>}
-                <ul className="grid gap-0.5">
-                  {c.items.map((hotkey) => (
-                    <Row key={hotkey.combo + hotkey.description} hotkey={hotkey} lit={lit === hotkey} />
-                  ))}
-                </ul>
-              </section>
-            ))}
-          </div>
+      </div>
+      <div className={cn('grid min-h-0 grid-cols-[13rem_minmax(0,1fr)] border-t max-sm:grid-cols-1 max-sm:grid-rows-[auto_minmax(0,1fr)]', inline && 'h-[34rem] rounded-xl border bg-card px-4')}>
+        <nav aria-label="Shortcut headings" className="overflow-y-auto border-r py-3 pr-3 max-sm:flex max-sm:gap-1 max-sm:overflow-x-auto max-sm:border-b max-sm:border-r-0 max-sm:py-2 max-sm:pr-0">
+          {categories.map((c) => {
+            const count = searching ? (found.find((f) => f.id === c.id)?.items.length ?? 0) : c.items.length
+            const on = !searching && c.id === current?.id
+            return (
+              <button
+                key={c.id}
+                type="button"
+                aria-current={on ? 'true' : undefined}
+                disabled={searching && count === 0}
+                onClick={() => {
+                  setQuery('')
+                  setChosen(c.id)
+                }}
+                className={cn(
+                  'flex w-full items-center justify-between gap-2 rounded-lg px-3 py-2 text-left text-[15px] outline-none transition-colors duration-150 hover:bg-hover focus-visible:bg-hover max-sm:w-auto max-sm:shrink-0',
+                  on && 'font-semibold',
+                  searching && count === 0 && 'opacity-40',
+                )}
+              >
+                <span>
+                  {c.label}
+                  {c.here && <span className="ml-2 align-middle text-[10px] font-bold uppercase tracking-wide text-primary">here</span>}
+                </span>
+                <span className="num text-xs text-muted-foreground">{count}</span>
+              </button>
+            )
+          })}
+        </nav>
+        <div className="min-h-0 overflow-y-auto py-3 pl-4 max-sm:pl-0" aria-live="polite">
+          {searching && (
+            <p className="px-3 pb-2 text-xs text-muted-foreground">{total === 0 ? 'No shortcut matches that.' : `${total} ${total === 1 ? 'shortcut matches' : 'shortcuts match'}`}</p>
+          )}
+          {shown.map((c) => (
+            <section key={c.id} aria-label={c.label} className="mb-3">
+              {searching && <h3 className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{c.label}</h3>}
+              <ul className="grid gap-0.5">
+                {c.items.map((hotkey) => (
+                  <Row key={hotkey.combo + hotkey.description} hotkey={hotkey} lit={lit === hotkey} />
+                ))}
+              </ul>
+            </section>
+          ))}
         </div>
+      </div>
+    </>
+  )
+  return inline ? <div className="grid gap-4">{blocks}</div> : blocks
+}
+
+export function ShortcutSheet({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const search = useRef<HTMLInputElement>(null)
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent
+        className="h-[min(44rem,calc(100svh-2rem))] max-w-4xl grid-rows-[auto_auto_minmax(0,1fr)] gap-4 overflow-hidden p-0 [&>*]:px-6 [&>*:first-child]:pt-6"
+        aria-describedby="shortcut-help"
+        onOpenAutoFocus={(e) => {
+          // The search is where a person starts typing; "/" brings it back.
+          e.preventDefault()
+          search.current?.focus()
+        }}
+      >
+        <DialogHeader>
+          <DialogTitle className="text-xl">Keyboard shortcuts</DialogTitle>
+          <DialogDescription id="shortcut-help">Press any shortcut to see its row light up.</DialogDescription>
+        </DialogHeader>
+        <ShortcutGuide searchRef={search} />
       </DialogContent>
     </Dialog>
   )

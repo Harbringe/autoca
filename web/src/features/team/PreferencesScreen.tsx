@@ -7,7 +7,7 @@ import { type ReactNode, useState } from 'react'
 import { Checkbox } from '@/components/ui/controls'
 import { Button } from '@/components/ui/button'
 import { GlideChips } from '@/components/ui/glide-chips'
-import { Kbd } from '@/components/ui/kbd'
+import { ShortcutGuide } from '@/features/shell/ShortcutSheet'
 import { usePreferences, type Density, type Theme } from '@/lib/preferences'
 import { SIZE_CHOICES, pageSizeOf, setAllPageSize, setSectionPageSize, usePageSizeChoices, type PageSection } from '@/lib/pageSizes'
 import { setSearchAllStatements, useSearchAllStatements } from '@/lib/reviewPrefs'
@@ -389,22 +389,13 @@ function Lists() {
 }
 
 function Keyboard() {
-  const open = () => document.body.dispatchEvent(new KeyboardEvent('keydown', { key: '?', bubbles: true }))
   return (
     <>
       <Heading>Keyboard</Heading>
-      <div className="flex max-w-xl items-center gap-4 rounded-xl border bg-card p-4">
-        <Kbd aria-hidden className="size-8 rounded-lg border-b-[3px] text-sm font-bold text-foreground">
-          ?
-        </Kbd>
-        <div className="flex-1">
-          <b className="text-sm">Keyboard shortcuts</b>
-          <p className="text-[13px] text-muted-foreground">Press ? anywhere, or use the key button in the top bar, for the keys on the screen you are on.</p>
-        </div>
-        <Button variant="outline" onClick={open}>
-          Open the key guide
-        </Button>
-      </div>
+      <p className="-mt-2 mb-4 text-[13px] text-muted-foreground">
+        The keys for each screen, here to look through. Press a shortcut and its row lights up; on this page it does not run, so you can try them safely. Press ? anywhere else for the same guide.
+      </p>
+      <ShortcutGuide inline />
     </>
   )
 }

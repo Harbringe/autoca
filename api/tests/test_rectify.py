@@ -223,6 +223,19 @@ def test_each_invoice_line_is_given_a_ledger_of_its_own_before_anything_is_booke
         assert not JournalEntry.objects.filter(client=client_record).exists()
 
 
+def test_a_read_only_member_cannot_open_ledgers_for_invoice_lines(firm, api, client_record):
+    """Opening a product's ledger is part of booking, so it needs the same permission as booking (journal.approve)."""
+    from api.tests.conftest import member, sign_in
+    from core.models import Role
+
+    reader = sign_in(member(firm, Role.READ_ONLY, email="reader-items@example.test").user)
+    url = f"{base(client_record)}/bills/item-ledgers/"
+
+    assert reader.post(url, {"kind": "PURCHASE", "items": [{"description": "Sample Oil"}]}, format="json").status_code == 403
+    with firm_context(client_record.firm_id):
+        assert not LedgerAccount.objects.filter(client=client_record, name__startswith="Purchases - ").exists()
+
+
 def test_item_wise_booking_that_does_not_add_up_is_refused_and_books_nothing(api, client_record, ravi, purchases):
     body = voucher(ravi, purchases, bill_date="2025-05-10")
     body["itemwise"] = True

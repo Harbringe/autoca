@@ -83,14 +83,14 @@ function DensityPicture({ rows, gap }: { rows: number; gap: number }) {
 
 type SampleRow = [date: string, narration: string, amount: string, statement: string]
 const SAMPLE_ROWS: SampleRow[] = [
-  ['14-05-2025', 'AVANISH KHIYANI', '₹60,00,000.00', 'Apr–Jun 2025'],
-  ['14-05-2025', 'Cash Withdrawal At Br : NANDED', '₹2,00,000.00', 'Apr–Jun 2025'],
+  ['14-05-2025', 'SAMPLE CUSTOMER ONE', '₹60,00,000.00', 'Apr–Jun 2025'],
+  ['14-05-2025', 'Cash Withdrawal At Br : SAMPLETOWN', '₹2,00,000.00', 'Apr–Jun 2025'],
   ['12-04-2025', 'SMS CHRG FOR:01-01-2025to31-03-2025', '₹2.65', 'Jan–Mar 2025'],
-  ['22-09-2025', 'Paid To : TO AVANISH KHIYANIWAMY LAT', '₹50,00,000.00', 'Jul–Sep 2025'],
+  ['22-09-2025', 'Paid To : TO SAMPLE TRADERS PVT LTD', '₹50,00,000.00', 'Jul–Sep 2025'],
   ['29-08-2025', 'REJECT:4:REQUIRED INFORMATIO NOT LEGIBLE', '₹26,00,000.00', 'Jul–Sep 2025'],
   ['12-07-2025', 'SMS CHRG FOR:01-04-2025to30-06-2025', '₹1.47', 'Jul–Sep 2025'],
   ['03-06-2025', 'UPI/ZERODHA BROKING/COLLECTION', '₹1,10,000.00', 'Apr–Jun 2025'],
-  ['21-05-2025', 'NEFT-RAJVEER TUSHAR PATIL', '₹30,000.00', 'Apr–Jun 2025'],
+  ['21-05-2025', 'NEFT-SAMPLE SUPPLIER TWO', '₹30,000.00', 'Apr–Jun 2025'],
 ]
 
 function SampleRows({ rows, density, showStatement }: { rows: SampleRow[]; density: Density; showStatement?: boolean }) {

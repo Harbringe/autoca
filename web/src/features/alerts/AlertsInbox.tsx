@@ -214,8 +214,8 @@ export function AlertsInbox({ alerts, filter, onFilter }: { alerts: Alert[]; fil
                           onClick={() => setSelectedKey(key)}
                           style={{ animationDelay: `${Math.min(i, 10) * 28}ms` }}
                           className={cn(
-                            // What is selected is drawn by the global rule for a selected option (tint and bar); the row only eases into it.
-                            'rise relative flex cursor-pointer items-center gap-3 border-b border-border-strong px-6 py-4 outline-none transition-[background-color,box-shadow] duration-200 hover:bg-hover focus-visible:bg-hover',
+                            // What is selected is drawn by the global rule for a selected option (a tint); the row only eases into it.
+                            'rise relative flex cursor-pointer items-center gap-3 border-b border-border-strong px-6 py-4 outline-none transition-colors duration-200 hover:bg-hover focus-visible:bg-hover',
                           )}
                         >
                           <span className="min-w-0 flex-1">

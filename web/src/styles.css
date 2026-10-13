@@ -142,7 +142,6 @@
   --color-hover: var(--hover);
   /* What is chosen, as against what the pointer is over (hover): a tint of the brand colour, clearly more than hover in either theme. */
   --color-selected: color-mix(in srgb, var(--primary) 18%, transparent);
-  --color-selected-edge: var(--primary);
   --color-border: var(--border);
   --color-border-strong: var(--border-strong);
   --color-input: var(--input);
@@ -250,8 +249,8 @@
 }
 
 /*
- * The chosen one in any list, menu or switcher looks the same everywhere: a brand-coloured tint, a bar at the left edge and the heading
- * colour. It is told apart from hover (a faint grey) on purpose, so a person can see at a glance which one is on. Written once, here, on the
+ * The chosen one in any list, menu or switcher looks the same everywhere: a brand-coloured tint and the heading colour, nothing more.
+ * It is told apart from hover (a faint grey) on purpose, so a person can see at a glance which one is on. Written once, here, on the
  * roles and attributes the components already set, so a new list gets it without asking.
  */
 [role='option'][aria-selected='true'],
@@ -260,7 +259,6 @@
 [cmdk-item][data-selected='true'],
 [aria-current='true'] {
   background-color: var(--color-selected);
-  box-shadow: inset 3px 0 0 0 var(--color-selected-edge);
   color: var(--heading);
 }
 

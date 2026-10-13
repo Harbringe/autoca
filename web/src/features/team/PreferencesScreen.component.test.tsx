@@ -42,6 +42,33 @@ describe('preferences', () => {
     await user.click(box)
   })
 
+  it('chooses the way to search by pressing its preview', async () => {
+    const user = userEvent.setup()
+    setup()
+    await user.click(screen.getByRole('button', { name: 'Review' }))
+    const way = screen.getByRole('radiogroup', { name: 'Which way to search' })
+    const on = within(way).getByRole('radio', { name: /On: every statement/ })
+    const off = within(way).getByRole('radio', { name: /Off: this statement only/ })
+    expect(off).toHaveAttribute('aria-checked', 'true')
+    await user.click(on)
+    expect(on).toHaveAttribute('aria-checked', 'true')
+    expect(off).toHaveAttribute('aria-checked', 'false')
+    expect(screen.getByLabelText('Search every bank statement')).toBeChecked()
+    // from the keyboard, too
+    off.focus()
+    await user.keyboard('{Enter}')
+    expect(off).toHaveAttribute('aria-checked', 'true')
+  })
+
+  it('shows every screen’s keys in the keyboard guide, marking none of them here when no screen has registered any', async () => {
+    const user = userEvent.setup()
+    setup()
+    await user.click(screen.getByRole('button', { name: 'Keyboard' }))
+    const nav = screen.getByRole('navigation', { name: 'Shortcut headings' })
+    const names = within(nav).getAllByRole('button').map((b) => b.textContent ?? '')
+    for (const heading of ['Review', 'Alerts', 'Clients', 'Team', 'Go to']) expect(names.some((n) => n.startsWith(heading))).toBe(true)
+  })
+
   it('sets rows per page for one list and redraws the preview, then resets every list to 10', async () => {
     const user = userEvent.setup()
     setup()

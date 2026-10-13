@@ -4,6 +4,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Kbd } from '@/components/ui/kbd'
 import { comboKeys, comboOf, useHotkeyList, type Hotkey } from '@/lib/hotkeys'
 import { cn } from '@/lib/utils'
+import { withAllScreens } from './shortcutCatalog'
 import { searchCategories, shortcutCategories } from './shortcutGroups'
 
 const LIT_MS = 1400
@@ -70,12 +71,13 @@ export function ShortcutList() {
  *
  * It returns two blocks (the search, then the lists) so the dialog can lay them out in its own grid; `inline` wraps them for a page.
  */
-export function ShortcutGuide({ inline = false, searchRef }: { inline?: boolean; searchRef?: RefObject<HTMLInputElement | null> }) {
-  const hotkeys = useHotkeyList()
-  const categories = useMemo(() => shortcutCategories(hotkeys), [hotkeys])
+export function ShortcutGuide({ inline = false, allScreens = false, searchRef }: { inline?: boolean; /** Every screen's keys, not only those of the screen open now. */ allScreens?: boolean; searchRef?: RefObject<HTMLInputElement | null> }) {
+  const registered = useHotkeyList()
+  const hotkeys = useMemo(() => (allScreens ? withAllScreens(registered) : registered), [allScreens, registered])
+  const categories = useMemo(() => shortcutCategories(hotkeys, allScreens ? new Set(registered.map((h) => h.group ?? 'Global')) : undefined), [hotkeys, allScreens, registered])
   const [query, setQuery] = useState('')
   const [chosen, setChosen] = useState<string | null>(null)
-  const [lit, setLit] = useState<Hotkey | null>(null)
+  const [lit, setLit] = useState<Hotkey[]>([])
   const own = useRef<HTMLInputElement>(null)
   const search = searchRef ?? own
 
@@ -96,17 +98,19 @@ export function ShortcutGuide({ inline = false, searchRef }: { inline?: boolean;
         return
       }
       const sequence = lastKey && Date.now() - lastKey.at < SEQUENCE_MS ? `${lastKey.combo} ${combo}` : null
-      const hit = (sequence && hotkeys.find((h) => h.combo === sequence)) || hotkeys.find((h) => h.combo === combo)
+      // Every row with this key lights (j is Next row on Review and Next alert on Alerts).
+      const byCombo = (c: string) => hotkeys.filter((h) => h.combo === c)
+      const hits = (sequence && byCombo(sequence).length ? byCombo(sequence) : byCombo(combo))
       lastKey = { combo, at: Date.now() }
-      if (!hit) return
+      if (hits.length === 0) return
       e.preventDefault()
       // On a page the key would otherwise do its job (go to another screen, say) as well as light its row.
       if (inline) e.stopPropagation()
       setQuery('')
-      setChosen(categories.find((c) => c.items.includes(hit))?.id ?? null)
-      setLit(hit)
+      setChosen(categories.find((c) => c.items.some((i) => hits.includes(i)))?.id ?? null)
+      setLit(hits)
       window.clearTimeout(timer)
-      timer = window.setTimeout(() => setLit(null), LIT_MS)
+      timer = window.setTimeout(() => setLit([]), LIT_MS)
     }
     window.addEventListener('keydown', onKey, true)
     return () => {
@@ -185,7 +189,7 @@ export function ShortcutGuide({ inline = false, searchRef }: { inline?: boolean;
               {searching && <h3 className="px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">{c.label}</h3>}
               <ul className="grid gap-0.5">
                 {c.items.map((hotkey) => (
-                  <Row key={hotkey.combo + hotkey.description} hotkey={hotkey} lit={lit === hotkey} />
+                  <Row key={hotkey.combo + hotkey.description} hotkey={hotkey} lit={lit.includes(hotkey)} />
                 ))}
               </ul>
             </section>

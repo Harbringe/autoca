@@ -221,13 +221,26 @@ function Look() {
 }
 
 /** A search over Review's rows, as it reads with the setting off or on, so the two can be set side by side. */
-function SearchSample({ on, current, density }: { on: boolean; current: boolean; density: Density }) {
+function SearchSample({ on, current, density, onChoose }: { on: boolean; current: boolean; density: Density; onChoose: () => void }) {
   const rows = on ? SAMPLE_ROWS.slice(0, 5) : SAMPLE_ROWS.filter((r) => r[3] === 'Apr–Jun 2025')
   return (
-    <div className={cn('rounded-xl border bg-card p-3 transition-colors duration-200', current && 'border-primary ring-1 ring-primary')}>
+    // The picture is the control: pressing it chooses that way. It is a radio of a pair, so the keyboard works as it does for any radio.
+    <div
+      role="radio"
+      aria-checked={current}
+      tabIndex={0}
+      onClick={onChoose}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          onChoose()
+        }
+      }}
+      className={cn('cursor-pointer rounded-xl border bg-card p-3 transition-colors duration-200 hover:border-muted-foreground', current && 'border-primary bg-selected ring-1 ring-primary')}
+    >
       <div className="mb-2 flex items-center justify-between gap-2">
         <b className="text-sm">{on ? 'On: every statement' : 'Off: this statement only'}</b>
-        {current && <span className="rounded-full bg-selected px-2 py-0.5 text-[11px] font-semibold text-heading">Your choice</span>}
+        <span className={cn('rounded-full px-2 py-0.5 text-[11px] font-semibold', current ? 'bg-primary text-primary-foreground' : 'border text-muted-foreground')}>{current ? 'Selected' : 'Press to choose'}</span>
       </div>
       <div className="mb-2 flex h-8 items-center gap-2 rounded-lg border bg-background px-2.5 text-[13px]">
         <span aria-hidden>⌕</span>a<span className="text-xs text-muted-foreground"> · searching {on ? 'all 3 statements' : 'Apr–Jun 2025'}</span>
@@ -254,10 +267,10 @@ function ReviewTopic() {
           </p>
         </div>
       </div>
-      <Label>Preview: the same search, both ways</Label>
-      <div className="grid gap-4 lg:grid-cols-2">
-        <SearchSample on={false} current={!searchAll} density={density} />
-        <SearchSample on current={searchAll} density={density} />
+      <Label>Preview: the same search, both ways. Press one to choose it.</Label>
+      <div role="radiogroup" aria-label="Which way to search" className="grid gap-4 lg:grid-cols-2">
+        <SearchSample on={false} current={!searchAll} density={density} onChoose={() => setSearchAllStatements(false)} />
+        <SearchSample on current={searchAll} density={density} onChoose={() => setSearchAllStatements(true)} />
       </div>
     </>
   )
@@ -472,9 +485,9 @@ function Keyboard() {
     <>
       <Heading>Keyboard</Heading>
       <p className="-mt-2 mb-4 text-[13px] text-muted-foreground">
-        The keys for each screen, here to look through. Press a shortcut and its row lights up; on this page it does not run, so you can try them safely. Press ? anywhere else for the same guide.
+        The keys for every screen, here to look through; the screen you are on is marked. Press a shortcut and its row lights up; on this page it does not run, so you can try them safely. Press ? anywhere else for the same guide.
       </p>
-      <ShortcutGuide inline />
+      <ShortcutGuide inline allScreens />
     </>
   )
 }

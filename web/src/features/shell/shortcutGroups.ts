@@ -17,15 +17,19 @@ const GO_TO = 'Go to'
 /** What the registry calls a group becomes what the guide calls it. */
 const labelOf = (group?: string) => (!group || group === 'Global' ? EVERYWHERE : group === 'This client' ? GO_TO : group)
 
-export function shortcutCategories(hotkeys: Hotkey[]): ShortcutCategory[] {
+/** `here` names the groups to mark "here" (the screens open now); without it, every screen group in `hotkeys` is. */
+export function shortcutCategories(hotkeys: Hotkey[], here?: ReadonlySet<string>): ShortcutCategory[] {
   const by = new Map<string, Hotkey[]>()
   for (const hotkey of hotkeys) {
     const label = labelOf(hotkey.group)
     by.set(label, [...(by.get(label) ?? []), hotkey])
   }
-  const make = (label: string, here: boolean): ShortcutCategory => ({ id: label, label, here, items: by.get(label) ?? [] })
+  const make = (label: string, isHere: boolean): ShortcutCategory => ({ id: label, label, here: isHere, items: by.get(label) ?? [] })
   const screens = [...by.keys()].filter((l) => l !== GO_TO && l !== EVERYWHERE).sort((a, b) => a.localeCompare(b))
-  return [...screens.map((l) => make(l, true)), ...(by.has(GO_TO) ? [make(GO_TO, false)] : []), ...(by.has(EVERYWHERE) ? [make(EVERYWHERE, false)] : [])]
+  // The screens open now come first, then the rest, each in name order.
+  const open = (l: string) => (here ? here.has(l) : true)
+  screens.sort((a, b) => Number(open(b)) - Number(open(a)) || a.localeCompare(b))
+  return [...screens.map((l) => make(l, open(l))), ...(by.has(GO_TO) ? [make(GO_TO, false)] : []), ...(by.has(EVERYWHERE) ? [make(EVERYWHERE, false)] : [])]
 }
 
 /** The categories narrowed to what matches the words typed: in what the key does, or in the keys themselves ("ctrl", "g l"). */

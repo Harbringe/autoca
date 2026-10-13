@@ -214,7 +214,7 @@ def test_each_invoice_line_is_given_a_ledger_of_its_own_before_anything_is_booke
 
     assert first.status_code == 200, first.content
     made = first.json()["ledgers"]
-    assert [m["ledger_name"] for m in made] == ["Purchases - Sample Oil 1 LTR PP (12 PACK)", "Purchases - Sample Oil 15 LTR TIN"]
+    assert [m["ledger_name"] for m in made] == ["Purchases - Sample Oil 1 Ltr Pp (12 Pack)", "Purchases - Sample Oil 15 Ltr Tin"]
     assert all(m["created"] for m in made)
     # asking again finds the same ledgers and opens nothing new
     again = api.post(url, body, format="json").json()["ledgers"]

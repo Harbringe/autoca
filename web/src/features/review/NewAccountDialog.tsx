@@ -4,7 +4,7 @@
 // already exists, because a second "Courier" next to "Courier Charges" splits a year of entries.
 
 import { useMemo, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
 import { useInvalidateClient, V1 } from '@/api/queries/clients'

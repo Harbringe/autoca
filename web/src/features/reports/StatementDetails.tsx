@@ -4,7 +4,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { raw } from '@/api/client'
 import { messageOf } from '@/api/errors'
 import { statementSettings } from '@/api/queries/books'

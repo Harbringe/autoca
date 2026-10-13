@@ -4,7 +4,7 @@
 // each change next to the old spelling, lets a person untick any, and renames only what stays ticked.
 
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { raw } from '@/api/client'
 import { messageOf } from '@/api/errors'
 import { useInvalidateClient, V1 } from '@/api/queries/clients'

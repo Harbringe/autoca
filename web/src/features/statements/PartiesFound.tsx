@@ -6,7 +6,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { messageOf } from '@/api/errors'
 import { partyCandidates, useCreateFoundParties } from '@/api/queries/bills'
 import { Money } from '@/components/ca/Money'

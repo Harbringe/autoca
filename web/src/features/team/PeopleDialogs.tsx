@@ -5,7 +5,7 @@
 
 import { useState, type FormEvent } from 'react'
 import { Copy } from 'lucide-react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { messageOf } from '@/api/errors'
 import { useInvitePerson, useUpdateMember, type InviteCreated, type MemberPatch } from '@/api/queries/team'
 import type { Member, MembersResponse, Person, Role } from '@/api/types'

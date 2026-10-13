@@ -7,7 +7,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { CircleX } from 'lucide-react'
 import { useId, useState, type ReactNode } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { messageOf } from '@/api/errors'
 import { firmSettings, useRenameFirm, useTransferOwner } from '@/api/queries/team'
 import type { FirmSettings } from '@/api/types'

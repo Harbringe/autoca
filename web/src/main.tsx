@@ -2,8 +2,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider, createRouter } from '@tanstack/react-router'
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
-import { Toaster } from 'sonner'
 import { ApiError } from '@/api/errors'
+import { Notifications } from '@/components/ca/Notifications'
 import { PreferencesProvider } from '@/lib/preferences'
 import { watchScrolling } from '@/lib/scrollbars'
 import { SessionProvider } from '@/session/session'
@@ -37,7 +37,7 @@ createRoot(document.getElementById('root')!).render(
       <PreferencesProvider>
         <SessionProvider>
           <RouterProvider router={router} />
-          <Toaster position="bottom-right" duration={6000} richColors closeButton />
+          <Notifications />
         </SessionProvider>
       </PreferencesProvider>
     </QueryClientProvider>

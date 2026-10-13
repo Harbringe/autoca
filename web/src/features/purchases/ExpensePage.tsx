@@ -9,7 +9,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { ChevronLeft, EyeOff, MoreHorizontal, PanelRight, Sparkles, TriangleAlert, Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { isApiError, messageOf } from '@/api/errors'
 import { ledgers as ledgersQuery } from '@/api/queries/books'
 import {

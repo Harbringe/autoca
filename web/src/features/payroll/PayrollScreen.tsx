@@ -6,7 +6,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { messageOf } from '@/api/errors'
 import { employees, payrollRuns, useAddEmployee, useBookSalaries, useRemoveSalaries, type SalaryLine } from '@/api/queries/bills'
 import { clientDetail } from '@/api/queries/clients'

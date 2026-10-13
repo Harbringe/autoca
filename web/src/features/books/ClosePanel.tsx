@@ -7,7 +7,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { messageOf } from '@/api/errors'
 import { closeReport, useExplainItem, useWithdrawExplanation } from '@/api/queries/bills'
 import type { CloseItem } from '@/api/types'

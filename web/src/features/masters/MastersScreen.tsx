@@ -9,7 +9,7 @@ import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-quer
 import { Link } from '@tanstack/react-router'
 import { Bot, ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { Fragment, useEffect, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
 import { journal, ledgerRows, ledgers as ledgersQuery, parties as partiesQuery, rules as rulesQuery } from '@/api/queries/books'

@@ -8,7 +8,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { ArrowDown, ArrowRight, Plus, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
 import { ledgers as ledgersQuery, parties as partiesQuery } from '@/api/queries/books'

@@ -5,7 +5,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { raw } from '@/api/client'
 import { messageOf } from '@/api/errors'
 import { useInvalidateClient, V1 } from '@/api/queries/clients'

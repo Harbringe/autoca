@@ -6,7 +6,7 @@
 // the confirmation. On a signed run, or for a reader, it is the same view without the form.
 
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { messageOf } from '@/api/errors'
 import type { GstGroup, GstInvoice, GstRow } from '@/api/types'
 import { Badge } from '@/components/ui/badge'

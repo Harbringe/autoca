@@ -7,7 +7,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { toast } from 'sonner'
+import { toast } from '@/lib/toast'
 import { messageOf } from '@/api/errors'
 import { partyOpening, useBreakDownOpening } from '@/api/queries/bills'
 import { Money } from '@/components/ca/Money'

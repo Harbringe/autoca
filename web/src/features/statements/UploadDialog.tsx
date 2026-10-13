@@ -227,9 +227,9 @@ function Chooser({
 }
 
 function Reading({ file, job }: { file: File; job?: Job }) {
-  // The bar is the server's own progress figure (0 to 100). Until the server has answered there is
-  // no figure to show, so the bar says nothing rather than pretending.
-  const progress = job ? Math.min(100, Math.max(0, job.progress)) : null
+  // The bar is the server's own progress figure (0 to 100), but the server only reports 0 and then 100 (the whole read happens in
+  // one step), so while there is no real figure a moving bar says "working" without claiming a percentage.
+  const progress = job && job.progress > 0 ? Math.min(100, job.progress) : null
   return (
     <div className="grid gap-3 py-6" role="status">
       <div className="flex items-center gap-2 font-medium">
@@ -244,7 +244,11 @@ function Reading({ file, job }: { file: File; job?: Job }) {
         aria-valuenow={progress ?? undefined}
         className="h-2 overflow-hidden rounded-full bg-muted"
       >
-        <GrowFill id="upload-progress" percent={progress ?? 0} className="rounded-full bg-primary" />
+        {progress === null ? (
+          <span className="block h-full w-2/5 animate-[slide-across_1.4s_ease-in-out_infinite] rounded-full bg-primary motion-reduce:animate-none" />
+        ) : (
+          <GrowFill id="upload-progress" percent={progress} className="rounded-full bg-primary" />
+        )}
       </div>
       <p className="text-[13px] text-muted-foreground">
         {progress === null ? 'Sending the file.' : `${progress}%`} Every row is checked against the running balance, then the client’s rules

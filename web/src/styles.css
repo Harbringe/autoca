@@ -410,6 +410,14 @@
 .fade-in {
   animation: fade-in 260ms ease-out backwards;
 }
+@keyframes slide-across {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(250%);
+  }
+}
 .page-in {
   animation: page-in 180ms ease-out both;
 }

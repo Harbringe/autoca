@@ -65,6 +65,87 @@ export function useFadeOnChange(ref: RefObject<HTMLElement | null>, key: unknown
   }, [ref, key])
 }
 
+/**
+ * The page number you are on, which becomes a box when you press it: type another page, Enter to go there, Esc to leave it.
+ * A page beyond the end goes to the last page and one before the start to the first. Focus comes back to the number afterwards,
+ * so the keyboard is where it was.
+ */
+export function CurrentPage({ page, pages, onGo, className }: { page: number; pages: number; onGo: (page: number) => void; className?: string }) {
+  const [editing, setEditing] = useState(false)
+  const [value, setValue] = useState('')
+  const input = useRef<HTMLInputElement>(null)
+  const button = useRef<HTMLButtonElement>(null)
+  const wasEditing = useRef(false)
+  useEffect(() => {
+    if (editing) {
+      input.current?.focus()
+      input.current?.select()
+    } else if (wasEditing.current) {
+      button.current?.focus()
+    }
+    wasEditing.current = editing
+  }, [editing])
+
+  if (!editing) {
+    return (
+      <Button
+        ref={button}
+        size="sm"
+        variant="primary"
+        aria-current="page"
+        aria-label={`Page ${page} of ${pages}. Press to type a page number`}
+        title="Press to type a page number"
+        className={className}
+        onClick={() => {
+          setValue(String(page))
+          setEditing(true)
+        }}
+      >
+        {page}
+      </Button>
+    )
+  }
+  const go = () => {
+    const wanted = Number.parseInt(value, 10)
+    if (Number.isFinite(wanted)) onGo(Math.min(Math.max(wanted, 1), pages))
+    setEditing(false)
+  }
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault()
+        go()
+      }}
+    >
+      <input
+        ref={input}
+        type="text"
+        inputMode="numeric"
+        aria-label={`Go to page, 1 to ${pages}`}
+        value={value}
+        onChange={(e) => setValue(e.target.value.replace(/\D/g, '').slice(0, 6))}
+        onBlur={() => setEditing(false)}
+        onKeyDown={(e) => {
+          if (e.key === 'Escape') {
+            e.stopPropagation()
+            setEditing(false)
+          }
+        }}
+        className="num h-8 w-14 rounded-md border border-ring bg-background px-1 text-center text-sm outline-none ring-2 ring-ring/40"
+      />
+    </form>
+  )
+}
+
+/** "Page 5 of 12" with the number typeable, for a list that is paged by the server. */
+export function PageJump({ page, pages, onGo }: { page: number; pages: number; onGo: (page: number) => void }) {
+  return (
+    <span className="num inline-flex items-center gap-2 text-muted-foreground" aria-live="polite">
+      Page <CurrentPage page={page} pages={pages} onGo={onGo} /> of {pages}
+    </span>
+  )
+}
+
 /** The page numbers to offer: the first, the last, and the ones around this one, with a gap marked where some are left out. */
 export function pageNumbers(page: number, pages: number): (number | '…')[] {
   const wanted = new Set([1, pages, page - 1, page, page + 1].filter((n) => n >= 1 && n <= pages))
@@ -109,15 +190,10 @@ export function Pager({
             <span key={`gap-${i}`} aria-hidden className="px-1 text-muted-foreground">
               …
             </span>
+          ) : n === paged.page ? (
+            <CurrentPage key={n} page={paged.page} pages={paged.pages} onGo={go} />
           ) : (
-            <Button
-              key={n}
-              size="sm"
-              variant={n === paged.page ? 'primary' : 'ghost'}
-              aria-label={`Page ${n}`}
-              aria-current={n === paged.page ? 'page' : undefined}
-              onClick={() => go(n)}
-            >
+            <Button key={n} size="sm" variant="ghost" aria-label={`Page ${n}`} onClick={() => go(n)}>
               {n}
             </Button>
           ),

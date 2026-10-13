@@ -5,6 +5,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { AUDIT_PAGE, auditLog } from '@/api/queries/audit'
+import { PageJump } from '@/components/ca/Pager'
 import type { AuditRow } from '@/api/types'
 import { EmptyState, ErrorState, PageHeader } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
@@ -71,9 +72,7 @@ export function ActivityScreen() {
           <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage(page - 1)}>
             Newer
           </Button>
-          <span className="num text-muted-foreground" aria-live="polite">
-            Page {page} of {pages}
-          </span>
+          <PageJump page={page} pages={pages} onGo={setPage} />
           <Button variant="outline" size="sm" disabled={!log.data.next} onClick={() => setPage(page + 1)}>
             Older
           </Button>

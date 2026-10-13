@@ -54,13 +54,20 @@ beforeEach(() => {
   resetClientMemory()
 })
 
+/** What a link says to a person: its words and counts, not the key hints beside it (those are hidden from them). */
+const said = (el: Element) => {
+  const copy = el.cloneNode(true) as Element
+  copy.querySelectorAll('[aria-hidden]').forEach((n) => n.remove())
+  return copy.textContent
+}
+
 describe('the client panel', () => {
   it('lists the places, lights the one the address is in, and counts review rows on Bank statements', async () => {
     await inRouter('/clients/a/daybook', <ClientNavList clientId="a" />)
     const nav = await screen.findByRole('navigation', { name: 'Client screens' })
     await screen.findByText('12')
     const links = within(nav).getAllByRole('link')
-    expect(links.map((l) => l.textContent?.replace(/ rows waiting$/, ''))).toEqual([
+    expect(links.map((l) => said(l)?.replace(/ rows waiting$/, ''))).toEqual([
       'Overview', 'Pipeline', 'Bank statements12', 'Documents', 'Bookkeeping', 'GST', 'Reports', 'Client profile',
     ])
     const current = links.filter((l) => l.getAttribute('aria-current') === 'page')
@@ -74,7 +81,7 @@ describe('the client panel', () => {
     await inRouter('/clients/a', <ClientNavList clientId="a" />)
     const nav = await screen.findByRole('navigation', { name: 'Client screens' })
     await screen.findByText('12')
-    expect(within(nav).getAllByRole('link').map((l) => l.textContent?.replace(/ rows waiting$/, ''))).toEqual(['Overview', 'Pipeline', 'Bank statements12', 'Client profile'])
+    expect(within(nav).getAllByRole('link').map((l) => said(l)?.replace(/ rows waiting$/, ''))).toEqual(['Overview', 'Pipeline', 'Bank statements12', 'Client profile'])
   })
 })
 
@@ -91,14 +98,14 @@ describe('the phone strip', () => {
 })
 
 describe('the rail', () => {
-  it('names every place under its icon, shows the firm count in the firm only, and recent clients as discs', async () => {
+  it('names every place by its icon (to a screen reader and as a tooltip), shows the firm count in the firm only, and recent clients as discs', async () => {
     recordRecentClient('c')
     recordRecentClient('b')
     recordRecentClient('gone')
     recordRecentClient('a')
     await inRouter('/clients/a/daybook', <Rail onShortcuts={() => {}} />)
     const main = await screen.findByRole('navigation', { name: 'Main' })
-    expect(within(main).getAllByRole('link').map((l) => l.textContent)).toEqual(['Home', 'Clients', 'Alerts', 'Staff', 'Settings'])
+    expect(within(main).getAllByRole('link').map((l) => l.getAttribute('aria-label'))).toEqual(['Home', 'Clients', 'Alerts', 'Staff', 'Settings'])
     // Inside a client the rail carries no firm count: the bell speaks for the client.
     expect(within(main).getByRole('link', { name: 'Alerts' })).toBeInTheDocument()
     const recent = await screen.findByRole('region', { name: 'Recent clients' })

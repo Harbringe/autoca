@@ -43,6 +43,7 @@ import { SettlementPanel } from './SettlementPanel'
 import { LedgerIdea } from './LedgerIdea'
 import { StatementPicker } from './StatementPicker'
 import { activeStatement, statementChoices } from './statementChoices'
+import { setSearchAllStatements, useSearchAllStatements } from '@/lib/reviewPrefs'
 import { LedgerPicker, usableLedgers } from './LedgerPicker'
 import { NewAccountDialog } from './NewAccountDialog'
 import { ProposalDecision } from '@/features/masters/MastersScreen'
@@ -88,7 +89,9 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
   const statementList = useQuery(statementsQuery(clientId))
   // Reviewed one bank statement at a time: the statements with rows waiting in this stage, and the one shown.
   const choices = useMemo(() => statementChoices(statementList.data?.results ?? [], queue.data ?? []), [statementList.data, queue.data])
-  const statement = activeStatement(askedStatement, choices)
+  const chosenStatement = activeStatement(askedStatement, choices)
+  const statementLabel = useMemo(() => new Map(choices.map((c) => [c.id, c.label])), [choices])
+  const searchAll = useSearchAllStatements()
   const ledgers = useQuery(ledgersQuery(clientId))
   const accounts = useQuery(bankAccounts(clientId))
   const invalidate = useInvalidateClient(clientId)
@@ -102,6 +105,8 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
   const [bulk, setBulk] = useState<{ count: number; summary: BulkSummary | null }>({ count: 0, summary: null })
   const [confirmTicked, setConfirmTicked] = useState(false)
   const [text, setText] = useState('')
+  // A search looks through every row of the statement being reviewed (not only the page shown); with the setting on, through every statement.
+  const statement = searchAll && text.trim() ? null : chosenStatement
   const [sort, setSort] = useState<Sort>(null)
   const listRef = useRef<HTMLUListElement>(null)
   // The open row can be shut again by pressing it, without losing which row the keys are on.
@@ -269,6 +274,11 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
           onChange={(next) => void navigate({ to: '.', search: ((prev: Record<string, unknown>) => ({ ...prev, statement: next })) as never, replace: true })}
         />
       )}
+      {choices.length > 1 && searchAll && text.trim() && chosenStatement && (
+        <p role="status" className="text-xs text-muted-foreground">
+          Searching every statement. Turn this off with “Search all statements”, or in Preferences.
+        </p>
+      )}
 
       <AssistantStrip clientId={clientId} />
 
@@ -327,6 +337,14 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
                 onChange={(e) => setText(e.target.value)}
               />
             </div>
+          )}
+          {choices.length > 1 && !queue.isPending && !queue.error && (
+            <Checkbox
+              className="text-sm text-muted-foreground"
+              label="Search all statements"
+              checked={searchAll}
+              onChange={(e) => setSearchAllStatements(e.target.checked)}
+            />
           )}
         </div>
       </div>
@@ -422,6 +440,9 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
                         <span className="block truncate" title={r.transaction.narration}>
                           {r.counterparty && <span className="font-medium text-heading">{r.counterparty} </span>}
                           <span className="font-mono text-xs text-muted-foreground">{r.transaction.narration}</span>
+                          {choices.length > 1 && !statement && statementLabel.get(r.transaction.statement) && (
+                            <span className="ml-2 text-xs text-faint"> · {statementLabel.get(r.transaction.statement)}</span>
+                          )}
                         </span>
                         <span className="mt-0.5 flex items-center gap-1.5 text-[13px]">
                           {r.ledger_name ? (

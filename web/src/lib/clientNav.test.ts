@@ -1,6 +1,6 @@
 import { createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { routeTree } from '@/routeTree.gen'
-import { CLIENT_NAV, activeClientItem, clientNavFor, clientScreenOf, clientScreenPath, clientScreenName, clientTabsFor, stripFor, stripIsActive } from './clientNav'
+import { CLIENT_NAV, activeClientItem, clientNavFor, clientScreenOf, clientScreenPath, clientScreenName, clientTabsFor, parentPath, stripFor, stripIsActive } from './clientNav'
 
 const all = () => true
 const only = (...held: string[]) => (p: string) => held.includes(p)
@@ -93,5 +93,20 @@ describe('the phone strip', () => {
     expect(stripIsActive(books, '/clients/c1/review')).toBe(false)
     expect(stripIsActive(books, '/dashboard')).toBe(false)
     expect(stripIsActive(stripFor(all).find((i) => i.label === 'Bank')!, '/clients/c1/review')).toBe(true)
+  })
+})
+
+describe('one step up the path', () => {
+  it('takes a tab to its place, a place to the overview, the overview to All clients', () => {
+    expect(parentPath('/clients/abc/review')).toBe('/clients/abc/statements')
+    expect(parentPath('/clients/abc/ledgers')).toBe('/clients/abc/bookkeeping')
+    expect(parentPath('/clients/abc/statements')).toBe('/clients/abc')
+    expect(parentPath('/clients/abc/bookkeeping?fy=2025')).toBe('/clients/abc')
+    expect(parentPath('/clients/abc')).toBe('/clients')
+  })
+  it('takes the firm pages to the dashboard, and the dashboard nowhere', () => {
+    expect(parentPath('/clients')).toBe('/dashboard')
+    expect(parentPath('/settings/team')).toBe('/dashboard')
+    expect(parentPath('/dashboard')).toBeUndefined()
   })
 })

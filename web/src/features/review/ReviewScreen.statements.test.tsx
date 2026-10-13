@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from 'vitest'
 import { journal, ledgers, parties, reviewQueue } from '@/api/queries/books'
 import { bankAccounts, clientDetail, reviewSummary, statements } from '@/api/queries/clients'
 import type { Classification } from '@/api/types'
+import { setSearchAllStatements } from '@/lib/reviewPrefs'
 import { ReviewScreen } from './ReviewScreen'
 
 vi.mock('@/session/session', () => ({ useSession: () => ({ me: { permissions: [] }, can: () => true }) }))
@@ -119,5 +120,53 @@ describe('"Look at them" on the assistant-added ledgers', () => {
     expect(link).toHaveAttribute('href', '/clients/c1/ledgers')
     fireEvent.click(link)
     await waitFor(() => expect(router.state.location.pathname).toBe('/clients/c1/ledgers'))
+  })
+})
+
+describe('searching in the review', () => {
+  const search = (text: string) => fireEvent.change(screen.getByLabelText(/Search the queue/), { target: { value: text } })
+
+  it('looks through every row of the statement, not only the page on screen', async () => {
+    const many = Array.from({ length: 120 }, (_, i) => row(i + 1, 's2'))
+    renderReview(many, { start: '/clients/c1/review?statement=s2' })
+    await screen.findByText('Showing 1–50 of 120')
+    expect(document.getElementById('row-r110')).toBeNull()
+    search('NARRATION 110')
+    await waitFor(() => expect(shown()).toHaveLength(1))
+    expect(shown()[0]).toContain('NARRATION 110')
+  })
+
+  it('stays inside the statement chosen, unless the setting to search every statement is on', async () => {
+    setSearchAllStatements(false)
+    renderReview([row(1, 's2'), row(2, 's2'), row(3, 's1'), row(4, 's1')], { start: '/clients/c1/review?statement=s1' })
+    await screen.findByRole('group', { name: 'Statement' })
+    search('NARRATION 1')
+    await screen.findByText(/Nothing matches/)
+    expect(shown()).toHaveLength(0)
+  })
+
+  it('looks through every statement when asked to, and says which statement each row is from', async () => {
+    setSearchAllStatements(true)
+    try {
+      renderReview([row(1, 's2'), row(2, 's2'), row(3, 's1'), row(4, 's1')], { start: '/clients/c1/review?statement=s1' })
+      await screen.findByRole('group', { name: 'Statement' })
+      search('NARRATION 1')
+      await waitFor(() => expect(shown()).toHaveLength(1))
+      expect(shown()[0]).toContain('Icici Bank A/c 7921')
+      expect(screen.getByRole('status', { name: '' })).toBeDefined()
+      expect(screen.getByText(/Searching every statement/)).toBeInTheDocument()
+    } finally {
+      setSearchAllStatements(false)
+    }
+  })
+
+  it('has a quick switch beside the search box that sets the same thing', async () => {
+    setSearchAllStatements(false)
+    renderReview([row(1, 's2'), row(3, 's1')], { start: '/clients/c1/review?statement=s1' })
+    const box = await screen.findByLabelText('Search all statements')
+    expect(box).not.toBeChecked()
+    fireEvent.click(box)
+    expect(box).toBeChecked()
+    setSearchAllStatements(false)
   })
 })

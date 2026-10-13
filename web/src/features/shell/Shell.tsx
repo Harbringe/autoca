@@ -4,9 +4,8 @@
 // is the firm's, a path inside it is that client's. Under 1024px the rail and panel become a drawer, and
 // a client's five most-used screens a strip under the top bar. One of the two layouts is mounted at a time.
 
-import { Listbox } from '@/components/ui/listbox'
-import { Link, Outlet, useNavigate, useRouterState, useSearch } from '@tanstack/react-router'
-import { ChevronDown, ChevronRight, Loader2, Menu, Search, X } from 'lucide-react'
+import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
+import { Keyboard, Loader2, Menu, PanelLeftOpen, Search, X } from 'lucide-react'
 import { Sparkles } from '@/components/ui/sparkles'
 import { Dialog as Drawer } from 'radix-ui'
 import { useEffect, useState } from 'react'
@@ -17,9 +16,7 @@ import { isProcessing } from '@/features/assistant/queue'
 import { useAssistantShort, useAssistantStatus } from '@/features/assistant/useAssistant'
 import { Brand } from '@/features/auth/AuthLayout'
 import { AlertBell, useAlertCount } from '@/features/alerts/AlertBell'
-import { clientScreenName } from '@/lib/clientNav'
-import { fyLabel, financialYearOf } from '@/lib/format'
-import { parseFy } from '@/lib/fy'
+import { clientScreenName, parentPath } from '@/lib/clientNav'
 import { useHotkey } from '@/lib/hotkeys'
 import { JUMP_KEYS, moduleHref, type JumpKey } from '@/lib/jump'
 import { clientIdOf, moduleOf, type ModuleId } from '@/lib/modules'
@@ -28,16 +25,29 @@ import { usePageTitle } from '@/lib/title'
 import { useMediaQuery } from '@/lib/useMediaQuery'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
-import { ClientSwitcher } from './ClientSwitcher'
-import { useClientHeader } from './clientHeader'
+import { ContextBar } from './Crumbs'
+import { FySelect } from './FySelect'
+import { toggleSidebar, useSidebarHidden } from './useSidebar'
 import { usePalette } from './CommandPalette'
 import { ClientNavList, PanelHeader, ClientPanel } from './ClientPanel'
 import { PhoneClientButton, ClientStrip } from './PhoneChrome'
 import { Rail, RAIL_ICONS } from './Rail'
 import { useRouteFocus } from './routeFocus'
 import { ShortcutSheet } from './ShortcutSheet'
-import { useFy } from './useFy'
 import { UserMenu } from './UserMenu'
+
+/**
+ * F6 and Shift+F6 move focus between the parts of the screen: the firm's rail, the client's menu, the top bar and the page. It is the key
+ * Windows and code editors already use for this, so a person who lives on the keyboard never has to Tab through a whole menu to get across.
+ */
+function moveRegion(step: 1 | -1) {
+  const regions = [...document.querySelectorAll<HTMLElement>('[data-region]')].filter((el) => el.offsetParent !== null || el.tagName === 'MAIN')
+  if (regions.length === 0) return
+  const here = regions.findIndex((el) => el.contains(document.activeElement))
+  const next = regions[(here + step + regions.length) % regions.length]!
+  const target = next.matches('main') ? next : (next.querySelector<HTMLElement>('[aria-current="page"], a[href], button:not([disabled]), input, [tabindex]:not([tabindex="-1"])') ?? next)
+  target.focus()
+}
 
 /** What the phone's top bar says in the firm's pages, where there is no client to name. */
 const FIRM_TITLE: Partial<Record<ModuleId, string>> = {
@@ -62,93 +72,6 @@ function useClientPageTitle() {
   usePageTitle(title)
 }
 
-/** Modules where the financial year in view means something under All clients. */
-const FY_MODULES: ModuleId[] = ['dashboard', 'clients', 'pipeline', 'bookkeeping', 'bank', 'gst', 'reports']
-
-/**
- * The financial year in view (April to March, named by the year it starts in). Inside a client it is
- * that client's remembered year, written to `?fy=`. Under All clients it is a firm-level year, also
- * carried in `?fy=`, and picking a client afterwards keeps it.
- */
-function FySelect({ className, crumb = false }: { className?: string; crumb?: boolean }) {
-  const path = useRouterState({ select: (s) => s.location.pathname })
-  const { clientId, fy: clientFy, setFy: setClientFy, dataYears } = useFy()
-  const search = useSearch({ strict: false }) as { fy?: unknown }
-  const navigate = useNavigate()
-  const module = moduleOf(path)
-  if (!clientId && (!module || !FY_MODULES.includes(module))) return null
-
-  const now = financialYearOf(new Date())
-  const fy = clientId ? clientFy : (parseFy(search.fy) ?? now)
-  const setFy = clientId
-    ? setClientFy
-    : (next: number) => void navigate({ to: '.', search: ((prev: Record<string, unknown>) => ({ ...prev, fy: next })) as never, replace: true })
-  // A year that has not begun has no books to show, so the list starts at the current one.
-  const years = new Set([...Array.from({ length: 8 }, (_, i) => now - i), ...dataYears, fy])
-  const list = (
-    <Listbox
-      aria-label="Financial year"
-      value={String(fy)}
-      onValueChange={(v) => setFy(Number(v))}
-      options={[...years].sort((a, b) => b - a).map((year) => ({ value: String(year), label: `FY ${fyLabel(year)}` }))}
-      className={cn(
-        'h-9 w-auto shrink-0 gap-2 rounded-md px-2.5 text-sm font-medium',
-        crumb ? 'min-w-0 border-transparent bg-transparent text-muted-foreground shadow-none hover:bg-hover hover:text-foreground dark:border-transparent dark:bg-transparent dark:hover:bg-hover' : 'min-w-32',
-        className,
-      )}
-    />
-  )
-  return crumb ? (
-    <>
-      <ChevronRight className="size-3.5 shrink-0 text-faint" aria-hidden />
-      {list}
-    </>
-  ) : (
-    list
-  )
-}
-
-/**
- * Where you are, as a path: the firm, then the client (a button that opens the client switcher), then the financial year in view.
- * Under All clients the middle step names the place instead. It replaces the loose year menu that used to sit alone in the bar.
- */
-function ClientCrumb({ clientId }: { clientId: string }) {
-  const { name } = useClientHeader(clientId)
-  return (
-    <ClientSwitcher currentId={clientId}>
-      <button
-        type="button"
-        aria-label={`${name ?? 'Client'}. Switch client`}
-        className="inline-flex h-9 max-w-[16rem] items-center gap-1.5 rounded-md px-2 font-semibold text-heading hover:bg-hover"
-      >
-        <span className="truncate">{name ?? '…'}</span>
-        <ChevronDown className="size-4 shrink-0 text-muted-foreground" aria-hidden />
-      </button>
-    </ClientSwitcher>
-  )
-}
-
-function ContextBar({ clientId, firmName }: { clientId?: string; firmName?: string }) {
-  return (
-    <nav aria-label="Where you are" className="flex min-w-0 shrink-0 items-center gap-1.5 text-sm">
-      {firmName && (
-        <>
-          <Link to={moduleHref('dashboard') as never} className="max-w-[11rem] truncate rounded-md px-1.5 py-1 text-muted-foreground hover:bg-hover hover:text-foreground max-xl:hidden">
-            {firmName}
-          </Link>
-          <ChevronRight className="size-3.5 shrink-0 text-faint max-xl:hidden" aria-hidden />
-        </>
-      )}
-      {clientId ? (
-        <ClientCrumb clientId={clientId} />
-      ) : (
-        <span className="inline-flex h-9 items-center px-2 font-semibold text-heading">All clients</span>
-      )}
-      <FySelect crumb />
-    </nav>
-  )
-}
-
 /** The thin line along the top of the bar while a client is open. It sweeps while the assistant is reading that client's rows. */
 function Ribbon({ clientId }: { clientId: string }) {
   const working = isProcessing(useAssistantStatus(clientId))
@@ -165,11 +88,16 @@ function PaletteTrigger() {
     <button
       type="button"
       onClick={() => palette.open()}
-      className="flex h-9 min-w-0 max-w-sm flex-1 items-center gap-2 rounded-md border border-input bg-card px-3 text-sm text-faint hover:bg-hover"
+      aria-keyshortcuts="Control+K"
+      title="Search or jump (Ctrl K)"
+      className="grid h-9 w-full min-w-0 grid-cols-[1fr_auto_1fr] items-center gap-2 rounded-md border border-input bg-muted/50 px-3 text-sm text-muted-foreground hover:bg-hover hover:text-foreground"
     >
-      <Search className="size-4 shrink-0" aria-hidden />
-      <span className="truncate">Search or jump</span>
-      <span className="ml-auto flex shrink-0 items-center gap-1">
+      <span aria-hidden />
+      <span className="flex min-w-0 items-center gap-2">
+        <Search className="size-4 shrink-0" aria-hidden />
+        <span className="truncate">Search or jump</span>
+      </span>
+      <span aria-hidden className="flex shrink-0 items-center justify-end gap-1">
         <Kbd>Ctrl</Kbd>
         <Kbd>K</Kbd>
       </span>
@@ -365,6 +293,14 @@ export function Shell() {
   const clientId = clientIdOf(path)
 
   useHotkey('?', 'Show keyboard shortcuts', () => setShortcutsOpen(true))
+  const sidebarHidden = useSidebarHidden()
+  useHotkey('ctrl+b', 'Show or hide the client menu', () => clientId && toggleSidebar())
+  useHotkey('f6', 'Move to the next part of the screen (menu, top bar, page)', () => moveRegion(1))
+  useHotkey('shift+f6', 'Move to the previous part of the screen', () => moveRegion(-1))
+  useHotkey('alt+arrowup', 'Up one level in the path (section, place, client)', () => {
+    const up = parentPath(path)
+    if (up) void navigate({ to: up as never })
+  })
   const { can, me } = useSession()
   useClientPageTitle()
   useRouteFocus()
@@ -396,11 +332,11 @@ export function Shell() {
 
       {desktop && (
         <>
-          <aside aria-label="Firm" className="no-print sticky top-0 h-svh w-20 shrink-0">
+          <aside aria-label="Firm" data-region="firm" className="no-print sticky top-0 h-svh w-20 shrink-0">
             <Rail onShortcuts={() => setShortcutsOpen(true)} />
           </aside>
-          {clientId && (
-            <aside aria-label="Client" className="no-print sticky top-0 h-svh w-[232px] shrink-0">
+          {clientId && !sidebarHidden && (
+            <aside aria-label="Client" data-region="client" className="no-print sticky top-0 h-svh w-[232px] shrink-0">
               <ClientPanel key={clientId} clientId={clientId} />
             </aside>
           )}
@@ -424,15 +360,33 @@ export function Shell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <OfflineStrip />
-        <header className="no-print sticky top-0 z-30 flex h-14 items-center gap-2 border-b bg-background px-2 sm:px-3 md:gap-3 lg:px-6">
+        <header
+          aria-label="Top bar"
+          data-region="header"
+          className={cn(
+            'no-print sticky top-0 z-30 h-14 items-center gap-2 border-b bg-background px-2 sm:px-3 md:gap-3 lg:px-6',
+            // Wide enough: the path on the left, the command bar centred as in a code editor, the person's tools on the right.
+            desktop ? 'grid grid-cols-[minmax(0,1fr)_minmax(16rem,36rem)_minmax(0,1fr)]' : 'flex',
+          )}
+        >
           {clientId && <Ribbon clientId={clientId} />}
           {desktop ? (
             <>
-              <ContextBar clientId={clientId} firmName={firmName} />
+              <div className="flex min-w-0 items-center gap-1">
+                {clientId && sidebarHidden && (
+                  <Button variant="ghost" size="icon" className="size-9 shrink-0" aria-label="Show the client menu" aria-keyshortcuts="Control+B" title="Show the client menu (Ctrl B)" onClick={toggleSidebar}>
+                    <PanelLeftOpen className="size-[18px]" aria-hidden />
+                  </Button>
+                )}
+                <ContextBar clientId={clientId} firmName={firmName} />
+              </div>
               <PaletteTrigger />
-              <div className="ml-auto flex shrink-0 items-center gap-3">
+              <div className="flex min-w-0 shrink-0 items-center justify-end gap-2">
                 <SavingMark />
                 <AssistantIndicator />
+                <Button variant="ghost" size="icon" className="size-9 shrink-0" aria-label="Keyboard shortcuts" aria-keyshortcuts="?" title="Keyboard shortcuts (?)" onClick={() => setShortcutsOpen(true)}>
+                  <Keyboard className="size-[18px]" aria-hidden />
+                </Button>
                 {clientId && <AlertBell key={`bell-${clientId}`} clientId={clientId} />}
                 <UserMenu onShortcuts={() => setShortcutsOpen(true)} />
               </div>
@@ -453,7 +407,7 @@ export function Shell() {
           )}
         </header>
         {!desktop && clientId && <ClientStrip clientId={clientId} />}
-        <main id="content" tabIndex={-1} className="mx-auto w-full max-w-[1920px] flex-1 p-4 outline-none md:p-6 2xl:px-10">
+        <main id="content" data-region="page" tabIndex={-1} className="mx-auto w-full max-w-[1920px] flex-1 p-4 outline-none md:p-6 2xl:px-10">
           {/* A new place fades in; moving between a client's own screens is handled inside the client, so its header stays put. */}
           <div key={path.split('/')[1] ?? ''} className="page-in">
             <Outlet />

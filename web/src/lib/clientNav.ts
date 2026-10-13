@@ -25,25 +25,48 @@ export interface ClientNavItem {
   also?: string[]
   /** Sits at the foot of the panel, apart from the workflow. */
   bottom?: boolean
+  /** The heading it is listed under in the panel: the day-to-day work, or the books themselves. */
+  group?: 'work' | 'books'
 }
 
 /** The panel lists the places; the closely related screens of each are tabs on the page itself. */
 export const CLIENT_NAV: ClientNavItem[] = [
-  { screen: '', label: 'Overview', icon: LayoutGrid, permission: 'client.view' },
-  { screen: 'pipeline', label: 'Pipeline', icon: Columns3, permission: 'client.view' },
-  { screen: 'statements', label: 'Bank statements', icon: Landmark, permission: 'transaction.view', also: ['review'] },
-  { screen: 'documents', label: 'Documents', icon: FolderOpen, permission: 'document.view' },
+  { screen: '', label: 'Overview', icon: LayoutGrid, permission: 'client.view', group: 'work' },
+  { screen: 'pipeline', label: 'Pipeline', icon: Columns3, permission: 'client.view', group: 'work' },
+  { screen: 'statements', label: 'Bank statements', icon: Landmark, permission: 'transaction.view', also: ['review'], group: 'work' },
+  { screen: 'documents', label: 'Documents', icon: FolderOpen, permission: 'document.view', group: 'work' },
   {
     screen: 'bookkeeping',
     label: 'Bookkeeping',
     icon: BookOpen,
     permission: 'report.view',
     also: ['bills', 'invoices', 'tds', 'payroll', 'assets', 'daybook', 'open-items', 'ledgers', 'masters', 'books'],
+    group: 'books',
   },
-  { screen: 'gst', label: 'GST', icon: FileSpreadsheet, permission: 'gst.view' },
-  { screen: 'reports', label: 'Reports', icon: BarChart3, permission: 'report.view' },
+  { screen: 'gst', label: 'GST', icon: FileSpreadsheet, permission: 'gst.view', group: 'books' },
+  { screen: 'reports', label: 'Reports', icon: BarChart3, permission: 'report.view', group: 'books' },
   { screen: 'team', label: 'Client profile', icon: Settings2, permission: 'client.view', bottom: true },
 ]
+
+/** The headings the panel lists the places under, in order. */
+export const CLIENT_GROUPS: { id: NonNullable<ClientNavItem['group']>; label: string }[] = [
+  { id: 'work', label: 'Work' },
+  { id: 'books', label: 'Books' },
+]
+
+/** The two-key sequence (after g) that already opens each screen, so the panel and the menus can show it. Keep in step with `Workspace` and `jump`. */
+export const CLIENT_KEYS: Record<string, string> = {
+  '': 'g o',
+  statements: 'g s',
+  review: 'g v',
+  bookkeeping: 'g b',
+  ledgers: 'g l',
+  masters: 'g m',
+  books: 'g k',
+  gst: 'g g',
+  reports: 'g r',
+  team: 'g e',
+}
 
 /** One tab of a place: the closely related screens, in the order they are used. */
 export interface ClientTab {
@@ -134,4 +157,16 @@ export const stripFor = (can: (permission: string) => boolean): StripItem[] => P
 export const stripIsActive = (item: StripItem, pathname: string): boolean => {
   const screen = clientScreenOf(pathname)
   return screen !== undefined && (screen === item.screen || !!item.also?.includes(screen))
+}
+
+/** One step up the path the context bar shows: a tab goes to its place, a place to the client's overview, the overview to All clients. */
+export function parentPath(pathname: string): string | undefined {
+  const path = pathname.split('?')[0]!
+  const parts = path.split('/').filter(Boolean)
+  if (parts[0] !== 'clients' || !parts[1]) return path === '/dashboard' ? undefined : '/dashboard'
+  const place = activeClientItem(path)
+  const screen = clientScreenOf(path)
+  if (place && screen !== undefined && screen !== place.screen) return clientScreenPath(parts[1], place.screen)
+  if (place && place.screen !== '') return clientScreenPath(parts[1], '')
+  return '/clients'
 }

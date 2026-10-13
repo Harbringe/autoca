@@ -1,6 +1,6 @@
-import { fireEvent, render, renderHook, screen, act } from '@testing-library/react'
+import { act, fireEvent, render, renderHook, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { PAGE_SIZE, PagedList, Pager, pageNumbers, usePaged } from './Pager'
+import { PAGE_SIZE, PageJump, PagedList, Pager, pageNumbers, usePaged } from './Pager'
 
 const items = (n: number) => Array.from({ length: n }, (_, i) => i + 1)
 
@@ -42,7 +42,7 @@ describe('the pager', () => {
     expect(screen.getAllByRole('listitem')).toHaveLength(20)
     expect(screen.getByText('Showing 101–120 of 120')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Next' })).toBeDisabled()
-    expect(screen.getByRole('button', { name: 'Page 3' })).toHaveAttribute('aria-current', 'page')
+    expect(screen.getByRole('button', { name: /^Page 3 of 3/ })).toHaveAttribute('aria-current', 'page')
   })
 
   it('goes back to the first page when what the list is of changes', () => {
@@ -117,5 +117,53 @@ describe('turning the page', () => {
     window.matchMedia = ((q: string) => ({ matches: true, media: q, addEventListener() {}, removeEventListener() {} })) as never
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
     expect(animate).toHaveBeenCalledTimes(1)
+  })
+})
+
+describe('typing a page number', () => {
+  const open = () => fireEvent.click(screen.getByRole('button', { name: /^Page 1 of 3/ }))
+  const type = (value: string) => fireEvent.change(screen.getByLabelText('Go to page, 1 to 3'), { target: { value } })
+
+  it('turns the current page into a box, and goes to the page typed there', () => {
+    render(<Demo n={120} />)
+    open()
+    type('3')
+    fireEvent.submit(screen.getByLabelText('Go to page, 1 to 3').closest('form')!)
+    expect(screen.getByText('Showing 101–120 of 120')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Page 3 of 3/ })).toBeInTheDocument()
+  })
+
+  it('takes a page beyond the end to the last page and one before the start to the first', () => {
+    render(<Demo n={120} />)
+    open()
+    type('99')
+    fireEvent.submit(screen.getByLabelText('Go to page, 1 to 3').closest('form')!)
+    expect(screen.getByText('Showing 101–120 of 120')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /^Page 3 of 3/ }))
+    fireEvent.change(screen.getByLabelText('Go to page, 1 to 3'), { target: { value: '0' } })
+    fireEvent.submit(screen.getByLabelText('Go to page, 1 to 3').closest('form')!)
+    expect(screen.getByText('Showing 1–50 of 120')).toBeInTheDocument()
+  })
+
+  it('keeps only digits, leaves on Escape without going anywhere, and hands focus back to the page number', () => {
+    render(<Demo n={120} />)
+    open()
+    type('2x')
+    expect(screen.getByLabelText('Go to page, 1 to 3')).toHaveValue('2')
+    fireEvent.keyDown(screen.getByLabelText('Go to page, 1 to 3'), { key: 'Escape' })
+    expect(screen.queryByLabelText('Go to page, 1 to 3')).toBeNull()
+    expect(screen.getByText('Showing 1–50 of 120')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^Page 1 of 3/ })).toHaveFocus()
+  })
+})
+
+describe('PageJump', () => {
+  it('reads "Page 5 of 12" and goes to a page typed over the 5', () => {
+    const seen: number[] = []
+    render(<PageJump page={5} pages={12} onGo={(p) => seen.push(p)} />)
+    fireEvent.click(screen.getByRole('button', { name: /^Page 5 of 12/ }))
+    fireEvent.change(screen.getByLabelText('Go to page, 1 to 12'), { target: { value: '12' } })
+    fireEvent.submit(screen.getByLabelText('Go to page, 1 to 12').closest('form')!)
+    expect(seen).toEqual([12])
   })
 })

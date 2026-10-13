@@ -3,7 +3,9 @@
 import type { ReactNode } from 'react'
 import { PageHeader } from '@/components/ca/Page'
 import { ShortcutList } from '@/features/shell/ShortcutSheet'
+import { Checkbox } from '@/components/ui/controls'
 import { usePreferences, type Density, type Theme } from '@/lib/preferences'
+import { setSearchAllStatements, useSearchAllStatements } from '@/lib/reviewPrefs'
 import { usePageTitle } from '@/lib/title'
 
 const THEMES: { value: Theme; label: string }[] = [
@@ -46,12 +48,23 @@ function Panel({ id, title, children }: { id: string; title: string; children: R
 export function PreferencesScreen() {
   usePageTitle('Preferences')
   const { theme, setTheme, density, setDensity } = usePreferences()
+  const searchAll = useSearchAllStatements()
   return (
     <div className="grid max-w-3xl gap-4 [&>*]:min-w-0">
       <PageHeader title="Preferences" description="Kept in this browser. They change how you see the screen, not the firm’s books." className="mb-0" />
       <Panel id="pref-look" title="Look">
         <Choice legend="Theme" name="theme" options={THEMES} value={theme} onChange={setTheme} />
         <Choice legend="Rows" name="density" options={DENSITIES} value={density} onChange={setDensity} />
+      </Panel>
+      <Panel id="pref-review" title="Review">
+        <Checkbox
+          label="Search every bank statement, not only the one being reviewed"
+          checked={searchAll}
+          onChange={(e) => setSearchAllStatements(e.target.checked)}
+        />
+        <p className="-mt-2 text-[13px] text-muted-foreground">
+          Review works through one statement at a time. With this on, typing in its search box looks through all of the client’s statements, and shows where each row is from.
+        </p>
       </Panel>
       <Panel id="pref-keys" title="Keyboard shortcuts">
         <p className="-mt-2 text-[13px] text-muted-foreground">The keys that work on this page. Press ? anywhere to see the ones for the screen you are on.</p>

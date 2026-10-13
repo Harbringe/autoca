@@ -8,6 +8,7 @@ import type { ReactNode } from 'react'
 import { useAlertCount } from '@/features/alerts/AlertBell'
 import { clientIdOf } from '@/lib/modules'
 import { useClientMemory } from '@/lib/recentClients'
+import { JUMP_KEYS } from '@/lib/jump'
 import { railActive, railHref, railItems, type RailItem } from '@/lib/sidebarNav'
 import { initialsOf } from '@/lib/useDebounced'
 import { cn } from '@/lib/utils'
@@ -24,6 +25,13 @@ export const RAIL_ICONS: Record<RailItem['id'], ReactNode> = {
 }
 
 const RECENT_SHOWN = 4
+
+/** The tooltip: the place, and the key that goes there where there is one. */
+function railTitle(item: RailItem): string {
+  const jump = JUMP_KEYS.find((j) => j.module === (item.id === 'dashboard' ? 'dashboard' : item.id === 'clients' ? 'clients' : ''))
+  const keys = jump ? ` (G ${jump.key.toUpperCase()})` : item.id === 'staff' ? ' (G W)' : item.id === 'settings' ? ' (G F)' : ''
+  return `${item.label}${keys}`
+}
 
 export function Rail({ onShortcuts }: { onShortcuts: () => void }) {
   const { can } = useSession()
@@ -53,13 +61,14 @@ export function Rail({ onShortcuts }: { onShortcuts: () => void }) {
               to={railHref(item, can) as never}
               activeOptions={{ exact: true, includeSearch: false }}
               aria-current={isActive ? 'page' : undefined}
+              aria-label={item.label}
+              title={railTitle(item)}
               className={cn(
-                'relative flex min-h-14 w-full flex-col items-center justify-center gap-1 rounded-md px-0.5 py-1.5 text-xs font-medium leading-4 text-sidebar-foreground hover:bg-white/5 hover:text-white [&_svg]:size-5 [&_svg]:shrink-0',
+                'relative grid size-11 place-items-center rounded-md text-sidebar-foreground hover:bg-white/5 hover:text-white [&_svg]:size-[22px] [&_svg]:shrink-0',
                 isActive && 'bg-sidebar-active text-white before:absolute before:inset-y-2 before:-left-2 before:w-[3px] before:rounded-full before:bg-sidebar-bar',
               )}
             >
               {RAIL_ICONS[item.id]}
-              <span>{item.label}</span>
               {count > 0 && (
                 <span className="num absolute right-1.5 top-1 grid min-w-4 place-items-center rounded-full bg-sidebar-chip px-1 text-xs font-semibold leading-4 text-sidebar-chip-foreground">
                   {count > 99 ? '99+' : count}
@@ -83,7 +92,7 @@ function RecentClients({ currentId }: { currentId?: string }) {
   if (named.length === 0) return null
   return (
     <section aria-label="Recent clients" className="mt-3 flex w-full flex-col items-center gap-2 border-t border-white/10 px-2 pt-3">
-      <h2 className="text-xs font-medium text-sidebar-muted">Recent</h2>
+      <h2 className="sr-only">Recent clients</h2>
       {named.map((c) => {
         const current = c.id === currentId
         return (

@@ -29,6 +29,9 @@ export interface InboxFilter {
   client?: string
 }
 
+/** Alerts to a page: few enough that the list fits on the screen without scrolling. */
+const ALERTS_PER_PAGE = 10
+
 const MODULES = Object.keys(MODULE_LABEL) as AlertModule[]
 
 /** An element id for an alert: its key with anything an id should not hold taken out. */
@@ -60,7 +63,7 @@ export function AlertsInbox({ alerts, filter, onFilter }: { alerts: Alert[]; fil
 
   const index = Math.max(0, flat.findIndex((a) => alertKey(a) === selectedKey))
   const selected = flat[index] ?? null
-  const pager = usePaged(flat, `${by}|${severity}|${filter.module ?? ''}|${filter.client ?? ''}`)
+  const pager = usePaged(flat, `${by}|${severity}|${filter.module ?? ''}|${filter.client ?? ''}`, ALERTS_PER_PAGE)
   const listRef = useRef<HTMLUListElement>(null)
   const listKey = `${by}|${severity}|${filter.module ?? ''}|${filter.client ?? ''}|${pager.page}`
   useFadeOnChange(listRef, listKey)
@@ -179,7 +182,7 @@ export function AlertsInbox({ alerts, filter, onFilter }: { alerts: Alert[]; fil
           )}
         </EmptyState>
       ) : (
-        <div className="grid h-[calc(100svh-17rem)] min-h-[30rem] overflow-hidden rounded-xl border border-border-strong bg-card lg:grid-cols-[minmax(0,1fr)_380px] max-lg:h-auto">
+        <div className="grid max-h-[calc(100svh-15rem)] min-h-[22rem] overflow-hidden rounded-xl border border-border-strong bg-card lg:grid-cols-[minmax(0,1fr)_380px] max-lg:h-auto">
           <div className="flex min-h-0 min-w-0 flex-col">
             <ul
               ref={listRef}
@@ -219,7 +222,8 @@ export function AlertsInbox({ alerts, filter, onFilter }: { alerts: Alert[]; fil
                         >
                           <span className="min-w-0 flex-1">
                             <span className="flex items-center gap-2">
-                              <SeverityMark severity={alert.severity} />
+                              {/* Under a severity heading the word would only repeat it. */}
+                              {by !== 'severity' && <SeverityMark severity={alert.severity} />}
                               {many && by !== 'client' && (
                                 <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
                                   <Initials name={alert.client_name} className="size-5 text-[9px]" />
@@ -227,7 +231,7 @@ export function AlertsInbox({ alerts, filter, onFilter }: { alerts: Alert[]; fil
                                 </span>
                               )}
                             </span>
-                            <span className="mt-0.5 block font-medium text-heading">{alert.title}</span>
+                            <span className={cn('block font-medium text-heading', (by !== 'severity' || many) && 'mt-0.5')}>{alert.title}</span>
                           </span>
                           {alert.amount_display && <Money display={alert.amount_display} className="num shrink-0 text-[13px] font-semibold" />}
                         </li>

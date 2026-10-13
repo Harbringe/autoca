@@ -160,12 +160,25 @@ describe('the alerts inbox', () => {
     expect(onFilter).not.toHaveBeenCalled()
   })
 
-  it('pages a long list, 50 at a time', async () => {
+  it('pages a long list, 10 at a time', async () => {
     const many = Array.from({ length: 120 }, (_, i) => alert(i + 100, i % 2 ? 'a' : 'b', i % 2 ? 'Alpha' : 'Beta', 'medium', `Alert number ${i + 100}`))
     renderInbox(many)
-    await screen.findByText('Showing 1–50 of 120')
-    expect(options()).toHaveLength(50)
+    await screen.findByText('Showing 1–10 of 120')
+    expect(options()).toHaveLength(10)
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
-    await screen.findByText('Showing 51–100 of 120')
+    await screen.findByText('Showing 11–20 of 120')
+  })
+
+  it('selects one alert only, even when two checks of a client open the same screen', async () => {
+    const same = [
+      alert(1, 'a', 'Alpha', 'high', 'Every bank row is placed and posted', { kind: 'control', to: '/clients/a/signoff', search: undefined }),
+      alert(2, 'a', 'Alpha', 'high', 'Entries the assistant posted are checked by a person', { kind: 'control', to: '/clients/a/signoff', search: undefined }),
+    ]
+    renderInbox(same)
+    await screen.findAllByRole('option')
+    expect(screen.getAllByRole('option', { selected: true })).toHaveLength(1)
+    fireEvent.click(screen.getAllByRole('option')[1]!)
+    expect(screen.getAllByRole('option', { selected: true })).toHaveLength(1)
+    expect(within(detail()).getByRole('heading', { level: 2 })).toHaveTextContent('Entries the assistant posted')
   })
 })

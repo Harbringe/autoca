@@ -27,8 +27,8 @@ export function severityCounts(alerts: Alert[]): Record<SeverityFilter, number> 
 /** The bell's badge: the number, capped at 99+. */
 export const badgeText = (count: number): string => (count > 99 ? '99+' : String(count))
 
-/** One alert, told apart from the rest: the same kind can stand for two screens (rows with no ledger, rows ready to post). */
-export const alertKey = (a: Alert): string => `${a.client}|${a.kind}|${a.to}|${JSON.stringify(a.search ?? {})}`
+/** One alert, told apart from the rest: the same kind can stand for two screens (rows with no ledger, rows ready to post) and several checks share one screen, so the title is part of it. */
+export const alertKey = (a: Alert): string => `${a.client}|${a.kind}|${a.to}|${JSON.stringify(a.search ?? {})}|${a.title}`
 
 export type GroupBy = 'severity' | 'client' | 'none'
 

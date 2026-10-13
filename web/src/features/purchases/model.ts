@@ -5,6 +5,7 @@
 // up so a person sees one list and the alerts that matter on each row.
 
 import type { Bill, InvoiceReading, LedgerAccount } from '@/api/types'
+import { formatPaise } from '@/lib/format'
 import { normaliseName } from '@/lib/names'
 
 export type Tone = 'attention' | 'done' | 'neutral'
@@ -60,6 +61,13 @@ export function buildItems(readings: InvoiceReading[], bills: Bill[]): ListItem[
     if (bill) {
       const alerts: string[] = []
       if (r.auto_booked) alerts.push('Booked automatically from the file. Check it, and change it if anything is wrong.')
+      // A booked bill that does not match what the invoice prints is the thing most worth a second look, wherever it was booked.
+      const printed = r.read?.total_paise
+      if (printed != null && printed !== bill.total_paise) {
+        alerts.push(`The books have ${formatPaise(bill.total_paise)} but the invoice prints ${formatPaise(printed)}. Check the figures against the page.`)
+      }
+      // Booked by the system without a person's eye, and the arithmetic did not prove: say what failed.
+      if (r.auto_booked && r.read && !r.proved) alerts.push(...FAILED_CHECKS(r))
       items.push({
         id: r.id,
         as: 'reading',
@@ -72,7 +80,7 @@ export function buildItems(readings: InvoiceReading[], bills: Bill[]): ListItem[
         documentId: r.document,
         status: bill.open_paise <= 0 ? 'Settled' : 'Booked',
         tone: 'done',
-        alerts,
+        alerts: [...new Set(alerts.filter(Boolean))],
         filename: r.filename,
         billId: bill.id,
         readingId: r.id,

@@ -35,6 +35,14 @@ describe('the Purchases & Sales list', () => {
     expect(items[0]!.status).toBe('Settled')
   })
 
+  it('flags a booked invoice whose books differ from the total the invoice prints', () => {
+    const wrong = buildItems([reading({ status: 'BOOKED', bill: 'b1', read: { total_paise: 118604 } as never })], [bill({ id: 'b1', total_paise: 118000 })])
+    expect(wrong[0]!.alerts).toHaveLength(1)
+    expect(wrong[0]!.alerts[0]).toMatch(/books have .*1,180\.00 but the invoice prints .*1,186\.04/)
+    const right = buildItems([reading({ status: 'BOOKED', bill: 'b1', read: { total_paise: 118000 } as never })], [bill({ id: 'b1', total_paise: 118000 })])
+    expect(right[0]!.alerts).toEqual([])
+  })
+
   it('marks a file set aside', () => {
     expect(buildItems([reading({ status: 'DISCARDED' })], [])[0]).toMatchObject({ setAside: true, status: 'Set aside', alerts: [] })
   })

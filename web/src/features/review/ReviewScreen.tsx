@@ -37,7 +37,9 @@ import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { summariseBulk, type BulkSummary } from './bulkPost'
 import { SettlementPanel } from './SettlementPanel'
+import { LedgerIdea } from './LedgerIdea'
 import { LedgerPicker, usableLedgers } from './LedgerPicker'
+import { NewAccountDialog } from './NewAccountDialog'
 import { ProposalDecision } from '@/features/masters/MastersScreen'
 import { PostedEntries } from './PostedEntries'
 import { StageNav, STAGES } from './StageNav'
@@ -402,6 +404,12 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
                                   </span>
                                 </span>
                               )}
+                              {r.suggested_ledger && r.method !== 'REVIEWED' && (
+                                <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-info-bg px-1 text-xs font-medium text-info" title={`The assistant suggests a better ledger: ${r.suggested_ledger.name}. Open the row to create it or place the row there.`}>
+                                  <Sparkles className="size-3" aria-hidden />
+                                  Ledger idea
+                                </span>
+                              )}
                               {proposedIds.has(r.ledger ?? '') && (
                                 <span className="shrink-0 rounded-sm bg-info-bg px-1 text-xs font-medium text-info" title="A new ledger the assistant added. A senior CA keeps it, renames it or merges it into an existing one.">
                                   New
@@ -566,6 +574,7 @@ function Decision({
   const suggested = ledgers.some((l) => l.id === row.ledger) ? row.ledger : null
   const proposal = allLedgers.find((l) => l.id === row.ledger && (l.status === 'PROPOSED' || l.awaiting_look)) ?? null
   const [deciding, setDeciding] = useState(false)
+  const [openingIdea, setOpeningIdea] = useState(false)
   const [newParty, setNewParty] = useState<{ name: string; gstin: string; error: string | null; busy: boolean } | null>(null)
 
   async function createParty() {
@@ -601,12 +610,17 @@ function Decision({
   const unchanged = ledger === row.ledger && (party || null) === (row.party ?? null) && tds === (row.tds_section ?? '') && rcm === row.rcm
   const alreadyPlacedByPerson = row.method === 'REVIEWED' && unchanged
 
-  async function place() {
+  function place() {
     if (!ledger) return ledgerInput.current?.focus()
+    return placeIn(ledger)
+  }
+
+  /** Place the row in ``chosen``. Takes the ledger as an argument, so a ledger created a moment ago is not lost to stale state. */
+  async function placeIn(chosen: string) {
     setAction('place')
     try {
       const result = await raw.post<PlacementResult>(`${V1}/classifications/${row.id}/review/`, {
-        ledger,
+        ledger: chosen,
         party: party || null,
         rcm,
         tds_section: tds,
@@ -712,6 +726,31 @@ function Decision({
           {!flat && <AlertTriangle className="mt-0.5 size-4 shrink-0 text-warning" aria-hidden />}
           <span>{row.open_question}</span>
         </div>
+      )}
+
+      {row.suggested_ledger && canPlace && (
+        <LedgerIdea
+          suggestion={row.suggested_ledger}
+          placedIn={row.ledger_name ?? null}
+          canCreate={can('ledger.manage')}
+          busy={busy}
+          onPlaceExisting={(id) => void placeIn(id)}
+          onCreate={() => setOpeningIdea(true)}
+        />
+      )}
+      {openingIdea && row.suggested_ledger && (
+        <NewAccountDialog
+          clientId={clientId}
+          ledgers={ledgers}
+          initialName={row.suggested_ledger.name}
+          initialGroup={row.suggested_ledger.group}
+          onCreated={(made) => {
+            setOpeningIdea(false)
+            setLedger(made.id)
+            void placeIn(made.id)
+          }}
+          onClose={() => setOpeningIdea(false)}
+        />
       )}
 
       {legs.length > 0 && (

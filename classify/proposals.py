@@ -20,11 +20,12 @@ from __future__ import annotations
 
 import difflib
 import re
+from dataclasses import dataclass
 
 from django.db import transaction as db_transaction
 
 from classify.models import REVIEWED_MARK, ClassificationMethod, LedgerAccount, LedgerStatus
-from classify.standard_ledgers import PROPOSABLE_GROUPS, STANDARD_LEDGERS
+from classify.standard_ledgers import PROPOSABLE_GROUPS, STANDARD_LEDGERS, SUGGESTABLE_GROUPS
 from classify.treatment import band_for
 
 #: Two names at least this similar (after normalising) are treated as one.
@@ -72,6 +73,66 @@ def closest(name: str, ledgers) -> LedgerAccount | None:
     return best if best_ratio >= SIMILARITY else None
 
 
+@dataclass(frozen=True)
+class Vetted:
+    """What the checks on a proposed ledger found. ``status`` is one of:
+
+    * ``invalid``  -- not a usable name or group (too short, a pseudonym token, a group that cannot be proposed)
+    * ``refused``  -- close to a ledger a person rejected, or to one the caller excluded (the row's own bank account)
+    * ``existing`` -- close to a ledger the client already has: ``match`` is that ledger
+    * ``new``      -- genuinely new, with ``name`` and ``group`` as they would be created (the standard spelling taken)
+    """
+
+    status: str
+    name: str = ""
+    group: str = ""
+    match: object = None
+
+
+def vet_proposal(name, group, *, known, excluded_names=(), allowed_groups=PROPOSABLE_GROUPS) -> Vetted:
+    """The one set of checks on a ledger a model proposes, shared by creating it and by suggesting it to a person.
+
+    Kept in one place so the two paths cannot drift: a name that may not be created may not be suggested either, and the other
+    way round. ``known`` is every ledger the client has, in any status.
+    """
+    name = clean_name(name)
+    group = str(group or "")
+    if len(name) < 3 or group not in allowed_groups or _ALIAS_TOKEN.search(name):
+        return Vetted("invalid")
+
+    match = closest(name, known)
+    if match is not None:
+        if match.status == LedgerStatus.REJECTED or match.name in excluded_names:
+            return Vetted("refused")
+        return Vetted("existing", name=match.name, group=getattr(match, "group", ""), match=match)
+
+    for standard_name, standard_group in STANDARD_LEDGERS:
+        if name_key(standard_name) == name_key(name):
+            name, group = standard_name, standard_group
+            break
+    return Vetted("new", name=name, group=group)
+
+
+def suggestion_for(proposal, *, known, excluded_names=(), placed_in=None) -> tuple[str, str]:
+    """A ledger idea the model had but was not sure enough to open, as the ``(name, group)`` to show a person; empty when none.
+
+    Nothing is created. An idea that is close to a ledger the client already has is kept under that ledger's own name, so what is
+    shown is "place it in X" and not a second X; one that is the ledger the row already sits in is no suggestion at all.
+    """
+    if not isinstance(proposal, dict):
+        return "", ""
+    vetted = vet_proposal(
+        proposal.get("name"), proposal.get("group"), known=known, excluded_names=excluded_names, allowed_groups=SUGGESTABLE_GROUPS
+    )
+    if vetted.status not in ("new", "existing"):
+        return "", ""
+    if vetted.status == "new" and (str(vetted.group) not in SUGGESTABLE_GROUPS or len(re.sub(r"[^A-Za-z]", "", vetted.name)) < 3):
+        return "", ""
+    if vetted.match is not None and placed_in is not None and vetted.match.pk == getattr(placed_in, "pk", None):
+        return "", ""
+    return vetted.name, str(vetted.group)
+
+
 def resolve_proposal(
     client, name, group, reason, *, known, excluded_names=(), allow_new: bool = True
 ) -> LedgerAccount | None:
@@ -83,30 +144,18 @@ def resolve_proposal(
     rejected proposal, or duplicates a name the caller excluded (the bank
     account the row came from).
     """
-    name = clean_name(name)
-    group = str(group or "")
-    if len(name) < 3 or group not in PROPOSABLE_GROUPS or _ALIAS_TOKEN.search(name):
+    vetted = vet_proposal(name, group, known=known, excluded_names=excluded_names)
+    if vetted.status == "existing":
+        return vetted.match
+    if vetted.status != "new" or not allow_new:
         return None
-
-    match = closest(name, known)
-    if match is not None:
-        if match.status == LedgerStatus.REJECTED or match.name in excluded_names:
-            return None
-        return match
-    if not allow_new:
-        return None
-
-    for standard_name, standard_group in STANDARD_LEDGERS:
-        if name_key(standard_name) == name_key(name):
-            name, group = standard_name, standard_group
-            break
 
     ledger, _ = LedgerAccount.objects.get_or_create(
         firm_id=client.firm_id,
         client=client,
-        name=name,
+        name=vetted.name,
         defaults={
-            "group": group,
+            "group": vetted.group,
             "status": LedgerStatus.ACTIVE,
             "proposal_reason": clean_reason(reason),
         },

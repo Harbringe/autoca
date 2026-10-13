@@ -8339,6 +8339,11 @@ components:
           - $ref: '#/components/schemas/PlacementMemory'
           nullable: true
           readOnly: true
+        suggested_ledger:
+          allOf:
+          - $ref: '#/components/schemas/LedgerSuggestion'
+          nullable: true
+          readOnly: true
         on_party_account:
           type: boolean
           description: |-
@@ -8489,6 +8494,7 @@ components:
       - rcm
       - review_band
       - reviewed_at
+      - suggested_ledger
       - tds_section
       - transaction
       - voucher_type
@@ -10861,6 +10867,33 @@ components:
       - needs_review
       - transaction
       - value_date
+    LedgerSuggestion:
+      type: object
+      description: A ledger the assistant thought this row belongs in but was not
+        sure enough to open. Nothing has been created.
+      properties:
+        name:
+          type: string
+        group:
+          type: string
+        group_display:
+          type: string
+        existing_ledger:
+          type: string
+          format: uuid
+          nullable: true
+        existing_name:
+          type: string
+          nullable: true
+        rows_sharing:
+          type: integer
+      required:
+      - existing_ledger
+      - existing_name
+      - group
+      - group_display
+      - name
+      - rows_sharing
     MarkReviewedMarkerEnum:
       enum:
       - AI_POSTED

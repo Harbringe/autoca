@@ -3960,6 +3960,7 @@ export interface components {
             readonly id: string;
             readonly transaction: components["schemas"]["StatementTransaction"];
             readonly memory: components["schemas"]["PlacementMemory"] | null;
+            readonly suggested_ledger: components["schemas"]["LedgerSuggestion"] | null;
             /**
              * @description True when the row is placed on a supplier's or customer's own account.
              *
@@ -5093,6 +5094,16 @@ export interface components {
             readonly needs_review: boolean;
             readonly method: components["schemas"]["MethodB54Enum"];
             readonly method_display: string;
+        };
+        /** @description A ledger the assistant thought this row belongs in but was not sure enough to open. Nothing has been created. */
+        LedgerSuggestion: {
+            name: string;
+            group: string;
+            group_display: string;
+            /** Format: uuid */
+            existing_ledger: string | null;
+            existing_name: string | null;
+            rows_sharing: number;
         };
         /**
          * @description * `AI_POSTED` - AI_POSTED

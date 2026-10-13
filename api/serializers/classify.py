@@ -403,6 +403,19 @@ class PlacementMemorySerializer(serializers.Serializer):
     learned_on = serializers.DateField(allow_null=True, help_text="When the rule behind it was made, for a rule.")
 
 
+class LedgerSuggestionSerializer(serializers.Serializer):
+    """A ledger the assistant thought this row belongs in but was not sure enough to open. Nothing has been created."""
+
+    name = serializers.CharField()
+    group = serializers.CharField()
+    group_display = serializers.CharField()
+    #: Set when the client already has a ledger by (nearly) this name, so the row can be placed there directly.
+    existing_ledger = serializers.UUIDField(allow_null=True)
+    existing_name = serializers.CharField(allow_null=True)
+    #: How many other waiting rows carry the same suggestion.
+    rows_sharing = serializers.IntegerField()
+
+
 class ClassificationSerializer(serializers.ModelSerializer):
     """A row awaiting a decision, with everything needed to make it."""
 
@@ -425,6 +438,7 @@ class ClassificationSerializer(serializers.ModelSerializer):
     method_display = serializers.CharField(source="get_method_display", read_only=True)
     on_party_account = serializers.SerializerMethodField()
     memory = serializers.SerializerMethodField()
+    suggested_ledger = serializers.SerializerMethodField()
 
     class Meta:
         model = TransactionClassification
@@ -432,6 +446,7 @@ class ClassificationSerializer(serializers.ModelSerializer):
             "id",
             "transaction",
             "memory",
+            "suggested_ledger",
             "on_party_account",
             "ledger",
             "ledger_name",
@@ -495,6 +510,49 @@ class ClassificationSerializer(serializers.ModelSerializer):
         if obj.method == ClassificationMethod.LLM:
             return {"kind": "ai", "label": "AI suggestion", "note": obj.rationale or "Suggested by the assistant.", "learned_on": None}
         return None
+
+    @extend_schema_field(LedgerSuggestionSerializer(allow_null=True))
+    def get_suggested_ledger(self, obj):
+        """The head the assistant had in mind for this row, while the row is still the assistant's or nobody's.
+
+        Gated here, not on what every save path remembers to clear: once a person or a rule has decided, or the row is in the
+        books, there is nothing left to suggest. If the client already has a ledger by this name (say it was created from another
+        row a moment ago) the answer says so, and the row can be placed straight into it.
+        """
+        from classify.models import ClassificationMethod, LedgerAccount, LedgerGroup, LedgerStatus
+        from classify.proposals import closest
+
+        name = obj.suggested_ledger_name
+        if not name or obj.method not in (ClassificationMethod.LLM, ClassificationMethod.UNRESOLVED) or row_is_posted(obj):
+            return None
+        client_id = obj.transaction.bank_account.client_id
+        memo = self.context.setdefault("_ledger_suggestions", {})
+        if (client_id, "ledgers") not in memo:
+            memo[(client_id, "ledgers")] = list(
+                LedgerAccount.objects.filter(client_id=client_id, status=LedgerStatus.ACTIVE, is_active=True).only("id", "name", "group", "status")
+            )
+        key = (client_id, name)
+        if key not in memo:
+            match = closest(name, memo[(client_id, "ledgers")])
+            others = (
+                TransactionClassification.objects.filter(
+                    transaction__bank_account__client_id=client_id,
+                    suggested_ledger_name=name,
+                    method__in=[ClassificationMethod.LLM, ClassificationMethod.UNRESOLVED],
+                ).count()
+                - 1
+            )
+            memo[key] = (match, max(others, 0))
+        match, others = memo[key]
+        group = match.group if match else obj.suggested_ledger_group
+        return {
+            "name": match.name if match else name,
+            "group": group,
+            "group_display": LedgerGroup(group).label if group in LedgerGroup.values else group,
+            "existing_ledger": match.pk if match else None,
+            "existing_name": match.name if match else None,
+            "rows_sharing": others,
+        }
 
     def get_on_party_account(self, obj) -> bool:
         """True when the row is placed on a supplier's or customer's own account.

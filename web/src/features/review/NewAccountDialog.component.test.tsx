@@ -48,4 +48,13 @@ describe('Creating an account', () => {
     expect(raw.post).toHaveBeenCalledWith(expect.stringContaining('/clients/c1/ledgers/'), { name: 'Packing Material', group: 'DIRECT_EXPENSE' })
     expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 'l9' }))
   })
+
+  // The groups the assistant may suggest (classify/standard_ledgers.py, SUGGESTABLE_GROUPS) must all be offered here, or a suggestion
+  // would quietly turn into Indirect Expense. Keep this list and that one the same.
+  it.each([
+    'INDIRECT_EXPENSE', 'DIRECT_EXPENSE', 'INDIRECT_INCOME', 'DIRECT_INCOME', 'CREDITOR', 'DEBTOR', 'LOAN', 'DUTIES_AND_TAXES', 'INVESTMENT', 'CAPITAL',
+  ])('offers %s, so a suggestion in that group is not changed to another', (group) => {
+    open({ initialName: 'Dividend Received', initialGroup: group })
+    expect(screen.getByLabelText('What kind of account is it?')).toHaveValue(group)
+  })
 })

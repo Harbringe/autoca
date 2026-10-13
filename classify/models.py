@@ -690,6 +690,11 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
     #: in plain words, that the answer to would settle the row.
     open_question = models.TextField(blank=True, default="")
 
+    #: A ledger the model thought this row belongs in but was not sure enough to open (below ``REVIEW_ADVISED``). Nothing is created:
+    #: the row sits in the closest existing ledger, and a person may open this one from the review screen. Empty when there is none.
+    suggested_ledger_name = models.CharField(max_length=255, blank=True, default="", db_default="")
+    suggested_ledger_group = models.CharField(max_length=32, blank=True, default="", db_default="")
+
     #: A transfer between two of the client's own accounts appears on both
     #: statements. The first side approved writes the Contra entry; the other
     #: side points here instead of writing it again. A plain id rather than a
@@ -778,6 +783,7 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
         self.review_band = band_for(confidence)
         self.needs_review = confidence < 1.0
         if method != ClassificationMethod.LLM:
+            self.suggested_ledger_name = self.suggested_ledger_group = ""
             # A narration the model wrote describes the ledger the model chose. Once a rule or a
             # person has decided differently it would describe an entry that no longer exists
             # ("cash withdrawn" on a transfer between banks), so the plain one is used instead.
@@ -802,6 +808,8 @@ class TransactionClassification(UUIDModel, FirmScopedModel):
             update_fields=[
                 "ai_revised",
                 "book_narration",
+                "suggested_ledger_name",
+                "suggested_ledger_group",
                 "ledger",
                 "party",
                 "rcm",

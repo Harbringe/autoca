@@ -88,3 +88,11 @@ STANDARD_LEDGERS: list[tuple[str, str]] = [
 PROPOSABLE_GROUPS = {
     value for value, _ in LedgerGroup.choices
 } - {LedgerGroup.BANK, LedgerGroup.CASH, LedgerGroup.SUSPENSE}
+
+#: Groups a model may *suggest* to a person, who then creates the ledger in the "New account" dialog. Exactly the groups that
+#: dialog offers (``web/src/features/review/NewAccountDialog.tsx``), so a suggestion can never silently become another group.
+SUGGESTABLE_GROUPS = {
+    LedgerGroup.INDIRECT_EXPENSE, LedgerGroup.DIRECT_EXPENSE, LedgerGroup.INDIRECT_INCOME, LedgerGroup.DIRECT_INCOME,
+    LedgerGroup.CREDITOR, LedgerGroup.DEBTOR, LedgerGroup.LOAN, LedgerGroup.DUTIES_AND_TAXES, LedgerGroup.INVESTMENT,
+    LedgerGroup.CAPITAL,
+} & PROPOSABLE_GROUPS

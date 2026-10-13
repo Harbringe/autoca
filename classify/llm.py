@@ -88,7 +88,8 @@ When the evidence does not say which ledger, you must still choose one. A carefu
 - Set confidence honestly: below 0.5 when it is really a guess, 0.5 to 0.75 when it is probable but unchecked. A low-confidence guess is not a failure; it is a flagged starting point that the reviewer will see and correct.
 - Put the one plain question that would settle it in "question", e.g. "Rs 25,000 cash deposited on 05-09: is this sales collection, money you put in, or a recovery from someone?". Keep the question even when you have also named a ledger.
 - A bare transfer to an unknown person, an advance or settlement with a person whose role is unknown, a large payment that could be an asset or an expense: pick the closest existing ledger (a loans, advances, debtors or drawings ledger if the client has one), give low confidence, and ask the question. Never open a ledger named after a person.
-- Do not open a new ledger for a guess. A new ledger in "new_ledger" is only for entries you are at least 0.75 sure about. Use null for "ledger" only when no ledger in "ledgers" could plausibly hold the entry.
+- Do not open a new ledger for a guess. A new ledger in "new_ledger" with "ledger" null is only for entries you are at least 0.75 sure about. Use null for "ledger" only when no ledger in "ledgers" could plausibly hold the entry.
+- When you are below 0.75 and the closest existing ledger is a poor fit because the client clearly lacks the right head (for example a dividend credit and no dividend ledger), still place the row in that closest ledger as above and ALSO fill "new_ledger" with the head you think fits, under the same naming rules. It is shown to the reviewer as a suggestion and nothing is created unless they choose it. Fill it only when the head is clearly missing, not on every guess.
 
 Narration: write it as a CA writes a voucher narration -- one line, starting "Being", saying what the money was for, to or from whom, and the mode and reference in words, e.g. "Being courier charges paid to ABC Courier by UPI ref 7781", "Being refund received from Rajesh Electricals against payment of 01-09 by UPI", "Being cash withdrawn from ATM", "Being cash deposited at branch". Say the mode in words (by UPI, by NEFT, by cheque no. 104728, at ATM); never paste the channel code. Never copy the bank's raw string as the narration. Use the counterparty exactly as given (a token stays a token).
 
@@ -219,6 +220,12 @@ class _Chart:
             if name_key(standard_name) == key:
                 return {"name": standard_name, "group": group}
         return None
+
+    def suggest(self, spec, *, placed_in=None):
+        """The ``(name, group)`` of a head the model was not sure enough to open, for a person to see; nothing is created."""
+        from classify.proposals import suggestion_for
+
+        return suggestion_for(spec, known=self.known, excluded_names=(self.own,), placed_in=placed_in)
 
     def propose(self, spec, reason):
         from classify.proposals import resolve_proposal
@@ -703,6 +710,7 @@ def _applied_view(batch, replies) -> list[dict]:
                     "needs_review": c.needs_review,
                     "book_narration": c.book_narration,
                     "open_question": c.open_question,
+                    "suggested_ledger": c.suggested_ledger_name,
                     "rationale": c.rationale,
                     "tds_section": c.tds_section,
                     "rcm": c.rcm,
@@ -742,6 +750,13 @@ def _apply(batch, replies, chart, pseudonymiser) -> tuple[int, int, int]:
             else:
                 ledger = chart.propose(proposal, rationale)
 
+        # Below the bar nothing is created. The head the model had in mind is kept on the row as a suggestion for a person, and
+        # the row goes in the closest existing ledger as before. At or above the bar behaviour is exactly as it always was
+        # (a model that fills both a ledger and a new head at 0.8 has its ledger used and the new head dropped, as before).
+        suggested_name = suggested_group = ""
+        if proposal and confidence < REVIEW_ADVISED and classification.method != ClassificationMethod.RULE:
+            suggested_name, suggested_group = chart.suggest(proposal, placed_in=ledger)
+
         # Whatever else happens, what the model wrote is kept: the narration
         # is worth having even on a rule-placed row, and the question is the
         # whole outcome of a decline.
@@ -756,7 +771,9 @@ def _apply(batch, replies, chart, pseudonymiser) -> tuple[int, int, int]:
         # named: the reviewer sees the guess and what would settle it together.
         unsure = confidence < REVIEW_ADVISED
         classification.open_question = question if (ledger is None or unsure) else ""
-        kept = ["rationale", "book_narration", "open_question"]
+        kept = ["rationale", "book_narration", "open_question", "suggested_ledger_name", "suggested_ledger_group"]
+        classification.suggested_ledger_name = suggested_name
+        classification.suggested_ledger_group = suggested_group
         if _note_party_guess(classification, item.get("party_guess"), pseudonymiser):
             kept += ["party_candidates", "party_resolution"]
 

@@ -22,10 +22,20 @@ account fragments are the identifying parts; the counterparty and channel are
 what a classifier actually needs. Separating them here is what makes it possible
 to send the second without the first.
 
-Formats below are from real Axis savings statements. Other banks use the same
+Formats below are from real Axis, ICICI and SBI statements. Other banks use the same
 channel prefixes with their own field order, which is why each pattern is
 anchored to its channel and an unrecognised line degrades to
 ``channel=UNKNOWN`` with the raw text intact rather than being force-fitted.
+
+Three rules keep this safe to extend:
+
+* **A payee is only ever read from a field whose position is certain.** Where a bank's field order varies between rows (some UPI
+  credits put the reference first, some put the payee first), the row gets its channel and no counterparty. A guessed payee would
+  become a rule key, and one decision would then place unrelated rows.
+* **The fallback gives a channel and hints, never a counterparty.** A line no pattern matches is still classed by its leading
+  word (``ACH``, ``UPI``, ``POS``...), and the words it contains that name a purpose are reported as ``hints``.
+* **Hints are a closed vocabulary.** They are canonical words (``DIVIDEND``, ``REFUND``, ``FUEL``...), never the text that matched,
+  so they can go to a model even when the narration itself is withheld: no name can ride along in them.
 """
 
 from __future__ import annotations
@@ -61,6 +71,10 @@ class Channel:
     INSTRUMENT = "INSTRUMENT"
     #: An ACH / NACH mandate: a debit or credit the payee's bank collects under a standing authority.
     MANDATE = "MANDATE"
+    #: A debit-card swipe or an online card purchase at a merchant. Not a card *repayment* (that is CARD).
+    POS = "POS"
+    #: A utility or other bill paid through the bank's bill-payment service.
+    BILL = "BILL"
     FEE = "FEE"
     UNKNOWN = "UNKNOWN"
 
@@ -86,6 +100,13 @@ class NarrationFacts:
     #: accounts. These are contra entries, not income or expenditure, and
     #: booking them as either overstates both.
     is_self_transfer: bool = False
+    #: Canonical purpose words found in the narration (see ``_HINTS``). A closed vocabulary, so safe to send even when the
+    #: narration is not.
+    hints: tuple[str, ...] = ()
+    #: True when this line was read by field position (UPI, IMPS, ACH, bill pay...). The narration text of such a line carries
+    #: the payer's note, VPAs and phone numbers the page layout may have split so that no masking can see them, and the channel,
+    #: the payee token and the hints already say what a classifier needs. So the text itself is not sent to a model.
+    withhold_text: bool = False
 
     @property
     def is_recognised(self) -> bool:
@@ -134,7 +155,247 @@ def _clean(field: str) -> str:
 # broader pattern comes first.
 # ---------------------------------------------------------------------------
 
-_PATTERNS: list[tuple[str, re.Pattern]] = [
+
+# ---------------------------------------------------------------------------
+# Bank formats read by position. These are tried after the patterns above and before the catch-alls below, so a
+# narration with "fee" or "GST" in a remark is read as the UPI or IMPS payment it is, not as a bank charge.
+# ---------------------------------------------------------------------------
+
+_IFSC_SHAPE = re.compile(r"[A-Z]{4}0[A-Z0-9]{6}", re.I)
+_BANK_WORDS = re.compile(
+    r"\b(?:BANK|BK|KOTAK|HDFC|ICICI|AXIS|SBI|IDBI|CANARA|PNB|UCO|IOB|BOB|BOI|BOM|YES|INDUSIND|FEDERAL|RBL|UNION|KARUR|"
+    r"PAYTM|PAYMENTS)\b",
+    re.I,
+)
+#: A field that is the payer's note, not a name, when it opens a transfer.
+_NOTE_FIELD = re.compile(r"^(?:TO|FROM|FAMILY|MYSELF|SELF|PAYOUT)\b", re.I)
+
+
+def _is_ifsc(field: str) -> bool:
+    """An IFSC, though the page layout may have put spaces inside it (``HDF C0000006``)."""
+    return bool(_IFSC_SHAPE.fullmatch(re.sub(r"\s+", "", field or "")))
+
+
+def _bankish(field: str) -> bool:
+    return _is_ifsc(field) or bool(_BANK_WORDS.search(field or ""))
+
+
+def _name(field: str) -> str:
+    """A name as printed, without the ellipsis a truncated one ends in."""
+    text = re.sub(r"\s+", " ", re.sub(r"[.\s]*\.\.\.\s*$", "", field or ""))
+    # A long number after the name is a consumer, store or phone number, not part of who it is: it would leak, and it would make
+    # the same payee a different key every month.
+    return re.sub(r"[\s.]*\d{4,}\W*$", "", text).strip(" /-.")
+
+
+def _digits(field: str) -> str:
+    return re.sub(r"\s+", "", field or "")
+
+
+def _fields(rest: str) -> list[str]:
+    return [f.strip() for f in rest.split("/") if f.strip() and not re.match(r"chg\s*rs", f.strip(), re.I)]
+
+
+def _upi_by_position(raw: str):
+    """UPI/<payee>/<vpa>/<note>/<bank>/<ref>/<id>, and the credit shapes that put the reference or a bare VPA first."""
+    parts = raw.split("/")
+    if len(parts) < 4 or parts[0].upper() != "UPI":
+        return None
+    first = parts[1].strip()
+    if re.fullmatch(r"[\d\s]{9,}", first):
+        return {"reference": _digits(first)}  # reference first: who the payee is varies by row, so none is read
+    if "@" in first or not re.search(r"[A-Za-z]{2}", first):
+        return {}
+    return {"counterparty": _name(first)}
+
+
+def _imps_by_position(raw: str):
+    """MMT/IMPS/<ref>/<note>/<payee>/<IFSC>: the payee is the field just before the IFSC, and only then."""
+    m = re.match(r"^MMT/IMPS/(?P<ref>[^/]*)/(?P<rest>.*)$", raw, re.I)
+    if not m:
+        return None
+    fields = _fields(m.group("rest"))
+    found = {"reference": _digits(m.group("ref"))}
+    for i, field in enumerate(fields):
+        if i >= 1 and _is_ifsc(field) and not _NOTE_FIELD.match(fields[i - 1]):
+            found["counterparty"] = _name(fields[i - 1])
+            break
+    return found
+
+
+def _bill_by_position(raw: str):
+    m = re.match(r"^BIL/(?P<kind>BPAY|ONL|NEFT|IMPS)/(?P<ref>[^/]*)/(?P<rest>.*)$", raw, re.I)
+    if not m:
+        return None
+    kind = m.group("kind").upper()
+    fields = _fields(m.group("rest"))
+    found = {"reference": _digits(m.group("ref"))}
+    if kind in ("BPAY", "ONL"):
+        biller = fields[1] if fields and fields[0].upper() == "BBPS" and len(fields) > 1 else (fields[0] if fields else "")
+        if biller:
+            found["counterparty"] = _name(biller)
+        found["_channel"] = Channel.BILL
+    else:
+        found["_channel"] = Channel.NEFT if kind == "NEFT" else Channel.IMPS
+        if len(fields) >= 2 and _bankish(fields[-1]) and not _NOTE_FIELD.match(fields[-2]):
+            found["counterparty"] = _name(fields[-2])
+    return found
+
+
+def _internet_transfer(raw: str):
+    """INF/NEFT/<utr>/<IFSC>/<payee> (to another bank) and INF/INFT/<utr>/<payee> (inside the bank)."""
+    m = re.match(r"^INF/(?P<kind>NEFT|INFT|IMPS)/(?P<ref>[^/]*)/(?P<rest>.*)$", raw, re.I)
+    if not m:
+        return None
+    kind = m.group("kind").upper()
+    fields = _fields(m.group("rest"))
+    found = {"reference": _digits(m.group("ref")), "_channel": Channel.TRANSFER if kind == "INFT" else Channel.NEFT}
+    if kind == "INFT" and fields:
+        found["counterparty"] = _name(fields[0])
+    elif len(fields) >= 2 and _is_ifsc(fields[0]):
+        found["counterparty"] = _name(fields[1])
+    return found
+
+
+def _card_merchant(raw: str):
+    """VPS/<merchant>/<time>/<ref>/<city> and VIN/<merchant>/...: a debit-card purchase. A store number or WWW leads the name."""
+    m = re.match(r"^(?:VPS|VIN)/(?P<merchant>[^/]*)/", raw, re.I)
+    if not m:
+        return None
+    name = re.sub(r"^(?:\d+\s+|WWW\s+)", "", m.group("merchant").strip(), flags=re.I)
+    return {"counterparty": _name(name)} if re.search(r"[A-Za-z]{3}", name) else {}
+
+
+def _issuer(name: str) -> str:
+    """The company behind a dividend credit: ``NTPC-FIN-DIV 24-25`` and ``NTPC-2ND INT-DIV 25-26`` are both NTPC."""
+    if not re.search(r"DIV", name, re.I):
+        return name
+    stripped = re.sub(r"(?<=[A-Z])DIV(?:IDEND)?\d*$", "", name.strip(), flags=re.I)
+    tokens = re.split(r"[-\s]+", stripped)
+    keep = [
+        t for t in tokens
+        if t and not re.fullmatch(r"(?:FIN|FINAL|INT|INTERIM|DIV|DIVIDEND|DIV\d+|\d+(?:ST|ND|RD|TH)|\d{1,4})", t, re.I)
+    ]
+    return " ".join(keep) or name
+
+
+def _dash_transfer(channel: str):
+    pattern = re.compile(rf"^{channel}\s*-\s*(?P<reference>[A-Z0-9][A-Z0-9 ]*?)\s*-\s*(?P<counterparty>[^-]+?)\s*(?:-|$)", re.I)
+
+    def read(raw: str):
+        m = pattern.match(raw)
+        return {"reference": _digits(m.group("reference")), "counterparty": _name(m.group("counterparty"))} if m else None
+
+    return read
+
+
+def _auto_debit_or_credit(raw: str):
+    """ACH/<payer or biller>/<ref> and APBS/<scheme>/<ref>: a collection or credit under a standing mandate."""
+    m = re.match(r"^(?:ACH|NACH|APBS)/(?P<name>[^/]*)(?:/(?P<ref>[^/]*))?", raw, re.I)
+    if not m:
+        return None
+    found = {"counterparty": _issuer(_name(m.group("name")))}
+    if m.group("ref"):
+        found["reference"] = m.group("ref").strip()
+    return found
+
+
+def _atm(raw: str):
+    return {"counterparty": "ATM CASH WITHDRAWAL"} if re.match(r"^(?:NFS|VAT|MAT)/", raw, re.I) else None
+
+
+_MORE_PATTERNS: list[tuple[str, object]] = [
+    # 004401000001:Int.Pd:31-12-2025 to 29-03-2026 -- the bank's own interest, with the account number in front
+    (Channel.INTEREST, re.compile(r"^(?:SB:)?(?P<account>\d{6,})\s*:\s*Int\.?\s*(?P<kind>Pd|Coll)", re.I)),
+    (Channel.MANDATE, _auto_debit_or_credit),
+    (Channel.UPI, _upi_by_position),
+    (Channel.IMPS, _imps_by_position),
+    (Channel.BILL, _bill_by_position),
+    (Channel.TRANSFER, _internet_transfer),
+    (Channel.POS, _card_merchant),
+    # SBI: DEP TFR UPI/CR/<ref>/<payee>, WDL TFR UPI/DR/..., TO TRANSFER-UPI/DR/... (spaces are often missing)
+    (
+        Channel.UPI,
+        re.compile(
+            r"^(?:(?:DEP|WDL)\s*TFR|(?:TO|BY)\s*TRANSFER\s*-?)\s*UPI/(?P<kind>CR|DR)/(?P<reference>[^/]*)/(?P<counterparty>[^/]*)",
+            re.I,
+        ),
+    ),
+    # NEFT-HDFCH00000000001-DEMO CLEARING LIMITED-0001-0000000001- HDFC0000001 (reference first, payee second)
+    *[(channel, _dash_transfer(channel)) for channel in (Channel.NEFT, Channel.RTGS)],
+    # ICICI cash at an ATM: CAM/<machine>/CASH WDL, and its reversal CASH WDL RVSL
+    (Channel.CASH, re.compile(r"^CAM/[^/]*/(?P<counterparty>CASH\s*(?:WDL|DEP)(?:\s*RVSL)?)", re.I)),
+    (Channel.CASH, _atm),
+    (Channel.CASH, re.compile(r"^(?P<counterparty>CASH\s*DEPOSIT)", re.I)),
+]
+
+#: Rows read by position keep their text back from a model (see ``NarrationFacts.withhold_text``).
+_POSITIONAL = frozenset(id(matcher) for _, matcher in _MORE_PATTERNS)
+
+#: The leading word of a line no pattern read: enough to name the channel, never to name a payee.
+_LEADING_CHANNEL = {
+    "ACH": Channel.MANDATE, "NACH": Channel.MANDATE, "APBS": Channel.MANDATE,
+    "UPI": Channel.UPI, "NEFT": Channel.NEFT, "RTGS": Channel.RTGS, "IMPS": Channel.IMPS, "MMT": Channel.IMPS,
+    "POS": Channel.POS, "ECOM": Channel.POS, "VPS": Channel.POS, "VIN": Channel.POS,
+    "CAM": Channel.CASH, "NFS": Channel.CASH, "BIL": Channel.BILL,
+    "CHQ": Channel.CHEQUE, "CLG": Channel.CHEQUE,
+}
+
+#: Canonical purpose words, found by token. Each pattern stops at a letter on both sides, so DIV25 and INT-DIV hit while DIVYA
+#: and INTERNET do not. What is reported is the name on the left, never the text that matched.
+_HINTS: tuple[tuple[str, re.Pattern], ...] = tuple(
+    (name, re.compile(pattern, re.I))
+    for name, pattern in (
+        ("DIVIDEND", r"(?<![A-Z])(?:DIVIDEND|DIV)(?![A-Z])|(?<=[A-Z]{4})DIV(?=\d|$)"),
+        ("INTEREST", r"(?<![A-Z])INTEREST(?![A-Z])|(?<![A-Z])INT\.?\s?(?:PD|COLL)"),
+        ("SUBSIDY", r"SUBSID"),
+        ("REFUND", r"(?<![A-Z])REFUND"),
+        ("REVERSAL", r"(?<![A-Z])(?:RVSL|REVERSAL|REVERSED)"),
+        ("CHARGES_INCLUDED", r"CHG\s?RS\s?\d"),
+        ("SALARY", r"(?<![A-Z])(?:SALARY|PAYROLL)(?![A-Z])"),
+        ("RENT", r"(?<![A-Z])RENT(?![A-Z])"),
+        ("LOAN_EMI", r"(?<![A-Z])(?:EMI|LOAN)(?![A-Z])"),
+        ("INSURANCE", r"INSURA|(?<![A-Z])(?:LIC|PREMIUM)(?![A-Z])"),
+        ("ELECTRICITY", r"ELECTRICITY|MSEDCL|BESCOM|MAHAVITARAN|TORRENT\s?POWER"),
+        ("TELECOM", r"VODAFONE|AIRTEL|(?<![A-Z])(?:JIO|BSNL|VI)(?![A-Z])|POSTPAI|RECHARGE|BROADBAND"),
+        ("DTH_TV", r"TATA\s?PLAY|DISH\s?TV|(?<![A-Z])DTH(?![A-Z])"),
+        ("FUEL", r"(?<![A-Z])(?:PETROL|DIESEL|FUEL)(?![A-Z])"),
+        ("SUBSCRIPTION", r"NETFLIX|HOTSTAR|SPOTIFY|YOUTUBE|PRIME\s?VIDEO|SUBSCRIPTION"),
+        ("RECURRING", r"MANDAT|RECURRING|AUTOPAY"),
+        ("SHOPPING", r"AMAZON|FLIPKART|MYNTRA|AJIO|NYKAA|MEESHO|SNAPDEAL|DMART|BIGBASKET|BLINKIT|ZEPTO"),
+        ("FOOD", r"ZOMATO|SWIGGY|DINNER|LUNCH|BREAKFAST|RESTAURANT|RESTAU"),
+        ("INVESTMENT", r"ZERODHA|GROWW|UPSTOX|ANGEL\s?ONE|GEOJIT|INDIAN\s?CLE|MUTUAL\s?FUND|(?<![A-Z])(?:SIP|IPO|NSDL|CDSL)(?![A-Z])"),
+        ("EDUCATION", r"SCHOOL|COLLEGE|TUITION|UNIVERSITY|ACADEMY"),
+        ("TRAVEL", r"IRCTC|REDBUS|MAKEMYTRIP|MSRTC|FASTAG|(?<![A-Z])(?:UBER|OLA)(?![A-Z])"),
+        ("BILL_PAYMENT", r"BILLPAY|BBPS"),
+    )
+)
+
+
+def _hints(raw: str) -> tuple[str, ...]:
+    text = (raw or "").upper().replace("_", " ")
+    return tuple(name for name, pattern in _HINTS if pattern.search(text))
+
+
+#: What a bank's page layout glues onto the end of a narration when the PDF is read: not part of the transaction, and it
+#: would otherwise make the same payee look different on every page.
+_PAGE_FOOTER = re.compile(r"\s+(?:www\.[a-z0-9.-]+|legends\s+for\s+transactions\b).*$", re.I | re.S)
+
+
+def _lead_channel(raw: str) -> str:
+    m = re.match(r"[A-Za-z]+", raw)
+    return _LEADING_CHANNEL.get(m.group(0).upper(), Channel.UNKNOWN) if m else Channel.UNKNOWN
+
+
+def _read(matcher, raw: str):
+    """What a pattern (a regex or a function) found in ``raw``, or None when it does not apply. An empty dict is a match."""
+    if callable(matcher):
+        return matcher(raw)
+    match = matcher.match(raw)
+    return {k: v for k, v in match.groupdict().items() if v} if match else None
+
+
+_PATTERNS: list[tuple[str, object]] = [
     # SB:900000000000001:Int.Pd:01-04-2025 to 30-06-2025
     (Channel.INTEREST, re.compile(r"^SB:(?P<account>\d+):Int\.(?P<kind>Pd|Coll)", re.I)),
     # Sweep/VO000000012345678/19000000000001
@@ -254,6 +515,7 @@ _PATTERNS: list[tuple[str, re.Pattern]] = [
         Channel.INSTRUMENT,
         re.compile(r"^(?P<counterparty>IPPF|PPF|RD|TD)/(?P<reference>[^/]*)", re.I),
     ),
+    *_MORE_PATTERNS,
     (Channel.CASH, re.compile(r"^(?P<counterparty>CWDR|ATM-CASH|CASH\s+DEP)", re.I)),
     # A tax paid through the bank -- a GST challan (CPIN), income tax or TDS through CBDT/OLTAS --
     # is a payment against a liability, never a bank charge. It has to be recognised before
@@ -290,13 +552,15 @@ def analyse(narration: str, account_holder: str = "", own_accounts=()) -> Narrat
     statement moves money to and from the holder's own HDFC account five times
     in one year -- that missing them is not a rounding error.
     """
-    raw = re.sub(r"\s+", " ", (narration or "").strip())
+    raw = _PAGE_FOOTER.sub("", re.sub(r"\s+", " ", (narration or "").strip()))
+    hints = _hints(raw)
 
     for channel, pattern in _PATTERNS:
-        match = pattern.match(raw)
-        if not match:
+        found = _read(pattern, raw)
+        if found is None:
             continue
-        groups = {k: _clean(v) for k, v in (match.groupdict() or {}).items() if v}
+        groups = {k: _clean(v) for k, v in found.items() if v}
+        channel = groups.pop("_channel", channel)
         counterparty = groups.get("counterparty", "")
 
         instrument = groups.get("instrument", "")
@@ -314,11 +578,17 @@ def analyse(narration: str, account_holder: str = "", own_accounts=()) -> Narrat
                 channel in _TRANSFERABLE
                 and _looks_like_self(raw, counterparty, account_holder, own_accounts)
             ),
+            hints=hints,
+            withhold_text=id(pattern) in _POSITIONAL,
         )
 
+    # Nothing read it. The leading word still says how the money moved; no payee is guessed.
+    channel = _lead_channel(raw)
     return NarrationFacts(
         raw=raw,
-        is_self_transfer=_looks_like_self(raw, "", account_holder, own_accounts),
+        channel=channel,
+        is_self_transfer=channel in _TRANSFERABLE and _looks_like_self(raw, "", account_holder, own_accounts),
+        hints=hints,
     )
 
 
@@ -343,7 +613,7 @@ def _name_the_party(channel: str, counterparty: str, instrument: str, groups: di
 
 def _looks_like_self(raw: str, counterparty: str, account_holder: str, own_accounts) -> bool:
     upper = raw.upper()
-    if any(marker in upper for marker in _SELF_MARKERS):
+    if any(marker in upper for marker in _SELF_MARKERS) or re.search(r"\bMYSELF\b", upper):
         return True
     if any(str(account) and str(account) in raw for account in own_accounts):
         return True

@@ -222,3 +222,165 @@ def test_other_banks_formats_still_name_the_payee(raw, channel, payee):
 
 def test_a_monthly_mandate_keeps_one_payee_whatever_the_instalment():
     assert analyse("NACH DR-TATA CAPITAL-EMI 12").match_key == analyse("NACH DR-TATA CAPITAL-EMI 13").match_key
+
+
+# ---------------------------------------------------------------------------
+# Other banks' shapes. Every value below is made up; only the shapes are real.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "raw, channel, payee",
+    [
+        ("ACH/EXAMPLE POWER LTD/100001", Channel.MANDATE, "EXAMPLE POWER LTD"),
+        ("APBS/SAMPLE GAS SUBSIDY/P0100000AA00", Channel.MANDATE, "SAMPLE GAS SUBSIDY"),
+        ("UPI/Test Shop/testshop.9@upi/Dinner Bil/EXAMPLE BANK/100000000001/ABC123", Channel.UPI, "Test Shop"),
+        ("UPI/Mr Demo Payer/9000000000@ybl/Payment fr/EXAMPLE BANK/100000000002/XYZ", Channel.UPI, "Mr Demo Payer"),
+        ("MMT/IMPS/100000000001/Rent/RAMA DEMO/SBIN0000001", Channel.IMPS, "RAMA DEMO"),
+        ("MMT/IMPS/100000000002/To HDFC Ac/SAMPLE PERSON/HDFC0000001/chgRs5.00GSTRs0.90", Channel.IMPS, "SAMPLE PERSON"),
+        ("BIL/BPAY/0000001AAAA1/BBPS/Sample Telco/915831", Channel.BILL, "Sample Telco"),
+        ("BIL/ONL/100000000001/DEMOINSURA/1000000000001/Policy 0000", Channel.BILL, "DEMOINSURA"),
+        ("BIL/NEFT/IN10000000000001/Note/ANY PERSON/EXAMPLE BANK", Channel.NEFT, "ANY PERSON"),
+        ("INF/NEFT/IN 400000001 00001/KKBK 0000001/sample payee...", Channel.NEFT, "sample payee"),
+        ("INF/NEFT/IN 400000001 00002/HDF C0000001/demo name", Channel.NEFT, "demo name"),
+        ("NEFT-HDFCH00000000001-DEMO CLEARING CORPORATION LIMITED-0001-00000000000001- HDFC0000001", Channel.NEFT, "DEMO CLEARING CORPORATION LIMITED"),
+        ("NEFT- AXOMB000 00000001- SAMPLE TEXTILE-- 100000...", Channel.NEFT, "SAMPLE TEXTILE"),
+        ("VPS/4303 SAMPLE MART /202601010000/100000000001/CITY", Channel.POS, "SAMPLE MART"),
+        ("VIN/WWW EXAMPLE /202508280000/100000000001/", Channel.POS, "EXAMPLE"),
+        ("DEPTFRUPI/CR/100000000001/SAMPLE", Channel.UPI, "SAMPLE"),
+        ("WDL TFR UPI/DR/100000000002/DEMO PAYEE/EXAMPLE", Channel.UPI, "DEMO PAYEE"),
+        ("TO TRANSFER-UPI/DR/100000000003/DEMO PAYEE/", Channel.UPI, "DEMO PAYEE"),
+        ("CAM/00001ABC/CASH WDL/08-11-25", Channel.CASH, "CASH WDL"),
+        ("CASHDEPOSITSELFAT00000SAMPLETOWN", Channel.CASH, "CASHDEPOSIT"),
+    ],
+)
+def test_other_real_world_shapes_name_the_channel_and_the_payee(raw, channel, payee):
+    found = analyse(raw)
+    assert found.channel == channel
+    assert found.counterparty == payee
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        # reference first: who the payee is varies by row, so none is read
+        "UPI/100000 000001/Payment from Ph/9000000000@ybl/Ko",
+        # a bare VPA first
+        "UPI/qa00000000@ybl/Car Diesel/EXAMPLE BANK/100000000002/ICI0001",
+        # a payer's note and a bank, with no IFSC to say which field is the payee
+        "MMT/IMPS/100000000003/Payout/API Bankin",
+        "MMT/IMPS/100000000004/Myself to icici/ANY PERSON/EXAMPLE Bank",
+    ],
+)
+def test_where_the_field_order_varies_the_payee_is_not_guessed(raw):
+    """A guessed payee becomes a rule key, and one decision would then place unrelated rows."""
+    found = analyse(raw)
+    assert found.is_recognised
+    assert found.counterparty == ""
+
+
+def test_the_fallback_names_the_channel_never_a_payee():
+    found = analyse("ACH SOMETHING IN A SHAPE NOBODY TAUGHT 12345")
+    assert found.channel == Channel.MANDATE
+    assert found.counterparty == ""
+    assert analyse("POS 000000****0000 EXAMPLE STORE").channel == Channel.POS
+    assert analyse("POS 000000****0000 EXAMPLE STORE").counterparty == ""
+
+
+def test_a_leading_word_that_only_starts_like_a_channel_is_not_one():
+    assert analyse("CASHFREE PAYMENTS INDIA").channel == Channel.UNKNOWN
+    assert analyse("UPIDEMO SERVICES").channel == Channel.UNKNOWN
+
+
+def test_a_banks_own_interest_credit_is_income_not_a_transfer_to_the_other_account():
+    """The account number in front of Int.Pd once made it a self-transfer, so it landed in the other bank's ledger."""
+    found = analyse("000000000001:Int.Pd:01-01-2026 to 31-03-2026", HOLDER, ["000000000001"])
+    assert found.channel == Channel.INTEREST
+    assert not found.is_self_transfer
+    assert "INTEREST" in found.hints
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "MMT/IMPS/100000000004/Myself to icici/ANY PERSON/EXAMPLE Bank",
+        "BIL/NEFT/IN10000000000001/Myself to HDFC/ANY PERSON/EXAMPLE BANK",
+    ],
+)
+def test_a_note_saying_myself_marks_a_transfer_between_the_holders_own_accounts(raw):
+    assert analyse(raw).is_self_transfer
+
+
+def test_dividends_are_one_payee_whatever_the_year_or_instalment():
+    keys = {
+        analyse(raw).match_key
+        for raw in (
+            "ACH/SAMPLECO-FIN-DIV 24-25/SC0409250000001",
+            "ACH/SAMPLECO-INT-DIV 25-26/SC0711250000002",
+            "ACH/SAMPLECO-2ND INT-DIV 25-/SC0602260000003",
+            "ACH/SAMPLECO INTERIM DIV25 26/00000000000000100001",
+            "ACH/SAMPLECODIV07072025/1000001",
+        )
+    }
+    assert keys == {normalise("SAMPLECO")}
+
+
+@pytest.mark.parametrize(
+    "raw, hints",
+    [
+        ("ACH/SAMPLECO-FIN-DIV 24-25/SC0409250000001", {"DIVIDEND"}),
+        ("ACH/SAMPLECODIV07072025/1000001", {"DIVIDEND"}),
+        ("APBS/SAMPLE GAS SUBSIDY/P0100000AA00", {"SUBSIDY"}),
+        ("UPI/Test Shop/shop@upi/REFUND/EXAMPLE BANK/100000000001/A", {"REFUND"}),
+        ("CAM/00001ABC/CASH WDL RVSL/08-11-25", {"REVERSAL"}),
+        ("MMT/IMPS/100000000002/To HDFC Ac/SAMPLE PERSON/HDFC0000001/chgRs5.00GSTRs0.90", {"CHARGES_INCLUDED"}),
+        ("UPI/Test Pump/pump@upi/petrol/EXAMPLE BANK/100000000001/A", {"FUEL"}),
+        ("UPI/NETFLIX/netflix.bdauto/UPI Mandat/EXAMPLE BANK/100000000001/A", {"SUBSCRIPTION", "RECURRING"}),
+        ("BIL/BPAY/0000001AAAA1/BBPS/Vi Postpai/915831", {"TELECOM", "BILL_PAYMENT"}),
+    ],
+)
+def test_purpose_words_are_reported_as_canonical_hints(raw, hints):
+    assert set(analyse(raw).hints) == hints
+
+
+@pytest.mark.parametrize(
+    "raw",
+    [
+        "UPI/DIVYA STORES/shop@upi/Bill/EXAMPLE BANK/100000000001/A",
+        "UPI/INTERNET CAFE/cafe@upi/Bill/EXAMPLE BANK/100000000001/A",
+        "ACH/INTERIM TRADING LTD/100001",
+        "ACH/DEMO PETROLEUM COR/1795000",
+        "UPI/VIKAS STORES/shop@upi/Bill/EXAMPLE BANK/100000000001/A",
+    ],
+)
+def test_a_hint_needs_the_whole_word(raw):
+    """DIVYA is a name, INTERNET and INTERIM are not interest, PETROLEUM is a company and not a fuel purchase."""
+    assert analyse(raw).hints == ()
+
+
+def test_hints_are_the_canonical_word_never_the_text_that_matched():
+    for raw in ("UPI/Test Pump/pump@upi/petrol/EXAMPLE BANK/100000000001/A", "ACH/SAMPLECODIV07072025/1000001"):
+        for hint in analyse(raw).hints:
+            assert hint.isupper() and hint.replace("_", "").isalpha()
+
+
+def test_a_page_footer_glued_onto_a_narration_is_not_part_of_it():
+    clean = analyse("ACH/EXAMPLE LTD/100001")
+    glued = analyse("ACH/EXAMPLE LTD/100001 www.example.bank.in Dial your Bank call from your registered mobile number")
+    assert glued.raw == clean.raw
+    assert glued.match_key == clean.match_key
+    assert analyse("UPI/Test Shop/shop@upi/Bill/EXAMPLE BANK/100000000001/A Legends for transactions in your Account XYZ").raw.endswith("/A")
+
+
+def test_a_note_with_fee_or_gst_in_it_is_a_payment_not_a_bank_charge():
+    """The generic fee pattern comes last, so a school-fee UPI is a UPI payment and no seed rule posts it to Bank Charges."""
+    found = analyse("UPI/Test School/school@upi/School fee/EXAMPLE BANK/100000000001/A")
+    assert found.channel == Channel.UPI
+    assert found.channel != Channel.FEE
+
+
+def test_lines_read_by_position_keep_their_text_back():
+    assert analyse("UPI/Test Shop/shop@upi/Bill/EXAMPLE BANK/100000000001/A").withhold_text
+    assert analyse("ACH/EXAMPLE LTD/100001").withhold_text
+    # the older, fully understood shapes still send their masked text as before
+    assert not analyse("UPI/P2M/100000000001/ZERODHA BROKING LIMIT/098336/HDFC BANK LTD").withhold_text

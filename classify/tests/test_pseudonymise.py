@@ -185,3 +185,38 @@ def test_upi_addresses_are_masked_like_any_identifier():
 
     assert mask("pay rameshk1975@okhdfc now").text == "pay <UPI_ID> now"
     assert mask("a@b.com").text == "<EMAIL>"
+
+
+def test_a_line_read_by_position_sends_channel_payee_and_hints_but_not_its_text(client):
+    """The text can carry a note, a VPA or a phone number the page layout split so masking cannot see it."""
+    p = Pseudonymiser(client, parties=[])
+
+    row = p.row(txn("UPI/Rama Demo/9000 000000@ybl/Dinner Bil/EXAMPLE BANK/100000000001/ABC123", debit=False))
+    assert row.narration == "" and row.remark == ""
+    assert row.channel == "UPI"
+    assert row.counterparty.startswith("P")
+    assert "Rama" not in str(row.as_prompt_dict()) and "9000" not in str(row.as_prompt_dict())
+    assert row.as_prompt_dict()["hints"] == ["FOOD"]
+
+
+def test_a_dividend_credit_reaches_the_model_as_a_dividend_even_though_the_payer_is_pseudonymised(client):
+    p = Pseudonymiser(client, parties=[])
+
+    row = p.row(txn("ACH/SAMPLECO-FIN-DIV 24-25/SC0409250000001", debit=False))
+    assert row.channel == "MANDATE"
+    assert row.as_prompt_dict()["hints"] == ["DIVIDEND"]
+    assert "DIV" not in row.narration
+
+
+def test_a_line_nobody_taught_still_sends_its_hints_without_any_text(client):
+    p = Pseudonymiser(client, parties=[])
+
+    row = p.row(txn("SOMETHING NEW OF 9000000000 REFUND TO PERSON", debit=False))
+    assert row.narration == "" and row.counterparty == ""
+    assert row.as_prompt_dict()["hints"] == ["REFUND"]
+    assert "9000000000" not in str(row.as_prompt_dict())
+
+
+def test_a_row_with_no_hints_has_no_hints_key(client):
+    p = Pseudonymiser(client, parties=[])
+    assert "hints" not in p.row(txn("UPI/P2M/100000000001/EXAMPLE TRADERS LIMITED/098336/HDFC BANK LTD")).as_prompt_dict()

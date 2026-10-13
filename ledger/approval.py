@@ -250,6 +250,7 @@ def book_narration_for(classification) -> str:
     amount = format_inr(txn.amount_paise)
     party = classification.counterparty.strip()
     channel = classification.channel if classification.channel not in ("", "UNKNOWN") else "bank"
+    channel = _CHANNEL_WORDS.get(channel, channel)
     if txn.bank_account.kind == "CARD":
         # A purchase or charge on the card raises what is owed; a payment or a refund lowers it.
         bank_side = classification.ledger is not None and classification.ledger.is_bank_or_cash
@@ -532,10 +533,14 @@ def auto_post_client(client) -> int:
 # ---------------------------------------------------------------------------
 
 
+#: How a channel reads in the narration of an entry ("by debit card"), where its own name would not.
+_CHANNEL_WORDS = {"POS": "debit card", "BILL": "bill payment", "MANDATE": "ACH mandate"}
+
+
 #: Ways money moves that never involve notes and coins changing hands.
 ELECTRONIC_CHANNELS = frozenset({
     Channel.UPI, Channel.NEFT, Channel.RTGS, Channel.IMPS,
-    Channel.TRANSFER, Channel.CARD, Channel.MANDATE,
+    Channel.TRANSFER, Channel.CARD, Channel.MANDATE, Channel.POS, Channel.BILL,
 })
 
 

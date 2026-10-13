@@ -80,9 +80,12 @@ class ModelRow:
     is_self_transfer: bool
     #: Placeholder -> count, from the masking pass. Recorded, not sent.
     removed: dict[str, int] = field(default_factory=dict)
+    #: Canonical purpose words the narration contained (DIVIDEND, REFUND, FUEL...): a closed vocabulary, so they go even when the
+    #: narration itself is withheld.
+    hints: tuple[str, ...] = ()
 
     def as_prompt_dict(self) -> dict:
-        return {
+        row = {
             "key": self.key,
             "date": self.date,
             "channel": self.channel,
@@ -93,6 +96,9 @@ class ModelRow:
             "narration": self.narration,
             "self_transfer": self.is_self_transfer,
         }
+        if self.hints:
+            row["hints"] = list(self.hints)
+        return row
 
 
 def amount_band(paise: int) -> str:
@@ -188,7 +194,14 @@ class Pseudonymiser:
         remark = mask(facts.remark).text if facts.remark else ""
 
         party = ""
-        if not facts.counterparty:
+        if facts.withhold_text:
+            # Read by position: channel, payee token and hints go; the text, which can carry a note, a VPA or a phone number, does not.
+            narration = remark = ""
+            if facts.is_self_transfer:
+                party = "self"
+            elif facts.counterparty:
+                party = self.party_token(facts.counterparty)
+        elif not facts.counterparty:
             # Free text with no counterparty found is where a name hides that no
             # rule could locate. Channel, direction, amount and date still go.
             narration = remark = ""
@@ -218,6 +231,7 @@ class Pseudonymiser:
             remark=remark,
             is_self_transfer=facts.is_self_transfer,
             removed=masked.removed,
+            hints=facts.hints,
         )
 
     def party_token(self, counterparty: str) -> str:

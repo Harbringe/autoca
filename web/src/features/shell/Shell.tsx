@@ -4,6 +4,7 @@
 // is the firm's, a path inside it is that client's. Under 1024px the rail and panel become a drawer, and
 // a client's five most-used screens a strip under the top bar. One of the two layouts is mounted at a time.
 
+import { useIsMutating } from '@tanstack/react-query'
 import { Link, Outlet, useNavigate, useRouterState } from '@tanstack/react-router'
 import { Keyboard, Loader2, Menu, PanelLeftOpen, Search, X } from 'lucide-react'
 import { Sparkles } from '@/components/ui/sparkles'
@@ -15,6 +16,7 @@ import { useSavingMark } from '@/api/pending'
 import { isProcessing } from '@/features/assistant/queue'
 import { useAssistantShort, useAssistantStatus } from '@/features/assistant/useAssistant'
 import { Brand } from '@/features/auth/AuthLayout'
+import { INVOICE_UPLOAD_KEY } from '@/api/queries/bills'
 import { AlertBell, AlertDot, useAlertDot } from '@/features/alerts/AlertBell'
 import { clientScreenName, parentPath } from '@/lib/clientNav'
 import { useHotkey } from '@/lib/hotkeys'
@@ -72,9 +74,10 @@ function useClientPageTitle() {
   usePageTitle(title)
 }
 
-/** The thin line along the top of the bar while a client is open. It sweeps while the assistant is reading that client's rows. */
-function Ribbon({ clientId }: { clientId: string }) {
-  const working = isProcessing(useAssistantStatus(clientId))
+/** The thin line along the top of the bar while a client is open. It sweeps while the assistant is reading that client's rows, and while an invoice is being read. */
+export function Ribbon({ clientId }: { clientId: string }) {
+  const invoiceBeingRead = useIsMutating({ mutationKey: INVOICE_UPLOAD_KEY }) > 0
+  const working = isProcessing(useAssistantStatus(clientId)) || invoiceBeingRead
   return (
     <div className="absolute inset-x-0 top-0 h-[3px] overflow-hidden bg-brand" aria-hidden>
       {working && <span className="ribbon-sweep absolute inset-y-0 left-0 w-1/5" />}

@@ -137,9 +137,14 @@ export const invoiceReadings = (clientId: string) =>
     queryFn: () => allPages<InvoiceReading>(`${V1}/clients/${clientId}/invoices/`),
   })
 
+/** The key of an invoice upload while it is being read, for anything that wants to show that work is going on. */
+export const INVOICE_UPLOAD_KEY = ['invoice-upload'] as const
+
 export function useUploadInvoice(clientId: string) {
   const invalidate = useInvalidateClient(clientId)
   return useMutation({
+    // Named so the line along the top of the screen can tell that an invoice is being read (see INVOICE_UPLOAD_KEY).
+    mutationKey: INVOICE_UPLOAD_KEY,
     // No kind: the server tells a purchase from a sale by the client's own GSTIN and books it when certain.
     // `book: false` reads the file into a draft for a person to complete (the capture screen); otherwise a certain
     // invoice is booked at once.

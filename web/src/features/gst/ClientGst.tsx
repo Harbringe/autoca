@@ -198,9 +198,9 @@ function RunsAndRegistrations({ clientId }: { clientId: string }) {
 
 // --- add a GSTIN ------------------------------------------------------------
 
-export function AddGstinDialog({ clientId, onClose }: { clientId: string; onClose: () => void }) {
+export function AddGstinDialog({ clientId, onClose, onAdded, initialGstin = '' }: { clientId: string; onClose: () => void; onAdded?: (gstin: string) => void; initialGstin?: string }) {
   const { addRegistration } = useGstActions(clientId)
-  const [gstin, setGstin] = useState('')
+  const [gstin, setGstin] = useState(initialGstin)
   const [type, setType] = useState<GstRegistration['registration_type']>('regular')
   const [error, setError] = useState<string | null>(null)
 
@@ -212,6 +212,7 @@ export function AddGstinDialog({ clientId, onClose }: { clientId: string; onClos
     try {
       await addRegistration.mutateAsync({ gstin, registration_type: type })
       toast.success(`GSTIN ${gstin} added`)
+      onAdded?.(gstin)
       onClose()
     } catch (err) {
       // A bad checksum is a 400 naming the field; "already registered" is a 409 with only a sentence.

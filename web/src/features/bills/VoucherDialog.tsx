@@ -13,6 +13,7 @@ import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
 import { ledgers as ledgersQuery, parties as partiesQuery } from '@/api/queries/books'
 import { useItemLedgers, usePostBill, useReviseBill } from '@/api/queries/bills'
+import { gstRegistrations } from '@/api/queries/gst'
 import { clientDetail, useInvalidateClient, V1 } from '@/api/queries/clients'
 import type { BillCreateRequest, InvoiceReading, Party } from '@/api/types'
 import { Money } from '@/components/ca/Money'
@@ -22,7 +23,9 @@ import { DateInput } from '@/components/ui/date-input'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { AddGstinDialog } from '@/features/gst/ClientGst'
 import { LedgerPicker, usableLedgers } from '@/features/review/LedgerPicker'
+import { useSession } from '@/session/session'
 import { formatDate, formatPaise, parseDate, parseRupees } from '@/lib/format'
 import { normaliseName, sameBusiness, sharesAWord } from '@/lib/names'
 import { cn } from '@/lib/utils'
@@ -246,6 +249,17 @@ export function VoucherForm({
   const [ownGstin, setOwnGstin] = useState(prefill?.ownGstin ?? '')
   const [matchedNote, setMatchedNote] = useState('')
   const clientQuery = useQuery(clientDetail(clientId))
+  // The client's own GSTINs, to choose from. A role that cannot see GST keeps the plain box.
+  const { can } = useSession()
+  const canSeeGst = can('gst.view')
+  const registrations = useQuery({ ...gstRegistrations(clientId), enabled: canSeeGst })
+  const [addingGstin, setAddingGstin] = useState(false)
+  const ownGstins = registrations.data ?? []
+  // A client with one GSTIN has only that one to be: it is filled in when the invoice did not name another.
+  useEffect(() => {
+    if (!ownGstin.trim() && ownGstins.length === 1) setOwnGstin(ownGstins[0]!.gstin)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ownGstins.length])
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [newParty, setNewParty] = useState<{ name: string; gstin: string } | null>(prefill?.newParty ?? null)
   const [saving, setSaving] = useState(false)
@@ -514,9 +528,48 @@ export function VoucherForm({
     <fieldset className="grid min-w-0 gap-2 rounded-md border bg-card p-3">
       <legend className="px-1 text-xs font-medium text-muted-foreground">{purchaseSide ? 'To · buyer' : 'From · seller'}</legend>
       <div className="font-medium text-heading">{clientName || 'This client'}</div>
-      <Field label="GSTIN on this invoice" hint="Filled from the invoice; only needed if the client has more than one" error={errors.own_gstin} mask="gstin">
-        {(props, m) => <Input {...props} {...m} value={ownGstin} onChange={(e) => setOwnGstin(e.target.value)} />}
-      </Field>
+      {canSeeGst ? (
+        <div className="grid gap-1.5">
+          <div className="flex items-center justify-between gap-2">
+            <label htmlFor="own-gstin" className="text-sm font-medium">
+              Client’s GSTIN on this invoice
+            </label>
+            <Button type="button" variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={() => setAddingGstin(true)} aria-label="Add a GSTIN for this client">
+              <Plus className="size-3.5" aria-hidden /> Add GSTIN
+            </Button>
+          </div>
+          <Select id="own-gstin" value={ownGstin} aria-invalid={!!errors.own_gstin} onChange={(e) => setOwnGstin(e.target.value)}>
+            <option value="">{ownGstins.length > 1 ? 'Choose the GSTIN the invoice is made out to' : ownGstins.length === 1 ? 'Not stated' : 'No GSTIN on record yet'}</option>
+            {ownGstins.map((r) => (
+              <option key={r.id} value={r.gstin}>
+                {r.gstin} · state {r.state_code}
+              </option>
+            ))}
+            {/* What the invoice printed, when the client has no such GSTIN yet: kept so it is not lost, and "Add GSTIN" opens with it. */}
+            {ownGstin.trim() && !ownGstins.some((r) => r.gstin === ownGstin.trim().toUpperCase()) && (
+              <option value={ownGstin}>{ownGstin.trim().toUpperCase()} · from the invoice, not on record</option>
+            )}
+          </Select>
+          <p className="text-xs text-muted-foreground">
+            {ownGstin.trim() && !ownGstins.some((r) => r.gstin === ownGstin.trim().toUpperCase())
+              ? 'This GSTIN is not one of the client’s yet. Add it so every file is told apart exactly.'
+              : 'Filled from the invoice. Only needed if the client has more than one.'}
+          </p>
+          {errors.own_gstin && <p role="alert" className="text-xs text-destructive">{errors.own_gstin}</p>}
+        </div>
+      ) : (
+        <Field label="GSTIN on this invoice" hint="Filled from the invoice; only needed if the client has more than one" error={errors.own_gstin} mask="gstin">
+          {(props, m) => <Input {...props} {...m} value={ownGstin} onChange={(e) => setOwnGstin(e.target.value)} />}
+        </Field>
+      )}
+      {addingGstin && (
+        <AddGstinDialog
+          clientId={clientId}
+          initialGstin={ownGstin.trim() && !ownGstins.some((r) => r.gstin === ownGstin.trim().toUpperCase()) ? ownGstin.trim().toUpperCase() : ''}
+          onAdded={(gstin) => setOwnGstin(gstin)}
+          onClose={() => setAddingGstin(false)}
+        />
+      )}
       {ownFacts?.name && clientName && !sharesAWord(ownFacts.name, clientName) && (
         <p role="status" className="rounded-sm bg-accent px-2 py-1 text-xs text-warning">
           This invoice is made out to “{normaliseName(ownFacts.name)}”, not to {clientName}. Check it is the right client’s invoice.

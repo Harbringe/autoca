@@ -111,7 +111,7 @@ describe('one purchase or sale on its own page', () => {
     expect(within(sides).getByText('Silver Stone, Handewadi, Pune')).toBeInTheDocument()
     expect(within(sides).getByText('From · seller')).toBeInTheDocument()
     expect(within(sides).getByText('To · buyer')).toBeInTheDocument()
-    expect(within(sides).getByLabelText('GSTIN on this invoice')).toHaveValue('27AAACB2230M1ZT')
+    expect(within(sides).getByLabelText('Client’s GSTIN on this invoice')).toHaveValue('27AAACB2230M1ZT')
     // The narration is worked out from the lines, the party and the invoice number.
     expect(screen.getByLabelText('Narration')).toHaveValue('Being purchase of Biryani, Thali from Jubilant FoodWorks Limited vide invoice 80154/26/O4160')
     expect(await screen.findByAltText('Page 1 of 1 of the uploaded file')).toBeInTheDocument()

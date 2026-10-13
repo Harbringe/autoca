@@ -58,6 +58,16 @@ export function PartiesFound({ clientId }: { clientId: string }) {
       <p className="text-sm text-muted-foreground">
         Tick the ones that are real suppliers or customers. Their rows are attached to them and later statements recognise them. Nothing is created until you do.
       </p>
+      {mayCreate && items.length > 1 && (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border bg-card px-3 py-2 text-sm">
+          <Checkbox
+            label={`Select all ${items.length}`}
+            checked={items.every((c) => ticked[c.name])}
+            onChange={(e) => setTicked(e.target.checked ? Object.fromEntries(items.map((c) => [c.name, true])) : {})}
+          />
+          <span className="text-muted-foreground" aria-live="polite">{chosen.length ? `${chosen.length} selected` : 'Nothing selected yet'}</span>
+        </div>
+      )}
       <PagedList rows={items} resetKey={`${oneOffs}`} label="Parties found" section="parties">
       {(shown) => (
       <ul className="grid gap-1">

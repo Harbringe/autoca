@@ -39,6 +39,9 @@ import { useHotkey } from '@/lib/hotkeys'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { isHighReady, summariseBulk, type BulkSummary } from './bulkPost'
+import { LedgerIdeasBanner } from './LedgerIdeasBanner'
+import { SimilarGroupList } from './SimilarGroupList'
+import { groupKeyOf, groupSimilar, type SimilarGroup } from './similarGroups'
 import { SettlementPanel } from './SettlementPanel'
 import { LedgerIdea } from './LedgerIdea'
 import { StatementPicker } from './StatementPicker'
@@ -108,6 +111,10 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
   // Frozen when the dialog opens: the live count drops to 0 the moment the posting succeeds.
   const [bulk, setBulk] = useState<{ count: number; summary: BulkSummary | null }>({ count: 0, summary: null })
   const [confirmTicked, setConfirmTicked] = useState(false)
+  // Alike rows seen as groups, one decision each; and one group's rows when it is opened.
+  const [view, setView] = useState<'rows' | 'groups'>('rows')
+  const [groupKey, setGroupKey] = useState<string | null>(null)
+  const [confirmGroup, setConfirmGroup] = useState<SimilarGroup | null>(null)
   const [text, setText] = useState('')
   // A search looks through every row of the statement being reviewed (not only the page shown); with the setting on, through every statement.
   const statements = searchAll && text.trim() ? null : chosenStatements
@@ -123,6 +130,7 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
     const kept = (queue.data ?? [])
       .filter((r) => !statements || statements.includes(r.transaction.statement))
       .filter((r) => !band || r.review_band === band)
+      .filter((r) => !groupKey || groupKeyOf(r) === groupKey)
       .filter(
         (r) =>
           !q ||
@@ -139,8 +147,9 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
         ? sign * a.transaction.value_date.localeCompare(b.transaction.value_date)
         : sign * (a.transaction.amount_paise - b.transaction.amount_paise),
     )
-  }, [queue.data, statementKey, band, text, sort]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [queue.data, statementKey, band, text, sort, groupKey]) // eslint-disable-line react-hooks/exhaustive-deps
   // A long queue shows a page of rows at a time; what the list is of (stage, filter, search, sort) decides when it goes back to page 1.
+  const groups = useMemo(() => groupSimilar(rows), [rows])
   const pager = usePaged(rows, `${stage}|${statementKey}|${band}|${text}|${sort?.key ?? ''}${sort?.dir ?? ''}`, usePageSize('review'))
   const toggleSort = (key: SortKey) =>
     setSort((s) => (s?.key !== key ? { key, dir: 'asc' } : s.dir === 'asc' ? { key, dir: 'desc' } : null))
@@ -297,6 +306,27 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
 
       <AssistantStrip clientId={clientId} />
 
+      {stage === 'unresolved' && <LedgerIdeasBanner clientId={clientId} rows={rows} canPlace={can('transaction.classify')} canCreate={can('ledger.manage')} />}
+
+      {groupKey && (
+        <p role="status" className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
+          Showing the rows of one group.
+          <button type="button" className="font-medium text-link underline underline-offset-2" onClick={() => setGroupKey(null)}>
+            Show every row
+          </button>
+          <button
+            type="button"
+            className="font-medium text-link underline underline-offset-2"
+            onClick={() => {
+              setGroupKey(null)
+              setView('groups')
+            }}
+          >
+            Back to the groups
+          </button>
+        </p>
+      )}
+
       {proposed.length > 0 && (
         <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-info/30 bg-info-bg px-4 py-3 text-sm text-info">
           <span>
@@ -327,6 +357,21 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
           <span />
         )}
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
+          {canPost && stage !== 'unresolved' && (groups.length > 0 || view === 'groups') && (
+            <GlideChips
+              label="How to see the rows"
+              variant="segmented"
+              value={view}
+              onChange={(next) => {
+                setView(next)
+                setGroupKey(null)
+              }}
+              options={[
+                { value: 'rows', label: 'Rows' },
+                { value: 'groups', label: `Similar groups · ${groups.length}` },
+              ]}
+            />
+          )}
           {can('transaction.classify') && needsCount > 0 && (
             <Button variant="outline" onClick={() => suggest.mutate()} loading={suggest.isPending}>
               {!suggest.isPending && <Sparkles />} {suggest.isPending ? 'Asking the assistant…' : `Suggest ledgers for ${plural(needsCount, 'row')}`}
@@ -386,6 +431,16 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
             'Everything uploaded is posted. Upload the next statement, or read the reports.'
           ) : null}
         </EmptyState>
+      ) : view === 'groups' && stage !== 'unresolved' ? (
+        <SimilarGroupList
+          groups={groups}
+          canPost={canPost}
+          onPost={setConfirmGroup}
+          onShow={(g) => {
+            setGroupKey(g.key)
+            setView('rows')
+          }}
+        />
       ) : (
         <div className="relative overflow-hidden rounded-xl border border-border-strong bg-surface-2">
           {canPost && tickedRows.length > 0 && (
@@ -578,6 +633,25 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
         <p>
           Each becomes a journal entry in the Day Book. Until the books are signed off you can still correct or remove any of them.
         </p>
+      </Confirm>
+      <Confirm
+        open={!!confirmGroup}
+        onOpenChange={(open) => !open && setConfirmGroup(null)}
+        title={confirmGroup ? `Post ${plural(confirmGroup.rows.length, 'row')} like “${confirmGroup.label}”?` : ''}
+        confirmLabel={confirmGroup ? `Post ${confirmGroup.rows.length}` : 'Post'}
+        onConfirm={async () => {
+          if (confirmGroup) await post({ classifications: confirmGroup.rows.map((r) => r.id) })
+        }}
+      >
+        {confirmGroup && (
+          <>
+            <p>
+              {confirmGroup.debit ? 'Paid out' : 'Received'} {formatPaise(confirmGroup.totalPaise)} in all, every row placed in <b>{confirmGroup.ledgerName}</b>.
+            </p>
+            {confirmGroup.byModel > 0 && <p>{plural(confirmGroup.byModel, 'row')} were placed by the assistant from the narration: a guess. Open the group first if you have not looked at them.</p>}
+            <p>Each becomes a journal entry in the Day Book. All are posted together, or none.</p>
+          </>
+        )}
       </Confirm>
       <Confirm
         open={confirmTicked}

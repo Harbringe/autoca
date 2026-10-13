@@ -153,6 +153,7 @@ export function AlertsInbox({ alerts, filter, onFilter }: { alerts: Alert[]; fil
         {many && (
           <GlideChips
             label="Group by"
+            variant="segmented"
             value={groupBy}
             onChange={setGroupBy}
             options={[

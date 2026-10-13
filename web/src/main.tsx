@@ -5,9 +5,12 @@ import { createRoot } from 'react-dom/client'
 import { Toaster } from 'sonner'
 import { ApiError } from '@/api/errors'
 import { PreferencesProvider } from '@/lib/preferences'
+import { watchScrolling } from '@/lib/scrollbars'
 import { SessionProvider } from '@/session/session'
 import { routeTree } from './routeTree.gen'
 import './styles.css'
+
+watchScrolling()
 
 const queryClient = new QueryClient({
   defaultOptions: {

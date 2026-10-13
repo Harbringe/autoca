@@ -14,6 +14,7 @@ export function GlideChips<T extends string>({
   onChange,
   label,
   className,
+  variant = 'chips',
 }: {
   /** `disabled` dims a chip that has nothing behind it; it cannot be chosen. */
   options: { value: T; label: string; disabled?: boolean }[]
@@ -21,7 +22,10 @@ export function GlideChips<T extends string>({
   onChange: (value: T) => void
   label: string
   className?: string
+  /** 'segmented' is one framed switch with a light block on the choice, for a handful of ways to see the same thing. */
+  variant?: 'chips' | 'segmented'
 }) {
+  const segmented = variant === 'segmented'
   const wrap = useRef<HTMLDivElement>(null)
   const chips = useRef<Record<string, HTMLButtonElement | null>>({})
   const [box, setBox] = useState<Box | null>(null)
@@ -41,11 +45,11 @@ export function GlideChips<T extends string>({
   const glides = !!box
 
   return (
-    <div ref={wrap} role="group" aria-label={label} className={cn('relative flex flex-wrap items-center gap-1.5', className)}>
+    <div ref={wrap} role="group" aria-label={label} className={cn('relative flex items-center', segmented ? 'gap-0.5 rounded-lg border border-border-strong bg-card p-1' : 'flex-wrap gap-1.5', className)}>
       {glides && (
         <span
           aria-hidden
-          className="absolute left-0 top-0 rounded-full bg-primary transition-[transform,width,height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]"
+          className={cn('absolute left-0 top-0 transition-[transform,width,height] duration-300 ease-[cubic-bezier(0.22,1,0.36,1)]', segmented ? 'rounded-md bg-foreground' : 'rounded-full bg-primary')}
           style={{ width: box.w, height: box.h, transform: `translate(${box.x}px, ${box.y}px)` }}
         />
       )}
@@ -62,8 +66,19 @@ export function GlideChips<T extends string>({
             disabled={o.disabled && !on}
             onClick={() => onChange(o.value)}
             className={cn(
-              'relative z-10 rounded-full border px-2.5 py-0.5 text-sm transition-colors duration-200',
-              on ? (glides ? 'border-transparent text-primary-foreground' : 'border-primary bg-primary text-primary-foreground') : o.disabled ? 'cursor-not-allowed text-faint opacity-60' : 'hover:bg-hover',
+              'relative z-10 text-sm transition-colors duration-200',
+              segmented ? 'rounded-md px-3 py-1 font-medium' : 'rounded-full border px-2.5 py-0.5',
+              on
+                ? segmented
+                  ? glides
+                    ? 'text-background'
+                    : 'bg-foreground text-background'
+                  : glides
+                    ? 'border-transparent text-primary-foreground'
+                    : 'border-primary bg-primary text-primary-foreground'
+                : o.disabled
+                  ? 'cursor-not-allowed text-faint opacity-60'
+                  : 'hover:bg-hover',
             )}
           >
             {o.label}

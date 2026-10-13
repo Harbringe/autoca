@@ -220,7 +220,7 @@ function AssistantIndicator() {
             needsWords ? 'border-accent-edge bg-accent text-accent-foreground' : 'border-border bg-card text-muted-foreground',
           )}
         >
-          <Sparkles working={status.state === 'working'} className="size-4 text-accent-foreground" />
+          <Sparkles working={status.state === 'working'} className="size-4" />
           {needsWords ? (
             text
           ) : (

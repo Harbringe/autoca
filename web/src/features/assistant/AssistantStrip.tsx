@@ -23,7 +23,7 @@ export function AssistantStrip({ clientId, className }: { clientId: string; clas
         className,
       )}
     >
-      <Sparkles working={working} className={cn('size-6', !attention && 'text-accent-foreground')} />
+      <Sparkles working={working} className="size-6" />
       <span className="min-w-0 flex-1">{line}</span>
       {working && (
         <span

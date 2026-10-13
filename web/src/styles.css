@@ -358,12 +358,12 @@
   }
 }
 
-/* One small motion, for the assistant's sparkles while it works: transform and opacity of four tiny shapes, cheap on an old machine, and off under reduced motion. */
-@keyframes sparkle {
+/* One small motion, for the assistant's mark while it works: four small blocks swell and fade in turn. Transform and opacity only, cheap on an old machine, and off under reduced motion. */
+@keyframes spark-swell {
   0%,
   100% {
-    transform: scale(0.45);
-    opacity: 0.35;
+    transform: scale(0.7);
+    opacity: 0.25;
   }
   50% {
     transform: scale(1);

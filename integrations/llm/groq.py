@@ -68,8 +68,10 @@ RATE_LIMIT_CODE = "rate_limit_exceeded"
 TOO_LARGE = "the request is larger than the plan allows in a minute (request_too_large)"
 #: A JSON request runs about three characters to a token; erring high only means waiting sooner.
 CHARS_PER_TOKEN = 3
-#: In no-wait mode a call is one attempt with this timeout, so it cannot sit in a backoff.
-NO_WAIT_TIMEOUT_SECONDS = 15.0
+#: In no-wait mode a call is one attempt (it cannot sit in a backoff) and its timeout is the configured one, up to this. A reply of
+#: a dozen rows takes 10 to 20 seconds, so a cap of 15 cut off about three calls in four. It stays under the web server's own
+#: 120 seconds, so a call made from a web request still ends before the proxy gives up.
+NO_WAIT_TIMEOUT_SECONDS = 90.0
 #: A retry-after longer than this is the day's allowance, not this minute's.
 DAILY_RETRY_AFTER_SECONDS = 600.0
 _DAILY_LIMIT = re.compile(r"per day|\((?:TPD|RPD)\)", re.IGNORECASE)

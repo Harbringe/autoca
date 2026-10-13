@@ -242,12 +242,14 @@ def _limit(code: int, message: str, retry_after: str | None = None) -> urllib.er
     return urllib.error.HTTPError("u", code, "limit", headers, body)
 
 
-def test_no_wait_mode_is_a_cached_twin_with_one_attempt_and_a_short_timeout():
+def test_no_wait_mode_is_a_cached_twin_with_one_attempt_and_the_configured_timeout():
     adapter = GroqLLMAdapter(api_key="k", timeout_seconds=30)
     twin = adapter.without_waiting()
     assert twin is adapter.without_waiting() and twin is not adapter
-    assert twin.max_attempts == 1 and twin.timeout == 15.0
+    assert twin.max_attempts == 1 and twin.timeout == 30.0
     assert adapter.max_attempts == 3 and adapter.timeout == 30.0
+    # A very long configured timeout is held to the cap, so a web request still ends before the proxy gives up.
+    assert GroqLLMAdapter(api_key="k", timeout_seconds=600).without_waiting().timeout == 90.0
 
 
 def test_a_minute_limit_raises_at_once_with_groqs_retry_after():

@@ -23,6 +23,7 @@ import { UploadProvider, useUpload } from '@/features/statements/UploadDialog'
 import { fyLabel } from '@/lib/format'
 import { useHotkey } from '@/lib/hotkeys'
 import { clientScreenName, clientScreenOf, clientTabsFor } from '@/lib/clientNav'
+import { useReviewScope } from '@/features/review/useReviewScope'
 import { moduleOf } from '@/lib/modules'
 import { reviewSummary } from '@/api/queries/clients'
 import { REPORT_TABS } from '@/features/reports/tabs'
@@ -49,6 +50,9 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
   const client = useQuery(clientDetail(clientId))
   const books = useQuery({ ...booksStatus(clientId), enabled: can('report.view') })
   const summary = useQuery({ ...reviewSummary(clientId), enabled: can('transaction.view') })
+  // On Review the tab's count is that of the statements chosen there.
+  const reviewSearch = useRouterState({ select: (s) => s.location.search }) as { statement?: string }
+  const reviewScope = useReviewScope(clientId, reviewSearch.statement, clientScreenOf(path) === 'review')
   const overview = useQuery({ ...firmOverview(), enabled: can('client.view') })
   const { fy, setFy, explicit, ready, dataYears } = useFy()
   const latestYear = dataYears[dataYears.length - 1]
@@ -83,7 +87,7 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
           params: p,
           label: t.label,
           exact: true,
-          count: t.screen === 'review' ? summary.data?.total : undefined,
+          count: t.screen === 'review' ? (reviewScope.counts ? reviewScope.counts.all : summary.data?.total) : undefined,
         }))
   // Alerts follow where you are: a place shows its own and those of its tabs; the client's home and pipeline show all of its.
   const alertModule = module && module !== 'clients' ? (module as AlertModule) : undefined

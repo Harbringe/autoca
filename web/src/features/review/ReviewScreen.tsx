@@ -16,7 +16,7 @@ import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
 import { waitForJob } from '@/api/jobs'
 import { ledgers as ledgersQuery, parties as partiesQuery, reviewQueue, rules as rulesQuery, type ReviewTab, type Stage } from '@/api/queries/books'
-import { bankAccounts, clientDetail, reviewSummary, statements as statementsQuery, useInvalidateClient, V1 } from '@/api/queries/clients'
+import { bankAccounts, clientDetail, reviewSummary, useInvalidateClient, V1 } from '@/api/queries/clients'
 import { GROUP_LABEL, TDS_SECTIONS, type Classification, type Party, type Job, type JournalEntry, type PlacementResult } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
 import { Money } from '@/components/ca/Money'
@@ -42,7 +42,7 @@ import { isHighReady, summariseBulk, type BulkSummary } from './bulkPost'
 import { SettlementPanel } from './SettlementPanel'
 import { LedgerIdea } from './LedgerIdea'
 import { StatementPicker } from './StatementPicker'
-import { activeStatement, statementChoices } from './statementChoices'
+import { useReviewScope } from './useReviewScope'
 import { setSearchAllStatements, useSearchAllStatements } from '@/lib/reviewPrefs'
 import { LedgerPicker, usableLedgers } from './LedgerPicker'
 import { NewAccountDialog } from './NewAccountDialog'
@@ -83,14 +83,17 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
   const { can } = useSession()
   const client = useQuery(clientDetail(clientId))
   const summary = useQuery(reviewSummary(clientId))
-  // Opened without saying which stage: go where the work is.
-  const stage: Stage = asked ?? (!summary.data?.unresolved && summary.data?.pending_approval ? 'pending_approval' : 'unresolved')
+  // Reviewed by bank statement: the statements with rows waiting, the ones chosen (one, several or all), and the numbers for them.
+  const scope = useReviewScope(clientId, askedStatement)
+  const choices = scope.waiting
+  const chosenStatements = scope.selection
+  const counts = scope.counts
+  // Opened without saying which stage: go where the work is, in the statements chosen.
+  const firstNeeds = counts ? counts.unresolved : summary.data?.unresolved
+  const firstReady = counts ? counts.pending_approval : summary.data?.pending_approval
+  const stage: Stage = asked ?? (!firstNeeds && firstReady ? 'pending_approval' : 'unresolved')
   const queue = useQuery(reviewQueue(clientId, stage))
   const navigate = useNavigate()
-  const statementList = useQuery(statementsQuery(clientId))
-  // Reviewed one bank statement at a time: the statements with rows waiting in this stage, and the one shown.
-  const choices = useMemo(() => statementChoices(statementList.data?.results ?? [], queue.data ?? []), [statementList.data, queue.data])
-  const chosenStatement = activeStatement(askedStatement, choices)
   const statementLabel = useMemo(() => new Map(choices.map((c) => [c.id, c.label])), [choices])
   const searchAll = useSearchAllStatements()
   const ledgers = useQuery(ledgersQuery(clientId))
@@ -107,7 +110,8 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
   const [confirmTicked, setConfirmTicked] = useState(false)
   const [text, setText] = useState('')
   // A search looks through every row of the statement being reviewed (not only the page shown); with the setting on, through every statement.
-  const statement = searchAll && text.trim() ? null : chosenStatement
+  const statements = searchAll && text.trim() ? null : chosenStatements
+  const statementKey = statements ? statements.join(',') : 'all'
   const [sort, setSort] = useState<Sort>(null)
   const listRef = useRef<HTMLUListElement>(null)
   // The open row can be shut again by pressing it, without losing which row the keys are on.
@@ -117,7 +121,7 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
     const q = text.trim().toLowerCase()
     const qa = plainAmount(q)
     const kept = (queue.data ?? [])
-      .filter((r) => !statement || r.transaction.statement === statement)
+      .filter((r) => !statements || statements.includes(r.transaction.statement))
       .filter((r) => !band || r.review_band === band)
       .filter(
         (r) =>
@@ -135,9 +139,9 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
         ? sign * a.transaction.value_date.localeCompare(b.transaction.value_date)
         : sign * (a.transaction.amount_paise - b.transaction.amount_paise),
     )
-  }, [queue.data, statement, band, text, sort])
+  }, [queue.data, statementKey, band, text, sort]) // eslint-disable-line react-hooks/exhaustive-deps
   // A long queue shows a page of rows at a time; what the list is of (stage, filter, search, sort) decides when it goes back to page 1.
-  const pager = usePaged(rows, `${stage}|${statement}|${band}|${text}|${sort?.key ?? ''}${sort?.dir ?? ''}`, usePageSize('review'))
+  const pager = usePaged(rows, `${stage}|${statementKey}|${band}|${text}|${sort?.key ?? ''}${sort?.dir ?? ''}`, usePageSize('review'))
   const toggleSort = (key: SortKey) =>
     setSort((s) => (s?.key !== key ? { key, dir: 'asc' } : s.dir === 'asc' ? { key, dir: 'desc' } : null))
   const index = Math.max(0, rows.findIndex((r) => r.id === selectedId))
@@ -165,7 +169,7 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
     if (pager.items.length && !pager.items.some((r) => r.id === selectedId)) setSelectedId(pager.items[0]!.id)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [pager.page])
-  useEffect(() => setTicked(new Set()), [stage, band, statement])
+  useEffect(() => setTicked(new Set()), [stage, band, statementKey])
   // A filter or a sort changes what is listed; a short fade says so without remounting the rows.
   useEffect(() => {
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
@@ -235,15 +239,19 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
     })
   }, 'Review')
 
-  const needSettling = summary.data?.needs_settlement ?? 0
+  const needSettling = counts ? counts.settling : (summary.data?.needs_settlement ?? 0)
+  const needsCount = counts ? counts.unresolved : (summary.data?.unresolved ?? 0)
+  const readyCount = counts ? counts.pending_approval : (summary.data?.pending_approval ?? 0)
+  const totalCount = counts ? counts.all : (summary.data?.total ?? 0)
   // Reviewing one statement: "post all" is that statement's high-confidence rows only, so what was checked is what is posted. With no
   // statement chosen (a single statement, or all of them) it is the whole client's, as before.
   const clientHigh = summary.data?.bulk_approvable ?? 0
   // The rows the band would post, for the confirmation's breakdown. The "Ready to post" list is the one that holds them.
   const ready = useQuery({ ...reviewQueue(clientId, 'pending_approval'), enabled: canPost && clientHigh > 0 })
-  // (A statement named in the address counts even when this stage has rows of only that one, so the scope holds in every tab.)
-  const scopeStatement = chosenStatement ?? (askedStatement && askedStatement !== 'all' && statementList.data?.results.some((s) => s.id === askedStatement) ? askedStatement : null)
-  const scopedHigh = useMemo(() => (scopeStatement ? (ready.data ?? []).filter((r) => isHighReady(r) && r.transaction.statement === scopeStatement) : null), [ready.data, scopeStatement])
+  const scopedHigh = useMemo(
+    () => (chosenStatements ? (ready.data ?? []).filter((r) => isHighReady(r) && chosenStatements.includes(r.transaction.statement)) : null),
+    [ready.data, chosenStatements],
+  )
   const highCount = scopedHigh ? scopedHigh.length : clientHigh
   function askBulk() {
     const detail = scopedHigh ? summariseBulk(scopedHigh) : ready.data ? summariseBulk(ready.data) : null
@@ -265,7 +273,7 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
         <div className="flex flex-wrap gap-2">
           {canPost && highCount > 0 && (
             <Button variant={tickedRows.length ? 'outline' : 'primary'} onClick={askBulk}>
-              <CheckCheck /> Post all high-confidence{scopedHigh ? ' in this statement' : ''} ({highCount})
+              <CheckCheck /> Post all high-confidence{scopedHigh ? (chosenStatements!.length > 1 ? ' in these statements' : ' in this statement') : ''} ({highCount})
             </Button>
           )}
         </div>
@@ -276,12 +284,12 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
       {choices.length > 1 && (
         <StatementPicker
           choices={choices}
-          active={statement}
-          total={queue.data?.length ?? 0}
+          selection={chosenStatements}
+          total={choices.reduce((n, c) => n + c.count, 0)}
           onChange={(next) => void navigate({ to: '.', search: ((prev: Record<string, unknown>) => ({ ...prev, statement: next })) as never, replace: true })}
         />
       )}
-      {choices.length > 1 && searchAll && text.trim() && chosenStatement && (
+      {choices.length > 1 && searchAll && text.trim() && chosenStatements && (
         <p role="status" className="text-xs text-muted-foreground">
           Searching every statement. Turn this off with “Search all statements”, or in Preferences.
         </p>
@@ -319,9 +327,9 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
           <span />
         )}
         <div className="flex w-full flex-wrap items-center justify-end gap-2 sm:w-auto">
-          {can('transaction.classify') && (summary.data?.unresolved ?? 0) > 0 && (
+          {can('transaction.classify') && needsCount > 0 && (
             <Button variant="outline" onClick={() => suggest.mutate()} loading={suggest.isPending}>
-              {!suggest.isPending && <Sparkles />} {suggest.isPending ? 'Asking the assistant…' : `Suggest ledgers for ${plural(summary.data!.unresolved, 'row')}`}
+              {!suggest.isPending && <Sparkles />} {suggest.isPending ? 'Asking the assistant…' : `Suggest ledgers for ${plural(needsCount, 'row')}`}
             </Button>
           )}
           {!queue.isPending && !queue.error && (queue.data?.length ?? 0) > 1 && (
@@ -366,15 +374,15 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
             <button type="button" className="underline" onClick={() => setText('')}>
               Clear the search
             </button>
-          ) : stage === 'unresolved' && (summary.data?.pending_approval ?? 0) > 0 ? (
+          ) : stage === 'unresolved' && readyCount > 0 ? (
             <>
-              {plural(summary.data!.pending_approval, 'row')} placed and ready to post.{' '}
+              {plural(readyCount, 'row')} placed and ready to post.{' '}
               <Link to="/clients/$clientId/review" params={{ clientId }} search={{ stage: 'pending_approval' }} className="underline">
                 Go to Ready to post
               </Link>
               .
             </>
-          ) : (summary.data?.total ?? 0) === 0 ? (
+          ) : totalCount === 0 ? (
             'Everything uploaded is posted. Upload the next statement, or read the reports.'
           ) : null}
         </EmptyState>
@@ -447,7 +455,7 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
                         <span className="block truncate" title={r.transaction.narration}>
                           {r.counterparty && <span className="font-medium text-heading">{r.counterparty} </span>}
                           <span className="font-mono text-xs text-muted-foreground">{r.transaction.narration}</span>
-                          {choices.length > 1 && !statement && statementLabel.get(r.transaction.statement) && (
+                          {choices.length > 1 && (!statements || statements.length > 1) && statementLabel.get(r.transaction.statement) && (
                             <span className="ml-2 text-xs text-faint"> · {statementLabel.get(r.transaction.statement)}</span>
                           )}
                         </span>
@@ -536,7 +544,7 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
       <Confirm
         open={confirmHigh}
         onOpenChange={setConfirmHigh}
-        title={`Post ${plural(bulk.count, 'high-confidence row')}${scopedHigh ? ' of this statement' : ''}?`}
+        title={`Post ${plural(bulk.count, 'high-confidence row')}${scopedHigh ? (chosenStatements!.length > 1 ? ' of these statements' : ' of this statement') : ''}?`}
         confirmLabel={`Post ${bulk.count}`}
         onConfirm={() => post(scopedHigh ? { classifications: scopedHigh.map((r) => r.id) } : { band: 'HIGH' })}
       >

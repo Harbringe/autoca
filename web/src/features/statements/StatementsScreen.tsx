@@ -100,18 +100,24 @@ export function StatementsScreen({ clientId }: { clientId: string }) {
       align: 'right',
       cell: (s) => (
         <span className="flex justify-end gap-1">
-          {can('transaction.view') && (
-            <Button asChild variant={waitingWords(waitingBy.get(s.id)) ? 'primary' : 'outline'} className={ROW_BUTTON}>
-              <Link
-                to="/clients/$clientId/review"
-                params={{ clientId }}
-                search={{ stage: reviewStage(waitingBy.get(s.id)), statement: s.id }}
-                aria-label={`Review the statement ${formatDate(s.period_start)} to ${formatDate(s.period_end)}`}
-              >
+          {can('transaction.view') &&
+            (waitingKnown && !waitingWords(waitingBy.get(s.id)) ? (
+              <Button variant="outline" className={ROW_BUTTON} disabled title="Everything in this statement is posted">
                 Review
-              </Link>
-            </Button>
-          )}
+              </Button>
+            ) : (
+              <Button asChild variant={waitingKnown ? 'primary' : 'outline'} className={ROW_BUTTON}>
+                <Link
+                  to="/clients/$clientId/review"
+                  params={{ clientId }}
+                  // Until what is waiting is known the stage is left to Review, which opens where the work is.
+                  search={{ stage: waitingKnown ? reviewStage(waitingBy.get(s.id)) : undefined, statement: s.id }}
+                  aria-label={`Review the statement ${formatDate(s.period_start)} to ${formatDate(s.period_end)}`}
+                >
+                  Review
+                </Link>
+              </Button>
+            ))}
           <Button variant="outline" className={ROW_BUTTON} onClick={() => setViewing(s)}>
             Rows
           </Button>

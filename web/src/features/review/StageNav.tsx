@@ -2,11 +2,12 @@
 // other side of the line: what has already become an entry in the books.
 
 import { useQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useSearch } from '@tanstack/react-router'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { journal, type ReviewTab } from '@/api/queries/books'
 import { reviewSummary } from '@/api/queries/clients'
 import { cn } from '@/lib/utils'
+import { useReviewScope } from './useReviewScope'
 import { useSession } from '@/session/session'
 
 export const STAGES: { stage: ReviewTab; label: string; hint: string }[] = [
@@ -26,6 +27,9 @@ export function StageNav({ clientId, active }: { clientId: string; active: Revie
   const canSeePosted = can('journal.view')
   const posted = useQuery({ ...journal(clientId), enabled: canSeePosted })
   const tabs = STAGES.filter((s) => s.stage !== 'posted' || canSeePosted)
+  // With statements chosen, every number on the tabs is theirs, not the client's.
+  const asked = useSearch({ strict: false }) as { statement?: string }
+  const { counts: scoped } = useReviewScope(clientId, asked.statement)
 
   // The lit tab is one shape that glides to the tab you chose, rather than each tab switching its own background.
   const nav = useRef<HTMLElement>(null)
@@ -69,8 +73,9 @@ export function StageNav({ clientId, active }: { clientId: string; active: Revie
         />
       )}
       {tabs.map((s) => {
-        const count =
-          s.stage === 'unresolved'
+        const count = scoped
+          ? scoped[s.stage === 'posted' ? 'posted' : s.stage]
+          : s.stage === 'unresolved'
             ? summary.data?.unresolved
             : s.stage === 'pending_approval'
               ? summary.data?.pending_approval

@@ -1,6 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, RouterProvider, useSearch } from '@tanstack/react-router'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import { journal, ledgers, parties, reviewQueue } from '@/api/queries/books'
 import { bankAccounts, clientDetail, reviewSummary, statements } from '@/api/queries/clients'
@@ -35,8 +35,8 @@ const row = (n: number, statement: string): Classification =>
 const STATEMENTS = {
   count: 2,
   results: [
-    { id: 's2', bank_account_label: 'Icici Bank A/c 7921', period_start: '2025-04-03', period_end: '2026-03-31' },
-    { id: 's1', bank_account_label: 'Generic Bank A/c 5335', period_start: '2025-01-01', period_end: '2025-03-31' },
+    { id: 's2', bank_account_label: 'Icici Bank A/c 7921', period_start: '2025-04-03', period_end: '2026-03-31', transaction_count: 10 },
+    { id: 's1', bank_account_label: 'Generic Bank A/c 5335', period_start: '2025-01-01', period_end: '2025-03-31', transaction_count: 6 },
   ],
 }
 
@@ -45,6 +45,7 @@ function renderReview(rows: Classification[], { start = '/clients/c1/review', pr
   queryClient.setQueryData(clientDetail(CLIENT).queryKey, { id: CLIENT, name: 'Laxmi', can_post: true } as never)
   queryClient.setQueryData(reviewSummary(CLIENT).queryKey, { unresolved: 0, pending_approval: rows.length, total: rows.length, bulk_approvable: 0 } as never)
   queryClient.setQueryData(reviewQueue(CLIENT, 'pending_approval').queryKey, rows)
+  queryClient.setQueryData(reviewQueue(CLIENT, 'unresolved').queryKey, [])
   queryClient.setQueryData(statements(CLIENT).queryKey, STATEMENTS as never)
   queryClient.setQueryData(
     ledgers(CLIENT).queryKey,
@@ -78,7 +79,7 @@ describe('the review, one bank statement at a time', () => {
 
   it('starts on the oldest statement with work and says how many each has', async () => {
     renderReview(rows)
-    await screen.findByRole('group', { name: 'Statement' })
+    await screen.findByRole('group', { name: 'Statements to review' })
     expect(shown()).toHaveLength(2)
     expect(shown().join(' ')).toContain('NARRATION 4')
     expect(shown().join(' ')).not.toContain('NARRATION 1')
@@ -87,21 +88,51 @@ describe('the review, one bank statement at a time', () => {
     expect(screen.getByRole('button', { name: /All statements · 5/ })).toBeInTheDocument()
   })
 
-  it('moves to another statement, and to all of them, keeping the choice in the address', async () => {
+  it('ticks statements on and off, keeping the choice in the address', async () => {
     const router = renderReview(rows)
+    // the oldest is on; ticking the other adds it, and with both on that is every statement
     fireEvent.click(await screen.findByRole('button', { name: /Icici Bank A\/c 7921 · 3/ }))
+    await waitFor(() => expect(shown()).toHaveLength(5))
+    expect(router.state.location.search).toMatchObject({ statement: 'all' })
+    expect(shown().join(' ')).toContain('Generic Bank A/c 5335')
+
+    // unticking the first leaves the other alone
+    fireEvent.click(screen.getByRole('button', { name: /Generic Bank A\/c 5335 · 2/ }))
     await waitFor(() => expect(shown()).toHaveLength(3))
-    expect(shown().join(' ')).toContain('NARRATION 1')
     expect(router.state.location.search).toMatchObject({ statement: 's2' })
+    expect(shown().join(' ')).toContain('NARRATION 1')
+
+    // the last one on cannot be switched off
+    fireEvent.click(screen.getByRole('button', { name: /Icici Bank A\/c 7921 · 3/ }))
+    expect(shown()).toHaveLength(3)
 
     fireEvent.click(screen.getByRole('button', { name: /All statements · 5/ }))
     await waitFor(() => expect(shown()).toHaveLength(5))
     expect(router.state.location.search).toMatchObject({ statement: 'all' })
   })
 
+  it('opens on several statements when the address names them', async () => {
+    renderReview(rows, { start: '/clients/c1/review?statement=s1,s2' })
+    await waitFor(() => expect(shown()).toHaveLength(5))
+    expect(screen.getByRole('button', { name: /Generic Bank A\/c 5335 · 2/ })).toHaveAttribute('aria-pressed', 'true')
+    expect(screen.getByRole('button', { name: /Icici Bank A\/c 7921 · 3/ })).toHaveAttribute('aria-pressed', 'true')
+  })
+
+  it('shows the numbers of the statements chosen: the stage tabs, and what the screen says about the rows', async () => {
+    renderReview(rows, { start: '/clients/c1/review?statement=s1' })
+    await screen.findByRole('group', { name: 'Statements to review' })
+    const nav = screen.getByRole('navigation', { name: 'Review stage' })
+    const tab = (name: string) => within(nav).getByRole('link', { name: new RegExp(name) }).textContent
+    expect(tab('Ready to post')).toContain('2')
+    expect(tab('All waiting')).toContain('2')
+    expect(tab('Needs a ledger')).toContain('0')
+    // posted is what is on file in the statement (6) less what is still waiting (2)
+    expect(tab('Posted')).toContain('4')
+  })
+
   it('opens on the statement the address names', async () => {
     renderReview(rows, { start: '/clients/c1/review?statement=s2' })
-    await screen.findByRole('group', { name: 'Statement' })
+    await screen.findByRole('group', { name: 'Statements to review' })
     expect(shown()).toHaveLength(3)
     expect(shown().join(' ')).toContain('NARRATION 1')
   })
@@ -109,7 +140,7 @@ describe('the review, one bank statement at a time', () => {
   it('shows no picker when the rows belong to one statement', async () => {
     renderReview([row(1, 's2'), row(2, 's2')])
     await waitFor(() => expect(shown()).toHaveLength(2))
-    expect(screen.queryByRole('group', { name: 'Statement' })).toBeNull()
+    expect(screen.queryByRole('group', { name: 'Statements to review' })).toBeNull()
   })
 })
 
@@ -139,7 +170,7 @@ describe('searching in the review', () => {
   it('stays inside the statement chosen, unless the setting to search every statement is on', async () => {
     setSearchAllStatements(false)
     renderReview([row(1, 's2'), row(2, 's2'), row(3, 's1'), row(4, 's1')], { start: '/clients/c1/review?statement=s1' })
-    await screen.findByRole('group', { name: 'Statement' })
+    await screen.findByRole('group', { name: 'Statements to review' })
     search('NARRATION 1')
     await screen.findByText(/Nothing matches/)
     expect(shown()).toHaveLength(0)
@@ -149,7 +180,7 @@ describe('searching in the review', () => {
     setSearchAllStatements(true)
     try {
       renderReview([row(1, 's2'), row(2, 's2'), row(3, 's1'), row(4, 's1')], { start: '/clients/c1/review?statement=s1' })
-      await screen.findByRole('group', { name: 'Statement' })
+      await screen.findByRole('group', { name: 'Statements to review' })
       search('NARRATION 1')
       await waitFor(() => expect(shown()).toHaveLength(1))
       expect(shown()[0]).toContain('Icici Bank A/c 7921')

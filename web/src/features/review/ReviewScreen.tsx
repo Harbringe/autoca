@@ -20,6 +20,7 @@ import { bankAccounts, clientDetail, reviewSummary, useInvalidateClient, V1 } fr
 import { GROUP_LABEL, TDS_SECTIONS, type Classification, type Party, type Job, type JournalEntry, type PlacementResult } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
 import { Money } from '@/components/ca/Money'
+import { Pager, usePaged } from '@/components/ca/Pager'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -27,6 +28,8 @@ import { Card } from '@/components/ui/card'
 import { Collapse, useClosing } from '@/components/ui/collapse'
 import { GlideChips } from '@/components/ui/glide-chips'
 import { AssistantStrip } from '@/features/assistant/AssistantStrip'
+import { useAssistantStatus } from '@/features/assistant/useAssistant'
+import { isProcessing } from '@/features/assistant/queue'
 import { Checkbox, Select } from '@/components/ui/controls'
 import { Input } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
@@ -83,6 +86,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
   const accounts = useQuery(bankAccounts(clientId))
   const invalidate = useInvalidateClient(clientId)
 
+  const working = isProcessing(useAssistantStatus(clientId))
   const [band, setBand] = useState<string>('')
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [ticked, setTicked] = useState<Set<string>>(new Set())
@@ -118,6 +122,8 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
         : sign * (a.transaction.amount_paise - b.transaction.amount_paise),
     )
   }, [queue.data, band, text, sort])
+  // A long queue shows a page of rows at a time; what the list is of (stage, filter, search, sort) decides when it goes back to page 1.
+  const pager = usePaged(rows, `${stage}|${band}|${text}|${sort?.key ?? ''}${sort?.dir ?? ''}`)
   const toggleSort = (key: SortKey) =>
     setSort((s) => (s?.key !== key ? { key, dir: 'asc' } : s.dir === 'asc' ? { key, dir: 'desc' } : null))
   const index = Math.max(0, rows.findIndex((r) => r.id === selectedId))
@@ -135,6 +141,16 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
   useEffect(() => {
     if (rows.length && !rows.some((r) => r.id === selectedId)) setSelectedId(rows[Math.min(index, rows.length - 1)]!.id)
   }, [rows, selectedId, index])
+  // The selected row's page is the one shown (keys, or a row leaving, can move the selection to another page) ...
+  useEffect(() => {
+    if (selectedId && rows.length) pager.reveal(index)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedId])
+  // ... and turning the page by hand selects the first row on it, so the keys and the open row are on the page in view.
+  useEffect(() => {
+    if (pager.items.length && !pager.items.some((r) => r.id === selectedId)) setSelectedId(pager.items[0]!.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pager.page])
   useEffect(() => setTicked(new Set()), [stage, band])
   // A filter or a sort changes what is listed; a short fade says so without remounting the rows.
   useEffect(() => {
@@ -343,8 +359,8 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
               Select every row that can be posted
             </label>
           )}
-          <ul ref={listRef} aria-label="Rows waiting" className="divide-y divide-border-strong">
-            {rows.map((r) => {
+          <ul ref={listRef} id="review-list" aria-label="Rows waiting" className="divide-y divide-border-strong">
+            {pager.items.map((r) => {
               const isOpen = r.id === openId
               const showBody = isOpen || closing === r.id
               const tickable = canPost && stage !== 'unresolved' && postable(r)
@@ -397,12 +413,13 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
                                 {r.ledger_name}
                               </span>
                               {r.memory && r.method !== 'REVIEWED' && (
-                                <span className="inline-flex shrink-0 text-info" title={r.memory.note}>
-                                  <MemoryIcon kind={r.memory.kind} className="size-3.5" />
+                                <Badge tone={r.memory.kind === 'ai' ? 'assistant' : 'neutral'} title={r.memory.note} className="shrink-0">
+                                  {r.memory.kind === 'ai' ? 'Assistant' : r.memory.kind === 'matched' ? 'Invoice' : 'Rule'}
                                   <span className="sr-only">
+                                    {' '}
                                     {r.memory.label}: {r.memory.note}
                                   </span>
-                                </span>
+                                </Badge>
                               )}
                               {r.suggested_ledger && r.method !== 'REVIEWED' && (
                                 <span className="inline-flex shrink-0 items-center gap-1 rounded-sm bg-info-bg px-1 text-xs font-medium text-info" title={`The assistant suggests a better ledger: ${r.suggested_ledger.name}. Open the row to create it or place the row there.`}>
@@ -423,6 +440,14 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
                                 </span>
                               )}
                             </>
+                          ) : r.model_state === 'claimed' && working ? (
+                            // The assistant has this row right now: a quiet pulse where its ledger will appear.
+                            <span role="status" className="inline-flex items-center gap-2 text-xs text-muted-foreground">
+                              <span aria-hidden className="block h-2.5 w-28 animate-pulse rounded-full bg-muted motion-reduce:animate-none" />
+                              <span className="sr-only">Being read by the assistant</span>
+                            </span>
+                          ) : r.model_state === 'waiting' && working ? (
+                            <span className="text-xs text-muted-foreground">In line for the assistant</span>
                           ) : (
                             <span className="inline-flex items-center gap-1.5 rounded-full border border-accent-edge bg-accent px-2 py-0.5 text-xs font-medium text-accent-foreground">
                               <span aria-hidden className="size-1.5 rounded-full bg-current" />
@@ -459,6 +484,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
               )
             })}
           </ul>
+          <Pager paged={pager} label="Rows waiting" scrollTo="review-list" />
         </div>
       )}
 

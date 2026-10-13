@@ -470,6 +470,7 @@ class ClassificationSerializer(serializers.ModelSerializer):
             "confidence",
             "review_band",
             "needs_review",
+            "model_state",
             "channel",
             "counterparty",
             "is_self_transfer",

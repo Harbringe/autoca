@@ -18,6 +18,7 @@ import { bankAccounts, clientDetail, clientKeys, useInvalidateClient, V1 } from 
 import type { JournalEntry } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
 import { Money } from '@/components/ca/Money'
+import { Pager, usePaged } from '@/components/ca/Pager'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -88,6 +89,9 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
     else credit += line.amount_paise
     return { e, line, isDr }
   })
+
+  // A long year is shown a page of vouchers at a time; the totals below still cover all of them.
+  const pager = usePaged(rows, `${fy}|${type}|${text}|${onlyAi}`)
 
   if (entries.error) return <ErrorState error={entries.error} retry={() => void entries.refetch()} />
 
@@ -219,7 +223,7 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
               </tr>
             </thead>
             <tbody>
-              {rows.map(({ e, line, isDr }) => {
+              {pager.items.map(({ e, line, isDr }) => {
                 const isOpen = openId === e.id
                 const detailShown = isOpen || closingId === e.id
                 const toggleOpen = () => setOpenId(isOpen ? null : e.id)
@@ -296,6 +300,7 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
               </tr>
             </tfoot>
           </table>
+          <Pager paged={pager} label="Day Book vouchers" />
         </div>
       )}
 

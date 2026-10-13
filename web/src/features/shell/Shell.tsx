@@ -130,9 +130,9 @@ function SavingMark() {
 }
 
 /**
- * The assistant's live state while a client is open: "Assistant reading 14 rows", "Assistant paused,
- * 32 s". It links to Review, where the rows are, and is announced politely as it changes. Nothing
- * shows when the assistant has nothing to do.
+ * The assistant, while a client is open and it has something to do: a small calm mark, a spark and one word. What it is doing and how
+ * far it has got is shown where it happens (in the Review rows and in the strip), so nothing here competes for the bar. The full state
+ * ("Assistant processing 6 rows", "Assistant not answering") is still announced politely as it changes, and the mark links to Review.
  */
 function AssistantIndicator() {
   const path = useRouterState({ select: (s) => s.location.pathname })
@@ -145,10 +145,12 @@ function AssistantIndicator() {
           to="/clients/$clientId/review"
           params={{ clientId }}
           search={{ stage: 'all' }}
-          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-input bg-info-bg px-2.5 text-[13px] font-medium text-info hover:bg-hover"
+          title={text}
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-border bg-card px-2.5 text-xs font-medium text-muted-foreground hover:bg-hover"
         >
           <Sparkles working className="size-4 text-accent-foreground" />
-          {text}
+          Assistant
+          <span className="sr-only">: {text}</span>
         </Link>
       )}
     </div>

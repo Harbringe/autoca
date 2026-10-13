@@ -17,6 +17,7 @@ import { bankAccounts, reviewSummary, statements, useInvalidateClient, V1 } from
 import type { BankAccount, Statement } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
 import { Money } from '@/components/ca/Money'
+import { Pager, usePaged } from '@/components/ca/Pager'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -290,6 +291,8 @@ function RenameLedger({ clientId, account, onClose }: { clientId: string; accoun
 
 function StatementRows({ clientId, statement, onClose }: { clientId: string; statement: Statement; onClose: () => void }) {
   const rows = useQuery(statementRows(clientId, statement.id))
+  // A year's statement has hundreds of rows: a hundred at a time keeps the window light.
+  const paged = usePaged(rows.data ?? [], statement.id, 100)
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-5xl" aria-describedby={undefined}>
@@ -310,10 +313,11 @@ function StatementRows({ clientId, statement, onClose }: { clientId: string; sta
         ) : rows.error ? (
           <ErrorState error={rows.error} />
         ) : (
+          <>
           <DataTable
             caption={`Rows of the ${statement.bank_account_label} statement`}
             scrollHeight="65vh"
-            rows={rows.data}
+            rows={paged.items}
             rowKey={(r) => String(r.id)}
             columns={[
               { key: 'no', header: '#', align: 'right', priority: 2, cell: (r) => <span className="text-muted-foreground">{r.row_number}</span> },
@@ -324,6 +328,8 @@ function StatementRows({ clientId, statement, onClose }: { clientId: string; sta
               { key: 'b', header: 'Balance', align: 'right', priority: 2, cell: (r) => <Money display={r.balance_display} /> },
             ]}
           />
+          <Pager paged={paged} label="Statement rows" className="flex flex-wrap items-center justify-between gap-3 pt-3 text-sm" />
+          </>
         )}
       </DialogContent>
     </Dialog>

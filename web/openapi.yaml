@@ -8444,6 +8444,12 @@ components:
         needs_review:
           type: boolean
           readOnly: true
+        model_state:
+          readOnly: true
+          nullable: true
+          oneOf:
+          - $ref: '#/components/schemas/ModelStateEnum'
+          - $ref: '#/components/schemas/NullEnum'
         channel:
           type: string
           readOnly: true
@@ -8483,6 +8489,7 @@ components:
       - memory
       - method
       - method_display
+      - model_state
       - needs_review
       - on_party_account
       - open_question
@@ -11558,6 +11565,18 @@ components:
       - median_days_upload_to_posted
       - member
       - statements_completed
+    ModelStateEnum:
+      enum:
+      - waiting
+      - claimed
+      - done
+      - declined
+      type: string
+      description: |-
+        * `waiting` - Waiting for the assistant
+        * `claimed` - Being read by the assistant
+        * `done` - The assistant suggested a ledger
+        * `declined` - Left for a person
     ModuleEnum:
       enum:
       - bank

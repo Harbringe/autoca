@@ -4004,6 +4004,7 @@ export interface components {
             readonly confidence: number;
             readonly review_band: components["schemas"]["ReviewBandEnum"];
             readonly needs_review: boolean;
+            readonly model_state: (components["schemas"]["ModelStateEnum"] | components["schemas"]["NullEnum"]) | null;
             readonly channel: string;
             readonly counterparty: string;
             readonly is_self_transfer: boolean;
@@ -5393,6 +5394,14 @@ export interface components {
              */
             median_days_request_to_sign_off: number | null;
         };
+        /**
+         * @description * `waiting` - Waiting for the assistant
+         *     * `claimed` - Being read by the assistant
+         *     * `done` - The assistant suggested a ledger
+         *     * `declined` - Left for a person
+         * @enum {string}
+         */
+        ModelStateEnum: "waiting" | "claimed" | "done" | "declined";
         /**
          * @description * `bank` - bank
          *     * `bookkeeping` - bookkeeping

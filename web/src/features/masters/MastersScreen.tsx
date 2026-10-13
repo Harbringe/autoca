@@ -24,6 +24,7 @@ import { GlideChips } from '@/components/ui/glide-chips'
 import { Switch } from '@/components/ui/switch'
 import { Checkbox, Select } from '@/components/ui/controls'
 import { Money } from '@/components/ca/Money'
+import { PagedList } from '@/components/ca/Pager'
 import { DataTable } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Field } from '@/components/ui/field'
@@ -347,18 +348,22 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
             // With nothing posted the tags on the placed rows say so; only a search that finds nothing needs words.
             q && hasEntries && <p className="py-5 text-center text-sm text-muted-foreground">No posted entries for this ledger in FY {fyLabel(fy)} match this search.</p>
           ) : (
-            <DataTable
-              caption={`${selected.name}: posted entries`}
-              rows={selectedEntries}
-              rowKey={(entry) => entry.id}
-              columns={[
-                { key: 'date', header: 'Date', align: 'right', cell: (entry) => formatDate(entry.entry_date) },
-                { key: 'vch', header: 'Voucher', priority: 2, cell: (entry) => `${entry.voucher_type} · ${entry.entry_no}` },
-                { key: 'narr', header: 'Narration', className: 'max-w-0 w-full truncate', cell: (entry) => <span title={entry.narration}>{entry.narration}</span> },
-                { key: 'dr', header: 'Debit', align: 'right', cell: (entry) => sideOf(entry, selected.id, 'DR') },
-                { key: 'cr', header: 'Credit', align: 'right', cell: (entry) => sideOf(entry, selected.id, 'CR') },
-              ]}
-            />
+            <PagedList rows={selectedEntries} resetKey={`${selected.id}|${fy}|${q}`} label={`${selected.name} entries`}>
+              {(items) => (
+                <DataTable
+                  caption={`${selected.name}: posted entries`}
+                  rows={items}
+                  rowKey={(entry) => entry.id}
+                  columns={[
+                    { key: 'date', header: 'Date', align: 'right', cell: (entry) => formatDate(entry.entry_date) },
+                    { key: 'vch', header: 'Voucher', priority: 2, cell: (entry) => `${entry.voucher_type} · ${entry.entry_no}` },
+                    { key: 'narr', header: 'Narration', className: 'max-w-0 w-full truncate', cell: (entry) => <span title={entry.narration}>{entry.narration}</span> },
+                    { key: 'dr', header: 'Debit', align: 'right', cell: (entry) => sideOf(entry, selected.id, 'DR') },
+                    { key: 'cr', header: 'Credit', align: 'right', cell: (entry) => sideOf(entry, selected.id, 'CR') },
+                  ]}
+                />
+              )}
+            </PagedList>
           )}
           {rowSummary && rowSummary.total > 0 && (
             <div className="grid gap-2">
@@ -366,9 +371,11 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
               {placedRows.length === 0 ? (
                 <p className="py-3 text-center text-sm text-muted-foreground">No placed rows match this search.</p>
               ) : (
+                <PagedList rows={placedRows} resetKey={`${selected.id}|${q}`} label={`${selected.name} placed rows`}>
+                  {(items) => (
                 <DataTable
                   caption={`${selected.name}: rows placed, all years`}
-                  rows={placedRows}
+                  rows={items}
                   rowKey={(r) => r.id}
                   columns={[
                     { key: 'date', header: 'Date', align: 'right', cell: (r) => formatDate(r.value_date) },
@@ -388,6 +395,8 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
                     },
                   ]}
                 />
+                  )}
+                </PagedList>
               )}
             </div>
           )}

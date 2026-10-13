@@ -9,7 +9,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { Check, ChevronRight, Lock, Search, Undo2 } from 'lucide-react'
-import { Fragment, useMemo, useState } from 'react'
+import { Fragment, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
 import { messageOf } from '@/api/errors'
@@ -18,7 +18,7 @@ import { bankAccounts, clientDetail, clientKeys, useInvalidateClient, V1 } from 
 import type { JournalEntry } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
 import { Money } from '@/components/ca/Money'
-import { Pager, usePaged } from '@/components/ca/Pager'
+import { Pager, useFadeOnChange, usePaged } from '@/components/ca/Pager'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -92,6 +92,8 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
 
   // A long year is shown a page of vouchers at a time; the totals below still cover all of them.
   const pager = usePaged(rows, `${fy}|${type}|${text}|${onlyAi}`)
+  const bodyRef = useRef<HTMLTableSectionElement>(null)
+  useFadeOnChange(bodyRef, pager.page)
 
   if (entries.error) return <ErrorState error={entries.error} retry={() => void entries.refetch()} />
 
@@ -222,7 +224,7 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
                 <th scope="col" className={cn(headCell, 'text-right max-sm:hidden')}>Credit</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody ref={bodyRef}>
               {pager.items.map(({ e, line, isDr }) => {
                 const isOpen = openId === e.id
                 const detailShown = isOpen || closingId === e.id

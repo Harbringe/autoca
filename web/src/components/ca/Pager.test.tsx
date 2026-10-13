@@ -1,5 +1,5 @@
 import { fireEvent, render, renderHook, screen, act } from '@testing-library/react'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { PAGE_SIZE, PagedList, Pager, pageNumbers, usePaged } from './Pager'
 
 const items = (n: number) => Array.from({ length: n }, (_, i) => i + 1)
@@ -96,5 +96,26 @@ describe('PagedList', () => {
     expect(screen.getByText('50 shown')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Next' }))
     expect(screen.getByText('25 shown')).toBeInTheDocument()
+  })
+})
+
+describe('turning the page', () => {
+  it('fades the list once per page turn, not on the first showing, and not for a person who asked for less motion', () => {
+    const animate = vi.fn()
+    Object.defineProperty(HTMLElement.prototype, 'animate', { value: animate, configurable: true })
+    window.matchMedia = ((q: string) => ({ matches: false, media: q, addEventListener() {}, removeEventListener() {} })) as never
+    render(
+      <PagedList rows={items(120)} resetKey="k" label="Entries">
+        {(shown) => <p>{shown.length} shown</p>}
+      </PagedList>,
+    )
+    expect(animate).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    expect(animate).toHaveBeenCalledTimes(1)
+    expect(animate.mock.calls[0]![0]).toEqual([{ opacity: 0.25 }, { opacity: 1 }])
+
+    window.matchMedia = ((q: string) => ({ matches: true, media: q, addEventListener() {}, removeEventListener() {} })) as never
+    fireEvent.click(screen.getByRole('button', { name: 'Next' }))
+    expect(animate).toHaveBeenCalledTimes(1)
   })
 })

@@ -156,7 +156,7 @@ function ReviewQueue({ clientId, stage: asked }: { clientId: string; stage?: Sta
   useEffect(() => {
     if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
     listRef.current?.animate?.([{ opacity: 0.35 }, { opacity: 1 }], { duration: 180, easing: 'ease-out' })
-  }, [band, sort])
+  }, [band, sort, pager.page])
   // The decision opens under its row; keep the whole of it on screen when the selection moves.
   useEffect(() => {
     if (!selectedId) return

@@ -2,7 +2,7 @@
 // when the list is longer than one page, so a short list looks exactly as it did. A list renders one page of rows instead of
 // hundreds, which is what keeps a long statement light on an old machine.
 
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Button } from '@/components/ui/button'
 
 /** Rows on a page. A few dozen is a screen or two of work, and few enough that opening a row stays instant. */
@@ -47,6 +47,22 @@ export function usePaged<T>(items: readonly T[], resetKey: string, size = PAGE_S
       if (target !== page) setPage(target)
     },
   }
+}
+
+/**
+ * A short fade on `ref` when `key` changes (a new page), so turning the page reads as a change and not a jump. Opacity only, which a
+ * browser does without repainting the rows, and none at all for a person who has asked for less motion. Not on the first showing.
+ */
+export function useFadeOnChange(ref: RefObject<HTMLElement | null>, key: unknown) {
+  const shown = useRef(false)
+  useEffect(() => {
+    if (!shown.current) {
+      shown.current = true
+      return
+    }
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+    ref.current?.animate?.([{ opacity: 0.25 }, { opacity: 1 }], { duration: 200, easing: 'ease-out' })
+  }, [ref, key])
 }
 
 /** The page numbers to offer: the first, the last, and the ones around this one, with a gap marked where some are left out. */
@@ -129,9 +145,11 @@ export function PagedList<T>({
   children: (items: T[]) => ReactNode
 }) {
   const paged = usePaged(rows, resetKey, size)
+  const body = useRef<HTMLDivElement>(null)
+  useFadeOnChange(body, paged.page)
   return (
     <>
-      {children(paged.items)}
+      <div ref={body}>{children(paged.items)}</div>
       <Pager paged={paged} label={label} className="flex flex-wrap items-center justify-between gap-3 pt-3 text-sm" />
     </>
   )

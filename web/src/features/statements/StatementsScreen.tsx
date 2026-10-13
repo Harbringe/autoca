@@ -8,7 +8,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { FileUp, Pencil } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
 import { messageOf } from '@/api/errors'
@@ -17,7 +17,7 @@ import { bankAccounts, reviewSummary, statements, useInvalidateClient, V1 } from
 import type { BankAccount, Statement } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
 import { Money } from '@/components/ca/Money'
-import { Pager, usePaged } from '@/components/ca/Pager'
+import { Pager, useFadeOnChange, usePaged } from '@/components/ca/Pager'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -293,6 +293,8 @@ function StatementRows({ clientId, statement, onClose }: { clientId: string; sta
   const rows = useQuery(statementRows(clientId, statement.id))
   // A year's statement has hundreds of rows: a hundred at a time keeps the window light.
   const paged = usePaged(rows.data ?? [], statement.id, 100)
+  const bodyRef = useRef<HTMLDivElement>(null)
+  useFadeOnChange(bodyRef, paged.page)
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-5xl" aria-describedby={undefined}>
@@ -314,6 +316,7 @@ function StatementRows({ clientId, statement, onClose }: { clientId: string; sta
           <ErrorState error={rows.error} />
         ) : (
           <>
+          <div ref={bodyRef}>
           <DataTable
             caption={`Rows of the ${statement.bank_account_label} statement`}
             scrollHeight="65vh"
@@ -328,6 +331,7 @@ function StatementRows({ clientId, statement, onClose }: { clientId: string; sta
               { key: 'b', header: 'Balance', align: 'right', priority: 2, cell: (r) => <Money display={r.balance_display} /> },
             ]}
           />
+          </div>
           <Pager paged={paged} label="Statement rows" className="flex flex-wrap items-center justify-between gap-3 pt-3 text-sm" />
           </>
         )}

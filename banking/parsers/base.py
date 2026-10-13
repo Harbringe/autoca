@@ -182,6 +182,10 @@ class ParsedStatement:
     #: by a guess after a bank read fails, because a bank statement with swapped columns would then pass here
     #: and post backwards.
     liability: bool = False
+    #: True when the statement printed a brought-forward balance of nothing that its first row contradicts, and the opening
+    #: balance was worked back from that row instead (see GenericStatementParser._bookend_balances). Every later row still
+    #: follows the printed running balance; only the opening figure is not the printed one, and a person is told so.
+    opening_inferred: bool = False
 
     def balance_effect(self, txn: ParsedTransaction) -> int:
         """What this row did to the printed running balance."""

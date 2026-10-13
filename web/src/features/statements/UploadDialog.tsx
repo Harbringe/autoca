@@ -322,6 +322,7 @@ function Done({
   const leftForYou = ready + needLedger
   const waitingForAssistant = Math.min(result.waiting_for_assistant ?? 0, needLedger)
   const [openingDone, setOpeningDone] = useState(!result.needs_opening_confirmation)
+  const openingWorkedBack = !!result.opening_inferred && !!statement
 
   const facts: [string, string | number][] = [
     ['Bank account', account?.label ?? '—'],
@@ -358,6 +359,14 @@ function Done({
           </div>
         ))}
       </dl>
+
+      {openingWorkedBack && (
+        <p role="status" className="rounded-md border border-accent-edge bg-accent px-3 py-2 text-sm text-accent-foreground">
+          The statement printed <b>0.00</b> as its opening balance, but its first row needs <b>{statement?.opening_balance_display}</b>. That is the opening shown
+          here, worked back from the first row; every row after it agrees with the balances the statement prints. Check it against the client’s books before you
+          confirm it.
+        </p>
+      )}
 
       {!nothingNew && (
         <div className="rounded-md bg-muted/60 p-3 text-sm">

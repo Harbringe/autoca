@@ -90,6 +90,8 @@ export interface IngestResult {
   rows_created: number
   rows_already_present: number
   needs_opening_confirmation: boolean
+  /** The statement printed 0.00 as its opening balance but its rows imply another, which is the one shown. Older servers do not say. */
+  opening_inferred?: boolean
   suggested: number
   queued_for_review: number
   /** Rows left for the assistant, which reads them a few at a time after the upload. */

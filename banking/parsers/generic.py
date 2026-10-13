@@ -156,7 +156,7 @@ class GenericStatementParser(StatementParser):
             self._read_row(row, mapping, number, continuations.get(id(row), ()))
             for number, row in enumerate(movements, start=1)
         ]
-        opening, closing = self._bookend_balances(
+        opening, closing, opening_inferred = self._bookend_balances(
             transactions, summaries, markers, mapping, self.liability
         )
         text = document.text
@@ -173,6 +173,7 @@ class GenericStatementParser(StatementParser):
             transactions=tuple(transactions),
             kind="LOAN" if self.liability else "BANK",
             liability=self.liability,
+            opening_inferred=opening_inferred,
         )
 
     def _chosen_mapping(self, rows) -> ColumnMap:
@@ -366,11 +367,30 @@ class GenericStatementParser(StatementParser):
             closing = balance_of(row) if balance_of(row) is not None else closing
 
         first, last = transactions[0], transactions[-1]
+        inferred = False
         if opening is None:
             opening = first.balance_paise - (-first.signed_paise if liability else first.signed_paise)
+        elif opening == 0:
+            # Some statements (SBI's cash credit and Kisan Credit Card accounts) print "brought forward 0.00" whatever the account owed.
+            # When that figure does not lead to the first row, but the first row's own balance leads, without a break, through every
+            # later row, the printed zero is the odd one out, and the opening is what the first row implies. Only a printed zero is
+            # treated so: any other printed opening that disagrees stays a refusal, because it may mean a row was lost.
+            implied = first.balance_paise - (-first.signed_paise if liability else first.signed_paise)
+            if implied != 0 and GenericStatementParser._follows_from_first_row(transactions, liability):
+                opening, inferred = implied, True
         if closing is None:
             closing = last.balance_paise
-        return opening, closing
+        return opening, closing, inferred
+
+    @staticmethod
+    def _follows_from_first_row(transactions, liability: bool) -> bool:
+        """Every row after the first moves the printed balance by exactly what its amount says."""
+        running = transactions[0].balance_paise
+        for txn in transactions[1:]:
+            running += -txn.signed_paise if liability else txn.signed_paise
+            if running != txn.balance_paise:
+                return False
+        return True
 
     # -- header metadata ----------------------------------------------------
 

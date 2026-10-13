@@ -187,6 +187,7 @@ def _ingest(*, client, data, filename, user, allow_gap, layout=None, password=No
         "rows_created": result.rows_created,
         "rows_already_present": result.rows_already_present,
         "needs_opening_confirmation": result.needs_opening_confirmation,
+        "opening_inferred": result.opening_inferred,
         "suggested": classified.placed,
         "queued_for_review": classified.queued,
         "waiting_for_assistant": waiting,

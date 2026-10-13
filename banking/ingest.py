@@ -63,6 +63,9 @@ class IngestResult:
     #: balance still needs a person to confirm it. A client onboarding mid-year
     #: has history this system never saw.
     needs_opening_confirmation: bool = False
+    #: True when the statement printed an opening balance of nothing that its rows contradict, so the opening shown was worked
+    #: back from the first row. The person is told to check it against the client's books.
+    opening_inferred: bool = False
 
     @property
     def bank_account(self) -> BankAccount:
@@ -187,6 +190,7 @@ def ingest_statement(
         rows_already_present=skipped,
         is_new=True,
         needs_opening_confirmation=not account.has_opening_balance,
+        opening_inferred=parsed.opening_inferred,
     )
 
 

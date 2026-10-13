@@ -38,7 +38,7 @@ import { formatDate, formatPaise, plainAmount, plural } from '@/lib/format'
 import { useHotkey } from '@/lib/hotkeys'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
-import { summariseBulk, type BulkSummary } from './bulkPost'
+import { isHighReady, summariseBulk, type BulkSummary } from './bulkPost'
 import { SettlementPanel } from './SettlementPanel'
 import { LedgerIdea } from './LedgerIdea'
 import { StatementPicker } from './StatementPicker'
@@ -235,12 +235,18 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
     })
   }, 'Review')
 
-  const highCount = summary.data?.bulk_approvable ?? 0
   const needSettling = summary.data?.needs_settlement ?? 0
+  // Reviewing one statement: "post all" is that statement's high-confidence rows only, so what was checked is what is posted. With no
+  // statement chosen (a single statement, or all of them) it is the whole client's, as before.
+  const clientHigh = summary.data?.bulk_approvable ?? 0
   // The rows the band would post, for the confirmation's breakdown. The "Ready to post" list is the one that holds them.
-  const ready = useQuery({ ...reviewQueue(clientId, 'pending_approval'), enabled: canPost && highCount > 0 })
+  const ready = useQuery({ ...reviewQueue(clientId, 'pending_approval'), enabled: canPost && clientHigh > 0 })
+  // (A statement named in the address counts even when this stage has rows of only that one, so the scope holds in every tab.)
+  const scopeStatement = chosenStatement ?? (askedStatement && askedStatement !== 'all' && statementList.data?.results.some((s) => s.id === askedStatement) ? askedStatement : null)
+  const scopedHigh = useMemo(() => (scopeStatement ? (ready.data ?? []).filter((r) => isHighReady(r) && r.transaction.statement === scopeStatement) : null), [ready.data, scopeStatement])
+  const highCount = scopedHigh ? scopedHigh.length : clientHigh
   function askBulk() {
-    const detail = ready.data ? summariseBulk(ready.data) : null
+    const detail = scopedHigh ? summariseBulk(scopedHigh) : ready.data ? summariseBulk(ready.data) : null
     setBulk({ count: highCount, summary: detail && detail.count === highCount ? detail : null })
     setConfirmHigh(true)
   }
@@ -259,7 +265,7 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
         <div className="flex flex-wrap gap-2">
           {canPost && highCount > 0 && (
             <Button variant={tickedRows.length ? 'outline' : 'primary'} onClick={askBulk}>
-              <CheckCheck /> Post all high-confidence ({highCount})
+              <CheckCheck /> Post all high-confidence{scopedHigh ? ' in this statement' : ''} ({highCount})
             </Button>
           )}
         </div>
@@ -530,9 +536,9 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
       <Confirm
         open={confirmHigh}
         onOpenChange={setConfirmHigh}
-        title={`Post ${plural(bulk.count, 'high-confidence row')}?`}
+        title={`Post ${plural(bulk.count, 'high-confidence row')}${scopedHigh ? ' of this statement' : ''}?`}
         confirmLabel={`Post ${bulk.count}`}
-        onConfirm={() => post({ band: 'HIGH' })}
+        onConfirm={() => post(scopedHigh ? { classifications: scopedHigh.map((r) => r.id) } : { band: 'HIGH' })}
       >
         {bulk.summary ? (
           <>

@@ -8,11 +8,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { FileUp, Pencil } from 'lucide-react'
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { raw } from '@/api/client'
 import { messageOf } from '@/api/errors'
-import { statementRows } from '@/api/queries/books'
+import { reviewQueue, statementRows } from '@/api/queries/books'
 import { bankAccounts, reviewSummary, statements, useInvalidateClient, V1 } from '@/api/queries/clients'
 import type { BankAccount, Statement } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
@@ -34,6 +34,7 @@ import { PartiesFound } from './PartiesFound'
 import { groupByAccount, rowsHeadline } from './statementGroups'
 import { usePageSize } from '@/lib/pageSizes'
 import { OpeningBalance, useUpload } from './UploadDialog'
+import { reviewStage, waitingByStatement, waitingWords } from './statementReview'
 
 /** The Rows and Delete buttons at the end of a statement row. */
 const ROW_BUTTON = 'h-11 rounded-lg px-4 font-semibold text-heading dark:border-border-strong dark:bg-background dark:hover:bg-hover'
@@ -50,6 +51,11 @@ export function StatementsScreen({ clientId }: { clientId: string }) {
   const invalidate = useInvalidateClient(clientId)
 
   const summary = useQuery({ ...reviewSummary(clientId), enabled: can('transaction.view') })
+  // What is waiting in each statement, so each can be reviewed on its own. The same two lists the Review screen reads.
+  const needsQueue = useQuery({ ...reviewQueue(clientId, 'unresolved'), enabled: can('transaction.view') })
+  const readyQueue = useQuery({ ...reviewQueue(clientId, 'pending_approval'), enabled: can('transaction.view') })
+  const waitingBy = useMemo(() => waitingByStatement(needsQueue.data ?? [], readyQueue.data ?? []), [needsQueue.data, readyQueue.data])
+  const waitingKnown = !!needsQueue.data && !!readyQueue.data
   const rowsOnFile = (stmts.data?.results ?? []).reduce((n, s) => n + s.transaction_count, 0)
   // Rows waiting are the review queue; whatever else is on file has been posted.
   const waiting = summary.data ? summary.data.unresolved + summary.data.pending_approval : 0
@@ -74,6 +80,16 @@ export function StatementsScreen({ clientId }: { clientId: string }) {
       ),
     },
     { key: 'rows', header: 'Rows', align: 'right', priority: 2, cell: (s) => s.transaction_count },
+    {
+      key: 'waiting',
+      header: 'To review',
+      cell: (s) => {
+        if (!can('transaction.view')) return null
+        if (!waitingKnown) return <span className="text-faint" aria-hidden>…</span>
+        const words = waitingWords(waitingBy.get(s.id))
+        return words ? <span className="text-sm">{words}</span> : <span className="text-sm text-muted-foreground">All posted</span>
+      },
+    },
     { key: 'opening', header: 'Opening', align: 'right', priority: 3, cell: (s) => <span className="font-mono"><Money display={s.opening_balance_display} /></span> },
     { key: 'withdrawals', header: 'Withdrawals', align: 'right', cell: (s) => <span className="font-mono"><Money display={s.total_debit_display} /></span> },
     { key: 'deposits', header: 'Deposits', align: 'right', cell: (s) => <span className="font-mono"><Money display={s.total_credit_display} /></span> },
@@ -84,6 +100,18 @@ export function StatementsScreen({ clientId }: { clientId: string }) {
       align: 'right',
       cell: (s) => (
         <span className="flex justify-end gap-1">
+          {can('transaction.view') && (
+            <Button asChild variant={waitingWords(waitingBy.get(s.id)) ? 'primary' : 'outline'} className={ROW_BUTTON}>
+              <Link
+                to="/clients/$clientId/review"
+                params={{ clientId }}
+                search={{ stage: reviewStage(waitingBy.get(s.id)), statement: s.id }}
+                aria-label={`Review the statement ${formatDate(s.period_start)} to ${formatDate(s.period_end)}`}
+              >
+                Review
+              </Link>
+            </Button>
+          )}
           <Button variant="outline" className={ROW_BUTTON} onClick={() => setViewing(s)}>
             Rows
           </Button>
@@ -305,8 +333,8 @@ function StatementRows({ clientId, statement, onClose }: { clientId: string; sta
           </DialogTitle>
           <DialogDescription>
             As read from the statement. To decide where these go, use{' '}
-            <Link to="/clients/$clientId/review" params={{ clientId }} search={{ stage: 'unresolved' }} className="underline" onClick={onClose}>
-              Review
+            <Link to="/clients/$clientId/review" params={{ clientId }} search={{ stage: 'unresolved', statement: statement.id }} className="underline" onClick={onClose}>
+              Review this statement
             </Link>
             .
           </DialogDescription>

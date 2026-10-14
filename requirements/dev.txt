@@ -2,5 +2,6 @@
 pytest==8.4.1
 pytest-django==4.11.1
 pytest-cov==6.2.1
+pytest-xdist==3.8.0
 ruff==0.12.9
 pypdf==5.9.0

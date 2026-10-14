@@ -679,6 +679,8 @@ function Parties({ clientId }: { clientId: string }) {
       ) : shown.length === 0 ? (
         <EmptyState title="No party matches">Clear the search box or the filter to see them all.</EmptyState>
       ) : (
+        <PagedList rows={shown} resetKey={`${role}|${q}`} label="parties" section="partyList">
+          {(items) => (
         <div role="region" aria-label="Parties" className="overflow-x-auto rounded-xl border border-border-strong bg-card">
           <table className="w-full text-left text-sm">
             <caption className="sr-only">Parties. Select a party to open its details and rules.</caption>
@@ -692,7 +694,7 @@ function Parties({ clientId }: { clientId: string }) {
               </tr>
             </thead>
             <tbody ref={body}>
-              {shown.map((p) => {
+              {items.map((p) => {
                 const isOpen = open === p.id
                 const detailShown = isOpen || closing === p.id
                 const mine = rulesOf(p.id)
@@ -771,6 +773,8 @@ function Parties({ clientId }: { clientId: string }) {
             </tbody>
           </table>
         </div>
+          )}
+        </PagedList>
       )}
     </div>
   )
@@ -966,8 +970,10 @@ function Rules({ clientId }: { clientId: string }) {
       {sorted.length === 0 ? (
         <EmptyState title="No rules yet">Rules appear here as you place rows in Review with “Remember this” ticked.</EmptyState>
       ) : (
+        <PagedList rows={sorted} resetKey="rules" label="rules" section="rules">
+          {(items) => (
         <ul ref={listRef} aria-label="Rules" className="divide-y divide-border-strong overflow-hidden rounded-xl border border-border-strong bg-card">
-          {sorted.map((r) => {
+          {items.map((r) => {
             const words = `${MATCH_LABEL[r.match_type ?? ''] ?? r.match_type} ${r.pattern}, ${DIRECTION_LABEL[r.direction ?? 'ANY']}, to ${r.ledger_name}`
             return (
               <li key={r.id} className={cn('flex flex-wrap items-center justify-between gap-x-4 gap-y-2 px-5 py-4 transition-[colors,opacity] hover:bg-hover', removing.has(r.id) && 'pointer-events-none opacity-60')}>
@@ -992,6 +998,8 @@ function Rules({ clientId }: { clientId: string }) {
             )
           })}
         </ul>
+          )}
+        </PagedList>
       )}
       {creating && <RuleForm clientId={clientId} ledgers={(ledgers.data ?? []).filter((l) => l.status === 'ACTIVE' && l.is_active)} onClose={() => setCreating(false)} />}
     </div>

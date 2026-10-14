@@ -291,6 +291,8 @@ const LISTS: ListInfo[] = [
   { id: 'statements', label: 'Statement rows', sub: 'Bank statements › one statement', total: 842 },
   { id: 'ledger', label: 'A ledger’s entries', sub: 'Ledgers › one ledger', total: 96 },
   { id: 'parties', label: 'Parties found', sub: 'Parties & rules', total: 41 },
+  { id: 'partyList', label: 'Parties', sub: 'Parties & rules › Parties', total: 87 },
+  { id: 'rules', label: 'Rules', sub: 'Parties & rules › Rules', total: 64 },
   { id: 'alerts', label: 'Alerts', sub: 'Alerts', total: 23 },
   { id: 'activity', label: 'Activity log', sub: 'Settings › Activity log', total: 530 },
 ]
@@ -341,6 +343,12 @@ const SHAPES: Record<PageSection | 'all', Shape> = {
   ) },
   parties: { title: 'Parties & rules', top: <Tools widths={[96, 104]} />, h: [58, 36], row: (i, h) => (
     <Row h={h}><span aria-hidden className="size-[30px] shrink-0 rounded-full bg-border-strong" />{flex(<><Bar w={`${vary(i, 50, 24)}%`} /><Bar w={`${vary(i, 34, 14)}%`} h={8} /></>, true)}<Bar w={110} accent /><Bar w={60} /></Row>
+  ) },
+  partyList: { title: 'Parties', top: <Tools widths={[220, 96, 104]} />, head: [['Party', 0], ['Role', 90], ['Tax defaults', 100], ['Rules', 50]], h: [58, 36], row: (i, h) => (
+    <Row h={h}>{flex(<Bar w={`${vary(i, 50, 24)}%`} />)}<Bar w={90} accent /><Bar w={100} /><Bar w={50} /></Row>
+  ) },
+  rules: { title: 'Rules', top: <Tools widths={[110]} />, h: [66, 40], row: (i, h) => (
+    <Row h={h}>{flex(<><Bar w={`${vary(i, 70, 24)}%`} /><Bar w={`${vary(i, 40, 14)}%`} h={8} /></>, true)}<Bar w={60} /><Bar w={38} h={20} accent /></Row>
   ) },
   alerts: { title: 'Alerts', top: <Tools widths={[70, 78, 86, 94]} />, h: [66, 40], row: (i, h) => (
     <Row h={h}>{flex(<><Bar w={60} h={8} accent /><Bar w={`${vary(i, 62, 24)}%`} /><Bar w={`${vary(i, 40, 14)}%`} h={8} /></>, true)}<Bar w={70} /></Row>

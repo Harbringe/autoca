@@ -96,3 +96,23 @@ describe('parties found in the statements, on the Parties page', () => {
     expect(screen.queryByText('Parties found in these statements')).toBeNull()
   })
 })
+
+describe('paging the parties and the rules', () => {
+  const many = <T,>(n: number, make: (i: number) => T) => Array.from({ length: n }, (_, i) => make(i + 1))
+
+  it('shows ten parties a page and turns to the rest', async () => {
+    renderTab('parties', many(23, (i) => party({ id: `p${i}`, canonical_name: `Party ${String(i).padStart(2, '0')}` })), [])
+    expect(await screen.findByText('Party 01')).toBeInTheDocument()
+    expect(screen.queryByText('Party 11')).toBeNull()
+    expect(screen.getByText(/Showing 1–10 of 23/)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /next/i }))
+    expect(await screen.findByText('Party 11')).toBeInTheDocument()
+    expect(screen.queryByText('Party 01')).toBeNull()
+  })
+
+  it('shows ten rules a page', async () => {
+    renderTab('rules', [], many(12, (i) => rule({ id: `r${i}`, pattern: `Payee ${i}`, party: null as never, priority: 100 - i })))
+    expect(await screen.findByText(/Showing 1–10 of 12/)).toBeInTheDocument()
+    expect(screen.getAllByRole('switch')).toHaveLength(10)
+  })
+})

@@ -66,6 +66,15 @@ CONFIDENCE_BY_MATCH = {
 }
 
 
+#: What a rule learned from a bare one-word payee ("ASHOK") claims: enough to suggest, never enough to place on its own.
+BARE_NAME_CONFIDENCE = 0.80
+
+
+def is_bare_name(pattern: str) -> bool:
+    """A single plain word, which is as likely a person's first name as a business -- and a person can be paid for many things."""
+    return " " not in pattern.strip() and pattern.isalpha()
+
+
 def default_confidence(match_type: str, source: str) -> float:
     """What a fresh rule of this kind should claim.
 
@@ -331,7 +340,7 @@ def learn_rule_from(classification, treatment, user=None) -> ClassificationRule 
             **treatment.as_fields(),
             "source": RuleSource.LEARNED,
             "priority": LEARNED_PRIORITY,
-            "confidence": default_confidence(MatchType.PARTY_EQUALS, RuleSource.LEARNED),
+            "confidence": BARE_NAME_CONFIDENCE if is_bare_name(pattern) else default_confidence(MatchType.PARTY_EQUALS, RuleSource.LEARNED),
             "created_by": user,
         },
     )

@@ -734,3 +734,16 @@ def test_the_ai_entries_refusal_has_its_own_stable_code():
     from api.exceptions import DOMAIN_ERRORS
 
     assert DOMAIN_ERRORS["AiEntriesUncheckedError"][1] == "ai_entries_unchecked"
+
+
+def test_the_review_queue_does_not_query_per_row(api, client_record, statement):
+    """A big statement's Review was slow because each row cost several queries; a page is a fixed handful now."""
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    url = f"{V1}/clients/{client_record.pk}/review-queue/"
+    api.get(url)  # warm per-process caches
+    with CaptureQueriesContext(connection) as queries:
+        rows = api.get(url, {"page_size": 500}).json()["results"]
+    assert rows
+    assert len(queries) <= 20

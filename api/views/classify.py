@@ -413,10 +413,16 @@ class ReviewQueueViewSet(
         band = self.request.query_params.get("band")
         stage = self.request.query_params.get("stage")
         if stage == "unresolved":
-            return unresolved_for(self.client)
-        if stage == "pending_approval":
-            return pending_approval(self.client)
-        return review_queue(self.client, band if band in BANDS else None)
+            rows = unresolved_for(self.client)
+        elif stage == "pending_approval":
+            rows = pending_approval(self.client)
+        else:
+            rows = review_queue(self.client, band if band in BANDS else None)
+        # The serializer reads each row's bank account, ledger, party, rule and journal entries. Fetched here, a page of 500 is a
+        # handful of queries; left to the serializer it was several per row, which is what made a big statement's Review slow.
+        return rows.select_related("transaction__bank_account", "ledger__party_record", "party", "rule__ledger").prefetch_related(
+            "transaction__journal_entries__superseded_by_set"
+        )
 
     @extend_schema(
         summary="The review queue",

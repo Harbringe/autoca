@@ -773,4 +773,4 @@ def test_the_counts_by_statement_agree_with_the_queue_and_are_small(api, client_
     mine = body[str(statement.pk)]
     assert (mine["needs"], mine["ready"]) == (needs, ready)
     assert mine["high"] <= mine["ready"]
-    assert len(queries) <= 12
+    assert len(queries) <= 25

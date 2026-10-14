@@ -102,7 +102,8 @@ jobs:
         run: pytest integrations/tests/test_adapter_swap.py -v
 
       - name: Full suite with coverage
-        run: pytest --cov=core --cov=integrations --cov-report=term-missing
+        # --durations lists the 30 slowest tests, so the next speed-up is aimed at something measured.
+        run: pytest --cov=core --cov=integrations --cov-report=term-missing --durations=30
 
       - name: Known-vulnerability audit of Python dependencies
         run: pip install pip-audit && pip-audit -r requirements/base.txt

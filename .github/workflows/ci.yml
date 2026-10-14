@@ -101,8 +101,7 @@ jobs:
       - name: Adapter boundary suite
         run: pytest integrations/tests/test_adapter_swap.py -v
 
-      - name: Full suite with coverage
-        # -n 4 spreads the tests over the runner's four cores, each worker with its own scratch database (pytest-django adds a _gwN suffix);
+      # -n 4 spreads the tests over the runner's four cores, each worker with its own scratch database (pytest-django adds a _gwN suffix);
       # --dist loadfile keeps one file's tests on one worker. --durations lists the 30 slowest tests.
       # Coverage slows every test, and nothing gates on it, so it is measured only for code that reaches main.
       - name: Full suite

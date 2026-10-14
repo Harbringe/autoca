@@ -51,7 +51,7 @@ else:
 # `run_assistant` reads waiting rows for every client and sends them to the model. The server runs one in its own container; a
 # second one here is safe (rows are claimed with SKIP LOCKED) but it spends model calls on real rows, so it needs the model on
 # and its own flag. The schema is changed by the deploy, never from a PC, so migrate stays refused whatever the flags say.
-ALLOWED_COMMANDS = {"runserver", "check", "showmigrations", "diffsettings", "shell"}
+ALLOWED_COMMANDS = {"runserver", "check", "showmigrations", "diffsettings", "shell", "rules_report"}
 if env_bool("LIVE_ALLOW_ASSISTANT"):
     if not env_bool("LIVE_ALLOW_MODEL"):
         raise ImproperlyConfigured("LIVE_ALLOW_ASSISTANT needs LIVE_ALLOW_MODEL too: the assistant is a model reader.")

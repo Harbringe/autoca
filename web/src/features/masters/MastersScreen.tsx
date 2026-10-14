@@ -7,7 +7,7 @@
 
 import { useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Bot, ChevronRight, Plus, Trash2 } from 'lucide-react'
+import { ChevronRight, Plus, Trash2 } from 'lucide-react'
 import { Fragment, useEffect, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { raw } from '@/api/client'
@@ -35,6 +35,7 @@ import { formatDate, fyLabel, plural } from '@/lib/format'
 import { NCE_LINES } from '@/lib/nce'
 import { summariseRows } from '@/lib/ledgerRows'
 import { TidyNames, proposals } from './TidyNames'
+import { ProposedLedgers } from './ProposedLedgers'
 import { useFy } from '@/features/shell/useFy'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
@@ -186,40 +187,7 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
 
   return (
     <div className="grid gap-4">
-      {proposed.length > 0 && (
-        <Card className="grid gap-3 border-info/40 p-4">
-          <div className="flex items-center gap-2 font-medium">
-            <Bot className="size-4 text-info" aria-hidden /> Ledgers the assistant added ({proposed.length})
-          </div>
-          <p className="text-sm text-muted-foreground">
-            {mayDecide
-              ? 'Keep each with the exact name it has in Tally, or merge it into a ledger that already exists. Ledgers the assistant added are live already, so rows may be in them; a merge moves those rows across.'
-              : 'A senior CA who leads this client decides these.'}
-          </p>
-          <DataTable
-            caption="Ledgers the assistant added"
-            rows={proposed}
-            rowKey={(l) => l.id}
-            columns={[
-              { key: 'name', header: 'Name', cell: (l) => <span className="font-medium text-heading">{l.name}</span> },
-              { key: 'group', header: 'Group', priority: 2, cell: (l) => GROUP_LABEL[l.group ?? ''] ?? l.group },
-              { key: 'why', header: 'Why', priority: 3, className: 'max-w-md truncate text-muted-foreground', cell: (l) => l.proposal_reason },
-              { key: 'rows', header: 'Rows', align: 'right', cell: (l) => l.row_count },
-              {
-                key: 'act',
-                header: <span className="sr-only">Actions</span>,
-                align: 'right',
-                cell: (l) =>
-                  mayDecide && (
-                    <Button size="sm" variant="outline" onClick={() => setDeciding(l)} aria-label={`Decide on ${l.name}`}>
-                      Decide
-                    </Button>
-                  ),
-              },
-            ]}
-          />
-        </Card>
-      )}
+      {proposed.length > 0 && <ProposedLedgers clientId={clientId} proposed={proposed} mayDecide={mayDecide} onDecide={setDeciding} />}
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-muted-foreground">

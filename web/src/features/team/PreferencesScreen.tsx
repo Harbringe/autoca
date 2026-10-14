@@ -293,6 +293,7 @@ const LISTS: ListInfo[] = [
   { id: 'parties', label: 'Parties found', sub: 'Parties & rules', total: 41 },
   { id: 'partyList', label: 'Parties', sub: 'Parties & rules › Parties', total: 87 },
   { id: 'rules', label: 'Rules', sub: 'Parties & rules › Rules', total: 64 },
+  { id: 'proposals', label: 'Ledgers the assistant added', sub: 'Ledgers', total: 18 },
   { id: 'alerts', label: 'Alerts', sub: 'Alerts', total: 23 },
   { id: 'activity', label: 'Activity log', sub: 'Settings › Activity log', total: 530 },
 ]
@@ -349,6 +350,9 @@ const SHAPES: Record<PageSection | 'all', Shape> = {
   ) },
   rules: { title: 'Rules', top: <Tools widths={[110]} />, h: [66, 40], row: (i, h) => (
     <Row h={h}>{flex(<><Bar w={`${vary(i, 70, 24)}%`} /><Bar w={`${vary(i, 40, 14)}%`} h={8} /></>, true)}<Bar w={60} /><Bar w={38} h={20} accent /></Row>
+  ) },
+  proposals: { title: 'Assistant’s ledgers', top: <Tools widths={[110]} />, head: [['', 24], ['Name', 0], ['Group', 100], ['Rows', 50], ['', 70]], h: [52, 34], row: (i, h) => (
+    <Row h={h}><Bar w={18} h={18} />{flex(<Bar w={`${vary(i, 66, 24)}%`} />)}<Bar w={100} accent /><Bar w={50} /><Bar w={70} h={26} /></Row>
   ) },
   alerts: { title: 'Alerts', top: <Tools widths={[70, 78, 86, 94]} />, h: [66, 40], row: (i, h) => (
     <Row h={h}>{flex(<><Bar w={60} h={8} accent /><Bar w={`${vary(i, 62, 24)}%`} /><Bar w={`${vary(i, 40, 14)}%`} h={8} /></>, true)}<Bar w={70} /></Row>

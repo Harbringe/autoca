@@ -160,6 +160,18 @@ def _ingest(*, client, data, filename, user, allow_gap, layout=None, password=No
     seed_client(client, created_by=user)
     classified = classify_statement(result.statement)
 
+    # Money moved between the client's own accounts shows as a withdrawal in one statement and a deposit in the other. Pairing the two
+    # sides places both in each other's account, instead of one looking like a payment and the other like a sale. A failure here must
+    # never lose an upload, so it is logged and the rows simply stay as they were.
+    try:
+        from classify.transfers import pair_own_transfers
+
+        pair_own_transfers(client)
+    except Exception:  # noqa: BLE001
+        import logging
+
+        logging.getLogger(__name__).exception("Pairing own-account transfers failed after a statement upload")
+
     # A row that is plainly the payment of an invoice already on the books is settled against it here, before it is
     # sent anywhere to be guessed at.
     from ledger.matching import match_client

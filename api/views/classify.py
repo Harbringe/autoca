@@ -564,15 +564,6 @@ class ReviewQueueViewSet(
         return Response(JobSerializer(outcome.job).data, status=status.HTTP_202_ACCEPTED)
 
     @extend_schema(
-        summary="How much work is waiting",
-        responses=ReviewSummarySerializer,
-        description=(
-            "Split by how much thought each row needs. The ordering is the "
-            "feature: it turns an hour of checking every row into minutes of "
-            "checking the ones that need it."
-        ),
-    )
-    @extend_schema(
         summary="What is waiting in each statement",
         description=(
             "Counts only, a few hundred bytes however long the queue is: for each statement with rows waiting, how many need a ledger, how "
@@ -598,6 +589,15 @@ class ReviewQueueViewSet(
         bump(ready.filter(ledger__party_record__isnull=False), "settling")
         return Response({"statements": out})
 
+    @extend_schema(
+        summary="How much work is waiting",
+        responses=ReviewSummarySerializer,
+        description=(
+            "Split by how much thought each row needs. The ordering is the "
+            "feature: it turns an hour of checking every row into minutes of "
+            "checking the ones that need it."
+        ),
+    )
     @action(detail=False, methods=["get"])
     def summary(self, request, client_id=None):
         summary = review_summary(self.client)

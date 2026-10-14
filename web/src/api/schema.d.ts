@@ -1838,8 +1838,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * How much work is waiting
-         * @description Split by how much thought each row needs. The ordering is the feature: it turns an hour of checking every row into minutes of checking the ones that need it.
+         * What is waiting in each statement
+         * @description Counts only, a few hundred bytes however long the queue is: for each statement with rows waiting, how many need a ledger, how many are placed and ready to post, how many of those are high-confidence and postable in bulk, and how many sit on a party's own account. The Statements and Review screens read this instead of the queue's rows.
          */
         get: operations["clients_review_queue_by_statement_retrieve"];
         put?: never;
@@ -1902,11 +1902,8 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * @description Everything still to be dealt with, surest first.
-         *
-         *     "Still to be dealt with" means **not yet posted to the ledger** -- not "not
-         *     yet looked at". A row a person has placed but nobody has approved is not
-         *     finished work, and a queue that hid it is how a month closes short.
+         * How much work is waiting
+         * @description Split by how much thought each row needs. The ordering is the feature: it turns an hour of checking every row into minutes of checking the ones that need it.
          */
         get: operations["clients_review_queue_summary_retrieve"];
         put?: never;
@@ -11925,7 +11922,9 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ReviewSummary"];
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -11994,7 +11993,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["Classification"];
+                    "application/json": components["schemas"]["ReviewSummary"];
                 };
             };
         };

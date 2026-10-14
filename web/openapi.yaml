@@ -4008,10 +4008,12 @@ paths:
   /api/v1/clients/{client_id}/review-queue/by-statement/:
     get:
       operationId: clients_review_queue_by_statement_retrieve
-      description: 'Split by how much thought each row needs. The ordering is the
-        feature: it turns an hour of checking every row into minutes of checking the
-        ones that need it.'
-      summary: How much work is waiting
+      description: 'Counts only, a few hundred bytes however long the queue is: for
+        each statement with rows waiting, how many need a ledger, how many are placed
+        and ready to post, how many of those are high-confidence and postable in bulk,
+        and how many sit on a party''s own account. The Statements and Review screens
+        read this instead of the queue''s rows.'
+      summary: What is waiting in each statement
       parameters:
       - in: path
         name: client_id
@@ -4028,7 +4030,8 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReviewSummary'
+                type: object
+                additionalProperties: {}
           description: ''
   /api/v1/clients/{client_id}/review-queue/recategorize/:
     post:
@@ -4096,12 +4099,10 @@ paths:
   /api/v1/clients/{client_id}/review-queue/summary/:
     get:
       operationId: clients_review_queue_summary_retrieve
-      description: |-
-        Everything still to be dealt with, surest first.
-
-        "Still to be dealt with" means **not yet posted to the ledger** -- not "not
-        yet looked at". A row a person has placed but nobody has approved is not
-        finished work, and a queue that hid it is how a month closes short.
+      description: 'Split by how much thought each row needs. The ordering is the
+        feature: it turns an hour of checking every row into minutes of checking the
+        ones that need it.'
+      summary: How much work is waiting
       parameters:
       - in: path
         name: client_id
@@ -4118,7 +4119,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Classification'
+                $ref: '#/components/schemas/ReviewSummary'
           description: ''
   /api/v1/clients/{client_id}/rules/:
     get:

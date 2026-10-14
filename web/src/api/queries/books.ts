@@ -27,14 +27,24 @@ import type {
 } from '@/api/types'
 import { clientKeys, V1 } from './clients'
 
-/** Every page of a paginated list, as one array. */
+/** Pages fetched at once after the first. A few at a time: quicker than one after another, and kind to the server and an old machine. */
+const PAGES_AT_ONCE = 4
+
+/**
+ * Every page of a paginated list, as one array. The first page says how many there are, and the rest are then fetched a few at a time
+ * instead of one after another, so a long list waits for the slowest page of each group, not for the sum of all of them.
+ */
 export async function allPages<T>(path: string, query: Record<string, string | number | boolean | undefined> = {}): Promise<T[]> {
-  const rows: T[] = []
-  for (let page = 1; ; page += 1) {
-    const result = await raw.get<Page<T>>(path, { ...query, page, page_size: 500 })
-    rows.push(...result.results)
-    if (!result.next) return rows
+  const get = (page: number) => raw.get<Page<T>>(path, { ...query, page, page_size: 500 })
+  const first = await get(1)
+  const rows: T[] = [...first.results]
+  if (!first.next) return rows
+  const pages = Math.max(2, Math.ceil(first.count / Math.max(first.results.length, 1)))
+  for (let from = 2; from <= pages; from += PAGES_AT_ONCE) {
+    const group = await Promise.all(Array.from({ length: Math.min(PAGES_AT_ONCE, pages - from + 1) }, (_, i) => get(from + i)))
+    for (const page of group) rows.push(...page.results)
   }
+  return rows
 }
 
 export type Stage = 'unresolved' | 'pending_approval' | 'all'
@@ -85,10 +95,11 @@ export const entryChanges = (clientId: string, entryId: string) =>
     queryFn: () => raw.get<EntryChange[]>(`${V1}/journal-entries/${entryId}/changes/`),
   })
 
-export const statementRows = (clientId: string, statementId: string) =>
+/** One page of a statement's rows. The viewer shows a page at a time, so it asks for just that page and not the whole statement. */
+export const statementRowsPage = (clientId: string, statementId: string, page: number, pageSize: number) =>
   queryOptions({
-    queryKey: clientKeys.part(clientId, 'statements', statementId, 'rows'),
-    queryFn: () => allPages<StatementTransaction>(`${V1}/clients/${clientId}/statements/${statementId}/transactions/`),
+    queryKey: clientKeys.part(clientId, 'statements', statementId, 'rows', page, pageSize),
+    queryFn: () => raw.get<Page<StatementTransaction>>(`${V1}/clients/${clientId}/statements/${statementId}/transactions/`, { page, page_size: pageSize }),
   })
 
 export const inventoryReport = (clientId: string, fy: number) =>

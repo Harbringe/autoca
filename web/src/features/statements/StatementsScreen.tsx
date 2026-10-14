@@ -5,19 +5,19 @@
 // figures a CA ties to the bank's own document. From a statement: look at its rows, export it
 // to Tally, or take it back out if it was the wrong file.
 
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { FileUp, Pencil } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { raw } from '@/api/client'
 import { messageOf } from '@/api/errors'
-import { reviewQueue, statementRows } from '@/api/queries/books'
+import { reviewQueue, statementRowsPage } from '@/api/queries/books'
 import { bankAccounts, reviewSummary, statements, useInvalidateClient, V1 } from '@/api/queries/clients'
 import type { BankAccount, Statement } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
 import { Money } from '@/components/ca/Money'
-import { Pager, useFadeOnChange, usePaged } from '@/components/ca/Pager'
+import { Pager, useFadeOnChange } from '@/components/ca/Pager'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -325,9 +325,23 @@ function RenameLedger({ clientId, account, onClose }: { clientId: string; accoun
 }
 
 function StatementRows({ clientId, statement, onClose }: { clientId: string; statement: Statement; onClose: () => void }) {
-  const rows = useQuery(statementRows(clientId, statement.id))
-  // A year's statement has hundreds of rows: a hundred at a time keeps the window light.
-  const paged = usePaged(rows.data ?? [], statement.id, usePageSize('statements'))
+  const size = usePageSize('statements')
+  const [page, setPage] = useState(1)
+  // A year's statement has hundreds of rows: only the page being looked at is fetched, and the last one stays up while the next arrives.
+  const rows = useQuery({ ...statementRowsPage(clientId, statement.id, page, size), placeholderData: keepPreviousData })
+  const total = rows.data?.count ?? 0
+  const pages = Math.max(1, Math.ceil(total / size))
+  const here = Math.min(page, pages)
+  const paged = {
+    items: rows.data?.results ?? [],
+    page: here,
+    pages,
+    from: total === 0 ? 0 : (here - 1) * size + 1,
+    to: Math.min(here * size, total),
+    total,
+    paged: total > size,
+    setPage: (next: number) => setPage(Math.min(Math.max(next, 1), pages)),
+  }
   const bodyRef = useRef<HTMLDivElement>(null)
   useFadeOnChange(bodyRef, paged.page)
   return (

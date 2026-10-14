@@ -164,6 +164,9 @@ export interface VoucherPrefill {
   igstPaise: number
   cessPaise: number
   roundOffPaise: number
+  /** Purchases: tax collected at source, and freight or loading printed outside the taxable value. */
+  tcsPaise?: number
+  otherChargesPaise?: number
   /** The stored invoice file this voucher is being booked from, so it is attached and its reading closed. */
   document?: string
   /** Set to change a bill already booked: the form starts from it and saving replaces it. */
@@ -239,6 +242,8 @@ export function VoucherForm({
     cess: asRupees(prefill?.cessPaise),
   })
   const [roundOff, setRoundOff] = useState(prefill?.roundOffPaise ? (prefill.roundOffPaise / 100).toFixed(2) : '')
+  const [tcs, setTcs] = useState(() => asRupees(prefill?.tcsPaise ?? prefill?.facts?.tcsPaise))
+  const [otherCharges, setOtherCharges] = useState(() => asRupees(prefill?.otherChargesPaise ?? prefill?.facts?.otherChargesPaise))
   const [tds, setTds] = useState('')
   const [tdsSection, setTdsSection] = useState('')
   const [rcm, setRcm] = useState(false)
@@ -293,12 +298,14 @@ export function VoucherForm({
     cess: amountOf(tax.cess),
     roundOff: amountOf(roundOff),
     tds: amountOf(tds),
+    tcs: amountOf(tcs),
+    otherCharges: amountOf(otherCharges),
   }
   // Each line to its own ledger: on unless switched off, and only where the lines are all there and add up to what the form is booking
   // (to a few paise of rounding; the server puts that on the largest line). Otherwise the one general ledger, as before.
   const headsTotal = amounts.heads.reduce((sum, h) => sum + h.paise, 0)
   const itemwise = !itemwiseOff && items.length > 0 && items.every((i) => i.amount_paise != null) && Math.abs(itemsSum - headsTotal) <= ITEM_ROUNDING_PAISE
-  const unreadable = [...amounts.heads, amounts.cgst, amounts.sgst, amounts.igst, amounts.cess, amounts.roundOff, amounts.tds].some((a) => !a.ok)
+  const unreadable = [...amounts.heads, amounts.cgst, amounts.sgst, amounts.igst, amounts.cess, amounts.roundOff, amounts.tds, amounts.tcs, amounts.otherCharges].some((a) => !a.ok)
   // Only the lines something has been typed on, so an empty form shows no complaint.
   const typedHeads = amounts.heads.map((a) => a.paise).filter((_, i) => (heads[i]?.amount.trim() ?? '') !== '')
   const preview = previewVoucher(kind, {
@@ -310,6 +317,8 @@ export function VoucherForm({
     roundOff: amounts.roundOff.paise,
     tds: canTds ? amounts.tds.paise : 0,
     rcm: canRcm && rcm,
+    tcs: kind === 'PURCHASE' ? amounts.tcs.paise : 0,
+    otherCharges: kind === 'PURCHASE' ? amounts.otherCharges.paise : 0,
   })
   const anythingTyped = typedHeads.length > 0
 
@@ -431,6 +440,8 @@ export function VoucherForm({
       round_off_paise: amounts.roundOff.paise,
       tds_paise: canTds ? amounts.tds.paise : 0,
       tds_section: (canTds ? tdsSection : '') as BillCreateRequest['tds_section'],
+      tcs_paise: kind === 'PURCHASE' ? amounts.tcs.paise : 0,
+      other_charges_paise: kind === 'PURCHASE' ? amounts.otherCharges.paise : 0,
       rcm: canRcm && rcm,
       narration: narration.trim() || heads.map((h) => h.description?.trim()).filter(Boolean).join('; ').slice(0, 200),
       own_gstin: ownGstin.trim().toUpperCase(),
@@ -834,6 +845,16 @@ export function VoucherForm({
             </div>
           )}
         </Field>
+        {kind === 'PURCHASE' && (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <Field label="TCS charged (₹)" hint="Tax the supplier collected on top of the invoice; it is owed to them with the rest.">
+              {(props) => <Input {...props} inputMode="decimal" className="text-right tabular-nums" value={tcs} onChange={(e) => setTcs(e.target.value)} />}
+            </Field>
+            <Field label="Freight / loading (₹)" hint="Charges printed outside the taxable value, with no GST.">
+              {(props) => <Input {...props} inputMode="decimal" className="text-right tabular-nums" value={otherCharges} onChange={(e) => setOtherCharges(e.target.value)} />}
+            </Field>
+          </div>
+        )}
         {canTds && (
           <details className="rounded-md border border-input px-3 py-2 text-sm" open={!!tds || !!tdsSection || rcm}>
             <summary className="cursor-pointer font-medium">TDS and reverse charge</summary>

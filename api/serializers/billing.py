@@ -155,6 +155,14 @@ class BillCreateSerializer(serializers.Serializer):
         help_text="Deducted when the bill is booked, so the supplier is owed the net. Purchases only.",
     )
     tds_section = serializers.ChoiceField(choices=TdsSection.CHOICES, required=False, allow_blank=True, default="")
+    tcs_paise = PaiseField(
+        required=False, default=0, min_value=0,
+        help_text="Tax the supplier collected on top of the invoice. Added to what the supplier is owed. Purchases only.",
+    )
+    other_charges_paise = PaiseField(
+        required=False, default=0, min_value=0,
+        help_text="Freight, loading and other charges printed outside the taxable value, with no GST. Purchases only.",
+    )
     rcm = serializers.BooleanField(
         required=False, default=False,
         help_text="Reverse charge: the client, not the supplier, owes the GST. Purchases only.",

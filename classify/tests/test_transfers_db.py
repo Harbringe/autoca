@@ -59,7 +59,8 @@ def test_both_sides_of_a_transfer_are_placed_in_each_others_account_and_post_as_
     arriving.refresh_from_db()
     assert outgoing.ledger == contra_ledger_for(other) and arriving.ledger == contra_ledger_for(statement.bank_account)
     assert outgoing.is_self_transfer and arriving.is_self_transfer
-    assert outgoing.method == ClassificationMethod.RULE and outgoing.confidence >= 0.9
+    # placed correctly, but under the 0.90 at which the system would post it on its own
+    assert outgoing.method == ClassificationMethod.RULE and 0.8 <= outgoing.confidence < 0.9
 
     first = approve(outgoing, membership=senior)
     second = approve(arriving, membership=senior)
@@ -97,3 +98,34 @@ def test_an_arrival_with_nothing_in_common_is_not_paired(client, statement):
     outgoing = _outgoing(client)
     _arrival(client, outgoing, "DEP BY SOMEONE ELSE")
     assert pair_own_transfers(client) == []
+
+
+def test_a_pair_is_never_posted_on_the_systems_own_authority(client, statement):
+    from ledger.approval import auto_post
+
+    outgoing = _outgoing(client)
+    other, arriving = _arrival(client, outgoing, "DEP TFR UPI/CR/AXOMB10000000001/Self")
+    pair_own_transfers(client)
+    outgoing.refresh_from_db()
+    arriving.refresh_from_db()
+    assert auto_post(outgoing) is None and auto_post(arriving) is None
+
+
+def test_a_row_decided_after_the_pairs_were_found_is_not_overwritten(client, statement, senior, monkeypatch):
+    """The pairs are worked out from rows read earlier; a person placing one in between must win."""
+    import classify.transfers as transfers
+
+    outgoing = _outgoing(client)
+    other, arriving = _arrival(client, outgoing, "DEP TFR UPI/CR/AXOMB10000000001/Self")
+    somewhere = ledger(client, "Somewhere Else")
+    real = transfers.pair_legs
+
+    def found_then_a_person_decides(legs, own_numbers=None):
+        pairs = real(legs, own_numbers)
+        review(outgoing, somewhere, learn=False)
+        return pairs
+
+    monkeypatch.setattr(transfers, "pair_legs", found_then_a_person_decides)
+    assert pair_own_transfers(client) == []
+    outgoing.refresh_from_db()
+    assert outgoing.ledger == somewhere and outgoing.method == ClassificationMethod.REVIEWED

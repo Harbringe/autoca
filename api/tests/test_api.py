@@ -747,3 +747,30 @@ def test_the_review_queue_does_not_query_per_row(api, client_record, statement):
         rows = api.get(url, {"page_size": 500}).json()["results"]
     assert rows
     assert len(queries) <= 20
+
+
+def test_the_review_queue_can_be_limited_to_some_statements(api, client_record, statement):
+    url = f"{V1}/clients/{client_record.pk}/review-queue/"
+    everything = api.get(url, {"page_size": 500}).json()
+    mine = api.get(url, {"statement": str(statement.pk), "page_size": 500}).json()
+    other = api.get(url, {"statement": "00000000-0000-0000-0000-000000000000,not-an-id"}).json()
+
+    assert mine["count"] == everything["count"] > 0
+    assert other["count"] == 0
+
+
+def test_the_counts_by_statement_agree_with_the_queue_and_are_small(api, client_record, statement):
+    from django.db import connection
+    from django.test.utils import CaptureQueriesContext
+
+    queue = f"{V1}/clients/{client_record.pk}/review-queue/"
+    needs = api.get(queue, {"stage": "unresolved", "page_size": 500}).json()["count"]
+    ready = api.get(queue, {"stage": "pending_approval", "page_size": 500}).json()["count"]
+
+    with CaptureQueriesContext(connection) as queries:
+        body = api.get(f"{queue}by-statement/").json()["statements"]
+
+    mine = body[str(statement.pk)]
+    assert (mine["needs"], mine["ready"]) == (needs, ready)
+    assert mine["high"] <= mine["ready"]
+    assert len(queries) <= 12

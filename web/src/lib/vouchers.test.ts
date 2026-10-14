@@ -117,3 +117,21 @@ describe('openPositions', () => {
     expect(openPositions([])).toEqual({ payables: 0, receivables: 0 })
   })
 })
+
+describe('tax collected at source and other charges on a purchase', () => {
+  const base = { heads: [130_560_957], cgst: 3_264_024, sgst: 3_264_024, igst: 0, cess: 0, roundOff: -6, tds: 0, rcm: false }
+
+  it('are owed to the supplier with the rest', () => {
+    const p = previewVoucher('PURCHASE', { ...base, tcs: 137_089, otherCharges: 60_400 })
+    expect(p.error).toBeNull()
+    expect(p.party).toBe(130_560_957 + 6_528_048 - 6 + 137_089 + 60_400)
+  })
+
+  it('change nothing when left out', () => {
+    expect(previewVoucher('PURCHASE', base)).toEqual(previewVoucher('PURCHASE', { ...base, tcs: 0, otherCharges: 0 }))
+  })
+
+  it('are refused on a sale, as the server refuses them', () => {
+    expect(previewVoucher('SALES', { ...base, tcs: 100 }).error).toMatch(/purchases only/)
+  })
+})

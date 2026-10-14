@@ -68,6 +68,8 @@ STANDARD_LEDGERS: list[tuple[str, str]] = [
     ("Input GST (RCM)", G.DUTIES_AND_TAXES),
     ("GST Payable (RCM)", G.DUTIES_AND_TAXES),
     ("TDS Receivable", G.CURRENT_ASSET),
+    # Tax a supplier collected from us on a purchase (section 206C(1H)): an asset, set against our own tax.
+    ("TCS Receivable", G.CURRENT_ASSET),
     ("Round Off", G.INDIRECT_EXPENSE),
     ("Advance Tax", G.DUTIES_AND_TAXES),
     ("Professional Tax", G.DUTIES_AND_TAXES),

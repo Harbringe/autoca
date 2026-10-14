@@ -79,6 +79,11 @@ export function prefillFromReading(reading: InvoiceReading, headLedger?: string)
 export function prefillOfBill(bill: BillDetail, document: string | undefined, reading?: InvoiceReading): VoucherPrefill {
   const side = bill.kind === 'PURCHASE' ? 'DR' : 'CR'
   const head = bill.lines.find((l) => !l.party && l.direction === side && l.amount_paise === bill.taxable_paise)
+  // A purchase's tax collected at source is its own ledger; freight and loading are whatever else makes up the total (taxable value, tax,
+  // round off, TCS, other charges, less TDS), so a bill booked with them is not changed into one without them.
+  const tcs = bill.kind === 'PURCHASE' ? bill.lines.filter((l) => l.ledger_name === 'TCS Receivable' && l.direction === 'DR').reduce((sum, l) => sum + l.amount_paise, 0) : 0
+  const tax = bill.cgst_paise + bill.sgst_paise + bill.igst_paise + bill.cess_paise
+  const rest = bill.kind === 'PURCHASE' ? bill.total_paise - bill.taxable_paise - (bill.rcm ? 0 : tax) - bill.round_off_paise + bill.tds_paise - tcs : 0
   return {
     kind: bill.kind as VoucherPrefill['kind'],
     partyId: bill.party,
@@ -90,6 +95,8 @@ export function prefillOfBill(bill: BillDetail, document: string | undefined, re
     igstPaise: bill.igst_paise,
     cessPaise: bill.cess_paise,
     roundOffPaise: bill.round_off_paise,
+    tcsPaise: tcs,
+    otherChargesPaise: Math.max(0, rest),
     document,
     reviseBill: bill.id,
     headLedger: head?.ledger_account,

@@ -52,6 +52,9 @@ export interface VoucherFigures {
   roundOff: number
   tds: number
   rcm: boolean
+  /** Purchases only: tax the supplier collected on top, and freight or loading printed outside the taxable value. */
+  tcs?: number
+  otherCharges?: number
 }
 
 export const NO_FIGURES: VoucherFigures = { heads: [], cgst: 0, sgst: 0, igst: 0, cess: 0, roundOff: 0, tds: 0, rcm: false }
@@ -75,8 +78,12 @@ export function previewVoucher(kind: VoucherKind, f: VoucherFigures): VoucherPre
   if ([f.cgst, f.sgst, f.igst, f.cess].some((t) => t < 0)) return fail('Tax amounts must be zero or more.')
   if (f.igst && (f.cgst || f.sgst)) return fail('An invoice carries CGST and SGST, or IGST, not both.')
   if (f.tds < 0) return fail('TDS must be zero or more.')
+  const tcs = f.tcs ?? 0
+  const otherCharges = f.otherCharges ?? 0
+  if (tcs < 0 || otherCharges < 0) return fail('TCS and other charges must be zero or more.')
 
   const purchase = kind === 'PURCHASE'
+  if (!purchase && (tcs || otherCharges)) return fail('Tax collected at source and other charges are booked on purchases only.')
   if (kind === 'DEBIT_NOTE' && (f.tds || f.rcm)) return fail('A debit note does not deduct TDS or carry reverse charge in this version.')
   if ((kind === 'SALES' || kind === 'CREDIT_NOTE') && (f.tds || f.rcm)) {
     return fail('A customer’s TDS is booked when they pay, and reverse charge does not apply to our sales.')
@@ -85,7 +92,7 @@ export function previewVoucher(kind: VoucherKind, f: VoucherFigures): VoucherPre
   // Purchase and debit note: the supplier is owed the taxable value plus tax (none under reverse charge) plus rounding,
   // less TDS. Sales and credit note: the customer owes taxable value plus tax plus rounding.
   const party = purchase || kind === 'DEBIT_NOTE'
-    ? taxable + (f.rcm ? 0 : tax) + f.roundOff - f.tds
+    ? taxable + (f.rcm ? 0 : tax) + f.roundOff + tcs + otherCharges - f.tds
     : taxable + tax + f.roundOff
   if (party <= 0) {
     return fail(

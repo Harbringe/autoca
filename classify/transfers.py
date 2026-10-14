@@ -99,8 +99,9 @@ def pair_legs(legs: list[Leg], own_numbers: dict[str, str] | None = None) -> lis
     return out
 
 
-#: Confidence of a placement made from a pair: a shared reference or a named account is as sure as a rule; a lone match is a suggestion.
-CONFIDENCE = {"reference": 0.95, "named": 0.95, "unique": 0.80}
+#: Confidence of a placement made from a pair. Even a shared reference stays just under the 0.90 at which the system posts on its own,
+#: so a pair is placed correctly and waits for a person to post it; a lone match is only a suggestion.
+CONFIDENCE = {"reference": 0.88, "named": 0.88, "unique": 0.80}
 
 
 def pair_own_transfers(client, *, apply: bool = True) -> list[Pair]:
@@ -112,8 +113,6 @@ def pair_own_transfers(client, *, apply: bool = True) -> list[Pair]:
     """
     from classify.engine import _unposted
     from classify.models import ClassificationMethod, ModelState
-    from classify.seeds import contra_ledger_for
-    from classify.treatment import Treatment
 
     rows = list(
         _unposted(client)
@@ -130,22 +129,46 @@ def pair_own_transfers(client, *, apply: bool = True) -> list[Pair]:
     if not apply:
         return pairs
 
-    by_id = {str(r.pk): r for r in rows}
+    from django.db import transaction
+
+    applied: list[Pair] = []
     for pair in pairs:
-        debit, credit = by_id[pair.debit], by_id[pair.credit]
-        for row, other in ((debit, credit), (credit, debit)):
-            row.apply(
-                Treatment(ledger=contra_ledger_for(other.transaction.bank_account)),
-                method=ClassificationMethod.RULE,
-                confidence=CONFIDENCE[pair.strength],
-            )
-            row.is_self_transfer = True
-            row.rationale = f"A transfer between the client's own accounts: {pair.why}."
-            row.model_state = None
-            row.save(
-                update_fields=[
-                    "ledger", "party", "rcm", "tds_section", "rule", "method", "confidence", "review_band", "needs_review",
-                    "suggested_ledger_name", "suggested_ledger_group", "book_narration", "is_self_transfer", "rationale", "model_state",
-                ]
-            )
-    return pairs
+        # A person may have placed, or the assistant claimed, either row since they were read. Each pair is re-read under a lock and
+        # skipped unless both rows are still nobody's decision, so a human's choice is never overwritten.
+        with transaction.atomic():
+            fresh = {
+                str(r.pk): r
+                for r in _unposted(client)
+                .filter(pk__in=[pair.debit, pair.credit], method__in=[ClassificationMethod.UNRESOLVED, ClassificationMethod.LLM])
+                .exclude(model_state=ModelState.CLAIMED)
+                .select_related("transaction__bank_account")
+                .select_for_update(of=("self",))
+            }
+            if len(fresh) != 2:
+                continue
+            _place(fresh[pair.debit], fresh[pair.credit], pair)
+            _place(fresh[pair.credit], fresh[pair.debit], pair)
+            applied.append(pair)
+    return applied
+
+
+def _place(row, other, pair: Pair) -> None:
+    """Put ``row`` in the other account's ledger, as one side of a transfer."""
+    from classify.models import ClassificationMethod
+    from classify.seeds import contra_ledger_for
+    from classify.treatment import Treatment
+
+    row.apply(
+        Treatment(ledger=contra_ledger_for(other.transaction.bank_account)),
+        method=ClassificationMethod.RULE,
+        confidence=CONFIDENCE[pair.strength],
+    )
+    row.is_self_transfer = True
+    row.rationale = f"A transfer between the client's own accounts: {pair.why}."
+    row.model_state = None
+    row.save(
+        update_fields=[
+            "ledger", "party", "rcm", "tds_section", "rule", "method", "confidence", "review_band", "needs_review",
+            "suggested_ledger_name", "suggested_ledger_group", "book_narration", "is_self_transfer", "rationale", "model_state",
+        ]
+    )

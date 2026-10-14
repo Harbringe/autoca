@@ -1830,6 +1830,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/review-queue/by-statement/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * How much work is waiting
+         * @description Split by how much thought each row needs. The ordering is the feature: it turns an hour of checking every row into minutes of checking the ones that need it.
+         */
+        get: operations["clients_review_queue_by_statement_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/review-queue/recategorize/": {
         parameters: {
             query?: never;
@@ -1882,8 +1902,11 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * How much work is waiting
-         * @description Split by how much thought each row needs. The ordering is the feature: it turns an hour of checking every row into minutes of checking the ones that need it.
+         * @description Everything still to be dealt with, surest first.
+         *
+         *     "Still to be dealt with" means **not yet posted to the ledger** -- not "not
+         *     yet looked at". A row a person has placed but nobody has approved is not
+         *     finished work, and a queue that hid it is how a month closes short.
          */
         get: operations["clients_review_queue_summary_retrieve"];
         put?: never;
@@ -3704,6 +3727,18 @@ export interface components {
             tds_paise: number;
             /** @default  */
             tds_section: components["schemas"]["TdsSectionEnum"] | components["schemas"]["BlankEnum"];
+            /**
+             * Format: int64
+             * @description Tax the supplier collected on top of the invoice. Added to what the supplier is owed. Purchases only.
+             * @default 0
+             */
+            tcs_paise: number;
+            /**
+             * Format: int64
+             * @description Freight, loading and other charges printed outside the taxable value, with no GST. Purchases only.
+             * @default 0
+             */
+            other_charges_paise: number;
             /**
              * @description Reverse charge: the client, not the supplier, owes the GST. Purchases only.
              * @default false
@@ -11853,6 +11888,8 @@ export interface operations {
                 page_size?: number;
                 /** @description `unresolved` is the half with no ledger yet; `pending_approval` is the half waiting on a senior CA. Omit for both. */
                 stage?: "pending_approval" | "unresolved";
+                /** @description Only these statements' rows: one id, or several joined with commas. */
+                statement?: string;
             };
             header?: never;
             path: {
@@ -11868,6 +11905,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaginatedClassificationList"];
+                };
+            };
+        };
+    };
+    clients_review_queue_by_statement_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ReviewSummary"];
                 };
             };
         };
@@ -11936,7 +11994,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ReviewSummary"];
+                    "application/json": components["schemas"]["Classification"];
                 };
             };
         };

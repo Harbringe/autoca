@@ -13,6 +13,7 @@ import uuid
 from django.core.exceptions import PermissionDenied
 from django.db.models import Count
 from django.shortcuts import get_object_or_404
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
@@ -418,6 +419,16 @@ class ReviewQueueViewSet(
             rows = pending_approval(self.client)
         else:
             rows = review_queue(self.client, band if band in BANDS else None)
+        # Only some statements' rows: `statement` is one id or several joined with commas. Unreadable ids select nothing.
+        statements = self.request.query_params.get("statement")
+        if statements:
+            ids = []
+            for part in statements.split(","):
+                try:
+                    ids.append(uuid.UUID(part.strip()))
+                except ValueError:
+                    continue
+            rows = rows.filter(transaction__statement_id__in=ids)
         # The serializer reads each row's bank account, ledger, party, rule and journal entries. Fetched here, a page of 500 is a
         # handful of queries; left to the serializer it was several per row, which is what made a big statement's Review slow.
         return rows.select_related("transaction__bank_account", "ledger__party_record", "party", "rule__ledger").prefetch_related(
@@ -436,6 +447,7 @@ class ReviewQueueViewSet(
                     "JUDGEMENT has no suggestion and needs a person."
                 ),
             ),
+            OpenApiParameter("statement", str, description="Only these statements' rows: one id, or several joined with commas."),
             OpenApiParameter(
                 "stage",
                 str,
@@ -560,6 +572,32 @@ class ReviewQueueViewSet(
             "checking the ones that need it."
         ),
     )
+    @extend_schema(
+        summary="What is waiting in each statement",
+        description=(
+            "Counts only, a few hundred bytes however long the queue is: for each statement with rows waiting, how many need a ledger, how "
+            "many are placed and ready to post, how many of those are high-confidence and postable in bulk, and how many sit on a party's "
+            "own account. The Statements and Review screens read this instead of the queue's rows."
+        ),
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    @action(detail=False, methods=["get"], url_path="by-statement")
+    def by_statement(self, request, client_id=None):
+        out: dict[str, dict[str, int]] = {}
+
+        def bump(qs, key):
+            for statement_id, n in qs.order_by().values_list("transaction__statement_id").annotate(n=Count("pk")):
+                out.setdefault(str(statement_id), {"needs": 0, "ready": 0, "high": 0, "settling": 0})[key] += n
+
+        needs = unresolved_for(self.client)
+        ready = pending_approval(self.client)
+        bump(needs, "needs")
+        bump(ready, "ready")
+        bump(ready.filter(review_band=ReviewBand.HIGH, ledger__party_record__isnull=True), "high")
+        # A row with no ledger is on no party account, so only the placed ones can be waiting to be settled.
+        bump(ready.filter(ledger__party_record__isnull=False), "settling")
+        return Response({"statements": out})
+
     @action(detail=False, methods=["get"])
     def summary(self, request, client_id=None):
         summary = review_summary(self.client)

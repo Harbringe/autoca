@@ -154,6 +154,28 @@ def test_a_purchase_writes_the_voucher_the_bill_and_the_party_account_together(b
     assert billing.open_amount(bill) == 11_800_000
 
 
+def test_tcs_and_other_charges_are_booked_to_their_own_ledgers_and_owed_to_the_supplier(books, senior):
+    bill = purchase(books, senior, tcs=11_800, other_charges=60_000)
+
+    assert bill.total_paise == 11_800_000 + 11_800 + 60_000
+    assert bill.taxable_paise == 10_000_000  # the GST base is untouched by either
+    assert lines_of(bill.entry) == [
+        ("Freight & Cartage", Direction.DEBIT, 60_000),
+        ("Input CGST", Direction.DEBIT, 900_000),
+        ("Input SGST", Direction.DEBIT, 900_000),
+        ("Purchases", Direction.DEBIT, 10_000_000),
+        ("Ravi Traders", Direction.CREDIT, 11_871_800),
+        ("TCS Receivable", Direction.DEBIT, 11_800),
+    ]
+    assert billing.open_amount(bill) == 11_871_800
+
+
+def test_a_sale_cannot_carry_tcs_or_other_charges(books, senior):
+    customer = make_party(books, "Mehta Stores", PartyRole.CUSTOMER, gstin="")
+    with pytest.raises(BillingError):
+        billing.post_sales(books, customer, [(LedgerAccount.objects.create(firm_id=books.firm_id, client=books, name="Sales X", group=LedgerGroup.SALES), 100_000)], invoice(reference="S-1", tcs=500), membership=senior)
+
+
 def test_the_gst_lands_in_its_own_ledger_not_inside_the_purchase(books, senior):
     purchase(books, senior)
 

@@ -3988,6 +3988,12 @@ paths:
           - unresolved
         description: '`unresolved` is the half with no ledger yet; `pending_approval`
           is the half waiting on a senior CA. Omit for both.'
+      - in: query
+        name: statement
+        schema:
+          type: string
+        description: 'Only these statements'' rows: one id, or several joined with
+          commas.'
       tags:
       - review
       security:
@@ -3998,6 +4004,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PaginatedClassificationList'
+          description: ''
+  /api/v1/clients/{client_id}/review-queue/by-statement/:
+    get:
+      operationId: clients_review_queue_by_statement_retrieve
+      description: 'Split by how much thought each row needs. The ordering is the
+        feature: it turns an hour of checking every row into minutes of checking the
+        ones that need it.'
+      summary: How much work is waiting
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ReviewSummary'
           description: ''
   /api/v1/clients/{client_id}/review-queue/recategorize/:
     post:
@@ -4065,10 +4096,12 @@ paths:
   /api/v1/clients/{client_id}/review-queue/summary/:
     get:
       operationId: clients_review_queue_summary_retrieve
-      description: 'Split by how much thought each row needs. The ordering is the
-        feature: it turns an hour of checking every row into minutes of checking the
-        ones that need it.'
-      summary: How much work is waiting
+      description: |-
+        Everything still to be dealt with, surest first.
+
+        "Still to be dealt with" means **not yet posted to the ledger** -- not "not
+        yet looked at". A row a person has placed but nobody has approved is not
+        finished work, and a queue that hid it is how a month closes short.
       parameters:
       - in: path
         name: client_id
@@ -4085,7 +4118,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ReviewSummary'
+                $ref: '#/components/schemas/Classification'
           description: ''
   /api/v1/clients/{client_id}/rules/:
     get:
@@ -7741,6 +7774,22 @@ components:
           oneOf:
           - $ref: '#/components/schemas/TdsSectionEnum'
           - $ref: '#/components/schemas/BlankEnum'
+        tcs_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+          description: Tax the supplier collected on top of the invoice. Added to
+            what the supplier is owed. Purchases only.
+        other_charges_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+          description: Freight, loading and other charges printed outside the taxable
+            value, with no GST. Purchases only.
         rcm:
           type: boolean
           default: false

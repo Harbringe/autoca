@@ -171,3 +171,36 @@ def test_every_line_is_a_positive_whole_amount():
     plan = plan_purchase([(PURCHASES, 10_000)], cgst=900, sgst=900, round_off=-3, tds=100, rcm=False)
 
     assert all(isinstance(line.amount_paise, int) and line.amount_paise > 0 for line in plan.lines)
+
+
+# --- Tax collected at source and charges outside the taxable value --------------------------------------------------
+
+
+def test_tcs_and_other_charges_are_owed_to_the_supplier_and_booked_to_their_own_ledgers():
+    from ledger.billing import OTHER_CHARGES, TCS_RECEIVABLE
+
+    plan = plan_purchase([(PURCHASES, 1_305_609_57)], cgst=32_640_24, sgst=32_640_24, tcs=1_370_89, other_charges=604_00, round_off=-6)
+    lines = by_ledger(plan)
+    assert lines[TCS_RECEIVABLE] == (DR, 1_370_89)
+    assert lines[OTHER_CHARGES] == (DR, 604_00)
+    # what the supplier is owed, and so the bill's total, is everything printed
+    assert plan.party_paise == 1_305_609_57 + 65_280_48 + 1_370_89 + 604_00 - 6
+    assert plan.taxable_paise == 1_305_609_57
+
+
+def test_leaving_tcs_and_other_charges_out_changes_nothing():
+    plain = plan_purchase([(PURCHASES, 100_00)], cgst=2_50, sgst=2_50)
+    zero = plan_purchase([(PURCHASES, 100_00)], cgst=2_50, sgst=2_50, tcs=0, other_charges=0)
+    assert plain == zero
+
+
+@pytest.mark.parametrize("kwargs", [{"tcs": -1}, {"other_charges": -5}, {"tcs": 1.5}])
+def test_negative_or_fractional_tcs_and_charges_are_refused(kwargs):
+    with pytest.raises(BillingError):
+        plan_purchase([(PURCHASES, 100_00)], **kwargs)
+
+
+@pytest.mark.parametrize("tcs,other,tds", itertools.product([0, 7_00], [0, 3_00], [0, 5_00]))
+def test_every_plan_with_tcs_and_charges_balances(tcs, other, tds):
+    plan = plan_purchase([(PURCHASES, 100_00)], cgst=2_50, sgst=2_50, tcs=tcs, other_charges=other, tds=tds)
+    assert plan.debits == plan.credits

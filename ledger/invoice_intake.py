@@ -671,6 +671,9 @@ def _book(reading: InvoiceReading, membership) -> str:
                 igst=fields.get("igst_paise", 0),
                 cess=fields.get("cess_paise", 0),
                 round_off=fields.get("round_off_paise", 0),
+                # Printed outside the taxable value and owed to the supplier all the same; booked so the bill is the invoice's total.
+                tcs=fields.get("tcs_paise", 0) if purchase else 0,
+                other_charges=fields.get("other_charges_paise", 0) if purchase else 0,
             )
             post = billing.post_purchase if purchase else billing.post_sales
             heads = [(head, fields["taxable_paise"])]

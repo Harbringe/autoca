@@ -65,6 +65,9 @@ INPUT_RCM = "Input GST (RCM)"
 PAYABLE_RCM = "GST Payable (RCM)"
 TDS_PAYABLE = "TDS Payable"
 ROUND_OFF = "Round Off"
+TCS_RECEIVABLE = "TCS Receivable"
+#: Freight, loading (hamali) and other charges printed outside the taxable value.
+OTHER_CHARGES = "Freight & Cartage"
 
 #: Stands for the party's own ledger in a plan; resolved when the voucher is posted.
 PARTY = "<party>"
@@ -129,7 +132,7 @@ def _check_tax(cgst: int, sgst: int, igst: int, cess: int) -> int:
 
 
 def plan_purchase(
-    heads, *, cgst=0, sgst=0, igst=0, cess=0, round_off=0, tds=0, rcm=False, tds_section=""
+    heads, *, cgst=0, sgst=0, igst=0, cess=0, round_off=0, tds=0, rcm=False, tds_section="", tcs=0, other_charges=0
 ) -> VoucherPlan:
     """A supplier's invoice.
 
@@ -139,12 +142,19 @@ def plan_purchase(
     the tax is booked against itself: ``Dr Input GST (RCM) / Cr GST Payable (RCM)``. That nets to nothing in the books
     and is picked up in the return. TDS is deducted at booking: the party is credited the net, and ``TDS Payable`` the
     deduction. ``round_off`` is signed, positive when the invoice rounds up.
+
+    ``tcs`` is tax the supplier collected from us on top of the invoice (an asset, ``TCS Receivable``) and ``other_charges`` is freight,
+    loading and the like printed outside the taxable value (``Freight & Cartage``, no GST). Both are part of what the supplier is owed, so
+    the bill's total, and the payment that settles it, include them. Left at zero, the voucher is exactly what it was before.
     """
     taxable = _check_heads(heads)
     tax = _check_tax(cgst, sgst, igst, cess)
     if not isinstance(tds, int) or tds < 0 or not isinstance(round_off, int):
         raise BillingError("TDS must be a whole number of paise, zero or more, and the round-off whole paise.")
-    party_paise = taxable + (0 if rcm else tax) + round_off - tds
+    for name, amount in (("TCS", tcs), ("Other charges", other_charges)):
+        if not isinstance(amount, int) or amount < 0:
+            raise BillingError(f"{name} must be a whole number of paise, zero or more.")
+    party_paise = taxable + (0 if rcm else tax) + round_off + tcs + other_charges - tds
     if party_paise <= 0:
         raise BillingError("After tax, rounding and TDS the supplier would be owed nothing. Check the amounts.")
 
@@ -157,6 +167,10 @@ def plan_purchase(
             for key, amount in (("cgst", cgst), ("sgst", sgst), ("igst", igst), ("cess", cess))
             if amount
         ]
+    if other_charges:
+        lines.append(PlannedLine(OTHER_CHARGES, DR, other_charges))
+    if tcs:
+        lines.append(PlannedLine(TCS_RECEIVABLE, DR, tcs))
     if round_off > 0:
         lines.append(PlannedLine(ROUND_OFF, DR, round_off))
     elif round_off < 0:
@@ -310,6 +324,9 @@ class BillInput:
     tds: int = 0
     tds_section: str = ""
     rcm: bool = False
+    #: Purchases only: tax the supplier collected on top, and freight or loading printed outside the taxable value.
+    tcs: int = 0
+    other_charges: int = 0
     extra: dict = field(default_factory=dict)
 
 
@@ -442,6 +459,7 @@ def post_purchase(client, party, heads, data: BillInput, *, membership) -> Bill:
     plan = plan_purchase(
         _heads(heads), cgst=data.cgst, sgst=data.sgst, igst=data.igst, cess=data.cess,
         round_off=data.round_off, tds=data.tds, rcm=data.rcm, tds_section=data.tds_section,
+        tcs=data.tcs, other_charges=data.other_charges,
     )
     return _post(client, party, BillKind.PURCHASE, plan, data, membership=membership)
 
@@ -450,6 +468,8 @@ def post_sales(client, party, heads, data: BillInput, *, membership) -> Bill:
     """Book our invoice to a customer. See ``plan_sales``."""
     if data.tds or data.rcm:
         raise BillingError("A customer's TDS is booked when they pay, and reverse charge does not apply to our sales.")
+    if data.tcs or data.other_charges:
+        raise BillingError("Tax collected at source and other charges are booked on purchases only.")
     plan = plan_sales(
         _heads(heads), cgst=data.cgst, sgst=data.sgst, igst=data.igst, cess=data.cess,
         round_off=data.round_off,

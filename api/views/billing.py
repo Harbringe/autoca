@@ -171,6 +171,8 @@ class BillViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.RetrieveModel
                     tds=data["tds_paise"],
                     tds_section=data["tds_section"],
                     rcm=data["rcm"],
+                    tcs=data.get("tcs_paise", 0),
+                    other_charges=data.get("other_charges_paise", 0),
                 ),
                 membership=request.membership,
             )

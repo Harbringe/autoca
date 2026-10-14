@@ -103,7 +103,14 @@ jobs:
 
       - name: Full suite with coverage
         # -n 4 spreads the tests over the runner's four cores, each worker with its own scratch database (pytest-django adds a _gwN suffix);
-        # --dist loadfile keeps one file's tests on one worker. --durations lists the 30 slowest tests.
+      # --dist loadfile keeps one file's tests on one worker. --durations lists the 30 slowest tests.
+      # Coverage slows every test, and nothing gates on it, so it is measured only for code that reaches main.
+      - name: Full suite
+        if: github.ref != 'refs/heads/main'
+        run: pytest -n 4 --dist loadfile --durations=30
+
+      - name: Full suite with coverage
+        if: github.ref == 'refs/heads/main'
         run: pytest -n 4 --dist loadfile --cov=core --cov=integrations --cov-report=term-missing --durations=30
 
       - name: Known-vulnerability audit of Python dependencies

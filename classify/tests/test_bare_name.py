@@ -3,8 +3,9 @@ from classify.treatment import HIGH_CONFIDENCE, REVIEW_ADVISED
 
 
 def test_a_one_word_payee_is_a_bare_name():
-    assert is_bare_name("ashok")
-    assert not is_bare_name("ashok kumar")
+    assert is_bare_name("ASHOK")
+    assert not is_bare_name("NPCI BHIM")
+    assert not is_bare_name("Ashok Kumar")
     assert not is_bare_name("7eleven")
 
 

@@ -70,9 +70,13 @@ CONFIDENCE_BY_MATCH = {
 BARE_NAME_CONFIDENCE = 0.80
 
 
-def is_bare_name(pattern: str) -> bool:
-    """A single plain word, which is as likely a person's first name as a business -- and a person can be paid for many things."""
-    return " " not in pattern.strip() and pattern.isalpha()
+def is_bare_name(counterparty: str) -> bool:
+    """A single plain word as the bank wrote it, which is as likely a person's first name as a business -- and a person can be paid for many things.
+
+    Judged on the name with its spaces, not the normalised match key, which has none.
+    """
+    name = counterparty.strip()
+    return len(name.split()) == 1 and name.isalpha()
 
 
 def default_confidence(match_type: str, source: str) -> float:
@@ -340,7 +344,7 @@ def learn_rule_from(classification, treatment, user=None) -> ClassificationRule 
             **treatment.as_fields(),
             "source": RuleSource.LEARNED,
             "priority": LEARNED_PRIORITY,
-            "confidence": BARE_NAME_CONFIDENCE if is_bare_name(pattern) else default_confidence(MatchType.PARTY_EQUALS, RuleSource.LEARNED),
+            "confidence": BARE_NAME_CONFIDENCE if is_bare_name(facts.counterparty) else default_confidence(MatchType.PARTY_EQUALS, RuleSource.LEARNED),
             "created_by": user,
         },
     )

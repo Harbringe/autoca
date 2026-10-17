@@ -15,7 +15,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 export SCALE_DIR="$HERE"
 export REPO="${REPO:-/srv/autoca}"
 export SCALE_ENV="$HERE/.env.scale"
-DC="sudo -E docker compose -p autoca-scale --env-file $SCALE_ENV -f $HERE/compose.scale.yaml"
+DC="sudo env SCALE_DIR=$SCALE_DIR REPO=$REPO SCALE_ENV=$SCALE_ENV docker compose -p autoca-scale --env-file $SCALE_ENV -f $HERE/compose.scale.yaml"
 
 need_env() { [ -f "$SCALE_ENV" ] || { echo "scale: run 'sh scale.sh up' first" >&2; exit 1; }; }
 tool() { need_env; $DC run --rm -T tool "$@" </dev/null; }

@@ -45,6 +45,7 @@ from classify.models import (
 )
 from classify.narration import NarrationFacts, analyse, normalise
 from classify.parties import Kind, PartyBook, candidates_as_json, confirm_alias
+from classify.scoring import Evidence, confidence, first_word_counts, name_specificity, verdict
 from classify.treatment import ReviewBand, Treatment, band_for
 
 #: Learned rules outrank seeds but sit below anything written by hand, so a
@@ -68,6 +69,11 @@ CONFIDENCE_BY_MATCH = {
 
 #: What a rule learned from a bare one-word payee ("ASHOK") claims: enough to suggest, never enough to place on its own.
 BARE_NAME_CONFIDENCE = 0.80
+
+
+#: The most a rule learned from people's decisions may claim: under the 0.90 at which a placement is posted without asking
+#: (``ledger.approval.auto_post``). A learned rule places a row; a person still approves it.
+LEARNED_CEILING = 0.88
 
 
 def is_bare_name(counterparty: str) -> bool:
@@ -334,32 +340,88 @@ def learn_rule_from(classification, treatment, user=None) -> ClassificationRule 
         return None
 
     client = classification.transaction.bank_account.client
-    rule, created = ClassificationRule.objects.get_or_create(
-        firm_id=classification.firm_id,
-        client=client,
-        match_type=MatchType.PARTY_EQUALS,
-        pattern=pattern,
-        direction=Direction.DEBIT if classification.transaction.is_debit else Direction.CREDIT,
-        defaults={
-            **treatment.as_fields(),
-            "source": RuleSource.LEARNED,
-            "priority": LEARNED_PRIORITY,
-            "confidence": BARE_NAME_CONFIDENCE if is_bare_name(facts.counterparty) else default_confidence(MatchType.PARTY_EQUALS, RuleSource.LEARNED),
-            "created_by": user,
-        },
+    ledger = treatment.ledger
+    if ledger is None:
+        return None
+    direction = Direction.DEBIT if classification.transaction.is_debit else Direction.CREDIT
+
+    # A decision is evidence, not an order. What a person decided for this payee before counts with it, so one click is a hypothesis
+    # and a payee decided the same way again and again earns trust (``classify.scoring``); a payee decided differently each time earns
+    # no rule at all, and a person is asked each time. The newest click does not simply overwrite what the history says.
+    history, decided = _decisions_for(client, pattern, direction, except_pk=classification.pk)
+    history[ledger.pk] += 1
+    ranked = history.most_common(2)
+    favourite = ranked[0][0]
+    tie = len(ranked) > 1 and ranked[1][1] == ranked[0][1]
+    in_direction = decided.count() + 1
+    base = (decided.filter(ledger_id=favourite).count() + (1 if favourite == ledger.pk else 0)) / max(in_direction, 1)
+    payees = TransactionClassification.objects.filter(firm_id=client.firm_id, transaction__bank_account__client=client).values_list("counterparty", flat=True).distinct()
+    score = confidence(
+        Evidence(ranked[0][1], sum(history.values()), name_specificity(facts.counterparty, first_word_counts(payees)), base)
     )
-    if not created and not treatment.matches(rule):
-        # The person changed their mind about this payee -- a different ledger,
-        # or the same ledger now flagged reverse-charge. Their latest decision
-        # is the one that stands, on all four counts rather than just the one
-        # they happened to click.
-        for field, value in treatment.as_fields().items():
-            setattr(rule, field, value)
-        rule.is_active = True
-        rule.save(update_fields=["ledger", "party", "rcm", "tds_section", "is_active"])
-    # Read by the API to say whether this decision wrote a new rule (so it can be undone).
-    rule.just_created = created
-    return rule
+
+    existing = ClassificationRule.objects.filter(
+        firm_id=classification.firm_id, client=client, match_type=MatchType.PARTY_EQUALS, pattern=pattern, direction=direction
+    ).first()
+    if tie or verdict(score) == "ask":
+        # The history does not support placing this payee's next row on its own. Any rule that did is switched off, not deleted.
+        if existing is not None and existing.is_active:
+            existing.is_active = False
+            existing.save(update_fields=["is_active"])
+        return None
+
+    claim = min(score, BARE_NAME_CONFIDENCE if is_bare_name(facts.counterparty) else LEARNED_CEILING)
+    if favourite != ledger.pk:
+        # This decision is the minority: most of what people decided for this payee went elsewhere. Keep that rule as it was, with the
+        # weaker claim the disagreement earns; never rewrite it to this ledger.
+        if existing is not None and existing.is_active and existing.ledger_id == favourite:
+            existing.confidence = claim
+            existing.save(update_fields=["confidence"])
+            existing.just_created = False
+            return existing
+        return None
+
+    if existing is None:
+        rule = ClassificationRule.objects.create(
+            firm_id=classification.firm_id,
+            client=client,
+            match_type=MatchType.PARTY_EQUALS,
+            pattern=pattern,
+            direction=direction,
+            **treatment.as_fields(),
+            source=RuleSource.LEARNED,
+            priority=LEARNED_PRIORITY,
+            confidence=claim,
+            created_by=user,
+        )
+        # Read by the API to say whether this decision wrote a new rule (so it can be undone).
+        rule.just_created = True
+        return rule
+    for field, value in treatment.as_fields().items():
+        setattr(existing, field, value)
+    existing.confidence = claim
+    existing.is_active = True
+    existing.save(update_fields=["ledger", "party", "rcm", "tds_section", "is_active", "confidence"])
+    existing.just_created = False
+    return existing
+
+
+def _decisions_for(client, pattern: str, direction, *, except_pk):
+    """How people placed this payee (in this direction) before: ``({ledger id: decisions}, every such decision of the client's)``."""
+    decided = TransactionClassification.objects.filter(
+        firm_id=client.firm_id,
+        transaction__bank_account__client=client,
+        method=ClassificationMethod.REVIEWED,
+        ledger__isnull=False,
+        is_self_transfer=False,
+    ).exclude(pk=except_pk)
+    decided = decided.filter(transaction__debit_paise__gt=0) if direction == Direction.DEBIT else decided.filter(transaction__credit_paise__gt=0)
+    by_ledger: Counter = Counter()
+    # The stored spelling is the bank's; the rule's pattern is normalised. Narrow by the start of the name, then compare like with like.
+    for ledger_id, spelling in decided.filter(counterparty__istartswith=pattern[:1]).values_list("ledger_id", "counterparty"):
+        if spelling and normalise(spelling) == pattern:
+            by_ledger[ledger_id] += 1
+    return by_ledger, decided
 
 
 def party_for(client, name: str, *, rcm: bool = False, tds_section: str = "") -> Party:

@@ -206,14 +206,14 @@ def test_an_unmatched_row_claims_nothing(client, statement):
     assert unknown.ledger is None
 
 
-def test_a_learned_payee_rule_is_high_confidence(client, statement):
-    """It came from a person naming this exact payee. That is a strong claim."""
+def test_a_payee_rule_learned_from_one_decision_suggests_it_does_not_assert(client, statement):
+    """One decision is a hypothesis: it places the payee's other rows for a person to check, never as high-confidence ones that post themselves."""
     cashback = ledger(client, "Bhim Cash Back", LedgerGroup.INDIRECT_INCOME)
     review(queued(client, "NPCI BHIM"), cashback)
 
     siblings = review_queue(client).filter(ledger=cashback)
     assert siblings.exists()
-    assert all(row.review_band == ReviewBand.HIGH for row in siblings)
+    assert all(row.review_band == ReviewBand.ADVISED for row in siblings)
 
 
 def test_the_review_summary_splits_the_work_by_how_much_thought_it_needs(client, statement):

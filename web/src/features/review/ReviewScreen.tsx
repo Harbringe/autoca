@@ -813,7 +813,7 @@ function Decision({
       const created = !!ruleId && result.rule_created && mayUndoRule && !result.also_placed && !result.also_revised && !result.auto_posted
       const extra = [
         ruleId ? `Rule saved: ${row.counterparty} to ${placedIn}` : '',
-        learn && !ruleId ? 'Nothing was remembered: no payee could be read' : '',
+        learn && !ruleId ? 'Nothing was remembered: no payee could be read, or this payee has been placed in different ledgers, so each row is decided on its own' : '',
         result.also_placed ? `${plural(result.also_placed, 'other row')} from the same payee placed too` : '',
         result.auto_posted ? `${result.auto_posted} posted automatically` : '',
       ].filter(Boolean)

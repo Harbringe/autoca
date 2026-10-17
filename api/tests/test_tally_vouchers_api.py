@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import datetime
+
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
 
@@ -94,9 +96,9 @@ def test_a_file_with_a_doctype_is_422(api, client_record, chart):
 
 
 def test_a_file_over_the_limit_is_413(api, client_record, chart, settings):
-    settings.MAX_TALLY_IMPORT_BYTES = 200
-    response = upload(api, client_record, data=vouchers_xml([sale()]))
-    assert response.status_code == 413
+    settings.MAX_TALLY_IMPORT_BYTES = 1000
+    response = upload(api, client_record, data=b"<ENVELOPE>" + b" " * 1500 + b"</ENVELOPE>")
+    assert response.status_code == 413 and response.json()["code"] == "tally_file_too_large"
 
 
 def test_only_xml_is_accepted(api, client_record, chart):
@@ -117,7 +119,7 @@ def test_anonymous_is_refused(client_record):
 def test_another_firms_run_is_not_found(api, firm, client_record, chart):
     run = upload(api, client_record).json()
     other_firm = create_firm("Other Firm")
-    other_client = create_client(other_firm, "Other Client", __import__("datetime").date(2025, 4, 1))
+    other_client = create_client(other_firm, "Other Client", datetime.date(2025, 4, 1))
     from api.tests.conftest import member
     from core.models import Role
 

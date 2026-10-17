@@ -2,9 +2,11 @@
 // and keep the ticked ones in one go, each with the group the assistant gave it or one chosen for all of them. Merging or rejecting a
 // ledger is a decision about that one ledger, so it stays on its own row ("Decide").
 
+import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Bot } from 'lucide-react'
 import { raw } from '@/api/client'
+import { ledgerRows } from '@/api/queries/books'
 import { useInvalidateClient, V1 } from '@/api/queries/clients'
 import { GROUP_LABEL, LEDGER_GROUPS, type LedgerAccount } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
@@ -14,11 +16,47 @@ import { Card } from '@/components/ui/card'
 import { Checkbox, Select } from '@/components/ui/controls'
 import { DataTable } from '@/components/ui/table'
 import { runLimited } from '@/features/review/ledgerIdeas'
-import { plural } from '@/lib/format'
+import { formatDate, plural } from '@/lib/format'
 import { toast } from '@/lib/toast'
 
 /** How many ledgers are kept at once. A few at a time: quick, and kind to the server. */
 const AT_ONCE = 4
+/** How many of a ledger's rows the preview lists. */
+const PREVIEW_ROWS = 50
+
+/** The rows that sit in one ledger the assistant added, so a person can see what was sent where before keeping or merging it. */
+function RowsPreview({ clientId, ledger }: { clientId: string; ledger: LedgerAccount }) {
+  const rows = useQuery(ledgerRows(clientId, ledger.id))
+  const list = rows.data ?? []
+  return (
+    <div className="grid gap-2 rounded-md border bg-card px-3 py-2 text-sm" aria-live="polite">
+      <div className="font-medium text-heading">Rows in {ledger.name}</div>
+      {rows.isPending ? (
+        <p className="text-muted-foreground">Loading the rows…</p>
+      ) : rows.isError ? (
+        <p className="text-destructive">The rows could not be loaded.</p>
+      ) : list.length === 0 ? (
+        <p className="text-muted-foreground">No rows are in this ledger yet.</p>
+      ) : (
+        <ul className="grid gap-1 text-xs">
+          {list.slice(0, PREVIEW_ROWS).map((r) => (
+            <li key={r.id} className="grid grid-cols-[5.5rem_minmax(0,1fr)_7rem_5.5rem] gap-2">
+              <span className="text-muted-foreground">{formatDate(r.value_date)}</span>
+              <span className="truncate" title={r.narration}>
+                {r.counterparty || r.narration}
+              </span>
+              <span className="num text-right">
+                {r.amount_display} {r.is_debit ? 'Dr' : 'Cr'}
+              </span>
+              <span className="text-muted-foreground">{r.is_posted ? 'Posted' : 'Waiting'}</span>
+            </li>
+          ))}
+          {list.length > PREVIEW_ROWS && <li className="text-muted-foreground">and {list.length - PREVIEW_ROWS} more</li>}
+        </ul>
+      )}
+    </div>
+  )
+}
 
 export function ProposedLedgers({ clientId, proposed, mayDecide, onDecide }: { clientId: string; proposed: LedgerAccount[]; mayDecide: boolean; onDecide: (l: LedgerAccount) => void }) {
   const invalidate = useInvalidateClient(clientId)
@@ -26,6 +64,7 @@ export function ProposedLedgers({ clientId, proposed, mayDecide, onDecide }: { c
   // '' keeps each ledger in the group the assistant gave it.
   const [group, setGroup] = useState('')
   const [asking, setAsking] = useState(false)
+  const [previewId, setPreviewId] = useState<string | null>(null)
 
   const chosen = proposed.filter((l) => ticked.has(l.id))
   const allTicked = proposed.length > 0 && chosen.length === proposed.length
@@ -82,20 +121,27 @@ export function ProposedLedgers({ clientId, proposed, mayDecide, onDecide }: { c
                 key: 'act',
                 header: <span className="sr-only">Actions</span>,
                 align: 'right' as const,
-                cell: (l: LedgerAccount) =>
-                  mayDecide && (
-                    <Button size="sm" variant="outline" onClick={() => onDecide(l)} aria-label={`Decide on ${l.name}`}>
-                      Decide
+                cell: (l: LedgerAccount) => (
+                  <span className="inline-flex gap-1.5">
+                    <Button size="sm" variant="ghost" onClick={() => setPreviewId(previewId === l.id ? null : l.id)} aria-expanded={previewId === l.id} aria-label={`Preview the rows in ${l.name}`}>
+                      {previewId === l.id ? 'Hide rows' : 'Preview rows'}
                     </Button>
-                  ),
+                    {mayDecide && (
+                      <Button size="sm" variant="outline" onClick={() => onDecide(l)} aria-label={`Decide on ${l.name}`}>
+                        Decide
+                      </Button>
+                    )}
+                  </span>
+                ),
               },
             ]}
           />
         )}
       </PagedList>
+      {previewId && proposed.find((l) => l.id === previewId) && <RowsPreview clientId={clientId} ledger={proposed.find((l) => l.id === previewId)!} />}
       {mayDecide && (
         <div className="flex flex-wrap items-center justify-end gap-2">
-          <Select aria-label="Group for the selected ledgers" className="w-56" value={group} onChange={(e) => setGroup(e.target.value)}>
+          <Select aria-label="Group for the selected ledgers" className="w-72" value={group} onChange={(e) => setGroup(e.target.value)}>
             <option value="">Keep each in its suggested group</option>
             {LEDGER_GROUPS.map(([g, l]) => (
               <option key={g} value={g}>{l}</option>

@@ -751,7 +751,8 @@ def _apply(batch, replies, chart, pseudonymiser) -> tuple[int, int, int]:
             ledger = None
         # A standard name in ``ledger`` is a new ledger the model mis-filed; see
         # ``_Chart.standard_spec``. Its own ``new_ledger`` still wins.
-        proposal = item.get("new_ledger") or chart.standard_spec(named)
+        # (Not for a ledger the model has just called a poor fit: that name must not come back as a proposal for the same ledger.)
+        proposal = item.get("new_ledger") or (None if poor_fit else chart.standard_spec(named))
         if ledger is None and named and not proposal and not poor_fit:
             # Said so, instead of the vaguer "no usable signal" below: a name that is in no chart is the model's error.
             rationale = (f'The model named a ledger that is not in the chart ("{named[:80]}"). ' + rationale).strip()[:500]

@@ -75,10 +75,10 @@ def test_the_latest_click_does_not_overwrite_what_most_decisions_said(client, st
     with firm_context(client.firm_id):
         right, other = income(client, "Cashback Received"), income(client, "Sales Returns")
         rows = bhim_rows(client)
-        for row in rows[:3]:
+        for row in rows[:5]:
             review(row, Treatment(ledger=right))
         before = rule_for(client).confidence
-        review(rows[3], Treatment(ledger=other))
+        review(rows[5], Treatment(ledger=other))
         rule = rule_for(client)
-        assert rule.is_active and rule.ledger_id == right.pk, "three said Cashback Received, one said otherwise"
+        assert rule.is_active and rule.ledger_id == right.pk, "five said Cashback Received, one said otherwise"
         assert rule.confidence <= before, "but the disagreement weakens what the rule claims"

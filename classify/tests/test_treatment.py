@@ -23,6 +23,7 @@ from classify.engine import (
     unresolved_for,
 )
 from classify.models import (
+    ClassificationMethod,
     ClassificationRule,
     LedgerAccount,
     LedgerGroup,
@@ -211,7 +212,7 @@ def test_a_payee_rule_learned_from_one_decision_suggests_it_does_not_assert(clie
     cashback = ledger(client, "Bhim Cash Back", LedgerGroup.INDIRECT_INCOME)
     review(queued(client, "NPCI BHIM"), cashback)
 
-    siblings = review_queue(client).filter(ledger=cashback)
+    siblings = review_queue(client).filter(ledger=cashback).exclude(method=ClassificationMethod.REVIEWED)
     assert siblings.exists()
     assert all(row.review_band == ReviewBand.ADVISED for row in siblings)
 

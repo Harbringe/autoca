@@ -75,6 +75,8 @@ def test_a_one_off_correction_changes_only_the_entry_named(api, client_record, s
     row = review_queue(client_record).filter(counterparty="NPCI BHIM").first()
     api.post(f"{V1}/classifications/{row.pk}/review/", {"ledger": str(cashback.pk), "learn": True}, format="json")
     approve_high(api, client_record)
+    # A rule learned from one decision only suggests (ADVISED), so a person approves what it placed.
+    api.post(f"{V1}/clients/{client_record.pk}/approvals/", {"band": ReviewBand.ADVISED}, format="json")
     posted = [
         e for e in JournalEntry.objects.filter(client=client_record)
         if any(line.ledger_account_id == cashback.pk for line in e.lines.all())

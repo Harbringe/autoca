@@ -284,4 +284,4 @@ def test_placing_a_row_reports_what_the_lesson_changed(client, senior, statement
 
         assert rule is not None
         assert revised == 8, "the other eight guesses moved to the ledger the person chose"
-        assert auto_posted == 0, "and, placed by a rule learned from one decision, they wait for a person: a rule of that strength never posts itself"
+        assert posted_for(client, BHIM).count() == 0, "and, placed by a rule learned from one decision, they wait for a person: a rule of that strength never posts itself"

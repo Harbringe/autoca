@@ -21,6 +21,7 @@ from django.utils import timezone
 
 from classify.models import ClassificationMethod, TransactionClassification
 from classify.narration import Channel
+from classify.seeds import BANK_OWN_LEDGERS, bank_said_so
 from core.access import can_sign_off, require_posting_rights
 from core.fy import financial_year
 from core.money import format_inr
@@ -420,6 +421,12 @@ def auto_post(classification) -> JournalEntry | None:
         or ledger.is_party_account
         or (ledger.group == LedgerGroup.CASH and classification.channel in ELECTRONIC_CHANNELS)
         or (ledger.proposal_reason and not _a_person_has_posted_to(ledger))
+        # The bank's own ledgers are not the model's to post into on its word alone: its answer counts only with the bank's own words.
+        or (
+            classification.method == ClassificationMethod.LLM
+            and ledger.name.strip().lower() in BANK_OWN_LEDGERS
+            and not bank_said_so(txn.narration, classification.channel)
+        )
         or _live_entry_for(txn) is not None
     ):
         return None

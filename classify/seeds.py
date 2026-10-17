@@ -63,6 +63,22 @@ SEED_RULES = [
 ]
 
 
+#: Ledgers that exist for what the bank itself did. The assistant may suggest them like any other, but an unattended post
+#: (``ledger.approval.auto_post``) into one needs the bank's own words: a model that is unsure puts every credit it cannot explain in the
+#: first of them, and interest income is not something to book on its word.
+BANK_OWN_LEDGERS = frozenset({"bank interest received", "bank charges", "interest paid", "interest received", "interest collected"})
+
+
+def bank_said_so(narration: str, channel: str = "") -> bool:
+    """True when the bank's own narration says the row is interest or a charge."""
+    from classify.narration import analyse
+
+    if channel in (Channel.INTEREST, Channel.FEE):
+        return True
+    facts = analyse(narration or "")
+    return facts.channel in (Channel.INTEREST, Channel.FEE) or bool({"INTEREST", "CHARGES_INCLUDED"} & set(facts.hints))
+
+
 def seed_client(client, *, created_by=None) -> dict[str, int]:
     """Give ``client`` the ledgers and rules that are true regardless of trade.
 

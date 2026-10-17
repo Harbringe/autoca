@@ -115,6 +115,15 @@ def test_money_that_moved_by_upi_is_never_auto_posted_as_cash(client, statement)
         assert posted_for(client, BHIM).count() == 0
 
 
+def test_the_model_cannot_post_into_the_banks_own_interest_ledger_without_the_banks_words(client, statement):
+    """304 credits from people once sat in Bank Interest Received on the model's word; at 0.9 or more one of those would have posted."""
+    with firm_context(client.firm_id):
+        interest = income(client, "Bank Interest Received")
+        ai_places(client, BHIM, interest, confidence=0.96)
+        auto_post_client(client)
+        assert posted_for(client, BHIM).count() == 0
+
+
 def test_a_cash_withdrawal_at_the_counter_may_still_post_to_cash(client, statement):
     with firm_context(client.firm_id):
         cash = ledger(client, "Petty Cash", LedgerGroup.CASH)

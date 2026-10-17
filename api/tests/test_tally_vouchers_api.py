@@ -117,13 +117,14 @@ def test_anonymous_is_refused(client_record):
 
 
 def test_another_firms_run_is_not_found(api, firm, client_record, chart):
-    run = upload(api, client_record).json()
+    # The other firm is made before any request, because a request fixes the tenant for the rest of the test's transaction.
     other_firm = create_firm("Other Firm")
     other_client = create_client(other_firm, "Other Client", datetime.date(2025, 4, 1))
     from api.tests.conftest import member
     from core.models import Role
 
     outsider = sign_in(member(other_firm, Role.SENIOR_CA, "outsider@example.test").user)
+    run = upload(api, client_record).json()
     assert outsider.post(url(other_client, run["id"], "confirm-vouchers")).status_code == 404
     assert outsider.post(url(client_record, run["id"], "confirm-vouchers")).status_code == 404
 

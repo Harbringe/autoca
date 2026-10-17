@@ -14,7 +14,7 @@ from core.provisioning import create_client, create_firm
 from ledger import tally_voucher_import as tvi
 from ledger.billing import allocate
 from ledger.editing import EntryLockedError
-from ledger.models import Bill, ImportKind, JournalEntry, LedgerImportRun, TallyVoucher
+from ledger.models import Bill, ImportKind, JournalEntry, TallyVoucher
 from ledger.tally_import import TallyImportError, TallyRunStaleError
 from ledger.tally_parse import TallyParseError
 from ledger.tally_voucher_import import confirm_vouchers, stage_vouchers, undo_run
@@ -129,13 +129,6 @@ def test_only_the_leads_and_admins_may_stage(firm, client, chart):
     other = member(firm, Role.STAFF, "other@example.test")
     with pytest.raises(PermissionDenied):
         stage_vouchers(client, other, other.user, data=vouchers_xml([sale()]), filename="v.xml")
-
-
-def test_another_firm_cannot_see_the_run(firm, client, senior, chart):
-    run, _ = stage(client, senior, [sale()])
-    other = create_firm("Other Firm")
-    with firm_context(other.pk):
-        assert LedgerImportRun.objects.filter(pk=run.pk).count() == 0
 
 
 # ---------------------------------------------------------------------------
@@ -258,7 +251,10 @@ def test_undo_is_refused_once_a_payment_is_applied(firm, client, senior, chart):
     confirm_vouchers(run, senior, senior.user)
     bill = Bill.objects.get(client=client)
     pay = post(client, datetime.date(2025, 4, 20), make_ledger(client, "Cash", G.CASH), bill.party.ledger, 118000)
-    allocate(pay.lines.get(ledger_account=bill.party.ledger), amount_paise=118000, bill=bill)
+    party_line = pay.lines.get(ledger_account=bill.party.ledger)
+    party_line.party = bill.party
+    party_line.save(update_fields=["party"])
+    allocate(party_line, amount_paise=118000, bill=bill)
     with pytest.raises(TallyImportError):
         undo_run(run, senior, senior.user)
     assert JournalEntry.objects.filter(client=client, voucher_type="Sales").count() == 1

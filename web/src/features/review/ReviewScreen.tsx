@@ -48,7 +48,7 @@ import { StatementPicker } from './StatementPicker'
 import { useReviewScope } from './useReviewScope'
 import { setSearchAllStatements, useSearchAllStatements } from '@/lib/reviewPrefs'
 import { LedgerPicker, usableLedgers } from './LedgerPicker'
-import { EntryLegsLine } from './EntryLegsLine'
+import { bankSideOf, EntryLegsLine } from './EntryLegsLine'
 import { NewAccountDialog } from './NewAccountDialog'
 import { ProposalDecision } from '@/features/masters/MastersScreen'
 import { usePageSize } from '@/lib/pageSizes'
@@ -502,11 +502,14 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
                       aria-controls={`decision-${r.id}`}
                       onClick={() => choose(r.id)}
                       className={cn(
-                        'grid min-w-0 flex-1 grid-cols-[6rem_minmax(0,1fr)_auto] items-center gap-x-4 gap-y-1 py-4 pr-5 text-left max-sm:grid-cols-[minmax(0,1fr)_auto]',
+                        'grid min-w-0 flex-1 grid-cols-[6rem_minmax(0,1fr)_7.5rem_7.5rem] items-center gap-x-4 gap-y-1 py-4 pr-5 text-left max-sm:grid-cols-[minmax(0,1fr)_auto_auto]',
                         canPost && stage !== 'unresolved' ? 'pl-0' : 'pl-5',
                       )}
                     >
-                      <span className="num font-mono text-[13px] text-muted-foreground max-sm:col-span-2">{formatDate(r.transaction.value_date)}</span>
+                      <span className="num font-mono text-[13px] text-muted-foreground max-sm:col-span-3">
+                        {formatDate(r.transaction.value_date)}
+                        {r.voucher_type && <span className="block text-[11px] text-faint">{r.voucher_type}</span>}
+                      </span>
                       <span className="min-w-0">
                         <span className="block truncate" title={r.transaction.narration}>
                           {r.counterparty && <span className="font-medium text-heading">{r.counterparty} </span>}
@@ -566,10 +569,20 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
                         </span>
                         {!isOpen && <EntryLegsLine legs={r.entry_legs} />}
                       </span>
-                      <span className="text-right">
-                        <span className="num block font-mono text-heading">{r.transaction.amount_display}</span>
-                        <span className="sr-only">{r.transaction.is_debit ? 'Withdrawal' : 'Deposit'}</span>
-                      </span>
+                      {/* Tally's bank ledger view: the amount sits in the Debit column when the bank account is debited (money in) and in the Credit column when it is credited. */}
+                      {(['Dr', 'Cr'] as const).map((side) => (
+                        <span key={side} className="num text-right font-mono text-heading">
+                          {bankSideOf(r) === side && (
+                            <>
+                              {r.transaction.amount_display}
+                              <span className="sr-only">
+                                {' '}
+                                {side === 'Dr' ? 'Debit' : 'Credit'}, {r.transaction.is_debit ? 'withdrawal' : 'deposit'}
+                              </span>
+                            </>
+                          )}
+                        </span>
+                      ))}
                     </button>
                   </div>
                   {showBody && (

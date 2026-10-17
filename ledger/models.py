@@ -351,6 +351,7 @@ class EntryChange(UUIDModel, FirmScopedModel):
 
 class ImportKind(models.TextChoices):
     CHART_OPENING = "CHART_OPENING", "Chart of accounts and opening balances"
+    VOUCHERS = "VOUCHERS", "Vouchers"
 
 
 class ImportStatus(models.TextChoices):
@@ -429,6 +430,32 @@ class LedgerOpening(UUIDModel, FirmScopedModel):
 
     def __str__(self) -> str:
         return f"{self.ledger_id} FY{self.financial_year} {format_inr(self.signed_paise)}"
+
+
+class TallyVoucher(UUIDModel, FirmScopedModel):
+    """A voucher that came from Tally, and the entry it became.
+
+    It is what makes a second upload of the same file import nothing (one row per Tally GUID per client) and what lets a
+    whole run be undone. The Tally number is a string and is kept here, because ``JournalEntry.entry_no`` is AutoCA's own
+    integer series. The composite foreign keys (see 0035) keep the entry and the run in the link's own client's books.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="tally_vouchers")
+    run = models.ForeignKey(LedgerImportRun, null=True, blank=True, on_delete=models.SET_NULL, related_name="vouchers")
+    guid = models.CharField(max_length=100)
+    tally_type = models.CharField(max_length=64)
+    tally_number = models.CharField(max_length=64, blank=True)
+    entry = models.OneToOneField(JournalEntry, on_delete=models.PROTECT, related_name="tally_voucher")
+
+    class Meta:
+        db_table = "ledger_tally_voucher"
+        constraints = [
+            models.UniqueConstraint(fields=["firm", "client", "guid"], name="uniq_tally_guid_per_client"),
+        ]
+        indexes = [models.Index(fields=["firm", "client", "run"], name="idx_tally_voucher_run")]
+
+    def __str__(self) -> str:
+        return f"Tally {self.tally_type} {self.tally_number}"
 
 
 # ---------------------------------------------------------------------------

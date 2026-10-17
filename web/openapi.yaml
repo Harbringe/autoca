@@ -5018,6 +5018,223 @@ paths:
               schema:
                 $ref: '#/components/schemas/TallyError'
           description: ''
+  /api/v1/clients/{client_id}/tally-imports/bank-report/:
+    post:
+      operationId: clients_tally_imports_bank_report_create
+      description: Each row of the report becomes a bank entry between the chosen
+        bank account and the row's other ledger, through the same preview as a vouchers
+        export; confirm it with `confirm-vouchers`. A row where Tally shows several
+        ledgers is left out with the reason.
+      summary: Upload Tally bank ledger reports and preview importing them
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TallyBankReportUploadRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TallyBankReportUploadRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TallyBankReportUploadRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyVoucherRun'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyVoucherRun'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '413':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+  /api/v1/clients/{client_id}/tally-imports/discover/:
+    post:
+      operationId: clients_tally_imports_discover_create
+      description: 'Reads any mix of voucher exports and bank ledger reports and returns
+        what the client would need: the ledgers the files use that the client does
+        not have, each with the group the files suggest and why, and the bank, loan
+        or card accounts among them. **Writes nothing.** A bank report''s own bank
+        ledger is told from its file name where possible; otherwise it is given in
+        `bank_ledgers`, and until then its rows'' other ledgers are not proposed.'
+      summary: Read Tally files and propose the ledgers and bank accounts they use
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TallyDiscoverRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TallyDiscoverRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TallyDiscoverRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyDiscoveryResponse'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '413':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+  /api/v1/clients/{client_id}/tally-imports/setup/:
+    post:
+      operationId: clients_tally_imports_setup_create
+      description: Creates exactly the ledgers listed, each in the group given, and
+        the bank accounts listed that have an account number, each tied to the ledger
+        of the same name. Existing ledgers are left alone. All or nothing.
+      summary: Create the ledgers and bank accounts a person confirmed from the files
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TallySetupRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TallySetupRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TallySetupRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallySetupResult'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
   /api/v1/clients/{client_id}/tally-imports/vouchers/:
     post:
       operationId: clients_tally_imports_vouchers_create
@@ -10826,6 +11043,16 @@ components:
         * `DEBIT_NOTE` - Debit note (a purchase return)
         * `CREDIT_NOTE` - Credit note (a sales return)
         * `OPENING` - Opening balance, as a bill
+    Kind226Enum:
+      enum:
+      - BANK
+      - LOAN
+      - CARD
+      type: string
+      description: |-
+        * `BANK` - BANK
+        * `LOAN` - LOAN
+        * `CARD` - CARD
     Kind372Enum:
       enum:
       - BANK_STATEMENT
@@ -16964,6 +17191,45 @@ components:
         * `CUSTOMER` - Customer
         * `BOTH` - Both supplier and customer
         * `OTHER` - Other (lender, employee, related party)
+    TallyAccountChoiceRequest:
+      type: object
+      properties:
+        ledger:
+          type: string
+          minLength: 1
+          maxLength: 255
+        kind:
+          $ref: '#/components/schemas/Kind226Enum'
+        bank_code:
+          type: string
+          minLength: 1
+          default: BANK
+          maxLength: 16
+        account_number:
+          type: string
+          default: ''
+          maxLength: 40
+      required:
+      - kind
+      - ledger
+    TallyAccountProposal:
+      type: object
+      properties:
+        ledger:
+          type: string
+        kind:
+          $ref: '#/components/schemas/Kind226Enum'
+        bank_code:
+          type: string
+        account_number:
+          type: string
+          description: Read from the ledger's name; blank when the person must type
+            it.
+      required:
+      - account_number
+      - bank_code
+      - kind
+      - ledger
     TallyBankPanel:
       type: object
       description: Adds a ``*_display`` string beside every ``*_paise`` field named
@@ -17036,6 +17302,34 @@ components:
         * `agree` - agree
         * `conflict` - conflict
         * `nothing` - nothing
+    TallyBankReportUploadRequest:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            type: string
+            format: binary
+          description: Tally bank ledger reports, exported as XML; the same period
+            for every report.
+          maxItems: 12
+        accounts:
+          type: array
+          items:
+            type: string
+            format: uuid
+          description: The client's bank account each report is for, in the same order
+            as `files`.
+          maxItems: 12
+        date_from:
+          type: string
+          format: date
+        date_to:
+          type: string
+          format: date
+      required:
+      - accounts
+      - files
     TallyConfirmRequest:
       type: object
       properties:
@@ -17156,6 +17450,47 @@ components:
       - needs_group
       - skipped
       - with_opening
+    TallyDiscoverRequest:
+      type: object
+      properties:
+        files:
+          type: array
+          items:
+            type: string
+            format: binary
+          description: 'Tally XML files: voucher exports and bank ledger reports,
+            any mix, up to 12.'
+          maxItems: 12
+        bank_ledgers:
+          description: 'For a bank report whose bank ledger could not be told from
+            the file name: {file name: the bank ledger''s name in Tally}.'
+      required:
+      - files
+    TallyDiscoveryResponse:
+      type: object
+      properties:
+        vouchers:
+          type: integer
+        voucher_files:
+          type: integer
+        reports:
+          type: array
+          items:
+            $ref: '#/components/schemas/TallyReportFile'
+        ledgers:
+          type: array
+          items:
+            $ref: '#/components/schemas/TallyLedgerProposal'
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/TallyAccountProposal'
+      required:
+      - accounts
+      - ledgers
+      - reports
+      - voucher_files
+      - vouchers
     TallyError:
       type: object
       properties:
@@ -17304,6 +17639,88 @@ components:
       required:
       - file
       - financial_year
+    TallyLedgerChoiceRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 255
+        group:
+          $ref: '#/components/schemas/LedgerGroupEnum'
+      required:
+      - group
+      - name
+    TallyLedgerProposal:
+      type: object
+      properties:
+        name:
+          type: string
+        group:
+          allOf:
+          - $ref: '#/components/schemas/LedgerGroupEnum'
+          description: |-
+            The group the files suggest; the person may change it.
+
+            * `BANK` - Bank Accounts
+            * `CASH` - Cash-in-Hand
+            * `DEBTOR` - Sundry Debtors
+            * `CREDITOR` - Sundry Creditors
+            * `INDIRECT_EXPENSE` - Indirect Expenses
+            * `DIRECT_EXPENSE` - Direct Expenses
+            * `INDIRECT_INCOME` - Indirect Incomes
+            * `DIRECT_INCOME` - Direct Incomes
+            * `DUTIES_AND_TAXES` - Duties & Taxes
+            * `LOAN` - Loans (Liability)
+            * `INVESTMENT` - Investments
+            * `CAPITAL` - Capital Account
+            * `SUSPENSE` - Suspense A/c
+            * `FIXED_ASSET` - Fixed Assets
+            * `STOCK` - Stock-in-Hand
+            * `CURRENT_ASSET` - Current Assets
+            * `LOAN_ADVANCE` - Loans & Advances (Asset)
+            * `DEPOSIT` - Deposits (Asset)
+            * `MISC_EXPENDITURE` - Misc. Expenses (Asset)
+            * `BANK_OD` - Bank OD A/c
+            * `CURRENT_LIABILITY` - Current Liabilities
+            * `PROVISION` - Provisions
+            * `RESERVES` - Reserves & Surplus
+            * `SALES` - Sales Accounts
+            * `PURCHASE` - Purchase Accounts
+        reason:
+          type: string
+          description: Why that group, in a few words.
+        uses:
+          type: integer
+          description: How many times the files use the ledger.
+        unsure:
+          type: boolean
+          description: The evidence was thin or mixed; look at this one.
+      required:
+      - group
+      - name
+      - reason
+      - unsure
+      - uses
+    TallyReportFile:
+      type: object
+      properties:
+        file:
+          type: string
+        ledger:
+          type: string
+          description: The bank ledger the report is for; blank when it could not
+            be told.
+        rows:
+          type: integer
+        left_out:
+          type: integer
+          description: Rows a bank report cannot rebuild (several ledgers on the voucher).
+      required:
+      - file
+      - ledger
+      - left_out
+      - rows
     TallyResolutionRequest:
       type: object
       properties:
@@ -17575,6 +17992,37 @@ components:
         * `conflict` - conflict
         * `needs_group` - needs_group
         * `skipped` - skipped
+    TallySetupRequest:
+      type: object
+      properties:
+        ledgers:
+          type: array
+          items:
+            $ref: '#/components/schemas/TallyLedgerChoiceRequest'
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/TallyAccountChoiceRequest'
+      required:
+      - ledgers
+    TallySetupResult:
+      type: object
+      properties:
+        ledgers:
+          type: integer
+          description: Ledgers created.
+        accounts:
+          type: integer
+          description: Bank accounts opened.
+        waiting_for_a_number:
+          type: array
+          items:
+            type: string
+          description: Accounts not opened because no account number was given.
+      required:
+      - accounts
+      - ledgers
+      - waiting_for_a_number
     TallyVoucherCounts:
       type: object
       properties:

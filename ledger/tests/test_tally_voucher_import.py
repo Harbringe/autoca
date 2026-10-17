@@ -571,3 +571,133 @@ def test_undo_takes_the_stock_movements_back(firm, client, senior, suppliers):
     confirm_vouchers(run, senior, senior.user)
     undo_run(run, senior, senior.user)
     assert StockEntry.objects.filter(client=client).count() == 0
+
+
+# ---------------------------------------------------------------------------
+# Setting a client up from the files, and importing bank reports
+# ---------------------------------------------------------------------------
+
+
+def _setup_from(client, senior, files, bank_ledgers=None):
+    from ledger.tally_setup import apply_setup, discover_files
+
+    found = discover_files(client, senior, files, bank_ledgers)
+    done = apply_setup(
+        client, senior, senior.user,
+        ledgers=[{"name": p["name"], "group": p["group"]} for p in found["ledgers"]],
+        accounts=[{**a, "account_number": a["account_number"] or "9999000011"} for a in found["accounts"]],
+    )
+    return found, done
+
+
+@pytest.fixture
+def in_context(firm, client):
+    with firm_context(firm.pk):
+        yield
+
+
+def test_a_fresh_client_gets_its_ledgers_and_parties_from_a_vouchers_file(firm, client, senior, in_context):
+    from classify.models import LedgerAccount
+
+    files = [("vouchers.xml", vouchers_xml([sale()]))]
+    found, done = _setup_from(client, senior, files)
+    assert {p["name"]: p["group"] for p in found["ledgers"]} == {
+        "Acme Traders": "DEBTOR", "Sales": "SALES", "Output CGST": "DUTIES_AND_TAXES", "Output SGST": "DUTIES_AND_TAXES",
+    }
+    assert done["ledgers"] == 4 and LedgerAccount.objects.filter(client=client, name="Output CGST").exists()
+    run, _ = stage(client, senior, [sale()])
+    confirmed = confirm_vouchers(run, senior, senior.user)
+    assert confirmed.result["posted"] == 1 and confirmed.result["bills"] == 1
+    assert Party.objects.get(client=client).canonical_name == "Acme Traders"
+
+
+def test_setup_leaves_existing_ledgers_alone_and_waits_for_a_missing_account_number(firm, client, senior, in_context):
+    from classify.models import LedgerAccount
+    from ledger.tally_setup import apply_setup
+
+    make_ledger(client, "Cash", G.CASH)
+    done = apply_setup(
+        client, senior, senior.user,
+        ledgers=[{"name": "cash", "group": "SUSPENSE"}, {"name": "SBI SB A/C 62139251173", "group": "BANK"}],
+        accounts=[{"ledger": "SBI SB A/C 62139251173", "kind": "BANK", "bank_code": "SBI", "account_number": ""}],
+    )
+    assert done["ledgers"] == 1 and done["accounts"] == 0 and done["waiting_for_a_number"] == ["SBI SB A/C 62139251173"]
+    assert LedgerAccount.objects.get(client=client, name="Cash").group == "CASH"  # not regrouped by the file
+
+
+def test_an_account_is_opened_tied_to_the_ledger_of_its_name(firm, client, senior, in_context):
+    from ledger.tally_setup import apply_setup
+
+    apply_setup(
+        client, senior, senior.user,
+        ledgers=[],
+        accounts=[{"ledger": "SBI SB A/C 62139251173", "kind": "BANK", "bank_code": "sbi", "account_number": "62139251173"}],
+    )
+    account = BankAccount.objects.get(client=client)
+    assert (account.ledger_name, account.bank_code, account.account_last4, account.kind) == ("SBI SB A/C 62139251173", "SBI", "1173", "BANK")
+
+
+def _two_accounts(client, senior):
+    from ledger.tally_setup import apply_setup
+
+    apply_setup(
+        client, senior, senior.user,
+        ledgers=[{"name": n, "group": g} for n, g in (("Cash", "CASH"), ("Rent Paid", "INDIRECT_EXPENSE"), ("Bank Charges", "INDIRECT_EXPENSE"))],
+        accounts=[
+            {"ledger": "SBI SB A/C 62139251173", "kind": "BANK", "bank_code": "SBI", "account_number": "62139251173"},
+            {"ledger": "SBI SB A/C 11112222333", "kind": "BANK", "bank_code": "SBI", "account_number": "11112222333"},
+        ],
+    )
+    return {a.ledger_name: a for a in BankAccount.objects.filter(client=client)}
+
+
+def test_a_bank_report_becomes_statement_rows_with_the_banks_own_narration(firm, client, senior, in_context):
+    from ledger.tally_voucher_import import stage_bank_reports
+    from ledger.tests.tally_voucher_xml import bank_report_xml, report_row
+
+    accounts = _two_accounts(client, senior)
+    data = bank_report_xml([
+        report_row("4-Apr-25", "Cash", "Rcpt", debit=1501.0, number="1", narration="CASH DEPOSIT SELF"),
+        report_row("5-Apr-25", "Rent Paid", "Pymt", credit=500.0, number="2", narration="NEFT RENT"),
+        report_row("6-Apr-25", "(as per details)", "Pymt", credit=90.0, number="3"),
+    ])
+    account = accounts["SBI SB A/C 62139251173"]
+    run, _ = stage_bank_reports(client, senior, senior.user, reports=[("sbi.xml", data, account.pk)])
+    assert run.counts["will_post"] == 2 and run.counts["skipped"] == 1 and run.counts["bank_rows"] == 2
+    assert any("several ledgers" in r["reason"] for r in run.rows if r["action"] == "skip")
+    done = confirm_vouchers(run, senior, senior.user)
+    assert done.result["posted"] == 2 and done.result["bank_rows"] == 2
+    rows = list(StatementTransaction.objects.filter(bank_account=account).order_by("value_date"))
+    assert [(t.narration, t.credit_paise, t.debit_paise, t.balance_paise) for t in rows] == [
+        ("CASH DEPOSIT SELF", 150100, 0, 150100), ("NEFT RENT", 0, 50000, 100100),
+    ]
+    placed = {t.narration: TransactionClassification.objects.get(transaction=t).ledger.name for t in rows}
+    assert placed == {"CASH DEPOSIT SELF": "Cash", "NEFT RENT": "Rent Paid"}
+
+
+def test_a_transfer_in_two_banks_reports_is_written_once_with_a_row_on_each(firm, client, senior, in_context):
+    from ledger.tally_voucher_import import stage_bank_reports
+    from ledger.tests.tally_voucher_xml import bank_report_xml, report_row
+
+    accounts = _two_accounts(client, senior)
+    first, second = accounts["SBI SB A/C 62139251173"], accounts["SBI SB A/C 11112222333"]
+    out = bank_report_xml([report_row("7-Apr-25", "SBI SB A/C 11112222333", "Pymt", credit=5000.0, number="9")])
+    into = bank_report_xml([report_row("7-Apr-25", "SBI SB A/C 62139251173", "Pymt", debit=5000.0, number="9")])
+    # The second report prints the same voucher from the other side (money in), so it carries the same identity.
+    run, _ = stage_bank_reports(client, senior, senior.user, reports=[("a.xml", out, first.pk), ("b.xml", into, second.pk)])
+    assert run.counts["will_post"] == 1 and run.counts["bank_rows"] == 2
+    confirm_vouchers(run, senior, senior.user)
+    assert JournalEntry.objects.filter(client=client).count() == 1
+    assert StatementTransaction.objects.filter(bank_account=first).count() == 1
+    assert StatementTransaction.objects.filter(bank_account=second).count() == 1
+    assert TransactionClassification.objects.filter(transaction__bank_account__client=client, is_self_transfer=True).count() == 2
+
+
+def test_two_reports_for_one_account_are_refused(firm, client, senior, in_context):
+    from ledger.tally_voucher_import import stage_bank_reports
+    from ledger.tests.tally_voucher_xml import bank_report_xml, report_row
+
+    account = _two_accounts(client, senior)["SBI SB A/C 62139251173"]
+    data = bank_report_xml([report_row("4-Apr-25", "Cash", "Rcpt", debit=1.0)])
+    with pytest.raises(TallyImportError):
+        stage_bank_reports(client, senior, senior.user, reports=[("a.xml", data, account.pk), ("b.xml", data, account.pk)])

@@ -308,3 +308,103 @@ class TallyVoucherRunSerializer(serializers.ModelSerializer):
         # Only what the screen shows: never the voucher's lines, figures or the party's GSTIN.
         keys = ("ordinal", "type", "number", "date", "party", "total_paise", "action", "bill", "reason", "note")
         return TallyVoucherRowSerializer([{k: row.get(k) for k in keys} for row in run.rows], many=True).data
+
+
+class TallyDiscoverSerializer(serializers.Serializer):
+    files = serializers.ListField(
+        child=serializers.FileField(),
+        max_length=12,
+        help_text="Tally XML files: voucher exports and bank ledger reports, any mix, up to 12.",
+    )
+    bank_ledgers = serializers.JSONField(
+        required=False,
+        help_text="For a bank report whose bank ledger could not be told from the file name: {file name: the bank ledger's name in Tally}.",
+    )
+
+    def validate_files(self, files):
+        for upload in files:
+            if upload.size == 0:
+                raise serializers.ValidationError(f"{upload.name} is empty.")
+            if upload.size > settings.MAX_TALLY_IMPORT_BYTES * 2:
+                raise serializers.ValidationError(f"{upload.name} is far too large to be a Tally export.")
+            if not upload.name.lower().endswith(".xml"):
+                raise serializers.ValidationError(f"{upload.name} is not an .xml file exported from Tally.")
+        return files
+
+
+class TallyLedgerProposalSerializer(serializers.Serializer):
+    name = serializers.CharField()
+    group = serializers.ChoiceField(choices=LedgerGroup.choices, help_text="The group the files suggest; the person may change it.")
+    reason = serializers.CharField(help_text="Why that group, in a few words.")
+    uses = serializers.IntegerField(help_text="How many times the files use the ledger.")
+    unsure = serializers.BooleanField(help_text="The evidence was thin or mixed; look at this one.")
+
+
+class TallyAccountProposalSerializer(serializers.Serializer):
+    ledger = serializers.CharField()
+    kind = serializers.ChoiceField(choices=["BANK", "LOAN", "CARD"])
+    bank_code = serializers.CharField()
+    account_number = serializers.CharField(allow_blank=True, help_text="Read from the ledger's name; blank when the person must type it.")
+
+
+class TallyReportFileSerializer(serializers.Serializer):
+    file = serializers.CharField()
+    ledger = serializers.CharField(allow_blank=True, help_text="The bank ledger the report is for; blank when it could not be told.")
+    rows = serializers.IntegerField()
+    left_out = serializers.IntegerField(help_text="Rows a bank report cannot rebuild (several ledgers on the voucher).")
+
+
+class TallyDiscoveryResponseSerializer(serializers.Serializer):
+    vouchers = serializers.IntegerField()
+    voucher_files = serializers.IntegerField()
+    reports = TallyReportFileSerializer(many=True)
+    ledgers = TallyLedgerProposalSerializer(many=True)
+    accounts = TallyAccountProposalSerializer(many=True)
+
+
+class TallyLedgerChoiceSerializer(serializers.Serializer):
+    name = serializers.CharField(max_length=255)
+    group = serializers.ChoiceField(choices=LedgerGroup.choices)
+
+
+class TallyAccountChoiceSerializer(serializers.Serializer):
+    ledger = serializers.CharField(max_length=255)
+    kind = serializers.ChoiceField(choices=["BANK", "LOAN", "CARD"])
+    bank_code = serializers.CharField(max_length=16, required=False, default="BANK")
+    account_number = serializers.CharField(max_length=40, allow_blank=True, required=False, default="")
+
+
+class TallySetupSerializer(serializers.Serializer):
+    ledgers = TallyLedgerChoiceSerializer(many=True, max_length=20_000)
+    accounts = TallyAccountChoiceSerializer(many=True, required=False, default=list, max_length=200)
+
+
+class TallySetupResultSerializer(serializers.Serializer):
+    ledgers = serializers.IntegerField(help_text="Ledgers created.")
+    accounts = serializers.IntegerField(help_text="Bank accounts opened.")
+    waiting_for_a_number = serializers.ListField(
+        child=serializers.CharField(), help_text="Accounts not opened because no account number was given."
+    )
+
+
+class TallyBankReportUploadSerializer(serializers.Serializer):
+    files = serializers.ListField(
+        child=serializers.FileField(), max_length=12, help_text="Tally bank ledger reports, exported as XML; the same period for every report."
+    )
+    accounts = serializers.ListField(
+        child=serializers.UUIDField(), max_length=12, help_text="The client's bank account each report is for, in the same order as `files`."
+    )
+    date_from = serializers.DateField(required=False)
+    date_to = serializers.DateField(required=False)
+
+    def validate(self, attrs):
+        if len(attrs["files"]) != len(attrs["accounts"]):
+            raise serializers.ValidationError("Give one bank account for each report.")
+        for upload in attrs["files"]:
+            if upload.size == 0:
+                raise serializers.ValidationError(f"{upload.name} is empty.")
+            if upload.size > settings.MAX_TALLY_IMPORT_BYTES * 2:
+                raise serializers.ValidationError(f"{upload.name} is far too large to be a bank report.")
+            if not upload.name.lower().endswith(".xml"):
+                raise serializers.ValidationError(f"{upload.name} is not an .xml file exported from Tally.")
+        return attrs

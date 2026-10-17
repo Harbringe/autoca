@@ -63,6 +63,7 @@ from ledger.models import (
     TallyVoucher,
     VoucherType,
 )
+from ledger.tally_bankreport import parse_bank_report
 from ledger.tally_import import (
     PREVIEW_LIFETIME,
     TallyImportError,
@@ -73,7 +74,7 @@ from ledger.tally_import import (
 from ledger.tally_learning import learn_rules
 from ledger.tally_parse import normal_name
 from ledger.tally_plan import Facts, Planned, plan_voucher
-from ledger.tally_vouchers import parse_vouchers
+from ledger.tally_vouchers import ParsedVoucher, VoucherLine, parse_vouchers
 
 logger = logging.getLogger("autoca.tally")
 
@@ -117,9 +118,69 @@ def stage_vouchers(client, membership, user, *, data: bytes, filename: str, date
     parsed = parse_vouchers(data, filename, max_bytes=settings.MAX_TALLY_IMPORT_BYTES)
     if len(parsed.companies) > 1:
         raise TallyImportError("This file has vouchers from more than one company. Export one company at a time.")
-    vouchers = [
-        v for v in parsed.vouchers if (date_from is None or v.date >= date_from) and (date_to is None or v.date <= date_to)
-    ]
+    return _stage(client, user, parsed.vouchers, parsed.skipped, digest, date_from, date_to)
+
+
+def stage_bank_reports(client, membership, user, *, reports: list[tuple[str, bytes, object]], date_from=None, date_to=None):
+    """Stage one preview from Tally bank ledger reports, each for one of the client's bank accounts. Returns ``(run, reused)``.
+
+    Each row becomes a two-line voucher between its account's ledger and the row's other ledger, and goes through the same plan, preview,
+    confirm and undo as a vouchers export. A transfer between two of the client's own accounts is printed in both accounts' reports with the
+    same identity, so reports staged together write it once, with a row on each account.
+    """
+    _require_rights(membership, client)
+    if not reports:
+        raise TallyImportError("Choose at least one report.")
+    merged: dict[str, ParsedVoucher] = {}
+    skipped = []
+    digest = hashlib.sha256()
+    used: set[str] = set()
+    for filename, data, account_id in reports:
+        account = BankAccount.objects.filter(pk=account_id, firm_id=client.firm_id, client=client).first()
+        if account is None:
+            raise TallyImportError("Choose one of this client's bank accounts for each report.")
+        if str(account.pk) in used:
+            raise TallyImportError(f"Two reports are for {account}. Choose a different account for each report.")
+        used.add(str(account.pk))
+        report = parse_bank_report(data, filename, max_bytes=settings.MAX_TALLY_IMPORT_BYTES)
+        digest.update(hashlib.sha256(data).digest() + str(account.pk).encode())
+        for voucher in _vouchers_from_report(report, account.ledger_name):
+            merged.setdefault(voucher.guid, voucher)  # the other side of a transfer is the same voucher
+        skipped.extend(report.skipped)
+    return _stage(client, user, list(merged.values()), skipped, digest.hexdigest(), date_from, date_to)
+
+
+def _vouchers_from_report(report, bank_ledger: str) -> list[ParsedVoucher]:
+    """The bank report's rows as two-line vouchers. The identity of each is the same from either bank's side."""
+    seen: dict[str, int] = {}
+    out = []
+    for row in report.rows:
+        pair = "|".join(sorted((normal_name(bank_ledger), normal_name(row.counter))))
+        key = f"report|{row.date.isoformat()}|{row.number}|{abs(row.signed_paise)}|{pair}"
+        seen[key] = seen.get(key, 0) + 1
+        out.append(
+            ParsedVoucher(
+                ordinal=row.ordinal,
+                guid=hashlib.sha256(f"{key}|{seen[key]}".encode()).hexdigest(),
+                tally_type=row.voucher_type,
+                number=row.number,
+                date=row.date,
+                party="",
+                narration=row.narration,
+                reference="",
+                party_gstin="",
+                own_gstin="",
+                lines=(
+                    VoucherLine(bank_ledger, row.signed_paise, False),
+                    VoucherLine(row.counter, -row.signed_paise, False),
+                ),
+            )
+        )
+    return out
+
+
+def _stage(client, user, all_vouchers, skipped, digest, date_from, date_to):
+    vouchers = [v for v in all_vouchers if (date_from is None or v.date >= date_from) and (date_to is None or v.date <= date_to)]
     if not vouchers:
         raise TallyImportError("There are no vouchers to import in this file for that period.")
     first, last = min(v.date for v in vouchers), max(v.date for v in vouchers)
@@ -195,7 +256,7 @@ def stage_vouchers(client, membership, user, *, data: bytes, filename: str, date
             counts["skipped"] += 1
             counts["bank_waiting"] += 1 if ("later release" in plan.reason or "bank account" in plan.reason) else 0
         rows.append(row)
-    for s in parsed.skipped:
+    for s in skipped:
         counts["skipped"] += 1
         rows.append({
             "ordinal": s.ordinal, "guid": "", "type": "", "number": s.name, "date": "", "party": "", "total_paise": 0,

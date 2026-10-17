@@ -13,7 +13,9 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { plural } from '@/lib/format'
 import { toast } from '@/lib/toast'
+import { BankReportStep } from './BankReportStep'
 import { ChartStep } from './ChartStep'
+import { SetupStep } from './SetupStep'
 
 const messageOf = (error: unknown) => (error instanceof Error && error.message ? error.message : 'Something went wrong. Try again.')
 
@@ -61,6 +63,7 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
 
   return (
     <div className="grid gap-4">
+      <SetupStep clientId={clientId} />
       <ChartStep clientId={clientId} />
       <Card className="grid gap-3 p-4">
         <h2 className="font-medium">2. The vouchers</h2>
@@ -85,6 +88,15 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
           </Button>
         </div>
       </Card>
+
+      <BankReportStep
+        clientId={clientId}
+        onStaged={(staged) => {
+          setError(null)
+          setRun(staged)
+        }}
+        onError={setError}
+      />
 
       {error && (
         <Card tone="danger" role="alert" className="p-3 text-sm">

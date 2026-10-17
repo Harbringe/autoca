@@ -80,3 +80,24 @@ def vouchers_xml(vouchers, *, company="TEST CO") -> bytes:
                 ET.SubElement(alloc, "BILLTYPE").text = billtype
                 ET.SubElement(alloc, "AMOUNT").text = f"{-rupees if debit else rupees:.2f}"
     return ET.tostring(envelope, encoding="utf-8", xml_declaration=True)
+
+
+def report_row(date, counter, vtype, *, debit=None, credit=None, narration="", number="1"):
+    """One row of a bank ledger report. ``debit``/``credit`` are rupees on the bank ledger's side, as the report prints them."""
+    return {"date": date, "counter": counter, "vtype": vtype, "debit": debit, "credit": credit, "narration": narration, "number": number}
+
+
+def bank_report_xml(rows) -> bytes:
+    """A flat run of DSPVCH elements, as Tally writes a ledger's vouchers report. A debit is printed negative."""
+    root = ET.Element("ENVELOPE")
+    for r in rows:
+        ET.SubElement(root, "DSPVCHDATE").text = r["date"]
+        ET.SubElement(root, "DSPVCHLEDACCOUNT").text = r["counter"]
+        ET.SubElement(root, "NAMEFIELD").text = ""
+        ET.SubElement(root, "INFOFIELD").text = ""
+        ET.SubElement(root, "DSPVCHGROUPN").text = r["narration"]
+        ET.SubElement(root, "DSPVCHTYPE").text = r["vtype"]
+        ET.SubElement(root, "DSPVCHDRAMT").text = f"{-r['debit']:.2f}" if r["debit"] else ""
+        ET.SubElement(root, "DSPVCHCRAMT").text = f"{r['credit']:.2f}" if r["credit"] else ""
+        ET.SubElement(root, "DSPEXPLVCHNUMBER").text = f"(No. :{r['number']})"
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True)

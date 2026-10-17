@@ -2249,6 +2249,66 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/tally-imports/bank-report/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload Tally bank ledger reports and preview importing them
+         * @description Each row of the report becomes a bank entry between the chosen bank account and the row's other ledger, through the same preview as a vouchers export; confirm it with `confirm-vouchers`. A row where Tally shows several ledgers is left out with the reason.
+         */
+        post: operations["clients_tally_imports_bank_report_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/tally-imports/discover/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read Tally files and propose the ledgers and bank accounts they use
+         * @description Reads any mix of voucher exports and bank ledger reports and returns what the client would need: the ledgers the files use that the client does not have, each with the group the files suggest and why, and the bank, loan or card accounts among them. **Writes nothing.** A bank report's own bank ledger is told from its file name where possible; otherwise it is given in `bank_ledgers`, and until then its rows' other ledgers are not proposed.
+         */
+        post: operations["clients_tally_imports_discover_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/tally-imports/setup/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create the ledgers and bank accounts a person confirmed from the files
+         * @description Creates exactly the ledgers listed, each in the group given, and the bank accounts listed that have an account number, each tied to the ledger of the same name. Existing ledgers are left alone. All or nothing.
+         */
+        post: operations["clients_tally_imports_setup_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/tally-imports/vouchers/": {
         parameters: {
             query?: never;
@@ -5046,6 +5106,13 @@ export interface components {
          * @enum {string}
          */
         Kind1acEnum: "PURCHASE" | "SALES" | "DEBIT_NOTE" | "CREDIT_NOTE" | "OPENING";
+        /**
+         * @description * `BANK` - BANK
+         *     * `LOAN` - LOAN
+         *     * `CARD` - CARD
+         * @enum {string}
+         */
+        Kind226Enum: "BANK" | "LOAN" | "CARD";
         /**
          * @description * `BANK_STATEMENT` - Bank statement
          *     * `PURCHASE_INVOICE` - Purchase invoice
@@ -8194,6 +8261,21 @@ export interface components {
          * @enum {string}
          */
         SuggestedRoleEnum: "VENDOR" | "CUSTOMER" | "BOTH" | "OTHER";
+        TallyAccountChoiceRequest: {
+            ledger: string;
+            kind: components["schemas"]["Kind226Enum"];
+            /** @default BANK */
+            bank_code: string;
+            /** @default  */
+            account_number: string;
+        };
+        TallyAccountProposal: {
+            ledger: string;
+            kind: components["schemas"]["Kind226Enum"];
+            bank_code: string;
+            /** @description Read from the ledger's name; blank when the person must type it. */
+            account_number: string;
+        };
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         TallyBankPanel: {
             /** Format: uuid */
@@ -8233,6 +8315,16 @@ export interface components {
          * @enum {string}
          */
         TallyBankPanelStatusEnum: "propose" | "agree" | "conflict" | "nothing";
+        TallyBankReportUploadRequest: {
+            /** @description Tally bank ledger reports, exported as XML; the same period for every report. */
+            files: string[];
+            /** @description The client's bank account each report is for, in the same order as `files`. */
+            accounts: string[];
+            /** Format: date */
+            date_from?: string;
+            /** Format: date */
+            date_to?: string;
+        };
         TallyConfirmRequest: {
             resolutions?: components["schemas"]["TallyResolutionRequest"][];
         };
@@ -8285,6 +8377,19 @@ export interface components {
             readonly credit_display: string | null;
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly difference_display: string | null;
+        };
+        TallyDiscoverRequest: {
+            /** @description Tally XML files: voucher exports and bank ledger reports, any mix, up to 12. */
+            files: string[];
+            /** @description For a bank report whose bank ledger could not be told from the file name: {file name: the bank ledger's name in Tally}. */
+            bank_ledgers?: unknown;
+        };
+        TallyDiscoveryResponse: {
+            vouchers: number;
+            voucher_files: number;
+            reports: components["schemas"]["TallyReportFile"][];
+            ledgers: components["schemas"]["TallyLedgerProposal"][];
+            accounts: components["schemas"]["TallyAccountProposal"][];
         };
         TallyError: {
             /** @description Stable code: tally_file_unreadable (422), tally_file_too_large (413), tally_year_mismatch (422), tally_run_stale (409), tally_conflicts_unresolved (409), tally_rule (409), entry_locked (409), ledger_name_taken (409), invalid (400), forbidden (403), not_found (404). */
@@ -8358,6 +8463,57 @@ export interface components {
              * @default true
              */
             include_openings: boolean;
+        };
+        TallyLedgerChoiceRequest: {
+            name: string;
+            group: components["schemas"]["LedgerGroupEnum"];
+        };
+        TallyLedgerProposal: {
+            name: string;
+            /**
+             * @description The group the files suggest; the person may change it.
+             *
+             *     * `BANK` - Bank Accounts
+             *     * `CASH` - Cash-in-Hand
+             *     * `DEBTOR` - Sundry Debtors
+             *     * `CREDITOR` - Sundry Creditors
+             *     * `INDIRECT_EXPENSE` - Indirect Expenses
+             *     * `DIRECT_EXPENSE` - Direct Expenses
+             *     * `INDIRECT_INCOME` - Indirect Incomes
+             *     * `DIRECT_INCOME` - Direct Incomes
+             *     * `DUTIES_AND_TAXES` - Duties & Taxes
+             *     * `LOAN` - Loans (Liability)
+             *     * `INVESTMENT` - Investments
+             *     * `CAPITAL` - Capital Account
+             *     * `SUSPENSE` - Suspense A/c
+             *     * `FIXED_ASSET` - Fixed Assets
+             *     * `STOCK` - Stock-in-Hand
+             *     * `CURRENT_ASSET` - Current Assets
+             *     * `LOAN_ADVANCE` - Loans & Advances (Asset)
+             *     * `DEPOSIT` - Deposits (Asset)
+             *     * `MISC_EXPENDITURE` - Misc. Expenses (Asset)
+             *     * `BANK_OD` - Bank OD A/c
+             *     * `CURRENT_LIABILITY` - Current Liabilities
+             *     * `PROVISION` - Provisions
+             *     * `RESERVES` - Reserves & Surplus
+             *     * `SALES` - Sales Accounts
+             *     * `PURCHASE` - Purchase Accounts
+             */
+            group: components["schemas"]["LedgerGroupEnum"];
+            /** @description Why that group, in a few words. */
+            reason: string;
+            /** @description How many times the files use the ledger. */
+            uses: number;
+            /** @description The evidence was thin or mixed; look at this one. */
+            unsure: boolean;
+        };
+        TallyReportFile: {
+            file: string;
+            /** @description The bank ledger the report is for; blank when it could not be told. */
+            ledger: string;
+            rows: number;
+            /** @description Rows a bank report cannot rebuild (several ledgers on the voucher). */
+            left_out: number;
         };
         TallyResolutionRequest: {
             /** @description The preview row's `row` number. */
@@ -8528,6 +8684,18 @@ export interface components {
          * @enum {string}
          */
         TallyRowActionEnum: "create" | "match" | "conflict" | "needs_group" | "skipped";
+        TallySetupRequest: {
+            ledgers: components["schemas"]["TallyLedgerChoiceRequest"][];
+            accounts?: components["schemas"]["TallyAccountChoiceRequest"][];
+        };
+        TallySetupResult: {
+            /** @description Ledgers created. */
+            ledgers: number;
+            /** @description Bank accounts opened. */
+            accounts: number;
+            /** @description Accounts not opened because no account number was given. */
+            waiting_for_a_number: string[];
+        };
         TallyVoucherCounts: {
             vouchers: number;
             will_post: number;
@@ -12843,6 +13011,223 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TallyVoucherRun"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+        };
+    };
+    clients_tally_imports_bank_report_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["TallyBankReportUploadRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TallyBankReportUploadRequest"];
+                "application/json": components["schemas"]["TallyBankReportUploadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyVoucherRun"];
+                };
+            };
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyVoucherRun"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+        };
+    };
+    clients_tally_imports_discover_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["TallyDiscoverRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TallyDiscoverRequest"];
+                "application/json": components["schemas"]["TallyDiscoverRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyDiscoveryResponse"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+        };
+    };
+    clients_tally_imports_setup_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["TallySetupRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TallySetupRequest"];
+                "application/json": components["schemas"]["TallySetupRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallySetupResult"];
                 };
             };
             400: {

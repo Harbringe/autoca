@@ -239,6 +239,21 @@ urlpatterns = [
         name="tally-import-confirm",
     ),
     path(
+        "clients/<uuid:client_id>/tally-imports/discover/",
+        TallyImportViewSet.as_view({"post": "discover"}),
+        name="tally-import-discover",
+    ),
+    path(
+        "clients/<uuid:client_id>/tally-imports/setup/",
+        TallyImportViewSet.as_view({"post": "set_up"}),
+        name="tally-import-setup",
+    ),
+    path(
+        "clients/<uuid:client_id>/tally-imports/bank-report/",
+        TallyImportViewSet.as_view({"post": "bank_report"}),
+        name="tally-import-bank-report",
+    ),
+    path(
         "clients/<uuid:client_id>/tally-imports/vouchers/",
         TallyImportViewSet.as_view({"post": "vouchers"}),
         name="tally-import-vouchers",

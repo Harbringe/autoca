@@ -138,3 +138,79 @@ def test_a_masters_run_cannot_be_confirmed_as_vouchers(api, client_record, chart
     }
     masters = api.post(url(client_record), body, format="multipart").json()
     assert api.post(url(client_record, masters["id"], "confirm-vouchers")).status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Setting a client up from the files, and importing bank reports
+# ---------------------------------------------------------------------------
+
+
+def _files(*pairs):
+    return [SimpleUploadedFile(name, data, content_type="text/xml") for name, data in pairs]
+
+
+def test_discover_proposes_the_ledgers_and_writes_nothing(api, firm, client_record):
+    from classify.models import LedgerAccount
+
+    response = api.post(url(client_record, "discover"), {"files": _files(("vouchers.xml", vouchers_xml([sale()])))}, format="multipart")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["vouchers"] == 1 and body["voucher_files"] == 1
+    groups = {p["name"]: p["group"] for p in body["ledgers"]}
+    assert groups["Acme Traders"] == "DEBTOR" and groups["Sales"] == "SALES"
+    with firm_context(firm.pk):
+        assert not LedgerAccount.objects.filter(client=client_record, name="Acme Traders").exists()
+
+
+def test_setup_creates_what_was_confirmed_then_the_vouchers_import(api, firm, client_record):
+    from classify.models import LedgerAccount
+
+    found = api.post(url(client_record, "discover"), {"files": _files(("vouchers.xml", vouchers_xml([sale()])))}, format="multipart").json()
+    done = api.post(url(client_record, "setup"), {"ledgers": [{"name": p["name"], "group": p["group"]} for p in found["ledgers"]], "accounts": []}, format="json")
+    assert done.status_code == 200 and done.json()["ledgers"] == 4
+    with firm_context(firm.pk):
+        assert LedgerAccount.objects.get(client=client_record, name="Output CGST").group == "DUTIES_AND_TAXES"
+    run = upload(api, client_record).json()
+    assert run["counts"]["will_post"] == 1
+    assert api.post(url(client_record, run["id"], "confirm-vouchers")).json()["result"]["bills"] == 1
+
+
+def test_setup_refuses_a_group_that_is_not_ours(api, client_record):
+    response = api.post(url(client_record, "setup"), {"ledgers": [{"name": "Rent", "group": "NOT_A_GROUP"}]}, format="json")
+    assert response.status_code == 400
+
+
+def test_discover_refuses_a_file_that_is_not_xml(api, client_record):
+    response = api.post(url(client_record, "discover"), {"files": _files(("masters.csv", b"a,b"))}, format="multipart")
+    assert response.status_code == 400
+
+
+def test_bank_reports_preview_and_confirm(api, firm, client_record):
+    from banking.models import BankAccount
+    from ledger.tests.tally_voucher_xml import bank_report_xml, report_row
+
+    api.post(url(client_record, "setup"), {
+        "ledgers": [{"name": "Cash", "group": "CASH"}],
+        "accounts": [{"ledger": "SBI SB A/C 62139251173", "kind": "BANK", "bank_code": "SBI", "account_number": "62139251173"}],
+    }, format="json")
+    with firm_context(firm.pk):
+        account = BankAccount.objects.get(client=client_record)
+    data = bank_report_xml([report_row("4-Apr-25", "Cash", "Rcpt", debit=100.0, narration="CASH DEP", number="1")])
+    response = api.post(
+        url(client_record, "bank-report"),
+        {"files": _files(("sbi.xml", data)), "accounts": [str(account.pk)]},
+        format="multipart",
+    )
+    assert response.status_code == 201
+    run = response.json()
+    assert run["counts"]["bank_rows"] == 1
+    done = api.post(url(client_record, run["id"], "confirm-vouchers")).json()
+    assert done["result"]["posted"] == 1 and done["result"]["bank_rows"] == 1
+
+
+def test_a_bank_report_needs_an_account_for_each_file(api, client_record):
+    from ledger.tests.tally_voucher_xml import bank_report_xml, report_row
+
+    data = bank_report_xml([report_row("4-Apr-25", "Cash", "Rcpt", debit=1.0)])
+    response = api.post(url(client_record, "bank-report"), {"files": _files(("a.xml", data))}, format="multipart")
+    assert response.status_code == 400

@@ -22,18 +22,29 @@ from rest_framework.response import Response
 
 from api.permissions import HasFirmPermission
 from api.serializers.tally import (
+    TallyBankReportUploadSerializer,
     TallyConfirmSerializer,
+    TallyDiscoverSerializer,
+    TallyDiscoveryResponseSerializer,
     TallyErrorSerializer,
     TallyImportDetailSerializer,
     TallyImportSummarySerializer,
     TallyImportUploadSerializer,
+    TallySetupResultSerializer,
+    TallySetupSerializer,
     TallyVoucherRunSerializer,
     TallyVouchersUploadSerializer,
 )
 from core.access import get_visible_client
 from ledger.models import ImportKind, LedgerImportRun
 from ledger.tally_import import confirm_run, stage_upload
-from ledger.tally_voucher_import import confirm_vouchers, stage_vouchers, undo_run
+from ledger.tally_setup import apply_setup, discover_files
+from ledger.tally_voucher_import import (
+    confirm_vouchers,
+    stage_bank_reports,
+    stage_vouchers,
+    undo_run,
+)
 
 _ERRORS = {
     400: TallyErrorSerializer,
@@ -214,3 +225,77 @@ class TallyImportViewSet(viewsets.GenericViewSet):
         _client, runs = self._runs(request, client_id, ImportKind.VOUCHERS)
         run = undo_run(get_object_or_404(runs, pk=pk), request.membership, request.user)
         return Response(TallyVoucherRunSerializer(run).data)
+
+    @extend_schema(
+        summary="Read Tally files and propose the ledgers and bank accounts they use",
+        description=(
+            "Reads any mix of voucher exports and bank ledger reports and returns what the client would need: the ledgers the files use "
+            "that the client does not have, each with the group the files suggest and why, and the bank, loan or card accounts among "
+            "them. **Writes nothing.** A bank report's own bank ledger is told from its file name where possible; otherwise it is given in "
+            "`bank_ledgers`, and until then its rows' other ledgers are not proposed."
+        ),
+        request=TallyDiscoverSerializer,
+        responses={200: TallyDiscoveryResponseSerializer, **_ERRORS, 409: TallyErrorSerializer, 413: TallyErrorSerializer, 422: TallyErrorSerializer},
+    )
+    @action(detail=False, methods=["post"], url_path="discover")
+    def discover(self, request, client_id=None):
+        client = get_visible_client(request, client_id)
+        payload = TallyDiscoverSerializer(data={"files": request.FILES.getlist("files"), "bank_ledgers": request.data.get("bank_ledgers")})
+        payload.is_valid(raise_exception=True)
+        given = payload.validated_data.get("bank_ledgers")
+        if isinstance(given, str):
+            import json
+
+            try:
+                given = json.loads(given) if given else {}
+            except ValueError:
+                given = {}
+        files = [(os.path.basename(u.name), u.read(settings.MAX_TALLY_IMPORT_BYTES + 1)) for u in payload.validated_data["files"]]
+        return Response(discover_files(client, request.membership, files, given if isinstance(given, dict) else {}))
+
+    @extend_schema(
+        summary="Create the ledgers and bank accounts a person confirmed from the files",
+        description=(
+            "Creates exactly the ledgers listed, each in the group given, and the bank accounts listed that have an account number, each "
+            "tied to the ledger of the same name. Existing ledgers are left alone. All or nothing."
+        ),
+        request=TallySetupSerializer,
+        responses={200: TallySetupResultSerializer, **_ERRORS, 409: TallyErrorSerializer},
+    )
+    @action(detail=False, methods=["post"], url_path="setup")
+    def set_up(self, request, client_id=None):
+        client = get_visible_client(request, client_id)
+        payload = TallySetupSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        return Response(apply_setup(client, request.membership, request.user, **payload.validated_data))
+
+    @extend_schema(
+        summary="Upload Tally bank ledger reports and preview importing them",
+        description=(
+            "Each row of the report becomes a bank entry between the chosen bank account and the row's other ledger, through the same preview "
+            "as a vouchers export; confirm it with `confirm-vouchers`. A row where Tally shows several ledgers is left out with the reason."
+        ),
+        request=TallyBankReportUploadSerializer,
+        responses={200: TallyVoucherRunSerializer, 201: TallyVoucherRunSerializer, **_ERRORS, 409: TallyErrorSerializer, 413: TallyErrorSerializer, 422: TallyErrorSerializer},
+    )
+    @action(detail=False, methods=["post"], url_path="bank-report")
+    def bank_report(self, request, client_id=None):
+        client = get_visible_client(request, client_id)
+        payload = TallyBankReportUploadSerializer(
+            data={
+                "files": request.FILES.getlist("files"),
+                "accounts": request.data.getlist("accounts") if hasattr(request.data, "getlist") else request.data.get("accounts", []),
+                "date_from": request.data.get("date_from") or None,
+                "date_to": request.data.get("date_to") or None,
+            }
+        )
+        payload.is_valid(raise_exception=True)
+        data = payload.validated_data
+        reports = [
+            (os.path.basename(u.name), u.read(settings.MAX_TALLY_IMPORT_BYTES + 1), account)
+            for u, account in zip(data["files"], data["accounts"], strict=True)
+        ]
+        run, reused = stage_bank_reports(
+            client, request.membership, request.user, reports=reports, date_from=data.get("date_from"), date_to=data.get("date_to")
+        )
+        return Response(TallyVoucherRunSerializer(run).data, status=status.HTTP_200_OK if reused else status.HTTP_201_CREATED)

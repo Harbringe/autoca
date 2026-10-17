@@ -123,3 +123,69 @@ export function useUndoVouchers(clientId: string) {
     onSuccess: invalidate,
   })
 }
+
+// ---- Setting a client up from the files: ledgers and bank accounts ----
+
+export interface LedgerProposal {
+  name: string
+  group: string
+  reason: string
+  uses: number
+  unsure: boolean
+}
+
+export interface AccountProposal {
+  ledger: string
+  kind: 'BANK' | 'LOAN' | 'CARD'
+  bank_code: string
+  account_number: string
+}
+
+export interface Discovery {
+  vouchers: number
+  voucher_files: number
+  reports: { file: string; ledger: string; rows: number; left_out: number }[]
+  ledgers: LedgerProposal[]
+  accounts: AccountProposal[]
+}
+
+export interface SetupResult {
+  ledgers: number
+  accounts: number
+  waiting_for_a_number: string[]
+}
+
+export function useDiscover(clientId: string) {
+  return useMutation({
+    mutationFn: ({ files, bankLedgers }: { files: File[]; bankLedgers: Record<string, string> }) => {
+      const form = new FormData()
+      for (const file of files) form.append('files', file)
+      if (Object.keys(bankLedgers).length) form.append('bank_ledgers', JSON.stringify(bankLedgers))
+      return raw.post<Discovery>(`${base(clientId)}/discover/`, form)
+    },
+  })
+}
+
+export function useSetup(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: (body: { ledgers: { name: string; group: string }[]; accounts: AccountProposal[] }) =>
+      raw.post<SetupResult>(`${base(clientId)}/setup/`, body),
+    onSuccess: invalidate,
+  })
+}
+
+// ---- Bank ledger reports ----
+
+export function useStageBankReports(clientId: string) {
+  return useMutation({
+    mutationFn: ({ reports }: { reports: { file: File; account: string }[] }) => {
+      const form = new FormData()
+      for (const r of reports) {
+        form.append('files', r.file)
+        form.append('accounts', r.account)
+      }
+      return raw.post<VoucherRun>(`${base(clientId)}/bank-report/`, form)
+    },
+  })
+}

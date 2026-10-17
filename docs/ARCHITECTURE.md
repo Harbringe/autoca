@@ -512,6 +512,14 @@ with the entry linked to the row; a transfer between two of the client's own acc
 bills Tally names (or are left on account); every debtor and creditor ledger becomes a party. TCS and TDS on a purchase are kept out of the
 taxable value (TDS is stored on the bill).
 
+A client can be set up from the files themselves. `ledger/tally_setup.py` reads any mix of voucher exports and bank ledger reports and proposes
+the ledgers and bank accounts they imply (`ledger/tally_discover.py`: the group from the ledger's name first, then the part it plays in a
+voucher, and from a bank report alone the direction of the money; thin evidence is flagged `unsure`). Nothing is created until a person confirms
+each group and account number. A bank report (`ledger/tally_bankreport.py`) is the one-sided "ledger vouchers" view of a bank ledger: each row
+becomes a two-line voucher between the account's ledger and the other ledger, with the bank's own narration; a row listing several ledgers
+("as per details") cannot be rebuilt and is left out with the reason. Reports are staged together, because a transfer between two of the
+client's accounts is in both and has the same identity from either side: it is written once, with a row on each account.
+
 An entry with more than two lines cannot be edited as a bank row (`editing.require_standard_shape`): that would rebuild it as two lines and
 drop the rest. Real statement uploads for dates a Tally import already filled are refused (`StatementOverlapsTallyError`), and an imported
 statement is removed only by undoing the import. Rules are learned afterwards by proportion (`ledger/tally_learning.py`), capped under the

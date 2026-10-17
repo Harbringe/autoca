@@ -40,7 +40,7 @@ export const CLIENT_NAV: ClientNavItem[] = [
     label: 'Bookkeeping',
     icon: BookOpen,
     permission: 'report.view',
-    also: ['bills', 'invoices', 'tds', 'payroll', 'assets', 'daybook', 'open-items', 'ledgers', 'masters', 'books'],
+    also: ['bills', 'invoices', 'tds', 'payroll', 'assets', 'daybook', 'open-items', 'ledgers', 'masters', 'books', 'tally'],
     group: 'books',
   },
   { screen: 'gst', label: 'GST', icon: FileSpreadsheet, permission: 'gst.view', group: 'books' },
@@ -93,6 +93,7 @@ export const CLIENT_TABS: Record<string, ClientTab[]> = {
     { screen: 'tds', label: 'TDS', permission: 'report.view' },
     { screen: 'payroll', label: 'Payroll', permission: 'report.view' },
     { screen: 'assets', label: 'Assets', permission: 'report.view' },
+    { screen: 'tally', label: 'Import from Tally', permission: 'ledger.import' },
   ],
 }
 

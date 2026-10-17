@@ -539,6 +539,23 @@ def test_the_prompt_says_where_people_put_this_clients_money_once_there_are_enou
     assert "credit" not in usual, "no decisions about receipts yet: nothing is said about them"
 
 
+def test_an_employees_name_never_reaches_the_prompt_through_the_clients_pattern(client, classified, scripted):
+    from ledger.models import Employee
+
+    scripted.script = {"*": {"ledger": None, "confidence": 0}}
+    with firm_context(client.firm_id):
+        pay = LedgerAccount.objects.create(firm_id=client.firm_id, client=client, name="Zorba Unlikelyname", group=LedgerGroup.INDIRECT_EXPENSE)
+        Employee.objects.create(firm_id=client.firm_id, client=client, name="Zorba Unlikelyname", ledger=pay)
+        payments = list(unresolved_for(client).filter(transaction__debit_paise__gt=0)[:6])
+        assert len(payments) >= 5
+        for row in payments:
+            review(row, pay, learn=False)
+        suggest_unresolved(client)
+    assert scripted.prompts, "the model was asked"
+    assert "Zorba" not in json.dumps(scripted.prompts)
+    assert "debit" not in scripted.prompts[0].get("usual_ledgers", {})
+
+
 def test_the_prompt_says_nothing_about_a_pattern_before_there_is_one(client, classified, scripted):
     scripted.script = {"*": {"ledger": None, "confidence": 0}}
     with firm_context(client.firm_id):

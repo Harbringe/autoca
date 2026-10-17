@@ -433,7 +433,9 @@ def _usual_ledgers(client, chart) -> dict:
     """
     from classify.models import TransactionClassification
 
-    by_id = {ledger.pk: ledger for ledger in chart.known}
+    # Only ledgers the model may see at all: ``usable`` already hides a party's account, an employee's, a suspense ledger and a
+    # rejected one, so the shares can never carry a name the rest of the prompt keeps out.
+    by_id = {ledger.pk: ledger for ledger in chart.usable}
     decided = TransactionClassification.objects.filter(
         firm_id=client.firm_id,
         transaction__bank_account__client=client,
@@ -453,7 +455,7 @@ def _usual_ledgers(client, chart) -> dict:
         shown = []
         for ledger_id, n in counts:
             ledger = by_id.get(ledger_id)
-            if ledger is None or ledger.is_bank_or_cash or ledger.is_party_account or ledger.group in PARTY_NAMED_GROUPS:
+            if ledger is None or ledger.is_bank_or_cash:
                 continue
             shown.append({"ledger": chart.shown(ledger), "share": round(n / total, 2)})
             if len(shown) == USUAL_LEDGERS_PER_DIRECTION:

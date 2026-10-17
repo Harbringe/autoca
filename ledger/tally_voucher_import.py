@@ -19,6 +19,7 @@ import dataclasses
 import datetime
 import hashlib
 import logging
+from decimal import Decimal
 
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
@@ -57,7 +58,10 @@ from ledger.models import (
     JournalEntry,
     JournalLine,
     LedgerImportRun,
+    StockEntry,
+    StockEntryKind,
     TallyVoucher,
+    VoucherType,
 )
 from ledger.tally_import import (
     PREVIEW_LIFETIME,
@@ -74,6 +78,14 @@ from ledger.tally_vouchers import parse_vouchers
 logger = logging.getLogger("autoca.tally")
 
 _BANKS = (LedgerGroup.BANK, LedgerGroup.BANK_OD)
+
+#: Which way stock moves for the vouchers that carry items: goods in on a purchase or a sales return, out on a sale or a purchase return.
+_STOCK_DIRECTION = {
+    VoucherType.PURCHASE: "IN",
+    VoucherType.CREDIT_NOTE: "IN",
+    VoucherType.SALES: "OUT",
+    VoucherType.DEBIT_NOTE: "OUT",
+}
 
 
 def _facts(client) -> Facts:
@@ -141,7 +153,7 @@ def stage_vouchers(client, membership, user, *, data: bytes, filename: str, date
     facts = _facts(client)
     rows: list[dict] = []
     accounts_used: set[str] = set()
-    counts = {"vouchers": 0, "will_post": 0, "will_make_bill": 0, "skipped": 0, "bank_waiting": 0, "bank_rows": 0, "by_type": {}}
+    counts = {"vouchers": 0, "will_post": 0, "will_make_bill": 0, "skipped": 0, "bank_waiting": 0, "bank_rows": 0, "stock_lines": 0, "by_type": {}}
     for v in vouchers:
         plan = plan_voucher(v, facts)
         counts["vouchers"] += 1
@@ -165,12 +177,16 @@ def stage_vouchers(client, membership, user, *, data: bytes, filename: str, date
                 gstin=v.party_gstin,
                 own_gstin=v.own_gstin,
                 figures=dataclasses.asdict(plan.bill) if plan.bill else None,
+                items=(
+                    [[i.name, i.unit, i.quantity, i.value_paise] for i in v.items] if plan.voucher_type in _STOCK_DIRECTION else []
+                ),
                 bank=(
                     {"legs": [[g.ledger, g.account_id, g.signed_paise] for g in plan.bank.legs], "counter": plan.bank.counter}
                     if plan.bank
                     else None
                 ),
             )
+            counts["stock_lines"] += len(v.items) if plan.voucher_type in _STOCK_DIRECTION else 0
             if plan.bank:
                 counts["bank_rows"] += len(plan.bank.legs)
                 accounts_used.update(g.account_id for g in plan.bank.legs)
@@ -238,7 +254,7 @@ def confirm_vouchers(run: LedgerImportRun, membership, user) -> LedgerImportRun:
     _recheck_period(client, run)
     ledgers = {normal_name(a.name): a for a in LedgerAccount.objects.filter(firm_id=client.firm_id, client=client)}
     done = set(TallyVoucher.objects.filter(firm_id=client.firm_id, client=client).values_list("guid", flat=True))
-    result = {"posted": 0, "bills": 0, "skipped": 0, "failed": [], "bank_rows": 0, "unmatched_bills": 0}
+    result = {"posted": 0, "bills": 0, "skipped": 0, "failed": [], "bank_rows": 0, "unmatched_bills": 0, "stock_entries": 0}
     todo = sorted((r for r in run.rows if r["action"] == "post"), key=lambda r: (r["date"], r["ordinal"]))
     try:
         for row in todo:
@@ -259,6 +275,7 @@ def confirm_vouchers(run: LedgerImportRun, membership, user) -> LedgerImportRun:
             result["posted"] += 1
             result["bank_rows"] += outcome["bank_rows"]
             result["unmatched_bills"] += outcome["unmatched"]
+            result["stock_entries"] += outcome["stock"]
             if outcome["bill"]:
                 result["bills"] += 1
             elif outcome["bill"] is None:
@@ -349,7 +366,8 @@ def _write(client, user, run, row, ledgers) -> dict:
         _classify_bank(user, bank, txns, entry, ledgers, parties)
     unmatched = _settle(client, lines, row["lines"])
     made = _bill(client, bill_party, entry, row, figures, date, year) if figures else False
-    return {"bill": made, "unmatched": unmatched, "bank_rows": len(txns)}
+    stock = _stock(client, user, run, row, date)
+    return {"bill": made, "unmatched": unmatched, "bank_rows": len(txns), "stock": stock}
 
 
 def _party_for(client, figures, row, ledgers) -> Party:
@@ -371,6 +389,35 @@ def _party_for(client, figures, row, ledgers) -> Party:
         party.set_gstin(row["gstin"])
     party.save()
     return party
+
+
+def _stock(client, user, run, row, date) -> int:
+    """The movements of an item invoice's stock items, for the stock register. Goods in or out depends on the voucher's type."""
+    direction = _STOCK_DIRECTION.get(row["voucher_type"])
+    items = row.get("items") or []
+    if direction is None or not items:
+        return 0
+    note = f"Tally {row['type']} {row['number']}"[:300]
+    StockEntry.objects.bulk_create(
+        [
+            StockEntry(
+                firm_id=client.firm_id,
+                client=client,
+                kind=StockEntryKind.TALLY,
+                entry_date=date,
+                direction=direction,
+                name=name[:200],
+                unit=unit[:16],
+                quantity=Decimal(quantity),
+                value_paise=value,
+                note=note,
+                created_by=user,
+                run=run,
+            )
+            for name, unit, quantity, value in items
+        ]
+    )
+    return len(items)
 
 
 def _party_of_ledger(client, ledger) -> Party | None:
@@ -408,6 +455,7 @@ def _bill(client, party, entry, row, f, date, year) -> bool | None:
                 igst_paise=f["igst_paise"],
                 cess_paise=f["cess_paise"],
                 round_off_paise=f["round_off_paise"],
+                tds_paise=f.get("tds_paise", 0),
                 total_paise=f["total_paise"],
                 entry=entry,
                 invoice_key=invoice_key(client.firm_id, identity, reference),
@@ -551,8 +599,9 @@ def _finalize_statements(client, run) -> None:
         if not rows:
             continue
         balance = statement.opening_balance_paise
+        owed = statement.bank_account.is_liability  # a loan or card statement prints what is owed, which a debit raises
         for txn in rows:
-            balance += txn.credit_paise - txn.debit_paise
+            balance += (txn.debit_paise - txn.credit_paise) if owed else (txn.credit_paise - txn.debit_paise)
             txn.balance_paise = balance
         StatementTransaction.objects.bulk_update(rows, ["balance_paise"])
         statement.period_start, statement.period_end = rows[0].value_date, rows[-1].value_date
@@ -591,6 +640,7 @@ def undo_run(run: LedgerImportRun, membership, user) -> LedgerImportRun:
                     f"undone. Release the payment first."
                 )
         BillAllocation.objects.filter(line__entry_id__in=entry_ids).delete()
+        StockEntry.objects.filter(firm_id=client.firm_id, client=client, run=run).delete()
         for link in links:
             entry = JournalEntry.objects.select_for_update().get(pk=link.entry_id)
             editing.record_change(

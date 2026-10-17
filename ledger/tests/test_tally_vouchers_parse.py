@@ -143,3 +143,14 @@ def test_an_item_invoice_gets_its_sales_head_from_the_stock_items():
     got = {ln.ledger: ln.signed_paise for ln in parsed.vouchers[0].lines}
     assert got == {"Acme Traders": 118000, "Output CGST": -9000, "Output SGST": -9000, "GST SALES": -100000}
     assert sum(got.values()) == 0
+
+
+def test_the_stock_items_of_an_item_invoice_are_kept_with_quantity_unit_and_value():
+    v = voucher(
+        guid="s1", vtype="Purchase", number="7", date="20250401", party="Zed Supplies",
+        lines=[line("Zed Supplies", -1180.0, party=True), line("Input CGST", 90.0), line("Input SGST", 90.0)],
+        items=[("Oil 1L", "GST PURCHASE", 600.0, "1,200 BOX"), ("Oil 15L", "GST PURCHASE", 400.0, "65.500 Kgs = 1 Nos"), ("No qty", "GST PURCHASE", 0.0)],
+    )
+    parsed = parse_vouchers(vouchers_xml([v]), "v.xml", max_bytes=MAX)
+    items = [(i.name, i.unit, i.quantity, i.value_paise) for i in parsed.vouchers[0].items]
+    assert items == [("Oil 1L", "BOX", "1200", 60000), ("Oil 15L", "Kgs", "65.500", 40000)]

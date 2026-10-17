@@ -98,7 +98,8 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
           <p className="text-sm" data-testid="counts">
             {plural(run.counts.vouchers, 'voucher')} from {run.counts.date_from} to {run.counts.date_to}: {run.counts.will_post} will be posted
             {run.counts.will_make_bill ? ` (${plural(run.counts.will_make_bill, 'bill')} made)` : ''}
-            {run.counts.bank_rows ? `, ${plural(run.counts.bank_rows, 'bank statement row')} written` : ''}, {run.counts.skipped} left out.
+            {run.counts.bank_rows ? `, ${plural(run.counts.bank_rows, 'bank statement row')} written` : ''}
+            {run.counts.stock_lines ? `, ${plural(run.counts.stock_lines, 'stock line')} recorded` : ''}, {run.counts.skipped} left out.
           </p>
           <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
             {Object.entries(run.counts.by_type).map(([type, n]) => (
@@ -158,6 +159,7 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
             <CheckCircle2 className="size-4" aria-hidden /> {plural(run.result?.posted ?? 0, 'voucher')} posted, {plural(run.result?.bills ?? 0, 'bill')} made.
           </div>
           {(run.result?.bank_rows ?? 0) > 0 && <p>{plural(run.result?.bank_rows ?? 0, 'bank statement row')} written, placed as Tally had them.</p>}
+          {(run.result?.stock_entries ?? 0) > 0 && <p>{plural(run.result?.stock_entries ?? 0, 'stock movement')} recorded in the stock register.</p>}
           {(run.result?.rules_learned ?? 0) > 0 && <p>{plural(run.result?.rules_learned ?? 0, 'rule')} learned from how it was placed in Tally. They suggest a ledger; nothing posts on its own.</p>}
           {(run.result?.unmatched_bills ?? 0) > 0 && (
             <p>

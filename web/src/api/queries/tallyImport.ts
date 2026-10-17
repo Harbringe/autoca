@@ -31,12 +31,13 @@ export interface VoucherRun {
     skipped: number
     bank_waiting: number
     bank_rows: number
+    stock_lines: number
     by_type: Record<string, number>
     date_from: string
     date_to: string
   }
   rows: VoucherRunRow[]
-  result: { posted?: number; bills?: number; skipped?: number; failed?: { guid: string; reason: string }[]; bank_rows?: number; unmatched_bills?: number; rules_learned?: number; undone?: number } | null
+  result: { posted?: number; bills?: number; skipped?: number; failed?: { guid: string; reason: string }[]; bank_rows?: number; unmatched_bills?: number; rules_learned?: number; stock_entries?: number; undone?: number } | null
   expires_at: string
 }
 

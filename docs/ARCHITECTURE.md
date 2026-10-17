@@ -504,9 +504,19 @@ file is kept. Three things differ from posting a bill by hand:
 - **Each voucher is its own transaction.** One that fails is listed with its reason and the rest go on. A period with any entry, a signed-off
   date, or a file with two companies is refused whole.
 
-Phase 1 imports Sales, Purchase, Credit Note, Debit Note and Journal vouchers, and Payment/Receipt/Contra that touch no bank ledger. Bank
-vouchers (as statement rows) and learning rules from the history are later phases; until then a run is partial books and the screen says so.
-Not imported: inventory lines, firm-specific voucher types.
+What is imported: Sales, Purchase, Credit Note, Debit Note and Journal vouchers; Payment, Receipt and Contra, including those with several
+lines (a payment with TDS) and those on loan and card accounts. An item invoice's sales or purchase head is read from inside its stock items,
+and the items go to the stock register (`StockEntry` kind TALLY, tied to the run). A bank voucher becomes a row on a placeholder statement (a
+`Document` of kind Tally export; its balances are worked out from the rows, so it proves by construction), placed as the accountant placed it,
+with the entry linked to the row; a transfer between two of the client's own accounts is one entry with a row on each. Payments settle the
+bills Tally names (or are left on account); every debtor and creditor ledger becomes a party. TCS and TDS on a purchase are kept out of the
+taxable value (TDS is stored on the bill).
+
+An entry with more than two lines cannot be edited as a bank row (`editing.require_standard_shape`): that would rebuild it as two lines and
+drop the rest. Real statement uploads for dates a Tally import already filled are refused (`StatementOverlapsTallyError`), and an imported
+statement is removed only by undoing the import. Rules are learned afterwards by proportion (`ledger/tally_learning.py`), capped under the
+auto-post line. Still not imported: a transfer between two bank accounts with other lines, a voucher across more than two bank accounts,
+firm-specific voucher types.
 
 ## On OCR — read before wiring a vendor
 

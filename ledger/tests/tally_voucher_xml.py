@@ -58,9 +58,11 @@ def vouchers_xml(vouchers, *, company="TEST CO") -> bytes:
         ET.SubElement(node, "ISCANCELLED").text = "Yes" if v["cancelled"] else "No"
         ET.SubElement(node, "ISOPTIONAL").text = "Yes" if v["optional"] else "No"
         # An item invoice: (stock item, ledger it is booked to, rupees with the books' sign), one allocation per item.
-        for stock, ledger, rupees in v["items"]:
+        for stock, ledger, rupees, *qty in v["items"]:
             stock_node = ET.SubElement(node, "ALLINVENTORYENTRIES.LIST")
             ET.SubElement(stock_node, "STOCKITEMNAME").text = stock
+            if qty:
+                ET.SubElement(stock_node, "BILLEDQTY").text = qty[0]
             ET.SubElement(stock_node, "AMOUNT").text = f"{-rupees:.2f}"
             alloc = ET.SubElement(stock_node, "ACCOUNTINGALLOCATIONS.LIST")
             ET.SubElement(alloc, "LEDGERNAME").text = ledger

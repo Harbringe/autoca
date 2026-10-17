@@ -10812,14 +10812,6 @@ components:
         * `payables` - payables
         * `tds` - tds
         * `gst` - gst
-    Kind0deEnum:
-      enum:
-      - OPENING
-      - ADJUSTMENT
-      type: string
-      description: |-
-        * `OPENING` - Opening stock
-        * `ADJUSTMENT` - Stock adjustment
     Kind1acEnum:
       enum:
       - PURCHASE
@@ -10882,6 +10874,16 @@ components:
       description: |-
         * `PURCHASE` - PURCHASE
         * `SALES` - SALES
+    KindAc0Enum:
+      enum:
+      - OPENING
+      - ADJUSTMENT
+      - TALLY
+      type: string
+      description: |-
+        * `OPENING` - Opening stock
+        * `ADJUSTMENT` - Stock adjustment
+        * `TALLY` - Imported from Tally
     LayoutPreview:
       type: object
       properties:
@@ -16850,7 +16852,7 @@ components:
           readOnly: true
         kind:
           allOf:
-          - $ref: '#/components/schemas/Kind0deEnum'
+          - $ref: '#/components/schemas/KindAc0Enum'
           readOnly: true
         kind_display:
           type: string
@@ -16903,7 +16905,7 @@ components:
       type: object
       properties:
         kind:
-          $ref: '#/components/schemas/Kind0deEnum'
+          $ref: '#/components/schemas/KindAc0Enum'
         entry_date:
           type: string
           format: date
@@ -17591,6 +17593,9 @@ components:
         bank_rows:
           type: integer
           description: Statement rows the bank vouchers will write.
+        stock_lines:
+          type: integer
+          description: Stock item lines that will go into the stock register.
         by_type:
           type: object
           additionalProperties:
@@ -17606,6 +17611,7 @@ components:
       - date_from
       - date_to
       - skipped
+      - stock_lines
       - vouchers
       - will_make_bill
       - will_post
@@ -17640,6 +17646,9 @@ components:
           type: integer
           description: Bill references on payments that could not be applied; left
             on account for a person to apply.
+        stock_entries:
+          type: integer
+          description: Stock movements written for item invoices.
         rules_learned:
           type: integer
           description: Rules learned from the bank history; they place rows but never

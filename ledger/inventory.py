@@ -175,10 +175,17 @@ def build(client, fy: int) -> InventoryReport:
         r.bill_id: r
         for r in InvoiceReading.objects.filter(firm_id=client.firm_id, client=client, bill_id__in=[b.pk for b in bills])
     }
+    # A bill that came in with a Tally import has its items in the stock register already, so it is not 'left out'.
+    from ledger.models import TallyVoucher
+
+    imported = set(TallyVoucher.objects.filter(firm_id=client.firm_id, client=client).values_list('entry_id', flat=True))
     movements: list[Movement] = []
     counted = left_out = no_value = 0
     examples: list[str] = []
     for bill in bills:
+        if bill.entry_id in imported:
+            counted += 1
+            continue
         reading = readings.get(bill.pk)
         lines = (fields_of(reading).get("items") or []) if reading is not None else []
         found = 0

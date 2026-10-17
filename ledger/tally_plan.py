@@ -7,6 +7,7 @@ round-off), the voucher is still written -- the money is right -- and the bill i
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 
 from classify.models import LedgerGroup as G
@@ -32,6 +33,8 @@ _BILL = {
     VoucherType.PURCHASE: (BillKind.PURCHASE, G.CREDITOR, -1),
     VoucherType.DEBIT_NOTE: (BillKind.DEBIT_NOTE, G.CREDITOR, +1),
 }
+_TCS = re.compile(r"\btcs\b")
+_TDS = re.compile(r"\btds\b")
 _ROUND_OFF = ("round off", "rounding", "round-off", "rounded off", "roundoff", "r/f", "r/off", "round off a/c")
 
 
@@ -57,6 +60,10 @@ class BillFigures:
     #: Signed: positive when the voucher rounds up.
     round_off_paise: int
     total_paise: int
+    #: Tax deducted at source from what the supplier is paid (a purchase); stored on the bill.
+    tds_paise: int = 0
+    #: Tax the supplier collected at source on top (a purchase); part of what is owed, with no column of its own on the bill.
+    tcs_paise: int = 0
 
 
 @dataclass(frozen=True)
@@ -124,13 +131,19 @@ def _bank_voucher(v: ParsedVoucher, vtype: str, facts: Facts) -> Planned | Skip:
         known = facts.accounts.get(normal_name(line.ledger))
         if known is None:
             return Skip(v, f"The bank ledger {line.ledger!r} has no bank account in AutoCA. Add the bank account first.")
-        account_id, liability = known
-        if liability:
-            return Skip(v, f"{line.ledger!r} is a loan or card account; those are imported in a later release.")
-        legs.append(BankLeg(line.ledger, account_id, line.signed_paise))
-    if len(v.lines) != 2 or len({leg.account_id for leg in legs}) != len(legs):
-        return Skip(v, "A bank voucher with more than two lines is imported in a later release.")
-    counter = None if len(legs) == 2 else next(line.ledger for line in v.lines if line not in bank_lines)
+        legs.append(BankLeg(line.ledger, known[0], line.signed_paise))
+    if len({leg.account_id for leg in legs}) != len(legs):
+        return Skip(v, "A voucher that uses the same bank account twice is imported in a later release.")
+    others = [line for line in v.lines if line not in bank_lines]
+    if len(legs) == 2:
+        if others:
+            return Skip(v, "A transfer between two bank accounts with other lines is imported in a later release.")
+        return Planned(v, vtype, EntryKind.BANK, None, bank=BankPlan(tuple(legs), None))
+    if len(legs) > 2:
+        return Skip(v, "A voucher across more than two bank accounts is imported in a later release.")
+    # One bank account and one or more other lines (a payment with TDS, a receipt with charges): the statement row is the bank
+    # line, and the row is placed in the largest of the others.
+    counter = max(others, key=lambda line: abs(line.signed_paise)).ledger
     return Planned(v, vtype, EntryKind.BANK, None, bank=BankPlan(tuple(legs), counter))
 
 
@@ -153,7 +166,7 @@ def _invoice(v: ParsedVoucher, vtype: str, facts: Facts) -> Planned | Skip:
     if not (v.number or v.reference):
         return Planned(v, vtype, EntryKind.VOUCHER, None, note="No invoice number, so no bill was made.")
 
-    taxable = cgst = sgst = igst = cess = round_off = 0
+    taxable = cgst = sgst = igst = cess = round_off = tcs = tds = 0
     for line in v.lines:
         if line is party:
             continue
@@ -171,12 +184,20 @@ def _invoice(v: ParsedVoucher, vtype: str, facts: Facts) -> Planned | Skip:
             cess += amount
         elif key in _ROUND_OFF:
             round_off += amount
+        elif _TCS.search(key):
+            tcs += amount
+        elif _TDS.search(key):
+            tds -= amount  # taken off what the party is paid, so its amount is on the party's side
         else:
             taxable += amount
     total = abs(party.signed_paise)
-    ties = taxable > 0 and min(cgst, sgst, igst, cess) >= 0 and taxable + cgst + sgst + igst + cess + round_off == total
+    ties = (
+        taxable > 0
+        and min(cgst, sgst, igst, cess, tcs, tds) >= 0
+        and taxable + cgst + sgst + igst + cess + round_off + tcs - tds == total
+    )
     if not ties:
         return Planned(
             v, vtype, EntryKind.VOUCHER, None, note="The lines do not tie to a taxable value, tax and round-off, so no bill was made."
         )
-    return Planned(v, vtype, EntryKind.VOUCHER, BillFigures(kind, party.ledger, taxable, cgst, sgst, igst, cess, round_off, total))
+    return Planned(v, vtype, EntryKind.VOUCHER, BillFigures(kind, party.ledger, taxable, cgst, sgst, igst, cess, round_off, total, tds, tcs))

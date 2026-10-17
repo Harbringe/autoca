@@ -13,7 +13,7 @@ from ledger.tally_vouchers import ParsedVoucher, VoucherLine
 CHART = {
     "Acme Traders": G.DEBTOR, "Zed Supplies": G.CREDITOR, "Cash": G.CASH, "Bank One": G.BANK, "Bank Two": G.BANK, "Bank Orphan": G.BANK,
     "Sales": G.SALES, "Purchases": G.PURCHASE, "Output CGST": G.DUTIES_AND_TAXES, "Output SGST": G.DUTIES_AND_TAXES,
-    "Input CGST": G.DUTIES_AND_TAXES, "Input SGST": G.DUTIES_AND_TAXES, "Round Off": G.INDIRECT_EXPENSE, "Rent": G.INDIRECT_EXPENSE,
+    "Input CGST": G.DUTIES_AND_TAXES, "Input SGST": G.DUTIES_AND_TAXES, "TCS Receivable": G.CURRENT_ASSET, "TDS Payable": G.DUTIES_AND_TAXES, "Round Off": G.INDIRECT_EXPENSE, "Rent": G.INDIRECT_EXPENSE,
 }
 FACTS = Facts(
     groups={normal_name(k): v for k, v in CHART.items()},
@@ -89,14 +89,21 @@ def test_a_bank_ledger_with_no_account_is_skipped_and_named():
     assert isinstance(out, Skip) and "Bank Orphan" in out.reason and "bank account" in out.reason
 
 
-def test_a_loan_account_waits_for_a_later_release():
+def test_a_loan_or_card_account_is_a_bank_entry_like_any_other():
     facts = Facts(FACTS.groups, FACTS.bank_ledgers, {normal_name("Bank One"): ("acct-1", True)})
-    out = plan_voucher(voucher("Payment", [("Rent", 1000, False), ("Bank One", -1000, False)]), facts)
-    assert isinstance(out, Skip) and "later release" in out.reason
+    plan = plan_voucher(voucher("Payment", [("Rent", 1000, False), ("Bank One", -1000, False)]), facts)
+    assert plan.entry_kind == EntryKind.BANK and plan.bank.legs[0].account_id == "acct-1"
 
 
-def test_a_bank_voucher_with_three_lines_waits_for_a_later_release():
-    v = voucher("Payment", [("Rent", 900, False), ("Round Off", 100, False), ("Bank One", -1000, False)])
+def test_a_payment_with_tds_is_one_bank_row_placed_in_the_largest_other_line():
+    v = voucher("Payment", [("Zed Supplies", 10000, True), ("Output CGST", -200, False), ("Bank One", -9800, False)], party="Zed Supplies")
+    plan = plan_voucher(v, FACTS)
+    assert plan.entry_kind == EntryKind.BANK
+    assert plan.bank.counter == "Zed Supplies" and [(g.ledger, g.signed_paise) for g in plan.bank.legs] == [("Bank One", -9800)]
+
+
+def test_a_transfer_between_two_accounts_with_other_lines_waits_for_a_later_release():
+    v = voucher("Contra", [("Bank Two", 5000, False), ("Bank One", -5100, False), ("Rent", 100, False)])
     out = plan_voucher(v, FACTS)
     assert isinstance(out, Skip) and "later release" in out.reason
 
@@ -127,3 +134,23 @@ def test_a_credit_note_and_a_debit_note_are_bills_of_their_own_kind():
     dn = voucher("Debit Note", [("Zed Supplies", 500, True), ("Purchases", -500, False)], number="D1", party="Zed Supplies")
     assert plan_voucher(cn, FACTS).bill.kind == BillKind.CREDIT_NOTE
     assert plan_voucher(dn, FACTS).bill.kind == BillKind.DEBIT_NOTE
+
+
+def test_tax_collected_at_source_is_owed_but_is_not_taxable_value():
+    v = voucher(
+        "Purchase",
+        [("Zed Supplies", -119000, True), ("Purchases", 100000, False), ("Input CGST", 9000, False), ("Input SGST", 9000, False), ("TCS Receivable", 1000, False)],
+        party="Zed Supplies",
+    )
+    b = plan_voucher(v, FACTS).bill
+    assert (b.taxable_paise, b.tcs_paise, b.tds_paise, b.total_paise) == (100000, 1000, 0, 119000)
+
+
+def test_tax_deducted_at_source_is_kept_on_the_bill_and_not_owed_to_the_supplier():
+    v = voucher(
+        "Purchase",
+        [("Zed Supplies", -99000, True), ("Purchases", 100000, False), ("TDS Payable", -1000, False)],
+        party="Zed Supplies",
+    )
+    b = plan_voucher(v, FACTS).bill
+    assert (b.taxable_paise, b.tds_paise, b.total_paise) == (100000, 1000, 99000)

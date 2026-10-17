@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import datetime
 import io
+import re
 from dataclasses import dataclass, field
+from decimal import Decimal, InvalidOperation
 
 from core.money import MoneyError, to_paise
 from ledger.tally_parse import (
@@ -46,6 +48,17 @@ class VoucherLine:
 
 
 @dataclass(frozen=True)
+class VoucherItem:
+    """One stock item line of an item invoice: what moved, how much, and what it was booked at."""
+
+    name: str
+    unit: str
+    #: A decimal as text (a quantity has up to three places); the caller turns it into a ``Decimal``.
+    quantity: str
+    value_paise: int
+
+
+@dataclass(frozen=True)
 class ParsedVoucher:
     ordinal: int
     guid: str
@@ -58,6 +71,7 @@ class ParsedVoucher:
     party_gstin: str
     own_gstin: str
     lines: tuple[VoucherLine, ...]
+    items: tuple[VoucherItem, ...] = ()
 
 
 @dataclass
@@ -124,13 +138,32 @@ def _without_declaration(text: str) -> str:
     return text
 
 
-def _inventory_lines(element) -> list[VoucherLine]:
-    """The accounting side of an item invoice: each stock item's allocation to a ledger, added up per ledger.
+_QUANTITY = re.compile(r"^\s*([\d,]*\.?\d+)\s*(.*)$")
+
+
+def _quantity(text: str) -> tuple[str, str] | None:
+    """``600 BOX`` -> ("600", "BOX"); ``1,200.500 Kgs = 1 Nos`` -> ("1200.500", "Kgs"). None when there is no usable number."""
+    match = _QUANTITY.match(text or "")
+    if not match:
+        return None
+    number = match.group(1).replace(",", "")
+    try:
+        if Decimal(number) <= 0:
+            return None
+    except InvalidOperation:
+        return None
+    return number, " ".join(match.group(2).split("=")[0].split())[:16]
+
+
+def _inventory(element) -> tuple[list[VoucherLine], tuple[VoucherItem, ...]]:
+    """The accounting side and the stock side of an item invoice.
 
     A voucher entered with items lists the party and the taxes among its ledger lines, but the head the goods are booked to
-    (Purchases, Sales) only appears inside the items. Without it the voucher cannot balance.
+    (Purchases, Sales) only appears inside the items, as each item's allocation to a ledger; those are added up per ledger.
+    The items themselves -- name, quantity, unit, value -- are what the stock register is built from.
     """
     totals: dict[str, int] = {}
+    items: list[VoucherItem] = []
     seen = 0
     for tag in _INVENTORY_TAGS:
         for item in element.findall(tag):
@@ -140,7 +173,15 @@ def _inventory_lines(element) -> list[VoucherLine]:
                     raise _BadText(f"The voucher has more than {MAX_INVENTORY_ALLOCATIONS} item lines.")
                 name = clean_text(alloc.findtext("LEDGERNAME"), what="ledger name")
                 totals[name] = totals.get(name, 0) - to_paise((alloc.findtext("AMOUNT") or "0").strip() or "0")
-    return [VoucherLine(name, paise, False) for name, paise in totals.items() if paise]
+            quantity = _quantity(item.findtext("BILLEDQTY") or item.findtext("ACTUALQTY") or "")
+            stock = " ".join((item.findtext("STOCKITEMNAME") or "").split())[:200]
+            if quantity and stock:
+                try:
+                    value = abs(to_paise((item.findtext("AMOUNT") or "0").strip() or "0"))
+                except (MoneyError, ValueError, ArithmeticError):
+                    value = 0
+                items.append(VoucherItem(stock, quantity[1], quantity[0], value))
+    return [VoucherLine(name, paise, False) for name, paise in totals.items() if paise], tuple(items)
 
 
 def _bills(node) -> tuple[tuple[str, str, int], ...]:
@@ -192,7 +233,8 @@ def _read_voucher(element, ordinal: int, parsed: ParsedVouchers) -> None:
             name = clean_text(node.findtext("LEDGERNAME"), what="ledger name")
             amount = -to_paise((node.findtext("AMOUNT") or "0").strip() or "0")
             lines.append(VoucherLine(name, amount, _yes(node, "ISPARTYLEDGER"), _bills(node)))
-        lines.extend(_inventory_lines(element))
+        stock_lines, items = _inventory(element)
+        lines.extend(stock_lines)
         party_raw = (element.findtext("PARTYLEDGERNAME") or "").strip()
         party = clean_text(party_raw, what="party name") if party_raw else ""
     except _BadText as exc:
@@ -212,5 +254,6 @@ def _read_voucher(element, ordinal: int, parsed: ParsedVouchers) -> None:
             party_gstin=(element.findtext("PARTYGSTIN") or "").strip().upper()[:15],
             own_gstin=(element.findtext("CMPGSTIN") or "").strip().upper()[:15],
             lines=tuple(lines),
+            items=items,
         )
     )

@@ -471,3 +471,103 @@ def test_undo_takes_the_rules_it_learned_back_unless_they_were_used(firm, client
     assert ClassificationRule.objects.filter(client=client).count() == 1
     undo_run(run, senior, senior.user)
     assert ClassificationRule.objects.filter(client=client).count() == 0
+
+
+# ---------------------------------------------------------------------------
+# Multi-line bank vouchers, loan accounts, tax at source on bills, and the stock register
+# ---------------------------------------------------------------------------
+
+
+def test_a_payment_with_tds_is_one_bank_row_and_keeps_every_line(firm, client, senior, banks):
+    make_ledger(client, "Zed Supplies", G.CREDITOR)
+    make_ledger(client, "TDS Payable", G.DUTIES_AND_TAXES)
+    v = voucher(
+        guid="t1", vtype="Payment", number="30", date="20250405", party="Zed Supplies",
+        lines=[line("Zed Supplies", 100.0, party=True), line("TDS Payable", -2.0), line("Bank One", -98.0)],
+    )
+    run, _ = stage(client, senior, [v])
+    confirm_vouchers(run, senior, senior.user)
+    entry = JournalEntry.objects.get(client=client)
+    assert entry.lines.count() == 3
+    txn = StatementTransaction.objects.get(bank_account=banks["Bank One"])
+    assert (txn.debit_paise, txn.credit_paise) == (9800, 0)
+    placement = TransactionClassification.objects.get(transaction=txn)
+    assert placement.ledger.name == "Zed Supplies" and placement.party.canonical_name == "Zed Supplies"
+    # Editing it as a two-line bank row would drop the TDS line, so that is refused.
+    from ledger.editing import WrongEntryKindError, require_standard_shape
+
+    with pytest.raises(WrongEntryKindError):
+        require_standard_shape(entry)
+
+
+def test_a_loan_account_statement_counts_what_is_owed(firm, client, senior, chart):
+    loan = BankAccount(firm_id=client.firm_id, client=client, bank_code="SBI", kind="LOAN", ledger_name="SBI Loan")
+    loan.set_account_number("5259000000")
+    loan.opening_balance_paise, loan.opening_as_of = 100000, START
+    loan.save()
+    make_ledger(client, "SBI Loan", G.LOAN)
+    make_ledger(client, "Bank Interest", G.INDIRECT_EXPENSE)
+    v = voucher(guid="l1", vtype="Journal", number="9", date="20250430", lines=[line("Bank Interest", 5.0), line("SBI Loan", -5.0)])
+    v["vtype"] = "Payment"  # entered as a payment voucher in Tally
+    run, _ = stage(client, senior, [v])
+    assert run.counts["bank_rows"] == 1
+    confirm_vouchers(run, senior, senior.user)
+    txn = StatementTransaction.objects.get(bank_account=loan)
+    assert (txn.debit_paise, txn.credit_paise, txn.balance_paise) == (500, 0, 100500)
+    assert txn.statement.closing_balance_paise == 100500
+
+
+def test_tds_and_tcs_on_a_purchase_are_kept_on_the_bill(firm, client, senior, chart):
+    make_ledger(client, "Zed Supplies", G.CREDITOR)
+    make_ledger(client, "Purchases", G.PURCHASE)
+    make_ledger(client, "TDS Payable", G.DUTIES_AND_TAXES)
+    v = voucher(
+        guid="d1", vtype="Purchase", number="P1", date="20250402", party="Zed Supplies",
+        lines=[line("Zed Supplies", -990.0, party=True), line("Purchases", 1000.0), line("TDS Payable", -10.0)],
+    )
+    run, _ = stage(client, senior, [v])
+    confirm_vouchers(run, senior, senior.user)
+    bill = Bill.objects.get(client=client)
+    assert (bill.taxable_paise, bill.tds_paise, bill.total_paise) == (100000, 1000, 99000)
+
+
+def item_purchase():
+    return voucher(
+        guid="s1", vtype="Purchase", number="P2", date="20250403", party="Zed Supplies",
+        lines=[line("Zed Supplies", -1180.0, party=True), line("Input CGST", 90.0), line("Input SGST", 90.0)],
+        items=[("Oil 1L", "Purchases", 600.0, "600 BOX"), ("Oil 15L", "Purchases", 400.0, "20 BOX")],
+    )
+
+
+@pytest.fixture
+def suppliers(client, chart):
+    make_ledger(client, "Zed Supplies", G.CREDITOR)
+    make_ledger(client, "Purchases", G.PURCHASE)
+    make_ledger(client, "Input CGST", G.DUTIES_AND_TAXES)
+    make_ledger(client, "Input SGST", G.DUTIES_AND_TAXES)
+
+
+def test_an_item_invoice_writes_its_stock_movements_and_the_report_counts_them(firm, client, senior, suppliers):
+    from ledger.inventory import build
+    from ledger.models import StockEntry
+
+    run, _ = stage(client, senior, [item_purchase()])
+    assert run.counts["stock_lines"] == 2
+    done = confirm_vouchers(run, senior, senior.user)
+    assert done.result["stock_entries"] == 2
+    rows = {r.name: r for r in StockEntry.objects.filter(client=client)}
+    assert (rows["Oil 1L"].kind, rows["Oil 1L"].direction, rows["Oil 1L"].unit, str(rows["Oil 1L"].quantity), rows["Oil 1L"].value_paise) == (
+        "TALLY", "IN", "BOX", "600.000", 60000,
+    )
+    report = build(client, 2025)
+    assert report.bills_left_out == 0
+    assert {i.name: i.closing_qty for i in report.items} == {"Oil 1L": 600, "Oil 15L": 20}
+
+
+def test_undo_takes_the_stock_movements_back(firm, client, senior, suppliers):
+    from ledger.models import StockEntry
+
+    run, _ = stage(client, senior, [item_purchase()])
+    confirm_vouchers(run, senior, senior.user)
+    undo_run(run, senior, senior.user)
+    assert StockEntry.objects.filter(client=client).count() == 0

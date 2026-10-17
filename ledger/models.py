@@ -761,6 +761,8 @@ class StockItem(UUIDModel, FirmScopedModel):
 class StockEntryKind(models.TextChoices):
     OPENING = "OPENING", "Opening stock"
     ADJUSTMENT = "ADJUSTMENT", "Stock adjustment"
+    #: A movement that came in with an imported Tally voucher; it goes back with that import.
+    TALLY = "TALLY", "Imported from Tally"
 
 
 class StockEntry(UUIDModel, FirmScopedModel):
@@ -782,6 +784,8 @@ class StockEntry(UUIDModel, FirmScopedModel):
     value_paise = models.BigIntegerField(default=0, db_default=0)
     note = models.CharField(max_length=300, blank=True, default="", db_default="")
     created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    #: The Tally import that wrote this movement, when one did; undoing the import removes it.
+    run = models.ForeignKey(LedgerImportRun, null=True, blank=True, on_delete=models.SET_NULL, related_name="stock_entries")
 
     class Meta:
         db_table = "ledger_stock_entry"

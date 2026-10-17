@@ -68,6 +68,21 @@ def locked_through(client_id):
     )
 
 
+def require_standard_shape(entry) -> None:
+    """An entry a Tally import wrote with more than two lines is not edited as a bank row.
+
+    Editing a bank row rebuilds the entry as two lines, which would quietly drop the rest (a TDS line, a charge). Such an entry
+    is corrected with a journal voucher, or taken back with the import that wrote it.
+    """
+    from ledger.models import TallyVoucher
+
+    if entry.lines.count() > 2 and TallyVoucher.objects.filter(entry=entry).exists():
+        raise WrongEntryKindError(
+            "This entry has more than two lines, as Tally recorded it, so it cannot be edited as a bank row without losing the "
+            "extra lines. Correct it with a journal voucher, or undo the Tally import that wrote it."
+        )
+
+
 def is_locked(entry) -> bool:
     through = locked_through(entry.client_id)
     return through is not None and entry.entry_date <= through
@@ -160,6 +175,7 @@ def revise_in_place(
     # holds that number.
     entry = JournalEntry.objects.select_for_update().get(pk=entry.pk)
     require_bank_entry(entry)
+    require_standard_shape(entry)
     require_editable(entry)
     if actor is None:
         # The machine, applying a lesson. What a payment on a party's account settles is a person's decision, so the

@@ -270,6 +270,7 @@ class TallyVoucherResultSerializer(serializers.Serializer):
     unmatched_bills = serializers.IntegerField(
         required=False, help_text="Bill references on payments that could not be applied; left on account for a person to apply."
     )
+    stock_entries = serializers.IntegerField(required=False, help_text="Stock movements written for item invoices.")
     rules_learned = serializers.IntegerField(required=False, help_text="Rules learned from the bank history; they place rows but never post on their own.")
     undone = serializers.IntegerField(required=False)
 
@@ -283,6 +284,7 @@ class TallyVoucherCountsSerializer(serializers.Serializer):
         help_text="Bank vouchers left out (no bank account in AutoCA, a loan or card account, or more than two lines); the bank ledger is incomplete."
     )
     bank_rows = serializers.IntegerField(help_text="Statement rows the bank vouchers will write.")
+    stock_lines = serializers.IntegerField(help_text="Stock item lines that will go into the stock register.")
     by_type = serializers.DictField(child=serializers.IntegerField())
     date_from = serializers.CharField()
     date_to = serializers.CharField()

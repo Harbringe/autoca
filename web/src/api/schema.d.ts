@@ -5038,12 +5038,6 @@ export interface components {
          */
         KeyEnum: "pnl" | "balance_sheet" | "trial_balance" | "receivables" | "payables" | "tds" | "gst";
         /**
-         * @description * `OPENING` - Opening stock
-         *     * `ADJUSTMENT` - Stock adjustment
-         * @enum {string}
-         */
-        Kind0deEnum: "OPENING" | "ADJUSTMENT";
-        /**
          * @description * `PURCHASE` - Purchase invoice
          *     * `SALES` - Sales invoice
          *     * `DEBIT_NOTE` - Debit note (a purchase return)
@@ -5084,6 +5078,13 @@ export interface components {
          * @enum {string}
          */
         KindA27Enum: "PURCHASE" | "SALES";
+        /**
+         * @description * `OPENING` - Opening stock
+         *     * `ADJUSTMENT` - Stock adjustment
+         *     * `TALLY` - Imported from Tally
+         * @enum {string}
+         */
+        KindAc0Enum: "OPENING" | "ADJUSTMENT" | "TALLY";
         LayoutPreview: {
             /** @description The table's own header cells, if it has one. */
             header: string[];
@@ -8136,7 +8137,7 @@ export interface components {
         StockEntry: {
             /** Format: uuid */
             readonly id: string;
-            readonly kind: components["schemas"]["Kind0deEnum"];
+            readonly kind: components["schemas"]["KindAc0Enum"];
             readonly kind_display: string;
             /** Format: date */
             readonly entry_date: string;
@@ -8155,7 +8156,7 @@ export interface components {
          */
         StockEntryCreateDirectionEnum: "IN" | "OUT";
         StockEntryCreateRequest: {
-            kind: components["schemas"]["Kind0deEnum"];
+            kind: components["schemas"]["KindAc0Enum"];
             /** Format: date */
             entry_date: string;
             /**
@@ -8536,6 +8537,8 @@ export interface components {
             bank_waiting: number;
             /** @description Statement rows the bank vouchers will write. */
             bank_rows: number;
+            /** @description Stock item lines that will go into the stock register. */
+            stock_lines: number;
             by_type: {
                 [key: string]: number;
             };
@@ -8556,6 +8559,8 @@ export interface components {
             bank_rows?: number;
             /** @description Bill references on payments that could not be applied; left on account for a person to apply. */
             unmatched_bills?: number;
+            /** @description Stock movements written for item invoices. */
+            stock_entries?: number;
             /** @description Rules learned from the bank history; they place rows but never post on their own. */
             rules_learned?: number;
             undone?: number;

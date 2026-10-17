@@ -14,7 +14,7 @@ from rest_framework import serializers
 
 from api.fields import MoneySerializerMixin, PaiseField
 from classify.models import LedgerGroup
-from ledger.models import ImportKind, ImportStatus
+from ledger.models import ImportKind, ImportStatus, LedgerImportRun
 from ledger.tally_import import ALL_CHOICES, BANK_CHOICES
 from ledger.tally_parse import ALLOWED_EXTENSIONS
 
@@ -226,3 +226,75 @@ class TallyErrorSerializer(serializers.Serializer):
         )
     )
     detail = serializers.CharField(help_text="A sentence for a person; show it as it is.")
+
+
+class TallyVouchersUploadSerializer(serializers.Serializer):
+    file = serializers.FileField(help_text="The vouchers exported from Tally in XML.")
+    date_from = serializers.DateField(required=False, help_text="Import vouchers dated on or after this day.")
+    date_to = serializers.DateField(required=False, help_text="Import vouchers dated on or before this day.")
+
+    def validate_file(self, upload):
+        if upload.size == 0:
+            raise serializers.ValidationError("The file is empty.")
+        if upload.size > settings.MAX_TALLY_IMPORT_BYTES * 2:
+            raise serializers.ValidationError("The file is far too large to be a vouchers export.")
+        if not upload.name.lower().endswith(".xml"):
+            raise serializers.ValidationError("Upload the .xml file exported from Tally.")
+        return upload
+
+
+class TallyVoucherRowSerializer(serializers.Serializer):
+    ordinal = serializers.IntegerField(help_text="The voucher's position in the file.")
+    type = serializers.CharField(help_text="Tally's voucher type, as written.")
+    number = serializers.CharField(allow_blank=True)
+    date = serializers.CharField(allow_blank=True, help_text="ISO date; empty when the voucher's date could not be read.")
+    party = serializers.CharField(allow_blank=True)
+    total_paise = PaiseField(help_text="The voucher's value: the debit side.")
+    action = serializers.ChoiceField(choices=["post", "skip"])
+    bill = serializers.BooleanField(help_text="A bill is made from it (an invoice or a note with a party and a number).")
+    reason = serializers.CharField(allow_blank=True, help_text="Why it is skipped.")
+    note = serializers.CharField(allow_blank=True, help_text="Posted, but something a person should know (for example, no bill).")
+
+
+class TallyVoucherFailureSerializer(serializers.Serializer):
+    guid = serializers.CharField()
+    reason = serializers.CharField()
+
+
+class TallyVoucherResultSerializer(serializers.Serializer):
+    posted = serializers.IntegerField(required=False)
+    bills = serializers.IntegerField(required=False)
+    skipped = serializers.IntegerField(required=False, help_text="Already imported earlier, so not written again.")
+    failed = TallyVoucherFailureSerializer(many=True, required=False)
+    undone = serializers.IntegerField(required=False)
+
+
+class TallyVoucherCountsSerializer(serializers.Serializer):
+    vouchers = serializers.IntegerField()
+    will_post = serializers.IntegerField()
+    will_make_bill = serializers.IntegerField()
+    skipped = serializers.IntegerField()
+    bank_waiting = serializers.IntegerField(help_text="Bank vouchers that wait for a later release; the bank ledger is incomplete.")
+    by_type = serializers.DictField(child=serializers.IntegerField())
+    date_from = serializers.CharField()
+    date_to = serializers.CharField()
+
+
+class TallyVoucherRunSerializer(serializers.ModelSerializer):
+    counts = TallyVoucherCountsSerializer()
+    result = serializers.SerializerMethodField()
+    rows = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LedgerImportRun
+        fields = ["id", "kind", "status", "financial_year", "counts", "rows", "result", "created_at", "expires_at", "confirmed_at"]
+
+    @extend_schema_field(TallyVoucherResultSerializer(allow_null=True))
+    def get_result(self, run):
+        return run.result or None
+
+    @extend_schema_field(TallyVoucherRowSerializer(many=True))
+    def get_rows(self, run):
+        # Only what the screen shows: never the voucher's lines, figures or the party's GSTIN.
+        keys = ("ordinal", "type", "number", "date", "party", "total_paise", "action", "bill", "reason", "note")
+        return TallyVoucherRowSerializer([{k: row.get(k) for k in keys} for row in run.rows], many=True).data

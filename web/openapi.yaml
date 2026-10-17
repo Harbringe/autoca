@@ -4906,6 +4906,198 @@ paths:
               schema:
                 $ref: '#/components/schemas/TallyError'
           description: ''
+  /api/v1/clients/{client_id}/tally-imports/{id}/confirm-vouchers/:
+    post:
+      operationId: clients_tally_imports_confirm_vouchers_create
+      description: 'Writes each voucher the preview marked `post`, in date order,
+        each in its own transaction: one that fails is listed in `result.failed` and
+        the rest go on. **Idempotent**: confirming an applied run returns it unchanged,
+        and a voucher already imported is never written twice. `409 tally_run_stale`
+        when the client''s ledgers changed since the preview.'
+      summary: Post a previewed Tally vouchers import
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyVoucherRun'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+  /api/v1/clients/{client_id}/tally-imports/{id}/undo/:
+    post:
+      operationId: clients_tally_imports_undo_create
+      description: Takes every entry and bill the run wrote back out. Refused with
+        `409 tally_rule` once a payment or adjustment is applied to one of its bills,
+        and `409 entry_locked` when any of its entries is now inside signed-off books.
+      summary: Undo an applied Tally vouchers import
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyVoucherRun'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+  /api/v1/clients/{client_id}/tally-imports/vouchers/:
+    post:
+      operationId: clients_tally_imports_vouchers_create
+      description: |-
+        Reads the vouchers and returns a **preview**; nothing is posted. Each voucher is `post` or `skip` with a reason (a ledger not in the client's chart, unbalanced, cancelled, a bank voucher that waits for a later release...). The vouchers are written exactly as Tally had them, so the client's ledgers must be imported first.
+
+        Refused with `409 tally_rule` when the period already has entries for the client, `409 entry_locked` when it reaches a signed-off date, and `409 tally_rule` for a file with more than one company. The same file with the chart unchanged returns the existing preview with **200**. Same roles as the masters import.
+      summary: Upload a Tally vouchers export and preview importing it
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TallyVouchersUploadRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TallyVouchersUploadRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TallyVouchersUploadRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyVoucherRun'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyVoucherRun'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '413':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
   /api/v1/clients/{client_id}/tds/:
     get:
       operationId: clients_tds_list
@@ -10690,11 +10882,6 @@ components:
       description: |-
         * `PURCHASE` - PURCHASE
         * `SALES` - SALES
-    KindBd8Enum:
-      enum:
-      - CHART_OPENING
-      type: string
-      description: '* `CHART_OPENING` - Chart of accounts and opening balances'
     LayoutPreview:
       type: object
       properties:
@@ -16989,7 +17176,7 @@ components:
           type: string
           format: uuid
         kind:
-          $ref: '#/components/schemas/KindBd8Enum'
+          $ref: '#/components/schemas/Kind372Enum'
         status:
           $ref: '#/components/schemas/Status105Enum'
         financial_year:
@@ -17047,7 +17234,7 @@ components:
           type: string
           format: uuid
         kind:
-          $ref: '#/components/schemas/KindBd8Enum'
+          $ref: '#/components/schemas/Kind372Enum'
         status:
           $ref: '#/components/schemas/Status105Enum'
         financial_year:
@@ -17386,6 +17573,182 @@ components:
         * `conflict` - conflict
         * `needs_group` - needs_group
         * `skipped` - skipped
+    TallyVoucherCounts:
+      type: object
+      properties:
+        vouchers:
+          type: integer
+        will_post:
+          type: integer
+        will_make_bill:
+          type: integer
+        skipped:
+          type: integer
+        bank_waiting:
+          type: integer
+          description: Bank vouchers that wait for a later release; the bank ledger
+            is incomplete.
+        by_type:
+          type: object
+          additionalProperties:
+            type: integer
+        date_from:
+          type: string
+        date_to:
+          type: string
+      required:
+      - bank_waiting
+      - by_type
+      - date_from
+      - date_to
+      - skipped
+      - vouchers
+      - will_make_bill
+      - will_post
+    TallyVoucherFailure:
+      type: object
+      properties:
+        guid:
+          type: string
+        reason:
+          type: string
+      required:
+      - guid
+      - reason
+    TallyVoucherResult:
+      type: object
+      properties:
+        posted:
+          type: integer
+        bills:
+          type: integer
+        skipped:
+          type: integer
+          description: Already imported earlier, so not written again.
+        failed:
+          type: array
+          items:
+            $ref: '#/components/schemas/TallyVoucherFailure'
+        undone:
+          type: integer
+    TallyVoucherRow:
+      type: object
+      properties:
+        ordinal:
+          type: integer
+          description: The voucher's position in the file.
+        type:
+          type: string
+          description: Tally's voucher type, as written.
+        number:
+          type: string
+        date:
+          type: string
+          description: ISO date; empty when the voucher's date could not be read.
+        party:
+          type: string
+        total_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: 'The voucher''s value: the debit side.'
+        action:
+          $ref: '#/components/schemas/TallyVoucherRowActionEnum'
+        bill:
+          type: boolean
+          description: A bill is made from it (an invoice or a note with a party and
+            a number).
+        reason:
+          type: string
+          description: Why it is skipped.
+        note:
+          type: string
+          description: Posted, but something a person should know (for example, no
+            bill).
+      required:
+      - action
+      - bill
+      - date
+      - note
+      - number
+      - ordinal
+      - party
+      - reason
+      - total_paise
+      - type
+    TallyVoucherRowActionEnum:
+      enum:
+      - post
+      - skip
+      type: string
+      description: |-
+        * `post` - post
+        * `skip` - skip
+    TallyVoucherRun:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        kind:
+          $ref: '#/components/schemas/Kind372Enum'
+        status:
+          $ref: '#/components/schemas/Status105Enum'
+        financial_year:
+          type: integer
+          maximum: 32767
+          minimum: 0
+          description: Starting year, e.g. 2025.
+        counts:
+          $ref: '#/components/schemas/TallyVoucherCounts'
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/TallyVoucherRow'
+          readOnly: true
+        result:
+          allOf:
+          - $ref: '#/components/schemas/TallyVoucherResult'
+          nullable: true
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        expires_at:
+          type: string
+          format: date-time
+        confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+      required:
+      - counts
+      - created_at
+      - expires_at
+      - financial_year
+      - id
+      - result
+      - rows
+    TallyVouchersUploadRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+          description: The vouchers exported from Tally in XML.
+        date_from:
+          type: string
+          format: date
+          description: Import vouchers dated on or after this day.
+        date_to:
+          type: string
+          format: date
+          description: Import vouchers dated on or before this day.
+      required:
+      - file
     TdsMonth:
       type: object
       properties:

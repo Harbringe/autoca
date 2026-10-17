@@ -16,6 +16,7 @@ from django.conf import settings
 from django.shortcuts import get_object_or_404
 from drf_spectacular.utils import extend_schema
 from rest_framework import status, viewsets
+from rest_framework.decorators import action
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
@@ -26,10 +27,13 @@ from api.serializers.tally import (
     TallyImportDetailSerializer,
     TallyImportSummarySerializer,
     TallyImportUploadSerializer,
+    TallyVoucherRunSerializer,
+    TallyVouchersUploadSerializer,
 )
 from core.access import get_visible_client
-from ledger.models import LedgerImportRun
+from ledger.models import ImportKind, LedgerImportRun
 from ledger.tally_import import confirm_run, stage_upload
+from ledger.tally_voucher_import import confirm_vouchers, stage_vouchers, undo_run
 
 _ERRORS = {
     400: TallyErrorSerializer,
@@ -48,9 +52,9 @@ class TallyImportViewSet(viewsets.GenericViewSet):
     serializer_class = TallyImportDetailSerializer
     queryset = LedgerImportRun.objects.none()
 
-    def _runs(self, request, client_id):
+    def _runs(self, request, client_id, kind=ImportKind.CHART_OPENING):
         client = get_visible_client(request, client_id)
-        return client, LedgerImportRun.objects.filter(firm_id=request.firm.pk, client=client)
+        return client, LedgerImportRun.objects.filter(firm_id=request.firm.pk, client=client, kind=kind)
 
     @extend_schema(
         summary="Upload a Tally masters export and preview the import",
@@ -136,3 +140,77 @@ class TallyImportViewSet(viewsets.GenericViewSet):
         payload.is_valid(raise_exception=True)
         run = confirm_run(run, request.membership, request.user, payload.validated_data["resolutions"])
         return Response(TallyImportDetailSerializer(run).data)
+
+    @extend_schema(
+        summary="Upload a Tally vouchers export and preview importing it",
+        description=(
+            "Reads the vouchers and returns a **preview**; nothing is posted. Each voucher is `post` or `skip` with a "
+            "reason (a ledger not in the client's chart, unbalanced, cancelled, a bank voucher that waits for a later "
+            "release...). The vouchers are written exactly as Tally had them, so the client's ledgers must be imported "
+            "first.\n\n"
+            "Refused with `409 tally_rule` when the period already has entries for the client, `409 entry_locked` when "
+            "it reaches a signed-off date, and `409 tally_rule` for a file with more than one company. The same file "
+            "with the chart unchanged returns the existing preview with **200**. Same roles as the masters import."
+        ),
+        request=TallyVouchersUploadSerializer,
+        responses={
+            200: TallyVoucherRunSerializer,
+            201: TallyVoucherRunSerializer,
+            **_ERRORS,
+            409: TallyErrorSerializer,
+            413: TallyErrorSerializer,
+            422: TallyErrorSerializer,
+        },
+    )
+    @action(detail=False, methods=["post"], url_path="vouchers")
+    def vouchers(self, request, client_id=None):
+        client = get_visible_client(request, client_id)
+        payload = TallyVouchersUploadSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        upload = payload.validated_data["file"]
+        data = upload.read(settings.MAX_TALLY_IMPORT_BYTES + 1)
+        run, reused = stage_vouchers(
+            client,
+            request.membership,
+            request.user,
+            data=data,
+            filename=os.path.basename(upload.name),
+            date_from=payload.validated_data.get("date_from"),
+            date_to=payload.validated_data.get("date_to"),
+        )
+        return Response(
+            TallyVoucherRunSerializer(run).data,
+            status=status.HTTP_200_OK if reused else status.HTTP_201_CREATED,
+        )
+
+    @extend_schema(
+        summary="Post a previewed Tally vouchers import",
+        description=(
+            "Writes each voucher the preview marked `post`, in date order, each in its own transaction: one that fails is "
+            "listed in `result.failed` and the rest go on. **Idempotent**: confirming an applied run returns it unchanged, "
+            "and a voucher already imported is never written twice. `409 tally_run_stale` when the client's ledgers changed "
+            "since the preview."
+        ),
+        request=None,
+        responses={200: TallyVoucherRunSerializer, **_ERRORS, 409: TallyErrorSerializer},
+    )
+    @action(detail=True, methods=["post"], url_path="confirm-vouchers")
+    def confirm_vouchers(self, request, client_id=None, pk=None):
+        _client, runs = self._runs(request, client_id, ImportKind.VOUCHERS)
+        run = confirm_vouchers(get_object_or_404(runs, pk=pk), request.membership, request.user)
+        return Response(TallyVoucherRunSerializer(run).data)
+
+    @extend_schema(
+        summary="Undo an applied Tally vouchers import",
+        description=(
+            "Takes every entry and bill the run wrote back out. Refused with `409 tally_rule` once a payment or adjustment "
+            "is applied to one of its bills, and `409 entry_locked` when any of its entries is now inside signed-off books."
+        ),
+        request=None,
+        responses={200: TallyVoucherRunSerializer, **_ERRORS, 409: TallyErrorSerializer},
+    )
+    @action(detail=True, methods=["post"], url_path="undo")
+    def undo(self, request, client_id=None, pk=None):
+        _client, runs = self._runs(request, client_id, ImportKind.VOUCHERS)
+        run = undo_run(get_object_or_404(runs, pk=pk), request.membership, request.user)
+        return Response(TallyVoucherRunSerializer(run).data)

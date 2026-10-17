@@ -2209,6 +2209,68 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/tally-imports/{id}/confirm-vouchers/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post a previewed Tally vouchers import
+         * @description Writes each voucher the preview marked `post`, in date order, each in its own transaction: one that fails is listed in `result.failed` and the rest go on. **Idempotent**: confirming an applied run returns it unchanged, and a voucher already imported is never written twice. `409 tally_run_stale` when the client's ledgers changed since the preview.
+         */
+        post: operations["clients_tally_imports_confirm_vouchers_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/tally-imports/{id}/undo/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Undo an applied Tally vouchers import
+         * @description Takes every entry and bill the run wrote back out. Refused with `409 tally_rule` once a payment or adjustment is applied to one of its bills, and `409 entry_locked` when any of its entries is now inside signed-off books.
+         */
+        post: operations["clients_tally_imports_undo_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/tally-imports/vouchers/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Upload a Tally vouchers export and preview importing it
+         * @description Reads the vouchers and returns a **preview**; nothing is posted. Each voucher is `post` or `skip` with a reason (a ledger not in the client's chart, unbalanced, cancelled, a bank voucher that waits for a later release...). The vouchers are written exactly as Tally had them, so the client's ledgers must be imported first.
+         *
+         *     Refused with `409 tally_rule` when the period already has entries for the client, `409 entry_locked` when it reaches a signed-off date, and `409 tally_rule` for a file with more than one company. The same file with the chart unchanged returns the existing preview with **200**. Same roles as the masters import.
+         */
+        post: operations["clients_tally_imports_vouchers_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/tds/": {
         parameters: {
             query?: never;
@@ -5022,11 +5084,6 @@ export interface components {
          * @enum {string}
          */
         KindA27Enum: "PURCHASE" | "SALES";
-        /**
-         * @description * `CHART_OPENING` - Chart of accounts and opening balances
-         * @enum {string}
-         */
-        KindBd8Enum: "CHART_OPENING";
         LayoutPreview: {
             /** @description The table's own header cells, if it has one. */
             header: string[];
@@ -8237,7 +8294,7 @@ export interface components {
         TallyImportDetail: {
             /** Format: uuid */
             id: string;
-            kind: components["schemas"]["KindBd8Enum"];
+            kind: components["schemas"]["Kind372Enum"];
             status: components["schemas"]["Status105Enum"];
             financial_year: number;
             source_format: string;
@@ -8264,7 +8321,7 @@ export interface components {
         TallyImportSummary: {
             /** Format: uuid */
             id: string;
-            kind: components["schemas"]["KindBd8Enum"];
+            kind: components["schemas"]["Kind372Enum"];
             status: components["schemas"]["Status105Enum"];
             financial_year: number;
             source_format: string;
@@ -8470,6 +8527,93 @@ export interface components {
          * @enum {string}
          */
         TallyRowActionEnum: "create" | "match" | "conflict" | "needs_group" | "skipped";
+        TallyVoucherCounts: {
+            vouchers: number;
+            will_post: number;
+            will_make_bill: number;
+            skipped: number;
+            /** @description Bank vouchers that wait for a later release; the bank ledger is incomplete. */
+            bank_waiting: number;
+            by_type: {
+                [key: string]: number;
+            };
+            date_from: string;
+            date_to: string;
+        };
+        TallyVoucherFailure: {
+            guid: string;
+            reason: string;
+        };
+        TallyVoucherResult: {
+            posted?: number;
+            bills?: number;
+            /** @description Already imported earlier, so not written again. */
+            skipped?: number;
+            failed?: components["schemas"]["TallyVoucherFailure"][];
+            undone?: number;
+        };
+        TallyVoucherRow: {
+            /** @description The voucher's position in the file. */
+            ordinal: number;
+            /** @description Tally's voucher type, as written. */
+            type: string;
+            number: string;
+            /** @description ISO date; empty when the voucher's date could not be read. */
+            date: string;
+            party: string;
+            /**
+             * Format: int64
+             * @description The voucher's value: the debit side.
+             */
+            total_paise: number;
+            action: components["schemas"]["TallyVoucherRowActionEnum"];
+            /** @description A bill is made from it (an invoice or a note with a party and a number). */
+            bill: boolean;
+            /** @description Why it is skipped. */
+            reason: string;
+            /** @description Posted, but something a person should know (for example, no bill). */
+            note: string;
+        };
+        /**
+         * @description * `post` - post
+         *     * `skip` - skip
+         * @enum {string}
+         */
+        TallyVoucherRowActionEnum: "post" | "skip";
+        TallyVoucherRun: {
+            /** Format: uuid */
+            readonly id: string;
+            kind?: components["schemas"]["Kind372Enum"];
+            status?: components["schemas"]["Status105Enum"];
+            /** @description Starting year, e.g. 2025. */
+            financial_year: number;
+            counts: components["schemas"]["TallyVoucherCounts"];
+            readonly rows: components["schemas"]["TallyVoucherRow"][];
+            readonly result: components["schemas"]["TallyVoucherResult"] | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: date-time */
+            confirmed_at?: string | null;
+        };
+        TallyVouchersUploadRequest: {
+            /**
+             * Format: binary
+             * @description The vouchers exported from Tally in XML.
+             */
+            file: string;
+            /**
+             * Format: date
+             * @description Import vouchers dated on or after this day.
+             */
+            date_from?: string;
+            /**
+             * Format: date
+             * @description Import vouchers dated on or before this day.
+             */
+            date_to?: string;
+        };
         TdsMonth: {
             /** @description The TDS section, or `?` where a deduction carried none. */
             section: string;
@@ -12605,6 +12749,197 @@ export interface operations {
                 };
             };
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+        };
+    };
+    clients_tally_imports_confirm_vouchers_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyVoucherRun"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+        };
+    };
+    clients_tally_imports_undo_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyVoucherRun"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+        };
+    };
+    clients_tally_imports_vouchers_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["TallyVouchersUploadRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TallyVouchersUploadRequest"];
+                "application/json": components["schemas"]["TallyVouchersUploadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyVoucherRun"];
+                };
+            };
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyVoucherRun"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

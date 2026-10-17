@@ -8532,8 +8532,10 @@ export interface components {
             will_post: number;
             will_make_bill: number;
             skipped: number;
-            /** @description Bank vouchers that wait for a later release; the bank ledger is incomplete. */
+            /** @description Bank vouchers left out (no bank account in AutoCA, a loan or card account, or more than two lines); the bank ledger is incomplete. */
             bank_waiting: number;
+            /** @description Statement rows the bank vouchers will write. */
+            bank_rows: number;
             by_type: {
                 [key: string]: number;
             };
@@ -8550,6 +8552,10 @@ export interface components {
             /** @description Already imported earlier, so not written again. */
             skipped?: number;
             failed?: components["schemas"]["TallyVoucherFailure"][];
+            /** @description Statement rows written for bank vouchers. */
+            bank_rows?: number;
+            /** @description Bill references on payments that could not be applied; left on account for a person to apply. */
+            unmatched_bills?: number;
             undone?: number;
         };
         TallyVoucherRow: {

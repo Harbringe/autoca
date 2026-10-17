@@ -38,6 +38,8 @@ class VoucherLine:
     ledger: str
     signed_paise: int
     is_party: bool
+    #: Tally's bill allocations on this line: (bill name, "Agst Ref" / "New Ref" / "On Account" / "Advance", paise, always positive).
+    bills: tuple[tuple[str, str, int], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -119,6 +121,21 @@ def _without_declaration(text: str) -> str:
     return text
 
 
+def _bills(node) -> tuple[tuple[str, str, int], ...]:
+    """The bill references on one ledger line. A reference that cannot be read is dropped; it only decides what a payment settles."""
+    found = []
+    for item in node.findall("BILLALLOCATIONS.LIST")[:MAX_LINES_PER_VOUCHER]:
+        name = " ".join((item.findtext("NAME") or "").split())[:64]
+        kind = " ".join((item.findtext("BILLTYPE") or "").split())[:20]
+        try:
+            paise = abs(to_paise((item.findtext("AMOUNT") or "0").strip() or "0"))
+        except (MoneyError, ValueError, ArithmeticError):
+            continue
+        if name and paise:
+            found.append((name, kind, paise))
+    return tuple(found)
+
+
 def _yes(element, tag) -> bool:
     return (element.findtext(tag) or "").strip().lower() == "yes"
 
@@ -152,7 +169,7 @@ def _read_voucher(element, ordinal: int, parsed: ParsedVouchers) -> None:
         for node in nodes:
             name = clean_text(node.findtext("LEDGERNAME"), what="ledger name")
             amount = -to_paise((node.findtext("AMOUNT") or "0").strip() or "0")
-            lines.append(VoucherLine(name, amount, _yes(node, "ISPARTYLEDGER")))
+            lines.append(VoucherLine(name, amount, _yes(node, "ISPARTYLEDGER"), _bills(node)))
         party_raw = (element.findtext("PARTYLEDGERNAME") or "").strip()
         party = clean_text(party_raw, what="party name") if party_raw else ""
     except _BadText as exc:

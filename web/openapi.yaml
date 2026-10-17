@@ -17586,8 +17586,11 @@ components:
           type: integer
         bank_waiting:
           type: integer
-          description: Bank vouchers that wait for a later release; the bank ledger
-            is incomplete.
+          description: Bank vouchers left out (no bank account in AutoCA, a loan or
+            card account, or more than two lines); the bank ledger is incomplete.
+        bank_rows:
+          type: integer
+          description: Statement rows the bank vouchers will write.
         by_type:
           type: object
           additionalProperties:
@@ -17597,6 +17600,7 @@ components:
         date_to:
           type: string
       required:
+      - bank_rows
       - bank_waiting
       - by_type
       - date_from
@@ -17629,6 +17633,13 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TallyVoucherFailure'
+        bank_rows:
+          type: integer
+          description: Statement rows written for bank vouchers.
+        unmatched_bills:
+          type: integer
+          description: Bill references on payments that could not be applied; left
+            on account for a person to apply.
         undone:
           type: integer
     TallyVoucherRow:

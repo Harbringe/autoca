@@ -7,7 +7,7 @@ round-off), the voucher is still written -- the money is right -- and the bill i
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from classify.models import LedgerGroup as G
 from ledger.models import BillKind, EntryKind, VoucherType
@@ -41,6 +41,8 @@ class Facts:
     groups: dict[str, str]
     #: normal_name of the ledgers that are bank accounts.
     bank_ledgers: frozenset[str]
+    #: normal_name(ledger name) -> (bank account id, is it a loan or card) for every bank account the client has in AutoCA.
+    accounts: dict[str, tuple[str, bool]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -58,12 +60,30 @@ class BillFigures:
 
 
 @dataclass(frozen=True)
+class BankLeg:
+    """One line of a bank voucher that sits on one of the client's bank accounts."""
+
+    ledger: str
+    account_id: str
+    #: Debit positive (the books' sign): positive is money into the account.
+    signed_paise: int
+
+
+@dataclass(frozen=True)
+class BankPlan:
+    legs: tuple[BankLeg, ...]
+    #: The other ledger of a one-sided bank voucher (a payment to Rent), or None when both lines are bank accounts (a Contra).
+    counter: str | None
+
+
+@dataclass(frozen=True)
 class Planned:
     voucher: ParsedVoucher
     voucher_type: str
     entry_kind: str
     bill: BillFigures | None
     note: str = ""
+    bank: BankPlan | None = None
 
 
 @dataclass(frozen=True)
@@ -87,12 +107,31 @@ def plan_voucher(v: ParsedVoucher, facts: Facts) -> Planned | Skip:
         return Skip(v, "The voucher does not balance.")
 
     if vtype in (VoucherType.PAYMENT, VoucherType.RECEIPT, VoucherType.CONTRA):
-        if any(normal_name(line.ledger) in facts.bank_ledgers for line in v.lines):
-            return Skip(v, "Bank vouchers are imported in a later release.")
-        return Planned(v, vtype, EntryKind.JOURNAL, None)
+        return _bank_voucher(v, vtype, facts)
     if vtype == VoucherType.JOURNAL:
         return Planned(v, vtype, EntryKind.JOURNAL, None)
     return _invoice(v, vtype, facts)
+
+
+def _bank_voucher(v: ParsedVoucher, vtype: str, facts: Facts) -> Planned | Skip:
+    bank_lines = [
+        line for line in v.lines if normal_name(line.ledger) in facts.bank_ledgers or normal_name(line.ledger) in facts.accounts
+    ]
+    if not bank_lines:
+        return Planned(v, vtype, EntryKind.JOURNAL, None)  # cash, or an account that is not a bank
+    legs = []
+    for line in bank_lines:
+        known = facts.accounts.get(normal_name(line.ledger))
+        if known is None:
+            return Skip(v, f"The bank ledger {line.ledger!r} has no bank account in AutoCA. Add the bank account first.")
+        account_id, liability = known
+        if liability:
+            return Skip(v, f"{line.ledger!r} is a loan or card account; those are imported in a later release.")
+        legs.append(BankLeg(line.ledger, account_id, line.signed_paise))
+    if len(v.lines) != 2 or len({leg.account_id for leg in legs}) != len(legs):
+        return Skip(v, "A bank voucher with more than two lines is imported in a later release.")
+    counter = None if len(legs) == 2 else next(line.ledger for line in v.lines if line not in bank_lines)
+    return Planned(v, vtype, EntryKind.BANK, None, bank=BankPlan(tuple(legs), counter))
 
 
 def _party_line(v: ParsedVoucher, facts: Facts, side: str):

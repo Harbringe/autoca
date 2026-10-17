@@ -266,6 +266,10 @@ class TallyVoucherResultSerializer(serializers.Serializer):
     bills = serializers.IntegerField(required=False)
     skipped = serializers.IntegerField(required=False, help_text="Already imported earlier, so not written again.")
     failed = TallyVoucherFailureSerializer(many=True, required=False)
+    bank_rows = serializers.IntegerField(required=False, help_text="Statement rows written for bank vouchers.")
+    unmatched_bills = serializers.IntegerField(
+        required=False, help_text="Bill references on payments that could not be applied; left on account for a person to apply."
+    )
     undone = serializers.IntegerField(required=False)
 
 
@@ -274,7 +278,10 @@ class TallyVoucherCountsSerializer(serializers.Serializer):
     will_post = serializers.IntegerField()
     will_make_bill = serializers.IntegerField()
     skipped = serializers.IntegerField()
-    bank_waiting = serializers.IntegerField(help_text="Bank vouchers that wait for a later release; the bank ledger is incomplete.")
+    bank_waiting = serializers.IntegerField(
+        help_text="Bank vouchers left out (no bank account in AutoCA, a loan or card account, or more than two lines); the bank ledger is incomplete."
+    )
+    bank_rows = serializers.IntegerField(help_text="Statement rows the bank vouchers will write.")
     by_type = serializers.DictField(child=serializers.IntegerField())
     date_from = serializers.CharField()
     date_to = serializers.CharField()

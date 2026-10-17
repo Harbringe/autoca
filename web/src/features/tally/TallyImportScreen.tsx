@@ -97,7 +97,8 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
           <h3 className="font-medium">Preview</h3>
           <p className="text-sm" data-testid="counts">
             {plural(run.counts.vouchers, 'voucher')} from {run.counts.date_from} to {run.counts.date_to}: {run.counts.will_post} will be posted
-            {run.counts.will_make_bill ? ` (${plural(run.counts.will_make_bill, 'bill')} made)` : ''}, {run.counts.skipped} left out.
+            {run.counts.will_make_bill ? ` (${plural(run.counts.will_make_bill, 'bill')} made)` : ''}
+            {run.counts.bank_rows ? `, ${plural(run.counts.bank_rows, 'bank statement row')} written` : ''}, {run.counts.skipped} left out.
           </p>
           <div className="flex flex-wrap gap-2 text-xs text-muted-foreground">
             {Object.entries(run.counts.by_type).map(([type, n]) => (
@@ -110,7 +111,7 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
             <Card tone="attention" className="flex gap-2 p-3 text-sm">
               <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
               <span>
-                {plural(run.counts.bank_waiting, 'bank voucher')} {run.counts.bank_waiting === 1 ? 'is' : 'are'} not imported yet. Until they are, this client's bank ledger will be missing those entries.
+                {plural(run.counts.bank_waiting, 'bank voucher')} {run.counts.bank_waiting === 1 ? 'is' : 'are'} left out (the reason is listed below), so this client's bank ledger will be missing {run.counts.bank_waiting === 1 ? 'that entry' : 'those entries'}.
               </span>
             </Card>
           )}
@@ -156,6 +157,12 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
           <div className="flex items-center gap-2 font-medium">
             <CheckCircle2 className="size-4" aria-hidden /> {plural(run.result?.posted ?? 0, 'voucher')} posted, {plural(run.result?.bills ?? 0, 'bill')} made.
           </div>
+          {(run.result?.bank_rows ?? 0) > 0 && <p>{plural(run.result?.bank_rows ?? 0, 'bank statement row')} written, placed as Tally had them.</p>}
+          {(run.result?.unmatched_bills ?? 0) > 0 && (
+            <p>
+              {plural(run.result?.unmatched_bills ?? 0, 'bill reference')} on payments could not be applied to a bill here, and {run.result?.unmatched_bills === 1 ? 'is' : 'are'} left on account for you to apply.
+            </p>
+          )}
           {(run.result?.skipped ?? 0) > 0 && <p>{plural(run.result?.skipped ?? 0, 'voucher')} had been imported before, so were not written again.</p>}
           {(run.result?.failed?.length ?? 0) > 0 && (
             <ul className="list-disc pl-5">

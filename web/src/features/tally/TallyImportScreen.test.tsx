@@ -16,7 +16,7 @@ const preview = (over: Partial<VoucherRun['counts']> = {}, rows: VoucherRun['row
   financial_year: 2025,
   expires_at: '2099-01-01T00:00:00Z',
   result: null,
-  counts: { vouchers: 3, will_post: 1, will_make_bill: 1, skipped: 2, bank_waiting: 1, by_type: { Sales: 1, Payment: 1, Journal: 1 }, date_from: '2025-04-01', date_to: '2025-04-03', ...over },
+  counts: { vouchers: 3, will_post: 1, will_make_bill: 1, skipped: 2, bank_waiting: 1, bank_rows: 0, by_type: { Sales: 1, Payment: 1, Journal: 1 }, date_from: '2025-04-01', date_to: '2025-04-03', ...over },
   rows: [
     { ordinal: 2, type: 'Journal', number: '2', date: '2025-04-02', party: '', total_paise: 1000, action: 'skip', bill: false, reason: "The ledger 'Ghost' is not in the client's chart. Import the masters first.", note: '' },
     { ordinal: 3, type: 'Payment', number: '3', date: '2025-04-03', party: '', total_paise: 1000, action: 'skip', bill: false, reason: 'Bank vouchers are imported in a later release.', note: '' },
@@ -45,7 +45,7 @@ describe('TallyImportScreen', () => {
     renderScreen()
     choose()
     expect(await screen.findByTestId('counts')).toHaveTextContent('3 vouchers from 2025-04-01 to 2025-04-03: 1 will be posted (1 bill made)')
-    expect(screen.getByText(/1 bank voucher is not imported yet/)).toBeInTheDocument()
+    expect(screen.getByText(/1 bank voucher is left out/)).toBeInTheDocument()
     expect(screen.getByText(/Ghost/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /Post 1 voucher/ })).toBeEnabled()
   })

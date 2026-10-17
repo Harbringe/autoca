@@ -11,13 +11,14 @@ from ledger.tally_plan import Facts, Planned, Skip, plan_voucher
 from ledger.tally_vouchers import ParsedVoucher, VoucherLine
 
 CHART = {
-    "Acme Traders": G.DEBTOR, "Zed Supplies": G.CREDITOR, "Cash": G.CASH, "Bank One": G.BANK,
+    "Acme Traders": G.DEBTOR, "Zed Supplies": G.CREDITOR, "Cash": G.CASH, "Bank One": G.BANK, "Bank Two": G.BANK, "Bank Orphan": G.BANK,
     "Sales": G.SALES, "Purchases": G.PURCHASE, "Output CGST": G.DUTIES_AND_TAXES, "Output SGST": G.DUTIES_AND_TAXES,
     "Input CGST": G.DUTIES_AND_TAXES, "Input SGST": G.DUTIES_AND_TAXES, "Round Off": G.INDIRECT_EXPENSE, "Rent": G.INDIRECT_EXPENSE,
 }
 FACTS = Facts(
     groups={normal_name(k): v for k, v in CHART.items()},
-    bank_ledgers=frozenset({normal_name("Bank One")}),
+    bank_ledgers=frozenset({normal_name("Bank One"), normal_name("Bank Two"), normal_name("Bank Orphan")}),
+    accounts={normal_name("Bank One"): ("acct-1", False), normal_name("Bank Two"): ("acct-2", False)},
 )
 
 
@@ -68,8 +69,34 @@ def test_a_missing_ledger_is_skipped_and_named():
     assert isinstance(out, Skip) and "Mystery" in out.reason
 
 
-def test_a_payment_on_a_bank_ledger_waits_for_phase_two():
+def test_a_payment_from_a_bank_account_is_a_bank_entry():
     v = voucher("Payment", [("Rent", 1000, False), ("Bank One", -1000, False)])
+    plan = plan_voucher(v, FACTS)
+    assert (plan.voucher_type, plan.entry_kind, plan.bill) == (VoucherType.PAYMENT, EntryKind.BANK, None)
+    assert plan.bank.counter == "Rent" and [(g.ledger, g.account_id, g.signed_paise) for g in plan.bank.legs] == [("Bank One", "acct-1", -1000)]
+
+
+def test_a_contra_between_two_accounts_has_two_legs_and_no_counter():
+    v = voucher("Contra", [("Bank Two", 5000, False), ("Bank One", -5000, False)])
+    plan = plan_voucher(v, FACTS)
+    assert plan.entry_kind == EntryKind.BANK and plan.bank.counter is None
+    assert [g.account_id for g in plan.bank.legs] == ["acct-2", "acct-1"]
+
+
+def test_a_bank_ledger_with_no_account_is_skipped_and_named():
+    v = voucher("Payment", [("Rent", 1000, False), ("Bank Orphan", -1000, False)])
+    out = plan_voucher(v, FACTS)
+    assert isinstance(out, Skip) and "Bank Orphan" in out.reason and "bank account" in out.reason
+
+
+def test_a_loan_account_waits_for_a_later_release():
+    facts = Facts(FACTS.groups, FACTS.bank_ledgers, {normal_name("Bank One"): ("acct-1", True)})
+    out = plan_voucher(voucher("Payment", [("Rent", 1000, False), ("Bank One", -1000, False)]), facts)
+    assert isinstance(out, Skip) and "later release" in out.reason
+
+
+def test_a_bank_voucher_with_three_lines_waits_for_a_later_release():
+    v = voucher("Payment", [("Rent", 900, False), ("Round Off", 100, False), ("Bank One", -1000, False)])
     out = plan_voucher(v, FACTS)
     assert isinstance(out, Skip) and "later release" in out.reason
 

@@ -117,3 +117,17 @@ def test_an_amount_that_is_not_a_number_skips_only_that_voucher():
     parsed = parse_vouchers(data, "v.xml", max_bytes=MAX)
     assert [v.guid for v in parsed.vouchers] == ["ok"]
     assert any("amount" in s.reason for s in parsed.skipped)
+
+
+def test_bill_allocations_on_a_line_are_kept():
+    v = voucher(
+        guid="r", vtype="Receipt", number="9", date="20250410", party="Acme Traders",
+        lines=[
+            line("Bank One", 1180.0),
+            line("Acme Traders", -1180.0, party=True, bills=[("INV-1", "Agst Ref", 1000.0), ("INV-2", "Agst Ref", 180.0)]),
+        ],
+    )
+    parsed = parse_vouchers(vouchers_xml([v]), "v.xml", max_bytes=MAX)
+    party_line = parsed.vouchers[0].lines[1]
+    assert party_line.bills == (("INV-1", "Agst Ref", 100000), ("INV-2", "Agst Ref", 18000))
+    assert parsed.vouchers[0].lines[0].bills == ()

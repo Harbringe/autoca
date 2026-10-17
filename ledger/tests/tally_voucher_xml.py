@@ -9,9 +9,12 @@ from __future__ import annotations
 import xml.etree.ElementTree as ET
 
 
-def line(ledger, amount, *, party=False):
-    """``amount`` is in rupees, debit positive (the books' sign); the builder writes Tally's sign."""
-    return {"ledger": ledger, "amount": amount, "party": party}
+def line(ledger, amount, *, party=False, bills=()):
+    """``amount`` is in rupees, debit positive (the books' sign); the builder writes Tally's sign.
+
+    ``bills`` are ``(name, billtype, rupees)`` bill allocations, e.g. ``("INV-1", "Agst Ref", 1180.0)``.
+    """
+    return {"ledger": ledger, "amount": amount, "party": party, "bills": bills}
 
 
 def voucher(
@@ -60,4 +63,9 @@ def vouchers_xml(vouchers, *, company="TEST CO") -> bytes:
             ET.SubElement(entry, "ISDEEMEDPOSITIVE").text = "Yes" if debit else "No"
             ET.SubElement(entry, "ISPARTYLEDGER").text = "Yes" if item["party"] else "No"
             ET.SubElement(entry, "AMOUNT").text = f"{-item['amount']:.2f}"
+            for name, billtype, rupees in item["bills"]:
+                alloc = ET.SubElement(entry, "BILLALLOCATIONS.LIST")
+                ET.SubElement(alloc, "NAME").text = name
+                ET.SubElement(alloc, "BILLTYPE").text = billtype
+                ET.SubElement(alloc, "AMOUNT").text = f"{-rupees if debit else rupees:.2f}"
     return ET.tostring(envelope, encoding="utf-8", xml_declaration=True)

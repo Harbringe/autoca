@@ -465,6 +465,18 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
               Select every row that can be posted
             </label>
           )}
+          <div
+            aria-hidden
+            className={cn(
+              'hidden items-center gap-x-4 border-b border-border-strong bg-muted/40 py-2 pr-5 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground sm:grid sm:grid-cols-[6rem_minmax(0,1fr)_7.5rem_7.5rem]',
+              canPost && stage !== 'unresolved' ? 'pl-12' : 'pl-5',
+            )}
+          >
+            <span>Date</span>
+            <span>Particulars</span>
+            <span className="text-right">Debit</span>
+            <span className="text-right">Credit</span>
+          </div>
           <ul ref={listRef} id="review-list" aria-label="Rows waiting" className="divide-y divide-border-strong">
             {pager.items.map((r) => {
               const isOpen = r.id === openId

@@ -326,6 +326,7 @@ def _claim(client, size: int) -> _Claim:
         list(LedgerAccount.objects.filter(firm_id=client.firm_id, client=client).select_related("party_record", "employee_record")),
         account.ledger_name,
     )
+    _ = chart.usual  # read now: the model is asked outside the tenant context, where the database cannot be read
     return _Claim(
         rows=rows,
         waiting=0,

@@ -353,8 +353,11 @@ def learn_rule_from(classification, treatment, user=None) -> ClassificationRule 
     ranked = history.most_common(2)
     favourite = ranked[0][0]
     tie = len(ranked) > 1 and ranked[1][1] == ranked[0][1]
-    in_direction = decided.count() + 1
-    base = (decided.filter(ledger_id=favourite).count() + (1 if favourite == ledger.pk else 0)) / max(in_direction, 1)
+    # The base rate is how much of this client's OTHER payees' money in this direction already goes to that ledger; this payee's own
+    # decisions are the evidence being weighed, so counting them would make a lone decision look like a ledger that everything goes to.
+    others = decided.count() - (sum(history.values()) - 1)
+    others_in_ledger = decided.filter(ledger_id=favourite).count() - (history[favourite] - (1 if favourite == ledger.pk else 0))
+    base = others_in_ledger / others if others > 0 else 0.0
     payees = TransactionClassification.objects.filter(firm_id=client.firm_id, transaction__bank_account__client=client).values_list("counterparty", flat=True).distinct()
     score = confidence(
         Evidence(ranked[0][1], sum(history.values()), name_specificity(facts.counterparty, first_word_counts(payees)), base)

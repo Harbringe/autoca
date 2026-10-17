@@ -10,12 +10,12 @@ import { V1, useInvalidateClient } from '@/api/queries/clients'
 import type { Classification, LedgerAccount } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
 import { Button } from '@/components/ui/button'
-import { plural } from '@/lib/format'
+import { formatDate, plural } from '@/lib/format'
 import { toast } from '@/lib/toast'
 import { ideasOf, runLimited, type Idea } from './ledgerIdeas'
 
 const AT_A_TIME = 4
-const LISTED = 8
+const ROWS_SHOWN = 40
 
 /** One box for the assistant's new-ledger work: the ledgers it already opened (sure enough to act, names to check) and the ideas it only suggests (nothing opened until a person says yes). */
 export function LedgerIdeasBanner({
@@ -37,11 +37,21 @@ export function LedgerIdeasBanner({
   const ideas = useMemo(() => ideasOf(rows), [rows])
   const [asking, setAsking] = useState(false)
   const [progress, setProgress] = useState<string | null>(null)
+  // Ideas the person unticked in the preview; they stay in the list, unplaced.
+  const [skipped, setSkipped] = useState<ReadonlySet<string>>(new Set())
   const total = ideas.reduce((n, i) => n + i.rows.length, 0)
   const toCreate = ideas.filter((i) => !i.existingLedger)
   // Opening a ledger is a separate permission from placing rows; without it only the ideas for ledgers that exist can be used.
   const usable = canCreate ? ideas : ideas.filter((i) => i.existingLedger)
   const usableRows = usable.reduce((n, i) => n + i.rows.length, 0)
+  const chosen = usable.filter((i) => !skipped.has(i.key))
+  const chosenRows = chosen.reduce((n, i) => n + i.rows.length, 0)
+  const toggle = (key: string) =>
+    setSkipped((now) => {
+      const next = new Set(now)
+      if (!next.delete(key)) next.add(key)
+      return next
+    })
   const hasIdeas = showIdeas && canPlace && ideas.length > 0
   if (!hasIdeas && proposed.length === 0) return null
 
@@ -49,7 +59,7 @@ export function LedgerIdeasBanner({
     let placed = 0
     let failed = 0
     let opened = 0
-    for (const idea of usable) {
+    for (const idea of chosen) {
       let ledger = idea.existingLedger
       if (!ledger) {
         try {
@@ -75,7 +85,7 @@ export function LedgerIdeasBanner({
           }),
         ),
         AT_A_TIME,
-        (done, bad) => setProgress(`Placing ${placed + done + bad} of ${usableRows}…`),
+        (done, bad) => setProgress(`Placing ${placed + done + bad} of ${chosenRows}…`),
       )
       placed += result.done
       failed += result.failed
@@ -86,7 +96,6 @@ export function LedgerIdeasBanner({
     if (failed) toast.error(`${plural(failed, 'row')} could not be placed`, { description: 'They are still in this list.' })
   }
 
-  const listed = usable.slice(0, LISTED)
   return (
     <>
       <div className="grid divide-y divide-info/20 rounded-xl border border-info/30 bg-info-bg text-sm text-info">
@@ -122,25 +131,47 @@ export function LedgerIdeasBanner({
       <Confirm
         open={asking}
         onOpenChange={setAsking}
-        title={`Use the assistant’s ideas for ${plural(usableRows, 'row')}?`}
-        confirmLabel={`Place ${usableRows}`}
+        title={`Use the assistant’s ideas for ${plural(chosenRows, 'row')}?`}
+        confirmLabel={`Place ${chosenRows}`}
         busyLabel="Placing…"
+        blockedReason={chosen.length === 0 ? 'Tick at least one idea.' : undefined}
         onConfirm={apply}
       >
         <p>
-          {plural(usable.filter((i) => !i.existingLedger).length, 'ledger')} will be opened, and each row is placed in the ledger it carries an idea for. Nothing is
-          posted: the rows move to Ready to post, where you check them.
+          {plural(chosen.filter((i) => !i.existingLedger).length, 'ledger')} will be opened, and each row is placed in the ledger it carries an idea for. Nothing is
+          posted: the rows move to Ready to post, where you check them. Open an idea to see its rows; untick one to leave it out.
         </p>
-        <ul className="grid gap-1 text-sm">
-          {listed.map((i: Idea) => (
-            <li key={i.key} className="flex justify-between gap-3">
-              <span className="truncate">
-                <b className="font-medium">{i.name}</b> <span className="text-muted-foreground">{i.existingLedger ? '(exists)' : '(new)'}</span>
-              </span>
-              <span className="num shrink-0">{plural(i.rows.length, 'row')}</span>
+        <ul className="grid max-h-[55vh] gap-2 overflow-y-auto text-sm">
+          {usable.map((i: Idea) => (
+            <li key={i.key} className="rounded-lg border border-border">
+              <div className="flex items-center gap-2 px-3 py-2">
+                <input type="checkbox" checked={!skipped.has(i.key)} onChange={() => toggle(i.key)} aria-label={`Use the idea ${i.name}`} />
+                <details className="group min-w-0 flex-1">
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+                    <span className="truncate">
+                      <b className="font-medium">{i.name}</b>{' '}
+                      <span className="text-muted-foreground">
+                        {i.existingLedger ? '(exists)' : '(new)'} · {i.group.toLowerCase().replaceAll('_', ' ')}
+                      </span>
+                    </span>
+                    <span className="num shrink-0">{plural(i.rows.length, 'row')}</span>
+                  </summary>
+                  <ul className="mt-2 grid gap-1 border-t border-border pt-2 text-xs">
+                    {i.rows.slice(0, ROWS_SHOWN).map((r) => (
+                      <li key={r.id} className="grid grid-cols-[5.5rem_minmax(0,1fr)_6.5rem] gap-2">
+                        <span className="text-muted-foreground">{formatDate(r.transaction.value_date)}</span>
+                        <span className="truncate" title={r.rationale || r.transaction.narration}>
+                          {r.counterparty || r.transaction.narration}
+                        </span>
+                        <span className="num text-right">{r.transaction.amount_display}</span>
+                      </li>
+                    ))}
+                    {i.rows.length > ROWS_SHOWN && <li className="text-muted-foreground">and {i.rows.length - ROWS_SHOWN} more</li>}
+                  </ul>
+                </details>
+              </div>
             </li>
           ))}
-          {usable.length > LISTED && <li className="text-muted-foreground">and {usable.length - LISTED} more</li>}
         </ul>
         {!canCreate && toCreate.length > 0 && <p className="text-muted-foreground">{plural(toCreate.length, 'idea')} need a new ledger, which your role cannot open; they are left for someone who can.</p>}
       </Confirm>

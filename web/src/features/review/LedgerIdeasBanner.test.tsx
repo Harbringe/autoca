@@ -12,7 +12,7 @@ let n = 0
 const idea = (name: string, existing: string | null = null) => ({ name, group: 'INDIRECT_EXPENSE', group_display: 'Indirect expenses', existing_ledger: existing, existing_name: existing ? name : null, rows_sharing: 0 })
 const row = (suggestion: ReturnType<typeof idea>, over: Record<string, unknown> = {}): Classification => {
   n += 1
-  return { id: `r${n}`, ledger: null, is_posted: false, is_self_transfer: false, method: 'UNRESOLVED', counterparty: `Payee ${n}`, suggested_ledger: suggestion, ...over } as unknown as Classification
+  return { id: `r${n}`, ledger: null, is_posted: false, is_self_transfer: false, method: 'UNRESOLVED', counterparty: `Payee ${n}`, suggested_ledger: suggestion, transaction: { value_date: '2026-04-01', amount_display: `₹${n}00.00`, narration: `UPI ${n}` }, rationale: '', ...over } as unknown as Classification
 }
 
 function setup(rows: Classification[], canCreate = true) {
@@ -53,6 +53,19 @@ describe('using the assistant’s ledger ideas all at once', () => {
     expect(placements.filter((p) => p.ledger === 'l9')).toHaveLength(1)
     // a row with a payee teaches its rule, as placing it by hand does
     expect(placements.every((p) => p.learn)).toBe(true)
+  })
+
+  it('shows which rows go to which ledger before anything is placed, and leaves out an idea that is unticked', async () => {
+    const user = userEvent.setup()
+    setup([row(idea('Fuel')), row(idea('Fuel')), row(idea('Telephone', 'l9'))])
+    await user.click(screen.getByRole('button', { name: /Use all 3 ideas/ }))
+    const dialog = await screen.findByRole('dialog')
+    expect(within(dialog).getByText('Payee 1')).toBeInTheDocument()
+    expect(within(dialog).getByText('Payee 3')).toBeInTheDocument()
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Use the idea Fuel' }))
+    await user.click(within(dialog).getByRole('button', { name: 'Place 1' }))
+    await waitFor(() => expect(post.mock.calls.filter((c) => String(c[0]).includes('/review/'))).toHaveLength(1))
+    expect(post.mock.calls.some((c) => String(c[0]).endsWith('/ledgers/'))).toBe(false)
   })
 
   it('leaves the ideas that need a new ledger when the person may not open ledgers', async () => {

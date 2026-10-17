@@ -48,6 +48,7 @@ import { StatementPicker } from './StatementPicker'
 import { useReviewScope } from './useReviewScope'
 import { setSearchAllStatements, useSearchAllStatements } from '@/lib/reviewPrefs'
 import { LedgerPicker, usableLedgers } from './LedgerPicker'
+import { EntryLegsLine } from './EntryLegsLine'
 import { NewAccountDialog } from './NewAccountDialog'
 import { ProposalDecision } from '@/features/masters/MastersScreen'
 import { usePageSize } from '@/lib/pageSizes'
@@ -563,6 +564,7 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
                             </span>
                           )}
                         </span>
+                        {!isOpen && <EntryLegsLine legs={r.entry_legs} />}
                       </span>
                       <span className="text-right">
                         <span className="num block font-mono text-heading">{r.transaction.amount_display}</span>

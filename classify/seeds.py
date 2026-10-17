@@ -26,6 +26,8 @@ three months that way, and never has to hunt for a wrong seeded assumption.
 
 from __future__ import annotations
 
+import re
+
 from django.db import transaction
 
 from classify.engine import default_confidence
@@ -76,7 +78,14 @@ def bank_said_so(narration: str, channel: str = "") -> bool:
     if channel in (Channel.INTEREST, Channel.FEE):
         return True
     facts = analyse(narration or "")
-    return facts.channel in (Channel.INTEREST, Channel.FEE) or bool({"INTEREST", "CHARGES_INCLUDED"} & set(facts.hints))
+    if facts.channel in (Channel.INTEREST, Channel.FEE):
+        return True
+    # A word in a payer's remark proves nothing: anyone can type "interest" into a UPI note. So a bare word counts only on a line no payer
+    # channel claimed, and only as its opening words ("INTEREST CREDIT", "TO INTEREST"), never somewhere inside the text.
+    return facts.channel == Channel.UNKNOWN and bool(_BANK_OPENING.match(facts.raw.strip()))
+
+
+_BANK_OPENING = re.compile(r"^(?:TO |BY )?(?:INTEREST|INT\.? ?(?:PD|COLL))\b", re.IGNORECASE)
 
 
 def seed_client(client, *, created_by=None) -> dict[str, int]:

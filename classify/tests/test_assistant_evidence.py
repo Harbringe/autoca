@@ -30,14 +30,28 @@ def test_a_missing_head_is_opened_at_half_confidence():
     assert NEW_LEDGER_BAR == 0.5
 
 
-@pytest.mark.parametrize("narration", ["INTEREST CREDIT", "TO INTEREST", "004401000001:Int.Pd:31-12-2025 to 29-03-2026"])
+@pytest.mark.parametrize(
+    "narration", ["INTEREST CREDIT", "TO INTEREST", "004401000001:Int.Pd:31-12-2025 to 29-03-2026"]
+)
 def test_the_banks_own_words_say_it_was_the_bank(narration):
     from classify.seeds import bank_said_so
 
     assert bank_said_so(narration)
 
 
-@pytest.mark.parametrize("narration", ["DEP TFR UPI/CR/877660980889/SHANKA", "DEP TFR P032600626760 IOCL LPG", "REMT THRU CHQ RTGS UTR NO: 123", ""])
+@pytest.mark.parametrize(
+    "narration",
+    [
+        "DEP TFR UPI/CR/877660980889/SHANKA",
+        "DEP TFR P032600626760 IOCL LPG",
+        "REMT THRU CHQ RTGS UTR NO: 123",
+        "",
+        "UPI/CR/123456789012/SHANKAR/INTEREST",
+        "DEP TFR UPI/CR/406343817962/RAJESH/interest",
+        "IMPS/P2A/123456789012/RAJESH/INTEREST",
+        "NEFT-SBIN123-RAJESH-INTEREST PAID",
+    ],
+)
 def test_a_credit_or_payment_that_does_not_say_interest_is_not_the_bank(narration):
     from classify.seeds import bank_said_so
 

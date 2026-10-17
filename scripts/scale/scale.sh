@@ -29,7 +29,7 @@ check)
     df -h / | tail -1
     free -m | sed -n '1,2p'
     echo
-    echo "Disk: a 1 million row fill needs about 1.5 GB. Memory: the scratch database is capped at 640 MB, the tool at 384 MB."
+    echo "Disk: a 1 million row fill needs about 1.5 GB. Memory: the scratch database is capped at 480 MB, the tool at 256 MB."
     echo "Live containers right now:"
     sudo docker stats --no-stream --format '  {{.Name}}  cpu {{.CPUPerc}}  mem {{.MemUsage}}' 2>/dev/null | grep -v autoca-scale || true
     ;;

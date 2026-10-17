@@ -8,7 +8,7 @@ client's data does. Nothing in it is real and nothing in it is connected to the 
 - A separate Compose project (`autoca-scale`): its own Postgres, network and volume. No port is published.
 - Fresh random passwords and keys, written to `.env.scale` next to the script, and deleted by `down`. No live key is used.
 - The database is named `autoca_scale_test`; `fill.py` and `timing.py` refuse to run against any other name.
-- The scratch Postgres is capped at 640 MB and half a CPU, the tool container at 384 MB and half a CPU, so the live containers keep
+- The scratch Postgres is capped at 480 MB and half a CPU, the tool container at 256 MB and half a CPU, so the live containers keep
   the rest of the 2 GB server. Run it when nobody is working: the server's CPU credits (a t3.small earns them slowly) are shared.
 
 ## Run it (Session Manager shell on the server)

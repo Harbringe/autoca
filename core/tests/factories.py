@@ -61,6 +61,7 @@ from ledger.models import (
     PayrollRun,
     StockEntry,
     StockItem,
+    TallyVoucher,
     TdsChallan,
     VoucherSequence,
     VoucherType,
@@ -375,6 +376,19 @@ def _ledger_opening(firm, **kw):
     )
 
 
+def _tally_voucher(firm, **kw):
+    entry = kw.get("entry") or _journal_entry(firm)
+    return TallyVoucher.objects.create(
+        firm=firm,
+        client=entry.client,
+        run=kw.get("run") or _ledger_import_run(firm, client=entry.client),
+        guid=uuid.uuid4().hex,
+        tally_type="Journal",
+        tally_number="1",
+        entry=entry,
+    )
+
+
 def _bill(firm, **kw):
     client = kw.get("client") or _client(firm)
     return Bill.objects.create(
@@ -550,6 +564,7 @@ FACTORIES = {
     EntryChange: _entry_change,
     LedgerImportRun: _ledger_import_run,
     LedgerOpening: _ledger_opening,
+    TallyVoucher: _tally_voucher,
     Bill: _bill,
     BillAllocation: _bill_allocation,
     InvoiceReading: _invoice_reading,

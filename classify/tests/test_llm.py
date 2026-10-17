@@ -523,3 +523,43 @@ def test_a_party_named_ledger_never_reaches_the_model_by_name(client, classified
     assert "Ramesh" not in sent
     assert PARTY_ACCOUNT_LABEL in sent
     assert all(entry["name"] != "Ramesh Kumar Sharma" for prompt in scripted.prompts for entry in prompt["ledgers"])
+
+
+def test_the_prompt_says_where_people_put_this_clients_money_once_there_are_enough_decisions(client, classified, scripted):
+    scripted.script = {"*": {"ledger": None, "confidence": 0}}
+    with firm_context(client.firm_id):
+        electricity = LedgerAccount.objects.get(client=client, name="Electricity")
+        payments = list(unresolved_for(client).filter(transaction__debit_paise__gt=0)[:6])
+        assert len(payments) >= 5, "the fixture statement has enough payments to make a pattern"
+        for row in payments:
+            review(row, electricity, learn=False)
+        suggest_unresolved(client)
+    usual = scripted.prompts[0]["usual_ledgers"]
+    assert usual["debit"][0] == {"ledger": "Electricity", "share": 1.0}
+    assert "credit" not in usual, "no decisions about receipts yet: nothing is said about them"
+
+
+def test_the_prompt_says_nothing_about_a_pattern_before_there_is_one(client, classified, scripted):
+    scripted.script = {"*": {"ledger": None, "confidence": 0}}
+    with firm_context(client.firm_id):
+        suggest_unresolved(client)
+    assert "usual_ledgers" not in scripted.prompts[0]
+
+
+def test_a_payee_people_placed_in_two_ledgers_is_shown_as_not_settled(client, classified, scripted):
+    scripted.script = {"*": {"ledger": None, "confidence": 0}}
+    with firm_context(client.firm_id):
+        by_payee: dict = {}
+        for row in unresolved_for(client):
+            if row.counterparty:
+                by_payee.setdefault(row.counterparty, []).append(row)
+        rows = next((r for r in by_payee.values() if len(r) >= 3), None)
+        if rows is None:
+            pytest.skip("the fixture statement has no payee with three unplaced rows")
+        electricity = LedgerAccount.objects.get(client=client, name="Electricity")
+        investments = LedgerAccount.objects.get(client=client, name="Investments")
+        review(rows[0], electricity, learn=False)
+        review(rows[1], investments, learn=False)
+        suggest_unresolved(client)
+    entry = next(h for prompt in scripted.prompts for h in prompt["history"] if len(h["booked_to"]) == 2)
+    assert entry["decisions"] == 2

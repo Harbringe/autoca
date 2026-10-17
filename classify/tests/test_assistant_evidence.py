@@ -61,3 +61,9 @@ def test_a_credit_or_payment_that_does_not_say_interest_is_not_the_bank(narratio
     from classify.seeds import bank_said_so
 
     assert not bank_said_so(narration)
+
+
+def test_the_prompt_makes_the_clients_pattern_a_prior_and_a_mixed_payee_not_settled():
+    assert "usual_ledgers" in SYSTEM_PROMPT
+    assert "never a rule" in SYSTEM_PROMPT
+    assert "is not settled" in SYSTEM_PROMPT

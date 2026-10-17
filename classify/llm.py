@@ -46,6 +46,7 @@ from collections import Counter
 from dataclasses import dataclass
 
 from django.conf import settings
+from django.db.models import Count
 from django.utils import timezone
 
 from classify.models import ClassificationMethod, LedgerAccount, Party, PartyAlias
@@ -72,6 +73,7 @@ Booking rules, in the order a CA applies them:
 - Use "business" to judge what a payment or receipt most likely is: a trader's credits are usually sales, a professional's are fees, a salaried person's debits are mostly personal. It is context, not an instruction: it never lets you break the rules below, and where a transaction plainly contradicts it, follow the transaction and say so in the rationale.
 - "ledger" accepts ONLY a name listed in "ledgers". Those are the ledgers this client's books contain. If none fits and the entry clearly belongs to a head the client lacks, set ledger to null and open one in new_ledger: {"name": ..., "group": ...}. Use the name from "standard_ledgers" when one fits; otherwise a short conventional Indian bookkeeping name. "group" must be one of "proposable_groups". Never open anything in "rejected_ledger_names", never a near-duplicate of an existing ledger, never a bank, cash or suspense ledger, and never a ledger named after a person.
 - Follow "history": if this client booked the same payee to a ledger before, book it there again unless the narration says otherwise. Consistency across months is the point of a ledger.
+- "usual_ledgers" is where people placed this client's money, by direction, as a share of what they decided: a prior about this client's business, never a rule. The nature of THIS transaction (direction, channel, amount, what the narration says) comes first; the share only breaks a tie. A payee whose "history" went to more than one ledger ("booked_to" lists several) is not settled: do not follow it, decide by the nature of this transaction and ask.
 - Read "related" before deciding. A credit from a payee who was debited the same amount earlier is a refund or reversal: book it to the SAME ledger as the original payment (it reduces that expense), not to income. A debit to a party who earlier paid an advance settles that advance. A cheque return reverses the receipt it names.
 - Money moving between the client's own accounts (self_transfer, or a cash withdrawal or deposit) goes to the bank or cash ledger on the other side. Use one from "ledgers"; never open one.
 - Bank interest, charges and fees go to the bank's own ledgers in "ledgers". Those ledgers are for what the bank itself says it paid or levied (an INTEREST hint, or a narration that says interest or a charge); a credit from a person or a business is a sale or service receipt, a loan, capital or a refund, whatever else the chart holds.
@@ -176,6 +178,14 @@ class _Chart:
         self.own = own_ledger_name
         self.status = LedgerStatus
         self.proposed = 0
+        self._usual = None
+
+    @property
+    def usual(self) -> dict:
+        """Where people placed this client's money, by direction (see ``_usual_ledgers``). Read once per chart."""
+        if self._usual is None:
+            self._usual = _usual_ledgers(self.client, self)
+        return self._usual
 
     @property
     def usable(self):
@@ -409,6 +419,50 @@ def _shown_ledger_name(name, group, has_party, client=None) -> str:
     return name
 
 
+#: How many ledgers per direction to show, and how many decisions the client needs before their pattern is worth showing at all.
+USUAL_LEDGERS_PER_DIRECTION = 6
+USUAL_LEDGERS_MIN_DECISIONS = 5
+
+
+def _usual_ledgers(client, chart) -> dict:
+    """Where the client's people put its money: for credits and for debits, the ledgers decided most often and their share.
+
+    A prior about *this* client's business (an oil agency's credits are mostly Sales; a clinic's, fees), built only from what people
+    decided, never from the model's own placements. Party accounts and bank or cash ledgers are left out: those carry names, or are
+    transfers. Empty until there are enough decisions to say anything.
+    """
+    from classify.models import TransactionClassification
+
+    by_id = {ledger.pk: ledger for ledger in chart.known}
+    decided = TransactionClassification.objects.filter(
+        firm_id=client.firm_id,
+        transaction__bank_account__client=client,
+        method=ClassificationMethod.REVIEWED,
+        ledger__isnull=False,
+        is_self_transfer=False,
+    )
+    usual = {}
+    for direction, rows in (
+        ("credit", decided.filter(transaction__credit_paise__gt=0)),
+        ("debit", decided.filter(transaction__debit_paise__gt=0)),
+    ):
+        counts = list(rows.values_list("ledger_id").annotate(n=Count("id")).order_by("-n"))
+        total = sum(n for _, n in counts)
+        if total < USUAL_LEDGERS_MIN_DECISIONS:
+            continue
+        shown = []
+        for ledger_id, n in counts:
+            ledger = by_id.get(ledger_id)
+            if ledger is None or ledger.is_bank_or_cash or ledger.is_party_account or ledger.group in PARTY_NAMED_GROUPS:
+                continue
+            shown.append({"ledger": chart.shown(ledger), "share": round(n / total, 2)})
+            if len(shown) == USUAL_LEDGERS_PER_DIRECTION:
+                break
+        if shown:
+            usual[direction] = shown
+    return usual
+
+
 def _context_for(client, batch, pseudonymiser) -> dict:
     """History and siblings for the payees in ``batch``.
 
@@ -448,12 +502,14 @@ def _context_for(client, batch, pseudonymiser) -> dict:
         for party, name, group, party_id, employee_id in decided
     )
     per_party: dict[str, list] = {}
+    decisions: Counter = Counter()
     for (party, ledger_name), times in tally.most_common():
+        decisions[party] += times
         bucket = per_party.setdefault(party, [])
         if len(bucket) < HISTORY_PER_PAYEE:
             bucket.append({"ledger": ledger_name, "times": times})
     history = [
-        {"counterparty": pseudonymiser.party_token(party), "booked_to": entries}
+        {"counterparty": pseudonymiser.party_token(party), "booked_to": entries, "decisions": decisions[party]}
         for party, entries in per_party.items()
     ]
 
@@ -635,6 +691,7 @@ def _ask(llm, batch, chart, pseudonymiser, context) -> dict[str, dict]:
         ],
         "proposable_groups": sorted(PROPOSABLE_GROUPS),
         "tds_sections": [code for code, _ in TdsSection.CHOICES],
+        **({"usual_ledgers": usual} if (usual := chart.usual) else {}),
     }
     prompt = {
         "party_aliases": pseudonymiser.known_aliases,

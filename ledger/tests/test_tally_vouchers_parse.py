@@ -26,7 +26,7 @@ def test_reads_a_sales_voucher_with_the_books_sign():
     v = parsed.vouchers[0]
     assert (v.guid, v.tally_type, v.number, v.date) == ("g1", "Sales", "1", datetime.date(2025, 4, 1))
     assert v.party == "Acme Traders" and v.party_gstin == "27ABCDE1234F1Z5"
-    assert [(l.ledger, l.signed_paise, l.is_party) for l in v.lines] == [
+    assert [(ln.ledger, ln.signed_paise, ln.is_party) for ln in v.lines] == [
         ("Acme Traders", 118000, True), ("Sales", -100000, False), ("Output CGST", -9000, False), ("Output SGST", -9000, False),
     ]
     assert parsed.company == "TEST CO" and parsed.date_from == parsed.date_to == datetime.date(2025, 4, 1)

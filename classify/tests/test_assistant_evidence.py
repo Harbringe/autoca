@@ -2,7 +2,7 @@
 
 import pytest
 
-from classify.llm import _DECIDED_BY, NEW_LEDGER_BAR, SYSTEM_PROMPT
+from classify.llm import _DECIDED_BY, NEW_LEDGER_BAR, PLACEMENT_FLOOR, SYSTEM_PROMPT
 from classify.models import ClassificationMethod
 from classify.narration import analyse
 
@@ -28,6 +28,11 @@ def test_the_model_is_asked_whether_the_ledger_fits_and_told_what_a_poor_fit_mea
 
 def test_a_missing_head_is_opened_at_half_confidence():
     assert NEW_LEDGER_BAR == 0.5
+
+
+def test_below_half_confidence_a_guess_is_not_placed_and_the_prompt_says_so():
+    assert PLACEMENT_FLOOR == 0.5
+    assert "is not placed at all" in SYSTEM_PROMPT
 
 
 @pytest.mark.parametrize(

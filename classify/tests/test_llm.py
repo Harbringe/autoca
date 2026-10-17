@@ -206,10 +206,10 @@ def test_a_rule_placed_row_gains_the_models_narration_but_keeps_the_rule(client,
         assert rule_row.book_narration == "Being as the rule says"
 
 
-def test_an_unsure_model_places_a_flagged_best_guess(client, classified, scripted):
-    """Unsure is not blank: the row gets a ledger, flagged, with the question."""
+def test_a_probable_answer_is_placed_flagged_with_the_question(client, classified, scripted):
+    """Unsure but probable (0.5 up) is a flagged placement with the question."""
     scripted.script = {"*": {
-        "ledger": "Electricity", "confidence": 0.4, "rationale": "Could be anything.",
+        "ledger": "Electricity", "confidence": 0.5, "rationale": "Could be a bill.",
         "question": "Is this an electricity bill?",
     }}
     with firm_context(client.firm_id):
@@ -221,7 +221,23 @@ def test_an_unsure_model_places_a_flagged_best_guess(client, classified, scripte
         assert row.review_band == ReviewBand.JUDGEMENT, "a guess must never look bulk-approvable"
         assert row.needs_review
         assert row.open_question == "Is this an electricity bill?"
-        assert row.rationale == "Could be anything."
+        assert row.rationale == "Could be a bill."
+
+
+def test_a_pure_guess_is_not_a_placement(client, classified, scripted):
+    """Below 0.5 the model is guessing: the row stays for a person, with what the model said and its question."""
+    scripted.script = {"*": {
+        "ledger": "Electricity", "confidence": 0.49, "rationale": "Could be anything.",
+        "question": "Is this an electricity bill?",
+    }}
+    with firm_context(client.firm_id):
+        before = unresolved_for(client).count()
+        outcome = suggest_unresolved(client)
+        assert outcome.suggested == 0 and outcome.declined == before
+        assert not review_queue(client).filter(method=ClassificationMethod.LLM).exists()
+        waiting = unresolved_for(client)
+        assert waiting.count() == before
+        assert all(r.ledger_id is None and r.open_question == "Is this an electricity bill?" and "Could be anything." in r.rationale and "Electricity" in r.rationale for r in waiting)
 
 
 def test_a_guess_never_displaces_a_rule(client, classified, scripted):

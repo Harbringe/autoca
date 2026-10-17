@@ -85,7 +85,7 @@ Booking rules, in the order a CA applies them:
 
 When the evidence does not say which ledger, you must still choose one. A careful bookkeeper does not leave a line blank: they book the most likely ledger and flag it for the reviewer. So:
 - Choose the ledger from "ledgers" that is most likely, even if you are unsure. Never leave "ledger" null just because you are uncertain, and never choose a suspense ledger (none is offered to you). The exception is a poor fit: when the best ledger in "ledgers" is only the nearest of a poor choice, because the right head is missing, say so with "fit": false and put the head you have in mind in "new_ledger" (Sales for the receipts of a trader, a loans or advances head for money lent or borrowed, and so on). The head is opened for you when you are reasonably sure (0.5 or more) and kept as a suggestion when you are not; either way a person checks it. A row that says honestly "nothing here fits" is worth more than a row confidently in the wrong ledger.
-- Set confidence honestly: below 0.5 when it is really a guess, 0.5 to 0.75 when it is probable but unchecked. A low-confidence guess is not a failure; it is a flagged starting point that the reviewer will see and correct.
+- Set confidence honestly: below 0.5 when it is really a guess (a row below 0.5 is not placed at all: it is left for a person with your question, so a guess costs nothing), 0.5 to 0.75 when it is probable but unchecked. A low-confidence guess is not a failure; it is a flagged starting point that the reviewer will see and correct.
 - Put the one plain question that would settle it in "question", e.g. "Rs 25,000 cash deposited on 05-09: is this sales collection, money you put in, or a recovery from someone?". Keep the question even when you have also named a ledger.
 - A bare transfer to an unknown person, an advance or settlement with a person whose role is unknown, a large payment that could be an asset or an expense: pick the closest existing ledger (a loans, advances, debtors or drawings ledger if the client has one), give low confidence, and ask the question. Never open a ledger named after a person.
 - Do not open a new ledger for a guess. A new ledger in "new_ledger" with "ledger" null is only for entries you are at least 0.75 sure about. Use null for "ledger" only when no ledger in "ledgers" could plausibly hold the entry.
@@ -159,6 +159,10 @@ _DECIDED_BY = (ClassificationMethod.REVIEWED, ClassificationMethod.RULE)
 #: A head the model says is missing is opened at this confidence, flagged for review like any guess of the model's. Below it the
 #: idea is only kept on the row as a suggestion: opening a ledger for a pure guess would bury the chart under one-row heads.
 NEW_LEDGER_BAR = 0.5
+
+#: Below this the model is only guessing, and a guess is not a placement: the row stays for a person with the model's question and what it
+#: said. A wrong ledger that looks placed costs more than an empty one, which is plain about needing a decision.
+PLACEMENT_FLOOR = 0.5
 
 
 class _Chart:
@@ -765,6 +769,12 @@ def _apply(batch, replies, chart, pseudonymiser) -> tuple[int, int, int]:
             else:
                 ledger = chart.propose(proposal, rationale)
                 opened = ledger is not None
+
+        if ledger is not None and confidence < PLACEMENT_FLOOR and classification.method != ClassificationMethod.RULE:
+            # (Never for a row a rule placed: the rule's placement stands below.)
+            # What it leaned towards is kept in the reason, so the person starting from this row sees it.
+            rationale = (f'Best guess "{named[:80]}", too uncertain to place. ' + rationale).strip()[:500] if named else rationale
+            ledger = None
 
         # Below the bar nothing is created. The head the model had in mind is kept on the row as a suggestion for a person, and
         # the row goes in the closest existing ledger as before. At or above the bar behaviour is exactly as it always was

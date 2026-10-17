@@ -1,7 +1,8 @@
 // "The assistant has ledger ideas for N rows": one button to open the ledgers that do not exist yet and place every row that carries an idea,
 // instead of opening each row and creating each ledger by hand. It asks first, listing what it will do, and says what it did.
 
-import { Sparkles } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
+import { Bot, Sparkles } from 'lucide-react'
 import { useMemo, useState } from 'react'
 import { raw } from '@/api/client'
 import { messageOf } from '@/api/errors'
@@ -16,7 +17,22 @@ import { ideasOf, runLimited, type Idea } from './ledgerIdeas'
 const AT_A_TIME = 4
 const LISTED = 8
 
-export function LedgerIdeasBanner({ clientId, rows, canPlace, canCreate }: { clientId: string; rows: readonly Classification[]; canPlace: boolean; canCreate: boolean }) {
+/** One box for the assistant's new-ledger work: the ledgers it already opened (sure enough to act, names to check) and the ideas it only suggests (nothing opened until a person says yes). */
+export function LedgerIdeasBanner({
+  clientId,
+  rows,
+  canPlace,
+  canCreate,
+  proposed = [],
+  showIdeas = true,
+}: {
+  clientId: string
+  rows: readonly Classification[]
+  canPlace: boolean
+  canCreate: boolean
+  proposed?: readonly { id: string; name: string }[]
+  showIdeas?: boolean
+}) {
   const invalidate = useInvalidateClient(clientId)
   const ideas = useMemo(() => ideasOf(rows), [rows])
   const [asking, setAsking] = useState(false)
@@ -26,7 +42,8 @@ export function LedgerIdeasBanner({ clientId, rows, canPlace, canCreate }: { cli
   // Opening a ledger is a separate permission from placing rows; without it only the ideas for ledgers that exist can be used.
   const usable = canCreate ? ideas : ideas.filter((i) => i.existingLedger)
   const usableRows = usable.reduce((n, i) => n + i.rows.length, 0)
-  if (!canPlace || ideas.length === 0) return null
+  const hasIdeas = showIdeas && canPlace && ideas.length > 0
+  if (!hasIdeas && proposed.length === 0) return null
 
   async function apply() {
     let placed = 0
@@ -72,15 +89,35 @@ export function LedgerIdeasBanner({ clientId, rows, canPlace, canCreate }: { cli
   const listed = usable.slice(0, LISTED)
   return (
     <>
-      <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-info/30 bg-info-bg px-4 py-3 text-sm text-info">
-        <span>
-          <Sparkles className="mr-1.5 inline size-4" aria-hidden />
-          The assistant has a ledger idea for <b>{plural(total, 'row')}</b>
-          {toCreate.length > 0 ? ` (${plural(toCreate.length, 'new ledger')} to open)` : ''}. You can use them all at once.
-        </span>
-        <Button size="sm" variant="outline" disabled={usableRows === 0 || progress !== null} onClick={() => setAsking(true)}>
-          {progress ?? `Use all ${plural(usableRows, 'idea')}…`}
-        </Button>
+      <div className="grid divide-y divide-info/20 rounded-xl border border-info/30 bg-info-bg text-sm text-info">
+        {proposed.length > 0 && (
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+            <span>
+              <Bot className="mr-1.5 inline size-4" aria-hidden />
+              <b className="mr-1.5 rounded-md bg-info/15 px-1.5 py-0.5 text-xs font-semibold">Added</b>
+              {plural(proposed.length, 'new ledger')} opened ({proposed.slice(0, 3).map((l) => l.name).join(', ')}
+              {proposed.length > 3 ? '…' : ''}). Check each name.
+            </span>
+            <Button asChild size="sm" variant="outline">
+              <Link to="/clients/$clientId/ledgers" params={{ clientId }}>
+                Look at them
+              </Link>
+            </Button>
+          </div>
+        )}
+        {hasIdeas && (
+          <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+            <span>
+              <Sparkles className="mr-1.5 inline size-4" aria-hidden />
+              <b className="mr-1.5 rounded-md border border-dashed border-info/50 px-1.5 py-0.5 text-xs font-semibold">Idea</b>
+              The assistant has a ledger idea for <b>{plural(total, 'row')}</b>
+              {toCreate.length > 0 ? ` (${plural(toCreate.length, 'new ledger')} to open, not opened yet)` : ''}. You can use them all at once.
+            </span>
+            <Button size="sm" variant="outline" disabled={usableRows === 0 || progress !== null} onClick={() => setAsking(true)}>
+              {progress ?? `Use all ${plural(usableRows, 'idea')}…`}
+            </Button>
+          </div>
+        )}
       </div>
       <Confirm
         open={asking}

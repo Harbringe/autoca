@@ -307,7 +307,14 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
 
       <AssistantStrip clientId={clientId} />
 
-      {stage === 'unresolved' && <LedgerIdeasBanner clientId={clientId} rows={rows} canPlace={can('transaction.classify')} canCreate={can('ledger.manage')} />}
+      <LedgerIdeasBanner
+        clientId={clientId}
+        rows={rows}
+        canPlace={can('transaction.classify')}
+        canCreate={can('ledger.manage')}
+        proposed={proposed}
+        showIdeas={stage === 'unresolved'}
+      />
 
       {groupKey && (
         <p role="status" className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
@@ -326,21 +333,6 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
             Back to the groups
           </button>
         </p>
-      )}
-
-      {proposed.length > 0 && (
-        <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-info/30 bg-info-bg px-4 py-3 text-sm text-info">
-          <span>
-            <Bot className="mr-1.5 inline size-4 text-info" aria-hidden />
-            The assistant added {plural(proposed.length, 'new ledger')} ({proposed.slice(0, 3).map((l) => l.name).join(', ')}
-            {proposed.length > 3 ? '…' : ''}). Check each name.
-          </span>
-          <Button asChild size="sm" variant="outline">
-            <Link to="/clients/$clientId/ledgers" params={{ clientId }}>
-              Look at them
-            </Link>
-          </Button>
-        </div>
       )}
 
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">

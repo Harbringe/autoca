@@ -23,7 +23,11 @@ interface GroupInfo {
   shows: string
 }
 
-/** Grouped by what the account is, in the order a chart of accounts is read. Bank and Suspense are never made by hand. */
+/**
+ * Grouped by what the account is, in the order a chart of accounts is read. Every group the books know is here. Bank Accounts is for an account
+ * the client holds at another bank (or a party's, or an owner's) that has no statement in AutoCA; the statement accounts are made by uploading a
+ * statement. Suspense is a parking place, said so in its help text.
+ */
 const GROUPS: { title: string; groups: GroupInfo[] }[] = [
   {
     title: 'Expenses',
@@ -47,8 +51,23 @@ const GROUPS: { title: string; groups: GroupInfo[] }[] = [
       { code: 'LOAN', help: 'Money borrowed that has to be repaid: a bank loan, a loan from a friend.', shows: 'Balance Sheet, under borrowings' },
       { code: 'DUTIES_AND_TAXES', help: 'GST, TDS and other taxes collected or payable.', shows: 'Balance Sheet, under taxes and duties' },
       { code: 'INVESTMENT', help: 'Shares, mutual funds, fixed deposits kept as investments.', shows: 'Balance Sheet, under investments' },
+      {
+        code: 'BANK',
+        help: 'An account at another bank that you do not upload statements for: the owner’s, a partner’s or a party’s other account. Money moved to or from it is a transfer (a Contra), not income or expense.',
+        shows: 'Balance Sheet, under bank balances',
+      },
       { code: 'CASH', help: 'Cash in hand.', shows: 'Balance Sheet, under cash' },
       { code: 'CAPITAL', help: "The owner's or partners' capital, drawings and reserves.", shows: "Balance Sheet, under owners' funds" },
+    ],
+  },
+  {
+    title: 'Parking',
+    groups: [
+      {
+        code: 'SUSPENSE',
+        help: 'Entries nobody has decided yet. It is a parking place, not an answer: it should be cleared to nil before the books are signed off.',
+        shows: 'Balance Sheet, under suspense (flagged until it is nil)',
+      },
     ],
   },
 ]

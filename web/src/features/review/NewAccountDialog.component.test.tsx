@@ -49,6 +49,28 @@ describe('Creating an account', () => {
     expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 'l9' }))
   })
 
+  it('offers Bank Accounts for another bank account and Suspense, and creates them under those groups', async () => {
+    vi.mocked(raw.post).mockResolvedValue(ledger('l8', 'SBI SB A/C 62139251173', 'BANK'))
+    open({ initialName: 'SBI SB A/C 62139251173' })
+    const kind = screen.getByLabelText('What kind of account is it?')
+    expect(screen.getByRole('option', { name: 'Bank Accounts' })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: 'Suspense A/c' })).toBeInTheDocument()
+    await userEvent.selectOptions(kind, 'BANK')
+    expect(screen.getByText(/another bank that you do not upload statements for/)).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Create and use' }))
+    expect(raw.post).toHaveBeenCalledWith(expect.stringContaining('/clients/c1/ledgers/'), { name: 'SBI SB A/C 62139251173', group: 'BANK' })
+    await userEvent.selectOptions(kind, 'SUSPENSE')
+    expect(screen.getByText(/cleared to nil before the books are signed off/)).toBeInTheDocument()
+  })
+
+  it('offers every group the books know', () => {
+    open()
+    const offered = screen.getAllByRole('option').map((o) => (o as HTMLOptionElement).value)
+    expect(offered.sort()).toEqual(
+      ['BANK', 'CAPITAL', 'CASH', 'CREDITOR', 'DEBTOR', 'DIRECT_EXPENSE', 'DIRECT_INCOME', 'DUTIES_AND_TAXES', 'INDIRECT_EXPENSE', 'INDIRECT_INCOME', 'INVESTMENT', 'LOAN', 'SUSPENSE'].sort(),
+    )
+  })
+
   // The groups the assistant may suggest (classify/standard_ledgers.py, SUGGESTABLE_GROUPS) must all be offered here, or a suggestion
   // would quietly turn into Indirect Expense. Keep this list and that one the same.
   it.each([

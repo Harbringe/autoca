@@ -491,6 +491,23 @@ Two more Tally behaviours worth knowing before touching that exporter:
 
 ---
 
+## Importing a client's history from Tally
+
+`ledger/tally_vouchers.py` (parse, pure), `ledger/tally_plan.py` (decide, pure), `ledger/tally_voucher_import.py` (stage, confirm, undo).
+Same staging rule as the masters import: a preview is a `LedgerImportRun` (kind `VOUCHERS`) holding only what its confirm needs, and no
+file is kept. Three things differ from posting a bill by hand:
+
+- **The lines are never rebuilt.** The books must equal Tally's, so a voucher is written with the lines it had and the bill's figures are
+  derived from them. A voucher whose lines do not tie to a taxable value, tax and round-off still posts; it just makes no bill, with a note.
+- **Tally's number is not `entry_no`.** `entry_no` is AutoCA's integer series; the Tally number and GUID live on `TallyVoucher`, one row per
+  GUID per client, which is what makes a re-run add nothing and a whole run undoable. The invoice number on a bill is the Tally number.
+- **Each voucher is its own transaction.** One that fails is listed with its reason and the rest go on. A period with any entry, a signed-off
+  date, or a file with two companies is refused whole.
+
+Phase 1 imports Sales, Purchase, Credit Note, Debit Note and Journal vouchers, and Payment/Receipt/Contra that touch no bank ledger. Bank
+vouchers (as statement rows) and learning rules from the history are later phases; until then a run is partial books and the screen says so.
+Not imported: inventory lines, firm-specific voucher types.
+
 ## On OCR — read before wiring a vendor
 
 **Do not use Azure Document Intelligence F0.** It allows 500 pages/month but

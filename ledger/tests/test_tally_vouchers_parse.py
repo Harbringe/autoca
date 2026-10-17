@@ -93,3 +93,27 @@ def test_a_file_with_no_vouchers_is_an_error():
 def test_only_xml_is_accepted():
     with pytest.raises(TallyParseError):
         parse_vouchers(vouchers_xml([sale()]), "v.csv", max_bytes=MAX)
+
+
+def test_a_voucher_with_too_many_lines_is_skipped():
+    many = voucher(
+        guid="m", vtype="Journal", number="1", date="20250401",
+        lines=[line("Rent", 1.0) for _ in range(250)] + [line("Cash", -1.0) for _ in range(251)],
+    )
+    parsed = parse_vouchers(vouchers_xml([many]), "v.xml", max_bytes=MAX)
+    assert parsed.vouchers == [] and "more than" in parsed.skipped[0].reason
+
+
+def test_deeply_nested_xml_is_refused_or_read_without_crashing():
+    deep = b"<ENVELOPE>" + b"<A>" * 20000 + b"</A>" * 20000 + b"</ENVELOPE>"
+    with pytest.raises(TallyParseError):
+        parse_vouchers(deep, "v.xml", max_bytes=MAX)  # well-formed, but holds no vouchers
+
+
+def test_an_amount_that_is_not_a_number_skips_only_that_voucher():
+    good = sale("ok")
+    bad = sale("bad", "2", "20250402", amount=1181.0)
+    data = vouchers_xml([good, bad]).replace(b"<AMOUNT>-1181.00</AMOUNT>", b"<AMOUNT>12abc</AMOUNT>")
+    parsed = parse_vouchers(data, "v.xml", max_bytes=MAX)
+    assert [v.guid for v in parsed.vouchers] == ["ok"]
+    assert any("amount" in s.reason for s in parsed.skipped)

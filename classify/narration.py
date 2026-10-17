@@ -615,7 +615,15 @@ def _name_the_party(channel: str, counterparty: str, instrument: str, groups: di
         return "Interest Paid" if groups.get("kind", "").lower() == "pd" else "Interest Collected"
     if channel == Channel.SWEEP:
         return "Sweep"
-    return counterparty
+    return "" if _only_a_title(counterparty) else counterparty
+
+
+#: A payee the bank cut off after the title. Nothing says who it is, and as a key it would put every such person's rows together.
+_TITLES = frozenset({"mr", "mrs", "ms", "miss", "shri", "shree", "sri", "smt", "dr", "m/s", "messrs"})
+
+
+def _only_a_title(name: str) -> bool:
+    return re.sub(r"[^a-z/]", "", (name or "").lower()) in _TITLES
 
 
 def _looks_like_self(raw: str, counterparty: str, account_holder: str, own_accounts) -> bool:

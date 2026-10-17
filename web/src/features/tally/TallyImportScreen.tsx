@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { plural } from '@/lib/format'
 import { toast } from '@/lib/toast'
+import { ChartStep } from './ChartStep'
 
 const messageOf = (error: unknown) => (error instanceof Error && error.message ? error.message : 'Something went wrong. Try again.')
 
@@ -60,8 +61,9 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
 
   return (
     <div className="grid gap-4">
+      <ChartStep clientId={clientId} />
       <Card className="grid gap-3 p-4">
-        <h2 className="font-medium">Import history from Tally</h2>
+        <h2 className="font-medium">2. The vouchers</h2>
         <p className="text-sm text-muted-foreground">
           Choose the vouchers exported from Tally in XML. Each voucher is posted to the books exactly as Tally had it, and invoices become bills. Import the
           client's ledgers first: a voucher that names a ledger AutoCA does not have is left out, and the preview says which.

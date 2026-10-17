@@ -1,0 +1,64 @@
+# A throwaway database for finding out how the app behaves with a lot of rows, on the same kind of server as production.
+#
+#   scripts/scale/scale.sh up | fill | time | stats | down      (see docs/SCALE.md)
+#
+# It is a separate Compose project (autoca-scale): its own Postgres, its own network, its own volume. It shares nothing with the
+# live stack, holds no live credentials or keys (scale.sh makes fresh ones), and publishes no port. The database is called
+# autoca_scale_test and the fill script refuses to run against any other name. Both containers are capped so that the real site,
+# on the same 2 GB server, keeps its share.
+
+name: autoca-scale
+
+services:
+  db:
+    image: postgres:16
+    env_file: ${SCALE_ENV:?run through scale.sh}
+    environment:
+      POSTGRES_DB: autoca_scale_test
+      POSTGRES_USER: postgres
+    command:
+      - postgres
+      - -c
+      - shared_buffers=128MB
+      - -c
+      - effective_cache_size=512MB
+      - -c
+      - max_connections=30
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - track_io_timing=on
+    mem_limit: 640m
+    cpus: 0.5
+    volumes:
+      - scale_pgdata:/var/lib/postgresql/data
+      - ${REPO:?run through scale.sh}/scripts/bootstrap_db_roles_prod.sql:/bootstrap_db_roles.sql:ro
+      - ${REPO}/deploy/init-roles.sh:/docker-entrypoint-initdb.d/10-roles.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d autoca_scale_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  # The app's own image, run once per command with the scripts mounted read-only. Settings are production's, pointed at the
+  # scratch database with throwaway keys.
+  tool:
+    image: autoca-app:prod
+    profiles: ["tools"]
+    env_file: ${SCALE_ENV}
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      PYTHONPATH: /srv/app
+      DATABASE_SSL_REQUIRE: "0"
+      FRONTEND_URL: https://scale.invalid
+      DJANGO_ALLOWED_HOSTS: scale.invalid
+    volumes:
+      - ${SCALE_DIR:?run through scale.sh}:/scale:ro
+    mem_limit: 384m
+    cpus: 0.5
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  scale_pgdata:

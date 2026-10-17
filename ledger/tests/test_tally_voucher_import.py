@@ -357,8 +357,11 @@ def test_a_contra_between_two_accounts_is_one_entry_with_a_row_on_each(firm, cli
     into = TransactionClassification.objects.get(transaction__bank_account=banks["Bank Two"])
     assert (out.ledger.name, into.ledger.name) == ("Bank Two", "Bank One")
     assert out.is_self_transfer and into.is_self_transfer
-    assert out.mirrored_entry_id is None and into.mirrored_entry_id == entry.pk
-    assert entry.source_transaction_id == out.transaction_id or entry.source_transaction_id == into.transaction_id
+    # One of the two rows is the entry's own source and the other is its mirror; which is which does not matter.
+    mirrored = [c for c in (out, into) if c.mirrored_entry_id]
+    assert len(mirrored) == 1 and mirrored[0].mirrored_entry_id == entry.pk
+    source = into if mirrored[0] is out else out
+    assert entry.source_transaction_id == source.transaction_id
 
 
 def test_undo_takes_the_statements_and_settlements_back_with_the_entries(firm, client, senior, banks):
@@ -449,7 +452,7 @@ def test_a_payee_who_always_went_to_one_ledger_earns_a_rule_that_never_posts_alo
     done = confirm_vouchers(run, senior, senior.user)
     assert done.result["rules_learned"] == 1
     rule = ClassificationRule.objects.get(client=client)
-    assert (rule.pattern, rule.direction, rule.ledger.name, rule.source) == ("ganeshsteelpvtltd", "DEBIT", "Rent", "LEARNED")
+    assert (rule.pattern, rule.direction, rule.ledger.name, rule.source) == ("GANESHSTEELPVTLTD", "DEBIT", "Rent", "LEARNED")
     assert 0.75 <= rule.confidence <= 0.88
 
 

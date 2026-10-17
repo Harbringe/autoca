@@ -240,7 +240,10 @@ class TallyImportViewSet(viewsets.GenericViewSet):
     @action(detail=False, methods=["post"], url_path="discover")
     def discover(self, request, client_id=None):
         client = get_visible_client(request, client_id)
-        payload = TallyDiscoverSerializer(data={"files": request.FILES.getlist("files"), "bank_ledgers": request.data.get("bank_ledgers")})
+        given_data = {"files": request.FILES.getlist("files")}
+        if request.data.get("bank_ledgers"):  # absent is not null: the field takes a value or nothing
+            given_data["bank_ledgers"] = request.data.get("bank_ledgers")
+        payload = TallyDiscoverSerializer(data=given_data)
         payload.is_valid(raise_exception=True)
         given = payload.validated_data.get("bank_ledgers")
         if isinstance(given, str):
@@ -281,14 +284,14 @@ class TallyImportViewSet(viewsets.GenericViewSet):
     @action(detail=False, methods=["post"], url_path="bank-report")
     def bank_report(self, request, client_id=None):
         client = get_visible_client(request, client_id)
-        payload = TallyBankReportUploadSerializer(
-            data={
-                "files": request.FILES.getlist("files"),
-                "accounts": request.data.getlist("accounts") if hasattr(request.data, "getlist") else request.data.get("accounts", []),
-                "date_from": request.data.get("date_from") or None,
-                "date_to": request.data.get("date_to") or None,
-            }
-        )
+        upload = {
+            "files": request.FILES.getlist("files"),
+            "accounts": request.data.getlist("accounts") if hasattr(request.data, "getlist") else request.data.get("accounts", []),
+        }
+        for field in ("date_from", "date_to"):  # absent is not null: leave a field out rather than send it empty
+            if request.data.get(field):
+                upload[field] = request.data.get(field)
+        payload = TallyBankReportUploadSerializer(data=upload)
         payload.is_valid(raise_exception=True)
         data = payload.validated_data
         reports = [

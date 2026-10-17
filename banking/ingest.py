@@ -72,6 +72,10 @@ class IngestResult:
         return self.statement.bank_account
 
 
+class StatementOverlapsTallyError(RuntimeError):
+    """This account's rows for these dates already came in from a Tally import, so the statement would count them twice."""
+
+
 class StatementElsewhereError(RuntimeError):
     """Kept so queued jobs that name it still load. Nothing raises it: the same file for two clients is two documents."""
 
@@ -140,6 +144,7 @@ def ingest_statement(
             )
 
     account = _account_for(client, parsed)
+    _refuse_over_tally_history(account, parsed)
     _check_continuity(account, parsed, allow_gap=allow_gap)
 
     storage_key = ""
@@ -262,6 +267,28 @@ def confirm_opening_balance(
     account.opening_as_of = as_of
     account.save(update_fields=["opening_balance_paise", "opening_as_of"])
     return account
+
+
+def _refuse_over_tally_history(account: BankAccount, parsed: ParsedStatement) -> None:
+    """A statement for dates a Tally import already filled would put every row in twice."""
+    imported = (
+        Statement.objects.filter(
+            firm_id=account.firm_id,
+            bank_account=account,
+            document__kind=DocumentKind.TALLY_EXPORT,
+            period_start__lte=parsed.period_end,
+            period_end__gte=parsed.period_start,
+        )
+        .order_by("period_start")
+        .first()
+    )
+    if imported is not None:
+        raise StatementOverlapsTallyError(
+            f"This statement covers {parsed.period_start:%d-%m-%Y} to {parsed.period_end:%d-%m-%Y}, but {account} already has "
+            f"{imported.period_start:%d-%m-%Y} to {imported.period_end:%d-%m-%Y} from the Tally import. Uploading it as well "
+            f"would count those rows twice. Upload a statement that starts after {imported.period_end:%d-%m-%Y}, or undo the "
+            f"Tally import first."
+        )
 
 
 def _check_continuity(account: BankAccount, parsed: ParsedStatement, *, allow_gap: bool) -> None:

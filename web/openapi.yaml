@@ -17640,6 +17640,10 @@ components:
           type: integer
           description: Bill references on payments that could not be applied; left
             on account for a person to apply.
+        rules_learned:
+          type: integer
+          description: Rules learned from the bank history; they place rows but never
+            post on their own.
         undone:
           type: integer
     TallyVoucherRow:

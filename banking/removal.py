@@ -18,6 +18,7 @@ from __future__ import annotations
 from django.db import transaction
 from django.db.models import ProtectedError
 
+from documents.models import DocumentKind
 from ledger import editing
 from ledger.models import JournalEntry
 
@@ -37,6 +38,8 @@ def entries_from(statement) -> list[JournalEntry]:
 @transaction.atomic
 def remove_statement(statement, *, actor, note: str = "") -> dict:
     """Remove ``statement`` and everything derived from it, or nothing at all."""
+    if statement.document.kind == DocumentKind.TALLY_EXPORT:
+        raise StatementRemovalError("This statement came from a Tally import, so it is taken back with that import. Undo the import instead.")
     entries = entries_from(statement)
 
     locked = [e for e in entries if editing.is_locked(e)]

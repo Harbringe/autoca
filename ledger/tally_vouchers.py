@@ -31,6 +31,9 @@ from ledger.tally_parse import (
 MAX_VOUCHERS = 200_000
 MAX_LINES_PER_VOUCHER = 500
 MAX_NARRATION = 2_000
+MAX_INVENTORY_ALLOCATIONS = 5_000
+#: Where an item invoice keeps the sales or purchase head: inside each stock item, not among the voucher's own ledger lines.
+_INVENTORY_TAGS = ("ALLINVENTORYENTRIES.LIST", "INVENTORYENTRIES.LIST", "INVENTORYENTRIESIN.LIST", "INVENTORYENTRIESOUT.LIST")
 
 
 @dataclass(frozen=True)
@@ -121,6 +124,25 @@ def _without_declaration(text: str) -> str:
     return text
 
 
+def _inventory_lines(element) -> list[VoucherLine]:
+    """The accounting side of an item invoice: each stock item's allocation to a ledger, added up per ledger.
+
+    A voucher entered with items lists the party and the taxes among its ledger lines, but the head the goods are booked to
+    (Purchases, Sales) only appears inside the items. Without it the voucher cannot balance.
+    """
+    totals: dict[str, int] = {}
+    seen = 0
+    for tag in _INVENTORY_TAGS:
+        for item in element.findall(tag):
+            for alloc in item.findall("ACCOUNTINGALLOCATIONS.LIST"):
+                seen += 1
+                if seen > MAX_INVENTORY_ALLOCATIONS:
+                    raise _BadText(f"The voucher has more than {MAX_INVENTORY_ALLOCATIONS} item lines.")
+                name = clean_text(alloc.findtext("LEDGERNAME"), what="ledger name")
+                totals[name] = totals.get(name, 0) - to_paise((alloc.findtext("AMOUNT") or "0").strip() or "0")
+    return [VoucherLine(name, paise, False) for name, paise in totals.items() if paise]
+
+
 def _bills(node) -> tuple[tuple[str, str, int], ...]:
     """The bill references on one ledger line. A reference that cannot be read is dropped; it only decides what a payment settles."""
     found = []
@@ -170,6 +192,7 @@ def _read_voucher(element, ordinal: int, parsed: ParsedVouchers) -> None:
             name = clean_text(node.findtext("LEDGERNAME"), what="ledger name")
             amount = -to_paise((node.findtext("AMOUNT") or "0").strip() or "0")
             lines.append(VoucherLine(name, amount, _yes(node, "ISPARTYLEDGER"), _bills(node)))
+        lines.extend(_inventory_lines(element))
         party_raw = (element.findtext("PARTYLEDGERNAME") or "").strip()
         party = clean_text(party_raw, what="party name") if party_raw else ""
     except _BadText as exc:

@@ -8,8 +8,8 @@ import pytest
 from django.core.exceptions import PermissionDenied
 
 from banking.models import BankAccount, Statement, StatementTransaction
+from classify.models import ClassificationRule, Party, TransactionClassification
 from classify.models import LedgerGroup as G
-from classify.models import TransactionClassification
 from core.db.session import firm_context
 from core.models import Client, FirmMembership, Role, User
 from core.provisioning import create_client, create_firm
@@ -383,3 +383,91 @@ def test_a_bank_ledger_with_no_account_is_left_out_and_counted(firm, client, sen
     run, _ = stage(client, senior, [v])
     assert run.counts["will_post"] == 0 and run.counts["bank_waiting"] == 1
     assert "bank account" in run.rows[0]["reason"]
+
+
+# ---------------------------------------------------------------------------
+# The period stays empty, real statements and Tally history never overlap, and the history teaches
+# ---------------------------------------------------------------------------
+
+
+def test_entries_posted_after_the_preview_make_it_stale(firm, client, senior, chart):
+    run, _ = stage(client, senior, [sale(date="20250401")])
+    post(client, datetime.date(2025, 4, 1), make_ledger(client, "Rent", G.INDIRECT_EXPENSE), make_ledger(client, "Cash", G.CASH), 100)
+    with pytest.raises(TallyRunStaleError):
+        confirm_vouchers(run, senior, senior.user)
+
+
+def test_a_statement_for_dates_the_import_filled_is_refused(firm, client, senior, banks):
+    from types import SimpleNamespace
+
+    from banking.ingest import StatementOverlapsTallyError, _refuse_over_tally_history
+
+    run, _ = stage(client, senior, [payment()])
+    confirm_vouchers(run, senior, senior.user)
+    account = banks["Bank One"]
+    with pytest.raises(StatementOverlapsTallyError):
+        _refuse_over_tally_history(account, SimpleNamespace(period_start=datetime.date(2025, 4, 1), period_end=datetime.date(2025, 4, 30)))
+    # A statement that starts after the imported history is fine.
+    _refuse_over_tally_history(account, SimpleNamespace(period_start=datetime.date(2025, 5, 1), period_end=datetime.date(2025, 5, 31)))
+
+
+def test_an_imported_statement_cannot_be_removed_on_its_own(firm, client, senior, banks):
+    from banking.removal import StatementRemovalError, remove_statement
+
+    run, _ = stage(client, senior, [payment()])
+    confirm_vouchers(run, senior, senior.user)
+    statement = Statement.objects.get(bank_account=banks["Bank One"])
+    with pytest.raises(StatementRemovalError):
+        remove_statement(statement, actor=senior.user)
+
+
+def test_a_creditor_ledger_becomes_a_party_even_without_a_bill(firm, client, senior, banks):
+    make_ledger(client, "Zed Supplies", G.CREDITOR)
+    v = voucher(
+        guid="z1", vtype="Payment", number="20", date="20250405",
+        lines=[line("Zed Supplies", 500.0, party=True), line("Bank One", -500.0)],
+    )
+    run, _ = stage(client, senior, [v])
+    confirm_vouchers(run, senior, senior.user)
+    party = Party.objects.get(client=client, canonical_name="Zed Supplies")
+    assert party.role == "VENDOR" and party.ledger.name == "Zed Supplies"
+    assert JournalEntry.objects.get(client=client).lines.get(ledger_account__name="Zed Supplies").party_id == party.pk
+    assert TransactionClassification.objects.get(transaction__bank_account=banks["Bank One"]).party_id == party.pk
+
+
+def neft(guid, date, payee, ledger, amount=100.0):
+    return voucher(
+        guid=guid, vtype="Payment", number=guid, date=date, narration=f"NEFT-HDFCN52025-{payee}-INV {guid}",
+        lines=[line(ledger, amount), line("Bank One", -amount)],
+    )
+
+
+def test_a_payee_who_always_went_to_one_ledger_earns_a_rule_that_never_posts_alone(firm, client, senior, banks):
+    make_ledger(client, "Repairs", G.INDIRECT_EXPENSE)
+    history = [neft(f"a{i}", f"2025040{i}", "GANESH STEEL PVT LTD", "Rent") for i in range(1, 5)]
+    run, _ = stage(client, senior, history)
+    done = confirm_vouchers(run, senior, senior.user)
+    assert done.result["rules_learned"] == 1
+    rule = ClassificationRule.objects.get(client=client)
+    assert (rule.pattern, rule.direction, rule.ledger.name, rule.source) == ("ganeshsteelpvtltd", "DEBIT", "Rent", "LEARNED")
+    assert 0.75 <= rule.confidence <= 0.88
+
+
+def test_a_payee_whose_payments_went_to_several_ledgers_earns_no_rule(firm, client, senior, banks):
+    make_ledger(client, "Repairs", G.INDIRECT_EXPENSE)
+    history = [
+        neft("b1", "20250401", "PATEL AGENCY", "Rent"), neft("b2", "20250402", "PATEL AGENCY", "Rent"),
+        neft("b3", "20250403", "PATEL AGENCY", "Repairs"), neft("b4", "20250404", "PATEL AGENCY", "Repairs"),
+    ]
+    run, _ = stage(client, senior, history)
+    assert confirm_vouchers(run, senior, senior.user).result["rules_learned"] == 0
+    assert ClassificationRule.objects.filter(client=client).count() == 0
+
+
+def test_undo_takes_the_rules_it_learned_back_unless_they_were_used(firm, client, senior, banks):
+    history = [neft(f"c{i}", f"2025040{i}", "GANESH STEEL PVT LTD", "Rent") for i in range(1, 4)]
+    run, _ = stage(client, senior, history)
+    confirm_vouchers(run, senior, senior.user)
+    assert ClassificationRule.objects.filter(client=client).count() == 1
+    undo_run(run, senior, senior.user)
+    assert ClassificationRule.objects.filter(client=client).count() == 0

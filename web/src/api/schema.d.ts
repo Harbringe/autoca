@@ -8556,6 +8556,8 @@ export interface components {
             bank_rows?: number;
             /** @description Bill references on payments that could not be applied; left on account for a person to apply. */
             unmatched_bills?: number;
+            /** @description Rules learned from the bank history; they place rows but never post on their own. */
+            rules_learned?: number;
             undone?: number;
         };
         TallyVoucherRow: {

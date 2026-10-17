@@ -18,12 +18,13 @@ def line(ledger, amount, *, party=False, bills=()):
 
 
 def voucher(
-    *, guid, vtype, number, date, lines, party="", narration="", reference="", gstin="", own_gstin="", cancelled=False, optional=False
+    *, guid, vtype, number, date, lines, party="", narration="", reference="", gstin="", own_gstin="", cancelled=False, optional=False,
+    items=(),
 ):
     return {
         "guid": guid, "vtype": vtype, "number": number, "date": date, "lines": lines, "party": party,
         "narration": narration, "reference": reference, "gstin": gstin, "own_gstin": own_gstin,
-        "cancelled": cancelled, "optional": optional,
+        "cancelled": cancelled, "optional": optional, "items": items,
     }
 
 
@@ -56,6 +57,14 @@ def vouchers_xml(vouchers, *, company="TEST CO") -> bytes:
             ET.SubElement(node, "NARRATION").text = v["narration"]
         ET.SubElement(node, "ISCANCELLED").text = "Yes" if v["cancelled"] else "No"
         ET.SubElement(node, "ISOPTIONAL").text = "Yes" if v["optional"] else "No"
+        # An item invoice: (stock item, ledger it is booked to, rupees with the books' sign), one allocation per item.
+        for stock, ledger, rupees in v["items"]:
+            stock_node = ET.SubElement(node, "ALLINVENTORYENTRIES.LIST")
+            ET.SubElement(stock_node, "STOCKITEMNAME").text = stock
+            ET.SubElement(stock_node, "AMOUNT").text = f"{-rupees:.2f}"
+            alloc = ET.SubElement(stock_node, "ACCOUNTINGALLOCATIONS.LIST")
+            ET.SubElement(alloc, "LEDGERNAME").text = ledger
+            ET.SubElement(alloc, "AMOUNT").text = f"{-rupees:.2f}"
         for item in v["lines"]:
             entry = ET.SubElement(node, "LEDGERENTRIES.LIST")
             ET.SubElement(entry, "LEDGERNAME").text = item["ledger"]

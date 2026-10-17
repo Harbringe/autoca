@@ -270,6 +270,7 @@ class TallyVoucherResultSerializer(serializers.Serializer):
     unmatched_bills = serializers.IntegerField(
         required=False, help_text="Bill references on payments that could not be applied; left on account for a person to apply."
     )
+    rules_learned = serializers.IntegerField(required=False, help_text="Rules learned from the bank history; they place rows but never post on their own.")
     undone = serializers.IntegerField(required=False)
 
 

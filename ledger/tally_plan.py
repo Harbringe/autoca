@@ -32,7 +32,7 @@ _BILL = {
     VoucherType.PURCHASE: (BillKind.PURCHASE, G.CREDITOR, -1),
     VoucherType.DEBIT_NOTE: (BillKind.DEBIT_NOTE, G.CREDITOR, +1),
 }
-_ROUND_OFF = ("round off", "rounding", "round-off", "rounded off")
+_ROUND_OFF = ("round off", "rounding", "round-off", "rounded off", "roundoff", "r/f", "r/off", "round off a/c")
 
 
 @dataclass(frozen=True)

@@ -131,3 +131,15 @@ def test_bill_allocations_on_a_line_are_kept():
     party_line = parsed.vouchers[0].lines[1]
     assert party_line.bills == (("INV-1", "Agst Ref", 100000), ("INV-2", "Agst Ref", 18000))
     assert parsed.vouchers[0].lines[0].bills == ()
+
+
+def test_an_item_invoice_gets_its_sales_head_from_the_stock_items():
+    v = voucher(
+        guid="i1", vtype="Sales", number="5", date="20250401", party="Acme Traders",
+        lines=[line("Acme Traders", 1180.0, party=True), line("Output CGST", -90.0), line("Output SGST", -90.0)],
+        items=[("Oil 1L", "GST SALES", -600.0), ("Oil 15L", "GST SALES", -400.0)],
+    )
+    parsed = parse_vouchers(vouchers_xml([v]), "v.xml", max_bytes=MAX)
+    got = {ln.ledger: ln.signed_paise for ln in parsed.vouchers[0].lines}
+    assert got == {"Acme Traders": 118000, "Output CGST": -9000, "Output SGST": -9000, "GST SALES": -100000}
+    assert sum(got.values()) == 0

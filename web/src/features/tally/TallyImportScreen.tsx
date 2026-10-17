@@ -158,6 +158,7 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
             <CheckCircle2 className="size-4" aria-hidden /> {plural(run.result?.posted ?? 0, 'voucher')} posted, {plural(run.result?.bills ?? 0, 'bill')} made.
           </div>
           {(run.result?.bank_rows ?? 0) > 0 && <p>{plural(run.result?.bank_rows ?? 0, 'bank statement row')} written, placed as Tally had them.</p>}
+          {(run.result?.rules_learned ?? 0) > 0 && <p>{plural(run.result?.rules_learned ?? 0, 'rule')} learned from how it was placed in Tally. They suggest a ledger; nothing posts on its own.</p>}
           {(run.result?.unmatched_bills ?? 0) > 0 && (
             <p>
               {plural(run.result?.unmatched_bills ?? 0, 'bill reference')} on payments could not be applied to a bill here, and {run.result?.unmatched_bills === 1 ? 'is' : 'are'} left on account for you to apply.

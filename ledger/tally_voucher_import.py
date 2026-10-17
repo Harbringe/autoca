@@ -29,6 +29,7 @@ from banking.models import BankAccount, Statement, StatementTransaction
 from classify.models import (
     CRYPTO_PURPOSE,
     ClassificationMethod,
+    ClassificationRule,
     LedgerAccount,
     LedgerGroup,
     Party,
@@ -65,6 +66,7 @@ from ledger.tally_import import (
     _require_rights,
     chart_stamp,
 )
+from ledger.tally_learning import learn_rules
 from ledger.tally_parse import normal_name
 from ledger.tally_plan import Facts, Planned, plan_voucher
 from ledger.tally_vouchers import parse_vouchers
@@ -233,6 +235,7 @@ def confirm_vouchers(run: LedgerImportRun, membership, user) -> LedgerImportRun:
     if chart_stamp(client, run.financial_year) != run.chart_stamp:
         raise TallyRunStaleError("The client's ledgers changed since this preview was made. Upload the file again.")
 
+    _recheck_period(client, run)
     ledgers = {normal_name(a.name): a for a in LedgerAccount.objects.filter(firm_id=client.firm_id, client=client)}
     done = set(TallyVoucher.objects.filter(firm_id=client.firm_id, client=client).values_list("guid", flat=True))
     result = {"posted": 0, "bills": 0, "skipped": 0, "failed": [], "bank_rows": 0, "unmatched_bills": 0}
@@ -262,11 +265,32 @@ def confirm_vouchers(run: LedgerImportRun, membership, user) -> LedgerImportRun:
                 result["failed"].append({"guid": row["guid"], "reason": "Posted, but no bill was made: a duplicate invoice number."})
     finally:
         _finalize_statements(client, run)
+    try:
+        with transaction.atomic():
+            rule_ids = learn_rules(client, run, user)
+    except Exception as exc:  # learning is a bonus; it must never undo or block the books
+        logger.warning("Learning from a Tally import failed (%s)", type(exc).__name__)
+        rule_ids = []
+    result["rules_learned"] = len(rule_ids)
+    result["rule_ids"] = rule_ids
     run.status = ImportStatus.CONFIRMED
     run.result = result
     run.confirmed_by, run.confirmed_at = user, timezone.now()
     run.save(update_fields=["status", "result", "confirmed_by", "confirmed_at"])
     return run
+
+
+def _recheck_period(client, run) -> None:
+    """The preview said the period was empty; it may not be any more. Looked at again before anything is written."""
+    first = datetime.date.fromisoformat(run.counts["date_from"])
+    last = datetime.date.fromisoformat(run.counts["date_to"])
+    if JournalEntry.objects.filter(firm_id=client.firm_id, client=client, entry_date__gte=first, entry_date__lte=last).exists():
+        raise TallyRunStaleError("Entries were posted for these dates since the preview was made. Upload the file again.")
+    accounts = {leg[1] for r in run.rows if r.get("bank") for leg in r["bank"]["legs"]}
+    if accounts and StatementTransaction.objects.filter(
+        firm_id=client.firm_id, bank_account_id__in=accounts, value_date__gte=first, value_date__lte=last
+    ).exists():
+        raise TallyRunStaleError("A bank statement was uploaded for these dates since the preview was made. Upload the file again.")
 
 
 def _write(client, user, run, row, ledgers) -> dict:
@@ -282,6 +306,11 @@ def _write(client, user, run, row, ledgers) -> dict:
     bill_party = _party_for(client, figures, row, ledgers) if figures else None
     line_ledgers = [ledgers[normal_name(name)] for name, _signed, _bills in row["lines"]]
     parties = {p.ledger_id: p for p in Party.objects.filter(firm_id=client.firm_id, client=client, ledger__in=line_ledgers)}
+    for ledger in line_ledgers:
+        if ledger.pk not in parties and ledger.group in (LedgerGroup.DEBTOR, LedgerGroup.CREDITOR):
+            party = _party_of_ledger(client, ledger)
+            if party is not None:
+                parties[ledger.pk] = party
     if bill_party is not None:
         parties[bill_party.ledger_id] = bill_party
 
@@ -342,6 +371,18 @@ def _party_for(client, figures, row, ledgers) -> Party:
         party.set_gstin(row["gstin"])
     party.save()
     return party
+
+
+def _party_of_ledger(client, ledger) -> Party | None:
+    """A debtor or creditor ledger is a party, so a payment on it can settle that party's bills. None when the name is taken."""
+    role = PartyRole.CUSTOMER if ledger.group == LedgerGroup.DEBTOR else PartyRole.VENDOR
+    party, _ = Party.objects.get_or_create(
+        firm_id=client.firm_id, client=client, canonical_name=ledger.name, defaults={"role": role}
+    )
+    if party.ledger_id is None and not Party.objects.filter(ledger=ledger).exists():
+        party.ledger = ledger
+        party.save(update_fields=["ledger"])
+    return party if party.ledger_id == ledger.pk else None
 
 
 def _bill(client, party, entry, row, f, date, year) -> bool | None:
@@ -417,6 +458,8 @@ def _bank_rows(client, user, run, row, bank, date, narration) -> list[StatementT
     for index, (_ledger, account_id, signed) in enumerate(bank["legs"]):
         account = BankAccount.objects.get(pk=account_id, firm_id=client.firm_id, client=client)
         statement = _statement_for(client, user, run, account, date)
+        if StatementTransaction.objects.filter(bank_account=account, value_date=date).exclude(statement=statement).exists():
+            raise _Refused(f"{account} already has statement rows on {date:%d-%m-%Y}.")
         rows.append(
             StatementTransaction.objects.create(
                 firm_id=client.firm_id,
@@ -557,6 +600,10 @@ def undo_run(run: LedgerImportRun, membership, user) -> LedgerImportRun:
             link.delete()
             entry.lines.all().delete()
             entry.delete()
+        # Rules this import learned that nothing has used yet go back with it.
+        ClassificationRule.objects.filter(
+            firm_id=client.firm_id, client=client, pk__in=run.result.get("rule_ids", []), hit_count=0
+        ).delete()
         # The placeholder statements, their rows and the rows' placements go with the entries they carried.
         Document.objects.filter(
             firm_id=client.firm_id, client=client, kind=DocumentKind.TALLY_EXPORT, original_filename=_doc_name(run)

@@ -37,7 +37,14 @@ from django.db.models import F, Q
 from django.utils import timezone
 
 from classify.llm import _applied_view, _apply, _ask_splitting, _Chart, _context_for
-from classify.models import LedgerAccount, ModelState, Party, PartyAlias, TransactionClassification
+from classify.models import (
+    ClassificationMethod,
+    LedgerAccount,
+    ModelState,
+    Party,
+    PartyAlias,
+    TransactionClassification,
+)
 from classify.pseudonymise import Pseudonymiser
 from core.db.session import firm_context
 from integrations import debug_archive
@@ -57,6 +64,10 @@ PROVIDER_BACKOFF_SECONDS = (30, 60, 120)
 DAILY_PAUSE_RANGE = (600, 86_400)
 #: Asked again this soon when someone else's call is reading the last rows.
 OTHER_CALL_RETRY_SECONDS = 5
+
+#: Guesses put back in the queue when a new ledger opens: at most this many, and not more often than this.
+REREAD_MAX_ROWS = 800
+REREAD_EVERY_SECONDS = 1800
 
 _DECLINE_NOTE = "The assistant could not read this row after three tries. It is for a person to place."
 
@@ -97,6 +108,36 @@ def mark_waiting(rows) -> int:
         rows.filter(ledger__isnull=True)
         .exclude(live_claim)
         .update(model_state=ModelState.WAITING, model_claimed_until=None, model_attempts=0)
+    )
+
+
+def requeue_guesses(client, *, leave=()) -> int:
+    """Put the assistant's own low-confidence guesses back in its queue, because the chart has grown since it made them.
+
+    A ledger opened part-way through a run (Sales, say) was not there for the rows read before it, so those rows went to the nearest
+    ledger there was. They are read again with the new head available. Only the assistant's unposted guesses below the review bar:
+    a person's decision, a rule's, a posted entry and a confident placement are all left alone. Once every half hour per client at
+    most, so a run that opens several ledgers does not read the same rows over and over.
+    """
+    from classify.engine import not_decided_by_a_person
+    from classify.treatment import REVIEW_ADVISED, band_for
+
+    if not cache.add(f"assistant:reread:{client.pk}", 1, timeout=REREAD_EVERY_SECONDS):
+        return 0
+    guesses = not_decided_by_a_person(client).filter(method=ClassificationMethod.LLM, confidence__lt=REVIEW_ADVISED).exclude(pk__in=list(leave))
+    ids = list(guesses.values_list("pk", flat=True)[:REREAD_MAX_ROWS])
+    return TransactionClassification.objects.filter(pk__in=ids).update(
+        ledger=None,
+        party=None,
+        rcm=False,
+        tds_section="",
+        method=ClassificationMethod.UNRESOLVED,
+        confidence=0.0,
+        review_band=band_for(0.0),
+        needs_review=True,
+        model_state=ModelState.WAITING,
+        model_claimed_until=None,
+        model_attempts=0,
     )
 
 
@@ -389,6 +430,8 @@ def _apply_batch(client, claim: _Claim, replies: dict) -> BatchOutcome:
             continue
 
     cache.delete(_pause_key(firm_id))
+    if chart.proposed > opened_before:
+        requeue_guesses(client, leave=[row.pk for row in rows])
     left = waiting_count(client)
     return BatchOutcome(
         processed=len(claim.rows),

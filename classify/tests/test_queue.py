@@ -20,7 +20,14 @@ from classify.models import (
     ModelState,
     TransactionClassification,
 )
-from classify.queue import MAX_ATTEMPTS, _pause_key, mark_waiting, process_next_batch, waiting_count
+from classify.queue import (
+    MAX_ATTEMPTS,
+    _pause_key,
+    mark_waiting,
+    process_next_batch,
+    requeue_guesses,
+    waiting_count,
+)
 from classify.seeds import seed_client
 from core.db.session import firm_context, get_current_firm_id
 from core.provisioning import create_client, create_firm
@@ -386,6 +393,32 @@ def test_new_ledgers_the_model_opens_are_capped_per_hour_not_per_batch(client, q
     assert outcome.proposed == 0
     with firm_context(client.firm_id):
         assert not LedgerAccount.objects.filter(client=client, name="Brand New Head").exists()
+
+
+def test_a_new_ledger_puts_the_assistants_earlier_low_confidence_guesses_back_in_the_queue(client, queued, llm):
+    process_next_batch(client)  # ten rows go to Electricity at 0.6: guesses
+    earlier = [r.pk for r in _by_state(client, ModelState.DONE)]
+    assert len(earlier) == 10
+    llm.reply = {
+        "ledger": None, "confidence": 0.9, "rationale": "Needs a head.",
+        "new_ledger": {"name": "Brand New Head", "group": "INDIRECT_INCOME"},
+    }
+
+    outcome = process_next_batch(client)
+
+    assert outcome.proposed == 1
+    states = _states(client)
+    assert all(
+        states[pk].method == ClassificationMethod.UNRESOLVED and states[pk].ledger_id is None and states[pk].model_state == ModelState.WAITING
+        for pk in earlier
+    )
+
+
+def test_guesses_are_put_back_at_most_once_every_half_hour(client, queued, llm):
+    process_next_batch(client)
+    with firm_context(client.firm_id):
+        assert requeue_guesses(client) == 10
+        assert requeue_guesses(client) == 0
 
 
 def test_the_pause_lives_in_the_cache_one_key_per_firm(client, queued, llm):

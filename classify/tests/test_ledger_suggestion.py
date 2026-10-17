@@ -85,8 +85,10 @@ def test_the_create_path_keeps_its_original_order_of_checks():
 # Applied to rows: the threshold behaves exactly as before at and above it
 # ---------------------------------------------------------------------------
 
-def say(ledger, new_ledger=None, confidence=0.6):
+def say(ledger, new_ledger=None, confidence=0.6, fit=None):
     reply = {"ledger": ledger, "confidence": confidence, "rationale": "Closest I have.", "question": "Is this a dividend?"}
+    if fit is not None:
+        reply["fit"] = fit
     if new_ledger:
         reply["new_ledger"] = new_ledger
     return {"*": reply}
@@ -125,8 +127,8 @@ def test_at_the_bar_with_no_ledger_it_is_created_as_it_always_was(client, classi
 
 @pytest.mark.django_db
 @pytest.mark.usefixtures("fixture_adapters")
-def test_just_below_the_bar_with_no_ledger_nothing_is_created_and_the_row_waits_with_its_idea(client, classified, scripted):
-    scripted.script = say(None, DIVIDEND, confidence=0.74)
+def test_below_half_confidence_with_no_ledger_nothing_is_created_and_the_row_waits_with_its_idea(client, classified, scripted):
+    scripted.script = say(None, DIVIDEND, confidence=0.49)
     with firm_context(client.firm_id):
         before = unresolved_for(client).count()
         outcome = suggest_unresolved(client)
@@ -135,6 +137,42 @@ def test_just_below_the_bar_with_no_ledger_nothing_is_created_and_the_row_waits_
         waiting = unresolved_for(client)
         assert waiting.count() == before
         assert all(r.suggested_ledger_name == "Dividend Received" for r in waiting)
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("fixture_adapters")
+def test_at_half_confidence_with_no_ledger_the_missing_head_is_opened_and_the_rows_stay_flagged(client, classified, scripted):
+    scripted.script = say(None, DIVIDEND, confidence=0.5)
+    with firm_context(client.firm_id):
+        outcome = suggest_unresolved(client)
+        assert outcome.proposed == 1
+        made = LedgerAccount.objects.get(client=client, name="Dividend Received")
+        rows = TransactionClassification.objects.filter(ledger=made)
+        assert rows.exists() and all(r.needs_review and r.method == ClassificationMethod.LLM for r in rows)
+        assert all(r.suggested_ledger_name == "" for r in rows)
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("fixture_adapters")
+def test_a_poor_fit_opens_the_right_head_instead_of_using_the_nearest_ledger(client, classified, scripted):
+    scripted.script = say("Electricity", DIVIDEND, confidence=0.6, fit=False)
+    with firm_context(client.firm_id):
+        outcome = suggest_unresolved(client)
+        assert outcome.proposed == 1
+        assert LedgerAccount.objects.filter(client=client, name="Dividend Received").exists()
+        assert not TransactionClassification.objects.filter(ledger__name="Electricity", method=ClassificationMethod.LLM).exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("fixture_adapters")
+def test_a_poor_fit_with_no_better_head_leaves_the_rows_for_a_person_with_the_question(client, classified, scripted):
+    scripted.script = say("Electricity", None, confidence=0.6, fit=False)
+    with firm_context(client.firm_id):
+        before = unresolved_for(client).count()
+        suggest_unresolved(client)
+        assert not TransactionClassification.objects.filter(ledger__name="Electricity", method=ClassificationMethod.LLM).exists()
+        waiting = unresolved_for(client)
+        assert waiting.count() == before and all(r.open_question for r in waiting)
 
 
 @pytest.mark.django_db

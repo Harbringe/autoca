@@ -23,6 +23,8 @@ class Migration(migrations.Migration):
                 ("details_enc", models.BinaryField(blank=True, null=True)),
                 ("provider", models.CharField(blank=True, db_default="", default="", max_length=32)),
                 ("checked_at", models.DateTimeField()),
+                ("counted_month", models.DateField(blank=True, null=True)),
+                ("month_lookups", models.PositiveIntegerField(db_default=0, default=0)),
                 (
                     "firm",
                     models.ForeignKey(

@@ -12,6 +12,7 @@ import datetime
 from dataclasses import dataclass
 
 from django.conf import settings
+from django.db.models import Sum
 from django.utils import timezone
 
 from core import names
@@ -22,6 +23,8 @@ from integrations.gstverify.base import GstinLookupError, GstinNotFound, Taxpaye
 from integrations.registry import get_gstverify
 
 REUSE_DAYS = 30
+#: The soonest the same GSTIN may be asked of the portal again, even on request.
+REFRESH_MIN_MINUTES = 60
 
 
 class GstinCheckRefused(RuntimeError):
@@ -51,7 +54,9 @@ def _month_start(now: datetime.datetime) -> datetime.datetime:
 
 
 def lookups_this_month(firm_id) -> int:
-    return GstinCheck.objects.filter(firm_id=firm_id, checked_at__gte=_month_start(timezone.now())).count()
+    """Live lookups the firm has made this month, every one counted, including repeats of the same GSTIN."""
+    month = _month_start(timezone.now()).date()
+    return GstinCheck.objects.filter(firm_id=firm_id, counted_month=month).aggregate(n=Sum("month_lookups"))["n"] or 0
 
 
 def check_gstin(firm_id, gstin: str, *, refresh: bool = False) -> CheckResult:
@@ -66,7 +71,11 @@ def check_gstin(firm_id, gstin: str, *, refresh: bool = False) -> CheckResult:
     if existing is not None and not refresh and now - existing.checked_at < datetime.timedelta(days=REUSE_DAYS):
         return _result(existing, from_cache=True)
 
-    if existing is None and lookups_this_month(firm_id) >= settings.GSTIN_CHECKS_PER_MONTH:
+    if existing is not None and now - existing.checked_at < datetime.timedelta(minutes=REFRESH_MIN_MINUTES):
+        return _result(existing, from_cache=True)
+    if lookups_this_month(firm_id) >= settings.GSTIN_CHECKS_PER_MONTH:
+        if existing is not None:
+            return dataclasses.replace(_result(existing, from_cache=True), message="This month's allowance of GSTIN checks is used up; showing the last answer.")
         raise GstinCheckRefused("This month's allowance of GSTIN checks for the firm is used up.")
 
     try:
@@ -90,6 +99,9 @@ def _details_dict(d: TaxpayerDetails) -> dict:
 
 
 def _save(row: GstinCheck, *, status: str, details: dict, now) -> GstinCheck:
+    month = _month_start(now).date()
+    row.month_lookups = (row.month_lookups + 1) if row.counted_month == month else 1
+    row.counted_month = month
     row.status = status[:24]
     row.set_details(details)
     row.provider = _provider_name()[:32]

@@ -235,6 +235,9 @@ class GstinCheck(UUIDModel, FirmScopedModel, GstinMixin):
     details_enc = models.BinaryField(blank=True, null=True)
     provider = models.CharField(max_length=32, blank=True, default="", db_default="")
     checked_at = models.DateTimeField()
+    #: Live lookups made for this GSTIN in ``counted_month`` (its first day); the firm's allowance is the sum over its rows.
+    counted_month = models.DateField(null=True, blank=True)
+    month_lookups = models.PositiveIntegerField(default=0, db_default=0)
 
     class Meta:
         db_table = "gst_gstin_check"

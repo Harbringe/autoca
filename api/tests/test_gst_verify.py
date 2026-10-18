@@ -53,8 +53,19 @@ def test_a_gstin_the_portal_does_not_know_is_said_so(api, client_record):
     assert body["outcome"] == "not_found" and "no record" in body["message"]
 
 
-def test_refresh_asks_the_portal_again(api, client_record):
+def _age(minutes):
+    import datetime
+
+    from django.utils import timezone
+
+    GstinCheck.objects.update(checked_at=timezone.now() - datetime.timedelta(minutes=minutes))
+
+
+def test_refresh_asks_the_portal_again_but_not_within_the_hour(api, client_record):
     api.post(URL.format(client_record.pk), {"gstin": ACTIVE}, format="json")
+    soon = api.post(URL.format(client_record.pk), {"gstin": ACTIVE, "refresh": True}, format="json").json()
+    assert soon["from_cache"] is True
+    _age(90)
     body = api.post(URL.format(client_record.pk), {"gstin": ACTIVE, "refresh": True}, format="json").json()
     assert body["from_cache"] is False and GstinCheck.objects.count() == 1
 
@@ -82,12 +93,17 @@ def test_a_malformed_gstin_and_an_empty_request_are_refused(api, client_record):
     assert api.post(URL.format(client_record.pk), {}, format="json").status_code == 400
 
 
-def test_the_monthly_allowance_stops_new_lookups_but_not_cached_answers(api, client_record, settings):
-    settings.GSTIN_CHECKS_PER_MONTH = 1
-    assert api.post(URL.format(client_record.pk), {"gstin": ACTIVE}, format="json").status_code == 200
-    blocked = api.post(URL.format(client_record.pk), {"gstin": CANCELLED}, format="json")
+def test_the_monthly_allowance_counts_every_live_lookup_refreshes_included(api, client_record, settings):
+    settings.GSTIN_CHECKS_PER_MONTH = 2
+    post = lambda **b: api.post(URL.format(client_record.pk), b, format="json")  # noqa: E731
+    assert post(gstin=ACTIVE).json()["from_cache"] is False
+    _age(90)
+    assert post(gstin=ACTIVE, refresh=True).json()["from_cache"] is False  # the second lookup, same GSTIN
+    _age(90)
+    stopped = post(gstin=ACTIVE, refresh=True).json()  # a third would pass the allowance: last answer, no call
+    assert stopped["from_cache"] is True and "allowance" in stopped["message"]
+    blocked = post(gstin=CANCELLED)
     assert blocked.status_code == 409 and "allowance" in blocked.json()["detail"]
-    assert api.post(URL.format(client_record.pk), {"gstin": ACTIVE}, format="json").status_code == 200
 
 
 def test_a_party_without_a_gstin_says_so(api, client_record):

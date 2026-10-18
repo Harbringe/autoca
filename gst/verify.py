@@ -12,6 +12,7 @@ import datetime
 from dataclasses import dataclass
 
 from django.conf import settings
+from django.db import connection, transaction
 from django.db.models import Sum
 from django.utils import timezone
 
@@ -63,7 +64,16 @@ def check_gstin(firm_id, gstin: str, *, refresh: bool = False) -> CheckResult:
     gstin = normalise_gstin(gstin)
     if not is_valid_gstin(gstin):
         raise GstinCheckRefused(f"{gstin or 'That'} is not a valid GSTIN.")
+    # One firm's checks run one at a time: the hour's wait, the month's allowance, the provider call and the count that
+    # records it all happen under this lock, so two requests at once cannot both pass the same check. A firm's lookups wait
+    # on each other for the length of one provider call; other firms are unaffected.
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", [f"gstin-check:{firm_id}"])
+        return _check_locked(firm_id, gstin, refresh)
 
+
+def _check_locked(firm_id, gstin: str, refresh: bool) -> CheckResult:
     row = GstinCheck(firm_id=firm_id)
     row.set_gstin(gstin)
     existing = GstinCheck.objects.filter(firm_id=firm_id, gstin_hash=row.gstin_hash).first()

@@ -4,6 +4,8 @@ import django.db.models.deletion
 import django.utils.timezone
 from django.db import migrations, models
 
+from core.db.rls import ddl_tenant_context_operations
+
 
 class Migration(migrations.Migration):
     dependencies = [
@@ -12,6 +14,7 @@ class Migration(migrations.Migration):
     ]
 
     operations = [
+        *ddl_tenant_context_operations(),
         migrations.CreateModel(
             name="GstinCheck",
             fields=[

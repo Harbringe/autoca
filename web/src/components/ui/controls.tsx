@@ -1,7 +1,10 @@
-import type { ComponentProps, ReactNode } from 'react'
+import { createElement, type ComponentProps, type ReactNode } from 'react'
 import { cn } from '@/lib/utils'
 
-export function Select({ className, ...props }: ComponentProps<'select'>) {
+/** Chromium can draw a customizable select; there the shown choice is given its own box so a long label is cut with an ellipsis and the arrow stays in view. */
+const CUSTOM_SELECT = typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('appearance', 'base-select')
+
+export function Select({ className, children, ...props }: ComponentProps<'select'>) {
   return (
     <select
       className={cn(
@@ -9,7 +12,10 @@ export function Select({ className, ...props }: ComponentProps<'select'>) {
         className,
       )}
       {...props}
-    />
+    >
+      {CUSTOM_SELECT && createElement('button', { type: 'button', tabIndex: -1, 'aria-hidden': true }, createElement('selectedcontent'))}
+      {children}
+    </select>
   )
 }
 

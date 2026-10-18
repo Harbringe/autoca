@@ -17,6 +17,7 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { DateInput } from '@/components/ui/date-input'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Select } from '@/components/ui/controls'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { ColumnChart, ColumnSkeleton, EmptyPlot } from '@/components/charts/ColumnChart'
@@ -80,9 +81,9 @@ function ReturnData({ clientId }: { clientId: string }) {
         />
         <label className="flex items-center gap-1.5">
           Financial year
-          <select className="h-9 rounded-md border bg-background px-2" value={fy} onChange={(e) => setFy(Number(e.target.value))}>
+          <Select className="w-36" value={fy} onChange={(e) => setFy(Number(e.target.value))}>
             {[currentFy(), currentFy() - 1, currentFy() - 2].map((y) => <option key={y} value={y}>{fyLabel(y)}</option>)}
-          </select>
+          </Select>
         </label>
         <GlideChips
           label="Quarter"

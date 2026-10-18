@@ -333,6 +333,32 @@ html {
     gap: 0.5rem;
     cursor: pointer;
   }
+  /* The shown choice sits in a button of its own (see Select): it takes the room the arrow leaves and is cut with an ellipsis, so a
+     long label neither wraps onto a second line nor pushes the arrow out of the box. */
+  select {
+    white-space: nowrap;
+    min-width: 0;
+  }
+  select > button {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    min-width: 0;
+    min-height: 0;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: inherit;
+    font: inherit;
+    text-align: left;
+  }
+  select > button selectedcontent {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   select::picker-icon {
     content: '';
     display: block;

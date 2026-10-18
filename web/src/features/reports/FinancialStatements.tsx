@@ -144,7 +144,8 @@ function HeadlinePictures({ s, end, prevEnd }: { s: Statements; end: string; pre
   )
 }
 
-export function FinancialStatements({ clientId, fy }: { clientId: string; fy: number }) {
+/** ``part`` narrows the page to one statement (the Balance Sheet or the Profit and Loss tab); the notes stay, since every line points to one. */
+export function FinancialStatements({ clientId, fy, part }: { clientId: string; fy: number; part?: 'bs' | 'pl' }) {
   const q = useQuery(financialStatements(clientId, fy))
   const { can } = useSession()
   const [editing, setEditing] = useState(false)
@@ -208,7 +209,8 @@ export function FinancialStatements({ clientId, fy }: { clientId: string; fy: nu
           ))}
         </ul>
       )}
-      <HeadlinePictures s={s} end={end} prevEnd={prevEnd} />
+      {!part && <HeadlinePictures s={s} end={end} prevEnd={prevEnd} />}
+      {part !== 'pl' && (
       <ReportFrame clientId={clientId} title="Balance Sheet" footer={s.footer} period={`as at ${end}`}>
         {!s.balances && (
           <div className="mb-4 flex gap-2 rounded-md border border-destructive/40 bg-destructive-bg p-3 text-sm">
@@ -225,13 +227,16 @@ export function FinancialStatements({ clientId, fy }: { clientId: string; fy: nu
         <p className="mb-2 text-xs text-muted-foreground">(Amount in {s.unit_label})</p>
         <StatementTable title="Balance Sheet" rows={s.balance_sheet} current={end} previous={prevEnd} hasPrevious={s.has_previous} unit={s.unit_paise} />
       </ReportFrame>
+      )}
 
+      {part !== 'bs' && (
       <ReportFrame clientId={clientId} title="Statement of Profit and Loss" footer={s.footer} period={`for the year ended ${end}`}>
         <p className="mb-2 text-xs text-muted-foreground">(Amount in {s.unit_label})</p>
         <StatementTable title="Statement of Profit and Loss" rows={s.profit_and_loss} current={end} previous={prevEnd} hasPrevious={s.has_previous} unit={s.unit_paise} />
       </ReportFrame>
+      )}
 
-      {s.size === 'large' ? (
+      {part ? null : s.size === 'large' ? (
         <ReportFrame clientId={clientId} title="Cash Flow Statement" footer={s.footer} period={`for the year ended ${end}`}>
           <p className="mb-2 text-xs text-muted-foreground">(Amount in {s.unit_label})</p>
           <StatementTable title="Cash Flow Statement" rows={s.cash_flow} current={end} previous={prevEnd} hasPrevious={s.has_previous} unit={s.unit_paise} />

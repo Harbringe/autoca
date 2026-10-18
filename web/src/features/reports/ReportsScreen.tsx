@@ -1,17 +1,15 @@
-// Trial Balance, Profit & Loss A/c, Balance Sheet, and the bank reconciliation, for the year
-// chosen at the top.
-//
-// Laid out as they are printed in practice: the P&L and Balance Sheet horizontally, expenses
-// or liabilities on the left, the profit carried across. Anything that is not final says so
-// -- a report with rows still waiting is Provisional -- and a Trial Balance that does not
-// tally says by how much. Every one prints on a plain page with the client, year and date.
+// The Trial Balance, the Balance Sheet and Profit and Loss in ICAI's format for non-corporate entities (the Balance Sheet and
+// Profit & Loss tabs are the same statements as Financial statements, one at a time), the outstanding reports, the inventory
+// and the bank reconciliation, for the year chosen at the top. Anything that is not final says so -- a report with rows still
+// waiting is Provisional -- and a Trial Balance that does not tally says by how much. Every one prints on a plain page with
+// the client, year and date.
 
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { AlertTriangle, CheckCircle2, Printer } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import type { ReportTab } from './tabs'
-import { balanceSheet, profitAndLoss, reconciliation, trialBalance } from '@/api/queries/books'
+import { reconciliation, trialBalance } from '@/api/queries/books'
 import { bankAccounts, statements } from '@/api/queries/clients'
 import type { LedgerBalance, ReportFooter } from '@/api/types'
 import { GROUP_LABEL } from '@/api/types'
@@ -24,12 +22,11 @@ import { Select, tbl } from '@/components/ui/controls'
 import { DateInput } from '@/components/ui/date-input'
 import { Spinner } from '@/components/ui/spinner'
 import { BalancePair } from '@/components/charts/BalancePair'
-import { Bridge } from '@/components/charts/Bridge'
 import { EmptyPlot } from '@/components/charts/ColumnChart'
-import { bsPair, plBridge, tbPair, type Pair } from '@/lib/reportSeries'
+import { tbPair, type Pair } from '@/lib/reportSeries'
 import { formatCompact } from '@/lib/format'
-import { MonthlyTrend, Picture, ReportSkeleton } from './ReportPicture'
-import { asAt, closingLine, formatDate, formatDrCr, formatPaise, fyLabel, parseDate, sideTotal } from '@/lib/format'
+import { Picture, ReportSkeleton } from './ReportPicture'
+import { asAt, formatDate, formatDrCr, formatPaise, fyLabel, parseDate } from '@/lib/format'
 import { useFy } from '@/features/shell/useFy'
 import { FinancialStatements } from './FinancialStatements'
 import { InventoryReport } from './InventoryReport'
@@ -51,17 +48,14 @@ export function ReportsScreen({ clientId, report }: { clientId: string; report: 
         </div>
       )}
       {report === 'tb' && <TrialBalanceReport clientId={clientId} fy={fy} />}
-      {report === 'pl' && <ProfitAndLossReport clientId={clientId} fy={fy} />}
-      {report === 'bs' && <BalanceSheetReport clientId={clientId} fy={fy} />}
       {(report === 'payables' || report === 'receivables') && <OutstandingReport clientId={clientId} side={report} />}
-      {report === 'nce' && <FinancialStatements clientId={clientId} fy={fy} />}
+      {(report === 'nce' || report === 'pl' || report === 'bs') && <FinancialStatements clientId={clientId} fy={fy} part={report === 'nce' ? undefined : report} />}
       {report === 'inventory' && <InventoryReport clientId={clientId} fy={fy} />}
       {report === 'recon' && <Reconciliation clientId={clientId} />}
     </div>
   )
 }
 
-const NO_SYMBOL = { symbol: false }
 
 
 function reportState<T>(q: { data?: T; isPending: boolean; error: unknown; refetch: () => unknown }) {
@@ -178,112 +172,6 @@ function TallyMark({ clientId, footer, balances }: { clientId: string; footer: R
 function drCr(paise: number): string {
   if (!paise) return ''
   return `${formatPaise(Math.abs(paise), { sign: false, symbol: false })} ${paise > 0 ? 'Dr' : 'Cr'}`
-}
-
-/** A side of a horizontal statement: its lines, padded so both sides end on the same row. */
-type SideRow = [name: string, value: string | null, ledger?: string | null]
-
-function Side({ clientId, heading, rows, total, rowsTo, amount }: { clientId: string; heading: string; rows: SideRow[]; total: string | null; rowsTo: number; amount: string }) {
-  const padded: SideRow[] = [...rows, ...Array.from({ length: Math.max(0, rowsTo - rows.length) }, () => ['', null] as SideRow)]
-  return (
-    <table className={cn(tbl.table, 'h-full')}>
-      <thead className={tbl.head}>
-        <tr>
-          <th className={tbl.th}>{heading}</th>
-          <th className={tbl.thNum}>{amount}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {padded.map(([name, value, ledger], i) => (
-          <tr key={`${name}-${i}`} className="h-(--row-h) border-b border-dashed last:border-b-0">
-            <td className={tbl.td}>{ledger ? <LedgerLink clientId={clientId} ledger={ledger} name={name} /> : name}</td>
-            <td className={tbl.tdNum}>{value}</td>
-          </tr>
-        ))}
-      </tbody>
-      <tfoot className={tbl.foot}>
-        <tr>
-          <td className={tbl.td}>Total</td>
-          <td className={tbl.tdNum}>{total}</td>
-        </tr>
-      </tfoot>
-    </table>
-  )
-}
-
-function ProfitAndLossReport({ clientId, fy }: { clientId: string; fy: number }) {
-  const r = reportState(useQuery(profitAndLoss(clientId, fy)))
-  if (!r.data) return r.node
-  const pl = r.data
-  if (!pl.income.length && !pl.expenses.length) return <NothingYet clientId={clientId} fy={fy} />
-  const profit = pl.net_profit_paise >= 0
-  const net = formatPaise(Math.abs(pl.net_profit_paise), { symbol: false })
-  const netText = formatPaise(Math.abs(pl.net_profit_paise))
-  const left: SideRow[] = pl.expenses.map((e) => [e.name, closingLine(e, 'expense', NO_SYMBOL), e.ledger])
-  const right: SideRow[] = pl.income.map((i) => [i.name, closingLine(i, 'income', NO_SYMBOL), i.ledger])
-  if (profit) left.push(['Net Profit (carried to Capital)', net])
-  else right.push(['Net Loss (carried to Capital)', net])
-  const total = formatPaise(Math.max(pl.total_income_paise, pl.total_expenses_paise), { symbol: false })
-  const rowsTo = Math.max(left.length, right.length)
-  return (
-    <ReportFrame clientId={clientId} title="Profit & Loss A/c" footer={pl.footer}>
-      <Picture title="From income to what was kept">
-        <Bridge
-          steps={plBridge(pl)}
-          ariaLabel={`${profit ? 'Net profit' : 'Net loss'} for the year ${formatCompact(Math.abs(pl.net_profit_paise))}, from income of ${formatCompact(pl.total_income_paise)} and expenses of ${formatCompact(pl.total_expenses_paise)}`}
-          caption="Profit and loss: income, the biggest expense heads and the result"
-        />
-      </Picture>
-      <MonthlyTrend clientId={clientId} fy={fy} />
-      <div className="grid gap-4 md:grid-cols-2 md:gap-0 md:divide-x">
-        <Side clientId={clientId} heading="Dr · Expenses" amount="Amount ₹" rows={left} rowsTo={rowsTo} total={total} />
-        <Side clientId={clientId} heading="Cr · Income" amount="Amount ₹" rows={right} rowsTo={rowsTo} total={total} />
-      </div>
-      <p className={cn('mt-3 text-sm font-medium', profit ? 'text-success' : 'text-destructive')}>
-        {profit ? 'Net Profit' : 'Net Loss'} for the year: {netText}
-      </p>
-    </ReportFrame>
-  )
-}
-
-function BalanceSheetReport({ clientId, fy }: { clientId: string; fy: number }) {
-  const r = reportState(useQuery(balanceSheet(clientId, fy)))
-  if (!r.data) return r.node
-  const bs = r.data
-  if (!bs.assets.length && !bs.liabilities.length) return <NothingYet clientId={clientId} fy={fy} />
-  const liabilities: SideRow[] = bs.liabilities.map((l) => [l.name, closingLine(l, 'liability', NO_SYMBOL), l.ledger])
-  liabilities.push([bs.net_profit_paise >= 0 ? 'Add: Net Profit for the year' : 'Less: Net Loss for the year', formatPaise(Math.abs(bs.net_profit_paise), { symbol: false })])
-  const assets: SideRow[] = bs.assets.map((a) => [a.name, closingLine(a, 'asset', NO_SYMBOL), a.ledger])
-  const rowsTo = Math.max(liabilities.length, assets.length)
-  return (
-    <ReportFrame clientId={clientId} title="Balance Sheet" footer={bs.footer} period={asAt(fy)}>
-      {!bs.balances && (
-        <div className="mb-4 flex gap-2 rounded-md border border-destructive/40 bg-destructive-bg p-3 text-sm">
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
-          <span>
-            <strong>The Balance Sheet does not balance.</strong> Liabilities and profit are {sideTotal(bs.total_liabilities_and_profit_paise, 'Cr')};
-            assets are {sideTotal(bs.total_assets_paise, 'Dr')}.
-          </span>
-        </div>
-      )}
-      {bs.suspense_paise !== 0 && (
-        <div className="mb-4 rounded-md border border-accent-edge bg-accent p-3 text-sm">
-          <strong>{bs.suspense_display}</strong> is in Suspense A/c. Place those transactions in their proper ledgers before finalising.
-        </div>
-      )}
-      <Picture title="What the business owes and keeps, against what it owns">
-        <BalancePair
-          pair={bsPair(bs)}
-          agree={`Both sides agree at ${formatCompact(Math.abs(bs.total_assets_paise))}`}
-          gapWords={(gap) => `${gap > 0 ? 'Liabilities and profit' : 'Assets'} are higher by ${formatCompact(Math.abs(gap))}`}
-        />
-      </Picture>
-      <div className="grid gap-4 md:grid-cols-2 md:gap-0 md:divide-x">
-        <Side clientId={clientId} heading="Liabilities" amount="Amount ₹" rows={liabilities} rowsTo={rowsTo} total={sideTotal(bs.total_liabilities_and_profit_paise, 'Cr', NO_SYMBOL)} />
-        <Side clientId={clientId} heading="Assets" amount="Amount ₹" rows={assets} rowsTo={rowsTo} total={sideTotal(bs.total_assets_paise, 'Dr', NO_SYMBOL)} />
-      </div>
-    </ReportFrame>
-  )
 }
 
 function NothingYet({ clientId, fy }: { clientId: string; fy: number }) {

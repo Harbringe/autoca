@@ -64,11 +64,11 @@ const STATEMENTS = {
   ],
 }
 
-function renderIt() {
+function renderIt(part?: 'bs' | 'pl') {
   vi.mocked(raw.get).mockResolvedValue(STATEMENTS)
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
-      <FinancialStatements clientId="c1" fy={2025} />
+      <FinancialStatements clientId="c1" fy={2025} part={part} />
     </QueryClientProvider>,
   )
 }
@@ -111,6 +111,13 @@ describe('the ICAI-format statements', () => {
     expect(screen.getAllByText('The accompanying notes are an integral part of the financial statements').length).toBeGreaterThan(0)
     const pl = screen.getByRole('table', { name: 'Statement of Profit and Loss' })
     expect(within(pl).getByText('(2,500.00)')).toBeInTheDocument()
+  })
+
+  it('shows one statement on the Balance Sheet and Profit & Loss tabs, with the notes still there', async () => {
+    renderIt('pl')
+    expect(await screen.findByRole('table', { name: 'Statement of Profit and Loss' })).toBeInTheDocument()
+    expect(screen.queryByRole('table', { name: 'Balance Sheet' })).toBeNull()
+    expect(screen.getByText('Notes forming part of the financial statements')).toBeInTheDocument()
   })
 
   it('takes each figure apart in its note, and lists a ledger that moved between lines', async () => {

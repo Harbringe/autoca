@@ -33,7 +33,12 @@ def row(name, group, net):
         ("Partners Capital", LedgerGroup.CAPITAL, -100000, "EQ.CAP"),
         ("Sales", LedgerGroup.SALES, -1000, "PL.REV"),
         ("Interest Received", LedgerGroup.INDIRECT_INCOME, -10, "PL.OTH"),
-        ("Purchases", LedgerGroup.PURCHASE, 600, "PL.COGS"),
+        ("Purchases", LedgerGroup.PURCHASE, 600, "PL.PUR"),
+        ("Carriage Inward", LedgerGroup.DIRECT_EXPENSE, 20, "PL.PUR"),
+        ("Direct Wages", LedgerGroup.DIRECT_EXPENSE, 20, "PL.EMP"),
+        ("Partners Current Account", LedgerGroup.CAPITAL, -500, "EQ.CUR"),
+        ("Interest to Partners", LedgerGroup.INDIRECT_EXPENSE, 10, "PL.FIN"),
+        ("Short Provision of Tax for Earlier Years", LedgerGroup.INDIRECT_EXPENSE, 10, "PL.TAXE"),
         ("Salary", LedgerGroup.INDIRECT_EXPENSE, 200, "PL.EMP"),
         ("Interest on Term Loan", LedgerGroup.INDIRECT_EXPENSE, 30, "PL.FIN"),
         ("Depreciation", LedgerGroup.INDIRECT_EXPENSE, 20, "PL.DEP"),
@@ -61,7 +66,7 @@ def test_a_ledgers_own_line_overrides_everything():
 
 def test_every_line_has_a_side_and_the_notes_the_format_numbers():
     assert {d.side for d in LINES.values()} == {"L", "A", "PI", "PE"}
-    assert LINES["CL.PAY"].note == 9 and LINES["PL.EXP"].note == 25 and LINES["EQ.CAP"].note == 3
+    assert LINES["CL.PAY"].note == 9 and LINES["PL.EXP"].note == 26 and LINES["EQ.CAP"].note == 3
 
 
 from ledger.nce import _partners, _section, _unit, normalise_settings  # noqa: E402
@@ -71,9 +76,9 @@ def test_a_note_lists_each_ledger_under_its_sub_head():
     assert _section(19, "PL.REV", row("Sales", LedgerGroup.SALES, -1))[0] == "Sale of products"
     assert _section(19, "PL.REV", row("Consulting Fees", LedgerGroup.DIRECT_INCOME, -1))[0] == "Sale of services"
     assert _section(19, "PL.REV", row("Export Incentive", LedgerGroup.SALES, -1))[0] == "Other operating revenue"
-    assert _section(25, "PL.EXP", row("Office Rent", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Rent"
-    assert _section(25, "PL.EXP", row("Audit Fees", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Payments to auditors"
-    assert _section(25, "PL.EXP", row("Sundry", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Miscellaneous expenses"
+    assert _section(26, "PL.EXP", row("Office Rent", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Rent"
+    assert _section(26, "PL.EXP", row("Audit Fees", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Auditor's remuneration"
+    assert _section(26, "PL.EXP", row("Sundry", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Miscellaneous expenses"
     assert _section(5, "NCL.BORR", row("Term Loan - HDFC Bank", LedgerGroup.LOAN, -1))[0] == "Long-term · Term loans from banks"
     assert _section(5, "CL.BORR", row("Cash Credit - SBI", LedgerGroup.LOAN, -1))[0] == "Short-term · Loans repayable on demand"
     assert _section(10, "CL.OTH", row("TDS Payable", LedgerGroup.DUTIES_AND_TAXES, -1))[0] == "TDS payable"
@@ -140,10 +145,10 @@ def test_a_ledger_pinned_to_a_sub_head_goes_there_and_a_catch_all_is_a_guess():
     from ledger.nce import _section
 
     sundry = row("Sundry", LedgerGroup.INDIRECT_EXPENSE, 1)
-    assert _section(25, "PL.EXP", sundry) == ("Miscellaneous expenses", True)
-    assert _section(25, "PL.EXP", sundry, pinned="Rent") == ("Rent", False)
-    assert _section(25, "PL.EXP", sundry, pinned="Not a sub-head") == ("Miscellaneous expenses", True)
-    assert _section(25, "PL.EXP", row("Office Rent", LedgerGroup.INDIRECT_EXPENSE, 1)) == ("Rent", False)
+    assert _section(26, "PL.EXP", sundry) == ("Miscellaneous expenses", True)
+    assert _section(26, "PL.EXP", sundry, pinned="Rent") == ("Rent", False)
+    assert _section(26, "PL.EXP", sundry, pinned="Not a sub-head") == ("Miscellaneous expenses", True)
+    assert _section(26, "PL.EXP", row("Office Rent", LedgerGroup.INDIRECT_EXPENSE, 1)) == ("Rent", False)
     loan = row("Friend", LedgerGroup.LOAN, -1)
     assert _section(5, "NCL.BORR", loan, pinned="Loans and advances from related parties") == ("Long-term · Loans and advances from related parties", False)
 
@@ -181,3 +186,25 @@ def test_the_net_block_at_the_start_of_a_year_is_the_end_of_the_one_before():
     assert block_for([asset], 2025)["Plant and machinery"].net_close < block_for([asset], 2024)["Plant and machinery"].net_close
     assert block_for([asset], 2025)["Plant and machinery"].gross_open == block_for([asset], 2024)["Plant and machinery"].gross_close
     assert block_for([asset], 2025)["Plant and machinery"].dep_open == block_for([asset], 2024)["Plant and machinery"].dep_close
+
+
+def test_the_profit_and_loss_notes_are_numbered_as_the_icai_illustrative_format_numbers_them():
+    numbers = {code: LINES[code].note for code in ("PL.REV", "PL.OTH", "PL.MAT", "PL.PUR", "PL.INV", "PL.EMP", "PL.FIN", "PL.DEP", "PL.EXP")}
+    assert numbers == {"PL.REV": 19, "PL.OTH": 20, "PL.MAT": 21, "PL.PUR": None, "PL.INV": 22, "PL.EMP": 23, "PL.FIN": 24, "PL.DEP": 25, "PL.EXP": 26}
+
+
+def test_a_ledger_pinned_before_the_cost_of_goods_was_split_goes_to_purchases():
+    assert _place(row("Mystery", LedgerGroup.INDIRECT_EXPENSE, 10), override="PL.COGS") == "PL.PUR"
+
+
+def test_the_capital_note_keeps_capital_accounts_and_current_accounts_apart():
+    assert _section(3, "EQ.CAP", row("Partner A Capital", LedgerGroup.CAPITAL, -1))[0] == "Capital account"
+    assert _section(3, "EQ.CUR", row("Partner A Current Account", LedgerGroup.CAPITAL, -1))[0] == "Current account"
+
+
+def test_the_expense_notes_name_their_sub_heads_as_the_format_does():
+    assert _section(23, "PL.EMP", row("Gratuity", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Gratuity expenses"
+    assert _section(23, "PL.EMP", row("Salary", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Salaries, wages, bonus and other allowances"
+    assert _section(24, "PL.FIN", row("Interest on Partners Capital", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Interest on partners' capital/members' capital"
+    assert _section(25, "PL.DEP", row("Amortisation of Software", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "On intangible assets"
+    assert _section(26, "PL.EXP", row("Travelling Expenses", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Travelling expenses"

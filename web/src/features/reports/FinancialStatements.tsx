@@ -77,7 +77,7 @@ function StatementTable({ title, rows, current, previous, hasPrevious, unit }: {
                 <td className="px-2 text-center text-muted-foreground">
                   {row.note ? (
                     <a href={`#note-${row.note}`} className="underline underline-offset-2 hover:text-foreground" aria-label={`Note ${row.note}`}>
-                      {row.note}
+                      {row.note_ref || row.note}
                     </a>
                   ) : null}
                 </td>
@@ -88,6 +88,7 @@ function StatementTable({ title, rows, current, previous, hasPrevious, unit }: {
           })}
         </tbody>
       </table>
+      <p className="mt-2 text-xs text-muted-foreground">The accompanying notes are an integral part of the financial statements</p>
     </div>
   )
 }

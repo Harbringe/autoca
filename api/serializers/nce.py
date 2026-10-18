@@ -16,6 +16,7 @@ class StatementRowSerializer(serializers.Serializer):
     kind = serializers.ChoiceField(choices=["heading", "line", "subtotal", "total"])
     level = serializers.IntegerField(help_text="Indentation, from 0.")
     note = serializers.IntegerField(allow_null=True, help_text="The note this line is explained in.")
+    note_ref = serializers.CharField(allow_blank=True, help_text="How the note column reads where it is more than the number: Note 3 is 3a (capital accounts) and 3b (current accounts).")
     current_paise = PaiseField(allow_null=True)
     previous_paise = PaiseField(allow_null=True)
 

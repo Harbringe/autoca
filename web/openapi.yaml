@@ -16628,6 +16628,10 @@ components:
           type: integer
           nullable: true
           description: The note this line is explained in.
+        note_ref:
+          type: string
+          description: 'How the note column reads where it is more than the number:
+            Note 3 is 3a (capital accounts) and 3b (current accounts).'
         current_paise:
           type: integer
           maximum: 1000000000000000000
@@ -16651,6 +16655,7 @@ components:
       - label
       - level
       - note
+      - note_ref
       - previous_paise
     StatementRowKindEnum:
       enum:

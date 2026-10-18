@@ -42,7 +42,8 @@ class LineDef:
 LINES: dict[str, LineDef] = {
     d.code: d
     for d in [
-        LineDef("EQ.CAP", "Owners' Capital Account", 3, "L"),
+        LineDef("EQ.CAP", "Owners'/Partners' Capital Account", 3, "L"),
+        LineDef("EQ.CUR", "Owners'/Partners' Current Account", 3, "L"),
         LineDef("EQ.RES", "Reserves and surplus", 4, "L"),
         LineDef("NCL.BORR", "Long-term borrowings", 5, "L"),
         LineDef("NCL.DTL", "Deferred tax liabilities (Net)", 6, "L"),
@@ -68,13 +69,18 @@ LINES: dict[str, LineDef] = {
         LineDef("CA.OTH", "Other current assets", 18, "A"),
         LineDef("PL.REV", "Revenue from operations", 19, "PI"),
         LineDef("PL.OTH", "Other Income", 20, "PI"),
-        LineDef("PL.COGS", "Cost of goods sold", 21, "PE"),
-        LineDef("PL.EMP", "Employee benefits expense", 22, "PE"),
-        LineDef("PL.FIN", "Finance costs", 23, "PE"),
-        LineDef("PL.DEP", "Depreciation and amortization expense", 24, "PE"),
-        LineDef("PL.EXP", "Other expenses", 25, "PE"),
+        LineDef("PL.MAT", "Cost of Material Consumed", 21, "PE"),
+        LineDef("PL.PUR", "Purchases of Stock-in-Trade", None, "PE"),
+        LineDef("PL.INV", "Changes in inventories of finished goods, work-in-progress and Stock-in-Trade", 22, "PE"),
+        LineDef("PL.EMP", "Employee benefits expense", 23, "PE"),
+        LineDef("PL.FIN", "Finance costs", 24, "PE"),
+        LineDef("PL.DEP", "Depreciation and amortization expense", 25, "PE"),
+        LineDef("PL.EXP", "Other expenses", 26, "PE"),
+        LineDef("PL.EXC", "Exceptional items", None, "PE"),
+        LineDef("PL.EXT", "Extraordinary items", None, "PE"),
         LineDef("PL.PREM", "Partners' remuneration", None, "PE"),
         LineDef("PL.TAXC", "Current tax", None, "PE"),
+        LineDef("PL.TAXE", "Excess/Short provision of tax relating to earlier years", None, "PE"),
         LineDef("PL.TAXD", "Deferred tax charge/ (benefit)", 6, "PE"),
     ]
 }
@@ -84,15 +90,21 @@ NOTE_TITLES = {
     8: "Provisions", 9: "Trade payables", 10: "Other current liabilities", 11: "Property, Plant and Equipment and Intangible assets",
     12: "Investments", 13: "Loans and advances", 14: "Other non-current assets", 15: "Inventories", 16: "Trade receivables",
     17: "Cash and bank balances", 18: "Other current assets", 19: "Revenue from operations", 20: "Other income",
-    21: "Cost of goods sold", 22: "Employee benefits expense", 23: "Finance costs", 24: "Depreciation and amortization expense",
-    25: "Other expenses",
+    21: "Cost of Material Consumed", 22: "Changes in inventories of finished goods, work in progress and stock-in-trade",
+    23: "Employee benefits expense (including contract labour)", 24: "Finance cost", 25: "Depreciation and amortization expense",
+    26: "Other expenses",
 }
+
+#: A line a ledger may still be pinned to from before the format was split: the old "Cost of goods sold" is now Purchases of Stock-in-Trade.
+_LEGACY_LINES = {"PL.COGS": "PL.PUR"}
 
 #: The lines a person may place a ledger on by hand: every balance-sheet and profit-and-loss line.
 ASSIGNABLE = tuple(LINES)
 
 _NAME = {
-    "premun": re.compile(r"partner'?s?\W*(remuneration|salary|interest)|remuneration (to|of) partner", re.I),
+    "premun": re.compile(r"partner'?s?\W*(remuneration|salary)|remuneration (to|of) partner", re.I),
+    "taxe": re.compile(r"(excess|short)\W*provision.*tax|tax.*(earlier|prior|previous)\W*years?", re.I),
+    "curr": re.compile(r"current a/?c|current account|drawing|withdrawal", re.I),
     "tax": re.compile(r"\b(income|provision for)\W*tax\b|current tax|advance tax paid", re.I),
     "deftax": re.compile(r"deferred tax", re.I),
     "dep": re.compile(r"depreciation|amorti[sz]ation", re.I),
@@ -108,6 +120,7 @@ _NAME = {
 
 def _place(row: LedgerBalance, override: str = "") -> str:
     """The line this ledger sits on this year: its own setting, else its group and name and the sign of its balance."""
+    override = _LEGACY_LINES.get(override, override)
     if override in LINES:
         return override
     group, name, net = row.group, row.name, row.net_paise
@@ -122,17 +135,20 @@ def _place(row: LedgerBalance, override: str = "") -> str:
         return "PL.REV"
     if group == LedgerGroup.INDIRECT_INCOME:
         return "PL.OTH"
-    if group in (LedgerGroup.PURCHASE, LedgerGroup.DIRECT_EXPENSE):
-        return "PL.COGS"
+    if group == LedgerGroup.PURCHASE:
+        return "PL.PUR"
+    if group == LedgerGroup.DIRECT_EXPENSE:
+        # Contract labour is employee cost (Note 23); carriage, freight and the like are part of what the goods cost.
+        return "PL.EMP" if _NAME["emp"].search(name) else "PL.PUR"
     if group == LedgerGroup.INDIRECT_EXPENSE:
-        for key, line in (("premun", "PL.PREM"), ("deftax", "PL.TAXD"), ("tax", "PL.TAXC"), ("dep", "PL.DEP"), ("emp", "PL.EMP"), ("fin", "PL.FIN")):
+        for key, line in (("premun", "PL.PREM"), ("deftax", "PL.TAXD"), ("taxe", "PL.TAXE"), ("tax", "PL.TAXC"), ("dep", "PL.DEP"), ("emp", "PL.EMP"), ("fin", "PL.FIN")):
             if _NAME[key].search(name):
                 return line
         return "PL.EXP"
 
     # --- balance sheet
     if group == LedgerGroup.CAPITAL:
-        return "EQ.CAP"
+        return "EQ.CUR" if _NAME["curr"].search(name) else "EQ.CAP"
     if group == LedgerGroup.RESERVES:
         return "EQ.RES"
     if group == LedgerGroup.BANK_OD:
@@ -213,6 +229,8 @@ class StatementRow:
     note: int | None = None
     current_paise: int | None = None
     previous_paise: int | None = None
+    #: How the note column reads where it is more than the number (Note 3 is split into ``3a`` and ``3b``).
+    note_ref: str = ""
 
 
 @dataclass(frozen=True)
@@ -445,41 +463,53 @@ _SECTIONS: dict[int, list[tuple[str, str]]] = {
         ("Net gain/loss on sale of investments", r"investment|mutual fund|capital gain|profit on sale"),
         ("Other non-operating income", r""),
     ],
-    21: [
-        ("Purchases of stock-in-trade", r"purchase"),
-        ("Changes in inventories", r"^\(increase\)"),
-        ("Direct expenses", r""),
-    ],
-    22: [
-        ("Contribution to provident and other funds", r"provident|\bpf\b|\besi\b|gratuity|\bepf\b|superannuation"),
-        ("Staff welfare expenses", r"welfare|canteen|uniform|training"),
-        ("Salaries, wages and bonus", r""),
-    ],
+    21: [("Cost of raw material consumed", r"")],
+    22: [("(Increase)/decrease in inventories", r"")],
     23: [
-        ("Other borrowing costs", r"processing|loan (fee|charge)|guarantee|commitment"),
-        ("Interest expense", r""),
+        ("Contribution to provident and other funds", r"provident|\bpf\b|\besi\b|\bepf\b|superannuation"),
+        ("Gratuity expenses", r"gratuity"),
+        ("Staff welfare expenses", r"welfare|canteen|uniform|training"),
+        ("Salaries, wages, bonus and other allowances", r""),
     ],
-    24: [("Amortization", r"amorti"), ("Depreciation", r"")],
-    25: [
-        ("Payments to auditors", r"audit"),
-        ("Rent", r"\brent\b|lease rent"),
+    24: [
+        ("Interest on partners' capital/members' capital", r"capital|partner|member"),
+        ("Interest on assets on finance lease", r"lease"),
+        ("Other borrowing costs", r"processing|loan (fee|charge)|guarantee|commitment"),
+        ("Loss on foreign exchange transactions and translations considered as finance cost", r"exchange|forex|fluctuation"),
+        ("Interest expense: on bank loans and others", r""),
+    ],
+    25: [("On intangible assets", r"amorti|software|goodwill|intangible"), ("On tangible assets", r"")],
+    26: [
+        ("Consumption of stores and spare parts", r"stores|spares|consumable"),
         ("Power and fuel", r"electric|power|fuel|diesel|petrol|water"),
-        ("Repairs and maintenance", r"repair|maintenance|\bamc\b"),
+        ("Rent", r"\brent\b|lease rent"),
+        ("Repairs and maintenance - Buildings", r"(repair|maintenance).*(building|premises|office|godown)|(building|premises).*(repair|maintenance)"),
+        ("Repairs and maintenance - Machinery", r"repair|maintenance|\bamc\b"),
         ("Insurance", r"insur"),
-        ("Rates and taxes", r"rates|\btax\b|licen|penalt|\broc\b"),
-        ("Legal and professional fees", r"legal|professional|consult"),
-        ("Travelling and conveyance", r"travel|conveyance|taxi|\bcab\b|flight|hotel"),
-        ("Communication", r"telephone|mobile|internet|broadband|postage|courier|communication"),
+        ("Rates and taxes, excluding taxes on income", r"rates|\btax\b|licen|penalt|\broc\b"),
+        ("Labour charges", r"labou?r\W*charges"),
+        ("Travelling expenses", r"travel|conveyance|taxi|\bcab\b|flight|hotel"),
+        ("Auditor's remuneration", r"audit"),
         ("Printing and stationery", r"printing|stationery"),
-        ("Advertising and selling expenses", r"advertis|marketing|promotion|commission|brokerage|selling|discount allowed"),
-        ("Bank charges", r"bank charge|bank fee"),
-        ("Bad debts and provisions for doubtful debts", r"bad debt|written off|doubtful"),
-        ("Donations", r"donat|\bcsr\b"),
+        ("Communication expenses", r"telephone|mobile|internet|broadband|postage|courier|communication"),
+        ("Legal and professional charges", r"legal|professional|consult"),
+        ("Advertisement and publicity", r"advertis|publicity|marketing"),
+        ("Business promotion expenses", r"promotion"),
+        ("Commission", r"commission|brokerage"),
+        ("Clearing and forwarding charges", r"clearing|forwarding|freight|cartage|transport"),
+        ("Loss on sale of Property, Plant and Equipment", r"loss on sale of (fixed|asset|property|plant|ppe)"),
+        ("Loss on foreign exchange transactions (net)", r"exchange|forex"),
+        ("Loss on sale of investments (net)", r"loss on sale of investment"),
+        ("Provision for diminution in value of investments", r"diminution"),
+        ("Provision for doubtful debts", r"bad debt|written off|doubtful"),
         ("Miscellaneous expenses", r""),
     ],
     10: [
-        ("Interest accrued on borrowings", r"interest accrued|interest payable"),
-        ("Income received in advance", r"advance (from|received)|income received|unearned"),
+        ("Current maturities of finance lease obligations", r"finance lease|lease obligation"),
+        ("Interest accrued and due on borrowings", r"interest (accrued )?and due|interest due"),
+        ("Interest accrued but not due on borrowings", r"interest accrued|interest payable"),
+        ("Income received in advance", r"advance (from|received)|income received"),
+        ("Unearned revenue", r"unearned|deferred revenue"),
         ("Goods and Service tax payable", r"\bgst\b|igst|cgst|sgst|output"),
         ("TDS payable", r"\btds\b|\btcs\b"),
         ("Statutory dues (PF, ESI, professional tax and others)", r"\bpf\b|\besi\b|provident|professional tax|statutory|payroll"),
@@ -527,13 +557,23 @@ _SECTIONS: dict[int, list[tuple[str, str]]] = {
 }
 
 
+#: A note whose sub-heads print in an order other than the one their rules are tried in (the catch-all is tried last but may print first).
+_ORDER: dict[int, tuple[str, ...]] = {
+    23: ("Salaries, wages, bonus and other allowances", "Contribution to provident and other funds", "Gratuity expenses", "Staff welfare expenses"),
+    24: (
+        "Interest expense: on bank loans and others", "Interest on assets on finance lease", "Interest on partners' capital/members' capital",
+        "Other borrowing costs", "Loss on foreign exchange transactions and translations considered as finance cost",
+    ),
+    25: ("On tangible assets", "On intangible assets"),
+}
+
 KINDS_5 = ("Term loans from banks", "Term loans from other parties", "Loans repayable on demand", "Loans and advances from related parties", "Other loans and advances")
 KINDS_8 = ("Provision for employee benefits", "Provision for income tax", "Other provisions")
 KINDS_13 = ("Security deposits", "Loans and advances to related parties", "Advances to suppliers and others")
 #: Notes whose sub-head is prefixed with the horizon ("Long-term · Term loans from banks").
 _HORIZON_NOTES = (5, 8, 13)
 #: Where a ledger that matches no rule falls to the catch-all, a person should look.
-_GUESS_NOTES = (10, 11, 12, 15, 18, 20, 25)
+_GUESS_NOTES = (10, 11, 12, 15, 18, 20, 26)
 
 
 def _tail_choices(note: int) -> tuple[str, ...]:
@@ -543,11 +583,13 @@ def _tail_choices(note: int) -> tuple[str, ...]:
         return KINDS_8
     if note == 13:
         return KINDS_13
-    return tuple(label for label, _ in _SECTIONS.get(note, []) if label != "Changes in inventories")
+    if note in (3, 21, 22):  # one fixed sub-head, or two kept apart by the line (capital and current accounts): nothing to pin
+        return ()
+    return tuple(label for label, _ in _SECTIONS.get(note, []))
 
 
 def section_choices() -> dict[int, tuple[str, ...]]:
-    return {n: c for n in (5, 8, 10, 11, 12, 13, 15, 17, 18, 19, 20, 21, 22, 23, 24, 25) if (c := _tail_choices(n))}
+    return {n: c for n in (5, 8, 10, 11, 12, 13, 15, 17, 18, 19, 20, 23, 24, 25, 26) if (c := _tail_choices(n))}
 
 
 def all_section_choices() -> frozenset[str]:
@@ -607,8 +649,10 @@ def _section(note: int | None, code: str, row: LedgerBalance, pinned: str = "") 
         return f"{'Current' if code.startswith('CA') else 'Non-current'} · {_pick(12, name)}", guessed
     if note == 19:
         return _pick(19, name, strict=True) or ("Sale of services" if group == LedgerGroup.DIRECT_INCOME else "Sale of products"), False
-    if note == 21:
-        return ("Purchases of stock-in-trade" if group == LedgerGroup.PURCHASE else _pick(21, name)), False
+    if note == 3:
+        return ("Current account" if code == "EQ.CUR" else "Capital account"), False
+    if note in (21, 22):
+        return _SECTIONS[note][0][0], False
     if note == 17:
         return ("Cash on hand" if group == LedgerGroup.CASH else _pick(17, name, skip_first=True)), False
     if note in _SECTIONS:
@@ -618,7 +662,7 @@ def _section(note: int | None, code: str, row: LedgerBalance, pinned: str = "") 
 
 def _section_rank(note: int, section: str) -> int:
     """Where a sub-head prints: the order of the note's rules, long-term before short-term."""
-    order = [label for label, _ in _SECTIONS.get(note, [])]
+    order = list(_ORDER.get(note) or [label for label, _ in _SECTIONS.get(note, [])])
     tail = section.split(" · ")[-1]
     rank = order.index(tail) if tail in order else len(order)
     return rank + (0 if section.startswith(("Long-term", "Non-current")) else 100)
@@ -718,16 +762,21 @@ def build(client, financial_year: int) -> Statements:
             totals["CA.STOCK"] = totals.get("CA.STOCK", 0) + gap
             parts.setdefault("CA.STOCK", []).append((_synthetic("Closing stock as valued at the year end", LedgerGroup.STOCK), gap))
         if change:
-            totals["PL.COGS"] = totals.get("PL.COGS", 0) - change
-            parts.setdefault("PL.COGS", []).append((_synthetic("(Increase)/decrease in inventories", LedgerGroup.DIRECT_EXPENSE), -change))
+            totals["PL.INV"] = totals.get("PL.INV", 0) - change
+            parts.setdefault("PL.INV", []).append((_synthetic("(Increase)/decrease in inventories", LedgerGroup.DIRECT_EXPENSE), -change))
 
     def profit(totals: dict) -> dict:
         revenue, other = totals.get("PL.REV", 0), totals.get("PL.OTH", 0)
-        expenses = sum(totals.get(c, 0) for c in ("PL.COGS", "PL.EMP", "PL.FIN", "PL.DEP", "PL.EXP"))
-        before_tax_items = revenue + other - expenses
-        after_prem = before_tax_items - totals.get("PL.PREM", 0)
-        tax = totals.get("PL.TAXC", 0) + totals.get("PL.TAXD", 0)
-        return {"income": revenue + other, "expenses": expenses, "before": before_tax_items, "after_prem": after_prem, "tax": tax, "net": after_prem - tax}
+        expenses = sum(totals.get(c, 0) for c in ("PL.MAT", "PL.PUR", "PL.INV", "PL.EMP", "PL.FIN", "PL.DEP", "PL.EXP"))
+        before_tax_items = revenue + other - expenses  # V
+        after_exceptional = before_tax_items - totals.get("PL.EXC", 0)  # VII
+        before_prem = after_exceptional - totals.get("PL.EXT", 0)  # IX
+        after_prem = before_prem - totals.get("PL.PREM", 0)  # XI
+        tax = totals.get("PL.TAXC", 0) + totals.get("PL.TAXE", 0) + totals.get("PL.TAXD", 0)  # XII
+        return {
+            "income": revenue + other, "expenses": expenses, "before": before_tax_items, "after_exceptional": after_exceptional,
+            "before_prem": before_prem, "after_prem": after_prem, "tax": tax, "net": after_prem - tax,
+        }
 
     cur_p, prev_p = profit(cur), profit(prev)
 
@@ -756,7 +805,7 @@ def build(client, financial_year: int) -> Statements:
     def s(totals, codes):
         return sum(totals.get(c, 0) for c in codes)
 
-    owners_c, owners_p = v(cur, "EQ.CAP") + cur_res, v(prev, "EQ.CAP") + prev_res
+    owners_c, owners_p = v(cur, "EQ.CAP") + v(cur, "EQ.CUR") + cur_res, v(prev, "EQ.CAP") + v(prev, "EQ.CUR") + prev_res
     liab_c = owners_c + s(cur, nc_liab) + s(cur, c_liab)
     liab_p = owners_p + s(prev, nc_liab) + s(prev, c_liab)
     assets_c = s(cur, nca) + s(cur, ca)
@@ -781,9 +830,9 @@ def build(client, financial_year: int) -> Statements:
         if gap_pp:
             pp["CA.STOCK"] = pp.get("CA.STOCK", 0) + gap_pp
         if gap_pp - gap_ppp:
-            pp["PL.COGS"] = pp.get("PL.COGS", 0) - (gap_pp - gap_ppp)
+            pp["PL.INV"] = pp.get("PL.INV", 0) - (gap_pp - gap_ppp)
         pp_p = profit(pp)
-        owners_pp = v(pp, "EQ.CAP") + v(pp, "EQ.RES", pp_p["net"] + gap_ppp)
+        owners_pp = v(pp, "EQ.CAP") + v(pp, "EQ.CUR") + v(pp, "EQ.RES", pp_p["net"] + gap_ppp)
     else:
         pp, pp_p, owners_pp = {}, profit({}), 0
     cf_args = {"show_difference": False}
@@ -811,57 +860,76 @@ def build(client, financial_year: int) -> Statements:
         for r in cf_cur.rows
     ]
 
+    def lettered(letter, code, *, level, label=None):
+        """A balance-sheet line as the format prints it: ``(a) Long-term borrowings``, its note beside it."""
+        return line(code, level=level, label=f"({letter}) {label or LINES[code].label}")
+
     bs = [
         L("h.I", "I. OWNERS' FUNDS AND LIABILITIES", kind="heading"),
-        L("h.1", "(1) Owners' Funds", level=1, kind="heading"),
-        line("EQ.CAP", level=2, label=capital_title),
-        L("EQ.RES", "Reserves and surplus", level=2, note=4, c=cur_res, p=prev_res),
+        L("h.1", "1. Owners' Funds", level=1, kind="heading"),
+        L("h.cap", "(a) Owners' Capital Account", level=2, kind="heading"),
+        replace(line("EQ.CAP", level=3, label=f"(i) {capital_title}"), note_ref="3a"),
+        replace(line("EQ.CUR", level=3, label="(ii) Owners'/Partners' Current Account"), note_ref="3b"),
+        L("EQ.RES", "(b) Reserves and surplus", level=2, note=4, c=cur_res, p=prev_res),
         *([L("EQ.RND", "Rounding difference", level=2, c=rnd_c, p=rnd_p)] if rnd_c or rnd_p else []),
         total("t.1", "Owners' Funds", owners_c, owners_p, 1),
-        L("h.2", "(2) Non-current liabilities", level=1, kind="heading"),
-        *[line(c, level=2) for c in nc_liab],
+        L("h.2", "2. Non-current liabilities", level=1, kind="heading"),
+        *[lettered(letter, c, level=2) for letter, c in zip("abcd", nc_liab, strict=True)],
         total("t.2", "Non-current liabilities", s(cur, nc_liab), s(prev, nc_liab), 1),
-        L("h.3", "(3) Current liabilities", level=1, kind="heading"),
-        *[line(c, level=2) for c in c_liab],
+        L("h.3", "3. Current liabilities", level=1, kind="heading"),
+        *[lettered(letter, c, level=2) for letter, c in zip("abcd", c_liab, strict=True)],
         total("t.3", "Current liabilities", s(cur, c_liab), s(prev, c_liab), 1),
-        total("t.L", "TOTAL", liab_c, liab_p),
+        total("t.L", "Total", liab_c, liab_p),
         L("h.II", "II. ASSETS", kind="heading"),
-        L("h.a1", "(1) Non-current assets", level=1, kind="heading"),
-        L("h.ppe", "(a) Property, Plant and Equipment and Intangible assets", level=2, kind="heading"),
-        *[line(c, level=3) for c in ("NCA.PPE", "NCA.INTANG", "NCA.CWIP", "NCA.IAUD")],
-        *[line(c, level=2) for c in ("NCA.INV", "NCA.DTA", "NCA.LOANS", "NCA.OTH")],
+        L("h.a1", "1. Non-current assets", level=1, kind="heading"),
+        L("h.ppe", "(a) Property, Plant and Equipment and Intangible assets", level=2, note=11, kind="heading"),
+        *[
+            line(c, level=3, label=f"({roman}) {LINES[c].label}")
+            for roman, c in zip(("i", "ii", "iii", "iv"), ("NCA.PPE", "NCA.INTANG", "NCA.CWIP", "NCA.IAUD"), strict=True)
+        ],
+        *[lettered(letter, c, level=2) for letter, c in zip("bcde", ("NCA.INV", "NCA.DTA", "NCA.LOANS", "NCA.OTH"), strict=True)],
         total("t.a1", "Non-current assets", s(cur, nca), s(prev, nca), 1),
-        L("h.a2", "(2) Current assets", level=1, kind="heading"),
-        *[line(c, level=2) for c in ca],
+        L("h.a2", "2. Current assets", level=1, kind="heading"),
+        *[lettered(letter, c, level=2) for letter, c in zip("abcdef", ca, strict=True)],
         total("t.a2", "Current assets", s(cur, ca), s(prev, ca), 1),
-        total("t.A", "TOTAL", assets_c, assets_p),
+        total("t.A", "Total", assets_c, assets_p),
+        L("n.1", "Brief about the Entity", kind="heading", note=1),
+        L("n.2", "Summary of significant accounting policies", kind="heading", note=2),
     ]
 
-    def pl_line(code, level=1, label=None):
-        return line(code, level=level, label=label)
+    def pl_line(code, letter, level=1):
+        return line(code, level=level, label=f"({letter}) {LINES[code].label}")
 
     income_c, income_p = cur_p["income"], prev_p["income"]
     pl = [
-        L("PL.REV", "Revenue from operations", note=19, c=cur.get("PL.REV", 0), p=prev.get("PL.REV", 0)),
-        L("PL.OTH", "Other Income", note=20, c=cur.get("PL.OTH", 0), p=prev.get("PL.OTH", 0)),
-        total("t.inc", "Total Income (I + II)", income_c, income_p),
-        L("h.exp", "Expenses:", kind="heading"),
-        pl_line("PL.COGS", label="(a) Cost of goods sold"),
-        pl_line("PL.EMP"),
-        pl_line("PL.FIN"),
-        pl_line("PL.DEP"),
-        pl_line("PL.EXP"),
+        L("PL.REV", "I. Revenue from operations", note=19, c=cur.get("PL.REV", 0), p=prev.get("PL.REV", 0)),
+        L("PL.OTH", "II. Other Income", note=20, c=cur.get("PL.OTH", 0), p=prev.get("PL.OTH", 0)),
+        total("t.inc", "III. Total Income (I + II)", income_c, income_p),
+        L("h.exp", "IV. Expenses:", kind="heading"),
+        pl_line("PL.MAT", "a"),
+        pl_line("PL.PUR", "b"),
+        pl_line("PL.INV", "c"),
+        pl_line("PL.EMP", "d"),
+        pl_line("PL.FIN", "e"),
+        pl_line("PL.DEP", "f"),
+        pl_line("PL.EXP", "g"),
         total("t.exp", "Total expenses", cur_p["expenses"], prev_p["expenses"]),
-        total("t.V", "Profit/(loss) before exceptional and extraordinary items, partners' remuneration and tax (III - IV)", cur_p["before"], prev_p["before"]),
-        L("PL.EXC", "Exceptional items", level=1, c=0, p=0),
-        L("PL.EXT", "Extraordinary items", level=1, c=0, p=0),
-        total("t.IX", "Profit before partners' remuneration and tax", cur_p["before"], prev_p["before"]),
-        L("PL.PREM", "Partners' remuneration", level=1, c=cur.get("PL.PREM", 0), p=prev.get("PL.PREM", 0)),
-        total("t.XI", "Profit before tax", cur_p["after_prem"], prev_p["after_prem"]),
-        L("h.tax", "Tax expense:", kind="heading"),
-        L("PL.TAXC", "(a) Current tax", level=1, c=cur.get("PL.TAXC", 0), p=prev.get("PL.TAXC", 0)),
-        L("PL.TAXD", "(c) Deferred tax charge/ (benefit)", level=1, note=6, c=cur.get("PL.TAXD", 0), p=prev.get("PL.TAXD", 0)),
-        total("t.XVII", "Profit/(Loss) for the year", cur_p["net"], prev_p["net"]),
+        total("t.V", "V. Profit/(loss) before exceptional and extraordinary items, partners' remuneration and tax (III - IV)", cur_p["before"], prev_p["before"]),
+        line("PL.EXC", level=1, label="VI. Exceptional items"),
+        total("t.VII", "VII. Profit/(loss) before extraordinary items, partners' remuneration and tax (V - VI)", cur_p["after_exceptional"], prev_p["after_exceptional"]),
+        line("PL.EXT", level=1, label="VIII. Extraordinary Items"),
+        total("t.IX", "IX. Profit before partners' remuneration and tax (VII - VIII)", cur_p["before_prem"], prev_p["before_prem"]),
+        line("PL.PREM", level=1, label="X. Partners' remuneration"),
+        total("t.XI", "XI. Profit before Tax (IX - X)", cur_p["after_prem"], prev_p["after_prem"]),
+        L("h.tax", "XII. Tax expense:", kind="heading"),
+        pl_line("PL.TAXC", "a"),
+        pl_line("PL.TAXE", "b"),
+        pl_line("PL.TAXD", "c"),
+        total("t.XIII", "XIII. Profit/(Loss) for the period from continuing operations (XI - XII)", cur_p["net"], prev_p["net"]),
+        L("PL.DISC", "XIV. Profit/(loss) from discontinuing operations", c=0, p=0),
+        L("PL.DISCT", "XV. Tax expense of discontinuing operations", c=0, p=0),
+        L("t.XVI", "XVI. Profit/(loss) from discontinuing operations (after tax) (XIV - XV)", c=0, p=0),
+        total("t.XVII", "XVII. Profit/(Loss) for the year (XIII + XVI)", cur_p["net"], prev_p["net"]),
     ]
 
     # --- the notes: every line's ledgers, both years
@@ -911,7 +979,7 @@ def build(client, financial_year: int) -> Statements:
 
     warnings = []
     holds_stock = any(r.group == LedgerGroup.STOCK and r.net_paise for r in cur_rows)
-    if (holds_stock or cur.get("PL.COGS")) and settings["years"].get(str(financial_year), {}).get("closing_stock_paise") is None:
+    if (holds_stock or cur.get("PL.PUR") or cur.get("PL.MAT")) and settings["years"].get(str(financial_year), {}).get("closing_stock_paise") is None:
         warnings.append("Closing stock for this year is not entered, so inventories are shown as the stock ledgers carry them.")
     if capital and abs(capital.difference_paise) > max(100, unit):
         warnings.append("The partners' closing capital does not agree with the owners' funds on the balance sheet. Check Note 3.")

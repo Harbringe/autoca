@@ -17,7 +17,8 @@ const footer = { client_name: 'Divine Construwell', financial_year: 2025, period
 const STATEMENTS = {
   balance_sheet: [
     { key: 'h.I', label: "I. OWNERS' FUNDS AND LIABILITIES", kind: 'heading', level: 0, note: null, current_paise: null, previous_paise: null },
-    { key: 'CL.PAY', label: 'Trade payables', kind: 'line', level: 2, note: 9, current_paise: 1000000, previous_paise: 500000 },
+    { key: 'EQ.CAP', label: "(i) Partners' Capital Accounts", kind: 'line', level: 3, note: 3, note_ref: '3a', current_paise: 700000, previous_paise: 700000 },
+    { key: 'CL.PAY', label: 'Trade payables', kind: 'line', level: 2, note: 9, note_ref: '', current_paise: 1000000, previous_paise: 500000 },
     { key: 't.L', label: 'TOTAL', kind: 'total', level: 0, note: null, current_paise: 1000000, previous_paise: 500000 },
   ],
   profit_and_loss: [{ key: 'PL.REV', label: 'Revenue from operations', kind: 'line', level: 0, note: 19, current_paise: -250000, previous_paise: 0 }],
@@ -103,6 +104,11 @@ describe('the ICAI-format statements', () => {
     const payables = within(bs).getByText('Trade payables').closest('tr')!
     expect(within(payables).getByLabelText('Note 9')).toHaveAttribute('href', '#note-9')
     expect(within(payables).getByText('10,000.00')).toBeInTheDocument()
+    // Note 3 is split into 3a and 3b: the column reads 3a and still goes to Note 3
+    const capital = within(bs).getByText("(i) Partners' Capital Accounts").closest('tr')!
+    expect(within(capital).getByLabelText('Note 3')).toHaveTextContent('3a')
+    expect(within(capital).getByLabelText('Note 3')).toHaveAttribute('href', '#note-3')
+    expect(screen.getAllByText('The accompanying notes are an integral part of the financial statements').length).toBeGreaterThan(0)
     const pl = screen.getByRole('table', { name: 'Statement of Profit and Loss' })
     expect(within(pl).getByText('(2,500.00)')).toBeInTheDocument()
   })

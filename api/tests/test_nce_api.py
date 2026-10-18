@@ -34,7 +34,7 @@ def test_the_balance_sheet_and_profit_and_loss_follow_the_icai_lines_and_balance
 
     bs, pl = by_key(report["balance_sheet"]), by_key(report["profit_and_loss"])
     assert bs["CL.PAY"]["current_paise"] == 10_000_00 and bs["CL.PAY"]["note"] == 9
-    assert pl["PL.COGS"]["current_paise"] == 10_000_00 and pl["PL.COGS"]["note"] == 21
+    assert pl["PL.PUR"]["current_paise"] == 10_000_00 and pl["PL.PUR"]["note"] is None  # Purchases of Stock-in-Trade carries no note
     assert pl["t.XVII"]["current_paise"] == -10_000_00  # a loss: purchases and no sales
     # The year's result is part of Reserves and surplus, so liabilities (with the loss) equal assets (nil).
     assert bs["EQ.RES"]["current_paise"] == -10_000_00
@@ -75,7 +75,7 @@ def test_a_ledger_can_be_placed_on_a_line_by_hand_and_a_wrong_line_is_refused(ap
     done = api.patch(f"{base(client_record)}/ledgers/{purchases['id']}/", {"nce_line": "PL.EXP"}, format="json")
     assert done.status_code == 200, done.content
     pl = by_key(statements(api, client_record)["profit_and_loss"])
-    assert pl["PL.EXP"]["current_paise"] == 10_000_00 and pl["PL.COGS"]["current_paise"] == 0
+    assert pl["PL.EXP"]["current_paise"] == 10_000_00 and pl["PL.PUR"]["current_paise"] == 0
     assert party["id"]
 
 
@@ -112,11 +112,11 @@ def test_closing_stock_lowers_the_cost_of_goods_and_the_sheet_still_balances(api
 
     bs, pl = by_key(report["balance_sheet"]), by_key(report["profit_and_loss"])
     assert bs["CA.STOCK"]["current_paise"] == 4_000_00
-    assert pl["PL.COGS"]["current_paise"] == 6_000_00
+    assert pl["PL.PUR"]["current_paise"] == 10_000_00 and pl["PL.INV"]["current_paise"] == -4_000_00
     assert pl["t.XVII"]["current_paise"] == -6_000_00
     assert report["balances"] is True
-    cogs_note = {n["number"]: n for n in report["notes"]}[21]
-    assert [r["section"] for r in cogs_note["rows"]] == ["Purchases of stock-in-trade", "Changes in inventories"]
+    stock_note = {n["number"]: n for n in report["notes"]}[22]
+    assert [r["section"] for r in stock_note["rows"]] == ["(Increase)/decrease in inventories"]
 
 
 def test_next_year_the_stock_carried_forward_is_charged_unless_the_new_closing_is_entered(api, client_record):
@@ -127,7 +127,7 @@ def test_next_year_the_stock_carried_forward_is_charged_unless_the_new_closing_i
 
     bs, pl = by_key(report["balance_sheet"]), by_key(report["profit_and_loss"])
     assert bs["CA.STOCK"]["previous_paise"] == 4_000_00 and bs["CA.STOCK"]["current_paise"] == 0
-    assert pl["PL.COGS"]["current_paise"] == 4_000_00  # the opening stock, consumed
+    assert pl["PL.INV"]["current_paise"] == 4_000_00  # the opening stock, consumed
     assert report["balances"] is True
 
 

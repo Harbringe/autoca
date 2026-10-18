@@ -1,7 +1,7 @@
 """The financial statements as an Excel workbook, laid out the way the ICAI format sets them out.
 
 Sheets: Balance Sheet, Statement of P&L, Cash Flow Statement (a Large entity only), Notes 1 to 3 (about the entity, policies, the partner-wise capital table) and
-Notes 4 to 25 with each note's sub-heads. Figures are in the unit the client chose (rupees, lakhs, ...), already rounded by
+Notes 4 to 26 with each note's sub-heads. Figures are in the unit the client chose (rupees, lakhs, ...), already rounded by
 ``ledger.nce``; every text that came from a person or a ledger name goes through ``_safe_cell`` so a name beginning with
 ``=`` cannot become a formula.
 """
@@ -64,7 +64,7 @@ def workbook(client, financial_year: int, s: Statements) -> bytes:
             ws.append(
                 [
                     ("    " * r.level) + _safe_cell(r.label),
-                    r.note,
+                    r.note_ref or r.note,
                     None if heading else _figure(r.current_paise, unit),
                     None if heading or not s.has_previous else _figure(r.previous_paise, unit),
                 ]
@@ -78,6 +78,8 @@ def workbook(client, financial_year: int, s: Statements) -> bytes:
             if r.kind == "total":
                 for c in row:
                     c.border = line
+        ws.append([])
+        ws.append(["The accompanying notes are an integral part of the financial statements"])
         return ws
 
     statement("Balance Sheet", f"Balance Sheet as at {end}", s.balance_sheet, first=True)
@@ -132,7 +134,7 @@ def workbook(client, financial_year: int, s: Statements) -> bytes:
             if isinstance(c.value, float):
                 c.number_format = number_format
 
-    ws = sheet("Notes 4 to 25", f"Notes forming part of the Financial Statements for the year ended {end}", [8, 70, 20, 20])
+    ws = sheet("Notes 4 to 26", f"Notes forming part of the Financial Statements for the year ended {end}", [8, 70, 20, 20])
     for note in s.notes:
         ws.append([])
         ws.append([note.number, note.title, end, prev_end if s.has_previous else ""])

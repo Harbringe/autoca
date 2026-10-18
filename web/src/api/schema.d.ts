@@ -7969,6 +7969,8 @@ export interface components {
             level: number;
             /** @description The note this line is explained in. */
             note: number | null;
+            /** @description How the note column reads where it is more than the number: Note 3 is 3a (capital accounts) and 3b (current accounts). */
+            note_ref: string;
             /**
              * Format: int64
              * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.

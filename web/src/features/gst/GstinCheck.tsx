@@ -44,7 +44,9 @@ export function GstinCheckPanel({
           <ShieldCheck /> {check.isPending ? 'Checking…' : 'Check with the GST portal'}
         </Button>
         {result && result.outcome === 'found' && (
-          <Badge tone={result.cancelled ? 'danger' : 'success'}>{result.cancelled ? `GSTIN ${result.status}` : 'Active on the portal'}</Badge>
+          <Badge tone={result.cancelled ? 'danger' : result.status === 'active' ? 'success' : 'warning'}>
+            {result.cancelled ? `GSTIN ${result.status}` : result.status === 'active' ? 'Active on the portal' : `Portal status: ${result.status || 'unknown'}`}
+          </Badge>
         )}
         {result && result.outcome === 'found' && result.name_matches === false && <Badge tone="warning">Name differs</Badge>}
         {result && result.outcome === 'not_found' && <Badge tone="danger">Not on the portal</Badge>}

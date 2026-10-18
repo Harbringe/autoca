@@ -52,6 +52,14 @@ describe('checking a party’s GSTIN with the portal', () => {
     expect(await screen.findByText(/GSTIN cancelled/)).toBeInTheDocument()
   })
 
+  it('does not call a provisional registration active', async () => {
+    post.mockResolvedValue({ ...ANSWER, status: 'provisional', name_matches: true })
+    setup()
+    await userEvent.click(screen.getByRole('button', { name: /check with the gst portal/i }))
+    expect(await screen.findByText('Portal status: provisional')).toBeInTheDocument()
+    expect(screen.queryByText('Active on the portal')).toBeNull()
+  })
+
   it('says so when the portal has no record, and offers no name to copy', async () => {
     post.mockResolvedValue({ ...ANSWER, outcome: 'not_found', details: {}, status: 'not found', message: 'The portal has no record of this GSTIN.', name_matches: null })
     setup()

@@ -221,3 +221,39 @@ class ReconDecision(UUIDModel, FirmScopedModel):
     class Meta:
         db_table = "gst_recon_decision"
         ordering = ["created_at"]
+
+
+class GstinCheck(UUIDModel, FirmScopedModel, GstinMixin):
+    """What the GST portal said about one GSTIN, and when. One row per GSTIN per firm, reused for 30 days.
+
+    Informs only: nothing here changes a party, an invoice or the books. The portal's names and address are public registration
+    data but are kept encrypted like the rest of a party's identifiers.
+    """
+
+    #: The portal's wording, lower-cased, e.g. "active", "cancelled", "suspended". Kept in the clear so an alert can filter on it.
+    status = models.CharField(max_length=24, blank=True, default="", db_default="")
+    details_enc = models.BinaryField(blank=True, null=True)
+    provider = models.CharField(max_length=32, blank=True, default="", db_default="")
+    checked_at = models.DateTimeField()
+
+    class Meta:
+        db_table = "gst_gstin_check"
+        constraints = [
+            models.UniqueConstraint(fields=["firm", "gstin_hash"], name="uniq_gstin_check_per_firm"),
+        ]
+
+    def __str__(self) -> str:
+        return f"GSTIN check ({self.status or 'unknown'})"
+
+    @property
+    def details(self) -> dict:
+        import json
+
+        if not self.details_enc:
+            return {}
+        return json.loads(decrypt_text_for_firm(bytes(self.details_enc), self.firm_id, CRYPTO_PURPOSE))
+
+    def set_details(self, details: dict) -> None:
+        import json
+
+        self.details_enc = encrypt_for_firm(json.dumps(details), self.firm_id, CRYPTO_PURPOSE)

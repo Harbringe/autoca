@@ -418,6 +418,9 @@ TRUSTED_PROXY_COUNT = int(env("TRUSTED_PROXY_COUNT", "0"))
 # request body, not a target; the upload serializer applies a tighter one to
 # the file itself and checks that it is a PDF before reading it.
 MAX_STATEMENT_UPLOAD_BYTES = 25 * 1024 * 1024
+
+# Live GSTIN lookups a firm may make in a calendar month (a cached answer costs nothing); see gst/verify.py.
+GSTIN_CHECKS_PER_MONTH = int(env("GSTIN_CHECKS_PER_MONTH", "500"))
 # A Tally masters file is names and numbers: ten megabytes is far past a real company's chart.
 MAX_TALLY_IMPORT_BYTES = 10 * 1024 * 1024
 # Extraction cost grows with pages, not bytes: a 300 KB file with two thousand
@@ -502,6 +505,7 @@ INTEGRATIONS = {
     "queue": env("QUEUE_BACKEND", "integrations.queue.celery_redis.CeleryRedisQueueAdapter"),
     "kms": env("KMS_BACKEND", "integrations.kms.local_fernet.LocalFernetKMSAdapter"),
     "llm": env("LLM_BACKEND", "integrations.llm.stub.StubLLMAdapter"),
+    "gstverify": env("GSTVERIFY_BACKEND", "integrations.gstverify.stub.StubGstinVerifier"),
 }
 
 INTEGRATION_OPTIONS = {
@@ -526,6 +530,7 @@ INTEGRATION_OPTIONS = {
         "key_id": env("KMS_KEY_ID"),
         "region": env("KMS_REGION"),
     },
+    "gstverify": {},
     "llm": {
         # The provider's key, model and endpoint. LLM_* names work for any provider; the GROQ_* names are
         # kept so an existing Groq setup keeps working untouched.
@@ -625,7 +630,7 @@ REST_FRAMEWORK = {
     "COERCE_DECIMAL_TO_STRING": True,
     "DATETIME_FORMAT": "iso-8601",
     # Per signed-in person; see api/throttles.py. Backstops, well above real use.
-    "DEFAULT_THROTTLE_RATES": {"upload": "120/hour", "model": "1500/hour", "preview": "3000/hour"},
+    "DEFAULT_THROTTLE_RATES": {"upload": "120/hour", "model": "1500/hour", "preview": "3000/hour", "gstverify": "300/hour"},
 }
 
 SPECTACULAR_SETTINGS = {

@@ -23,8 +23,9 @@ from rest_framework.response import Response
 from api.pagination import DefaultPagination
 from api.permissions import HasFirmPermission
 from api.throttles import enforce
+from classify.models import Party
 from core.access import get_visible_client
-from gst import books, report, services
+from gst import books, report, services, verify
 from gst.matching import ItcStatus, MatchKind, Section
 from gst.models import (
     DecisionKind,
@@ -568,3 +569,77 @@ class RunSignOffView(viewsets.GenericViewSet):
         run = _run_of(client, pk)
         services.sign_off_run(run, request.user, request.membership)
         return Response(report.run_report(run))
+
+
+class GstinCheckRequestSerializer(serializers.Serializer):
+    party = serializers.UUIDField(required=False, help_text="Check this party's GSTIN and compare the portal's names with the party.")
+    gstin = serializers.CharField(required=False, max_length=15, help_text="Or a GSTIN typed in.")
+    refresh = serializers.BooleanField(required=False, default=False, help_text="Ask the portal again instead of reusing an answer under 30 days old.")
+
+    def validate(self, data):
+        if not data.get("party") and not data.get("gstin"):
+            raise serializers.ValidationError("Give a party or a GSTIN.")
+        return data
+
+
+class GstinCheckSerializer(serializers.Serializer):
+    gstin = serializers.CharField()
+    outcome = serializers.ChoiceField(choices=["found", "not_found", "unavailable"])
+    status = serializers.CharField(help_text="The portal's registration status, lower-cased: active, cancelled, suspended...")
+    details = serializers.DictField(help_text="legal_name, trade_name, registration_type, address, state, pincode, registered_on, cancelled_on.")
+    checked_at = serializers.DateTimeField(allow_null=True)
+    from_cache = serializers.BooleanField(help_text="True when this is an earlier answer, reused or the last known after a failed attempt.")
+    provider = serializers.CharField()
+    message = serializers.CharField(help_text="A sentence for a person when the check could not be made or found nothing; else empty.")
+    party_name = serializers.CharField(allow_blank=True, help_text="The party's name in the books (empty when a GSTIN was typed).")
+    name_matches = serializers.BooleanField(allow_null=True, help_text="Whether the portal's names fit the party's; null when there was nothing to compare.")
+    cancelled = serializers.BooleanField(help_text="The portal shows the registration cancelled or suspended.")
+
+
+@extend_schema(tags=["gst"])
+class GstinCheckView(viewsets.GenericViewSet):
+    """Ask the GST portal (through the configured provider) about a GSTIN. Informs; changes nothing."""
+
+    serializer_class = GstinCheckSerializer
+    permission_classes = [HasFirmPermission]
+    pagination_class = None
+    required_permission = "gst.view"
+
+    @extend_schema(
+        request=GstinCheckRequestSerializer,
+        summary="Check a GSTIN against the GST portal",
+        description=(
+            "Returns what the portal says (names, status, address) beside the party's name in the books. An answer under 30 days old "
+            "is reused unless `refresh`; a firm has a monthly allowance of live checks. Nothing in the books changes. When the portal "
+            "cannot be reached the last answer is returned with `from_cache` and a `message`. Requires `gst.view`." + _ERRORS + _RULE
+            + " (not a valid GSTIN, or the month's allowance is used up)."
+        ),
+        responses=_responses(GstinCheckSerializer, rule=True),
+    )
+    def create(self, request, client_id=None):
+        client = get_visible_client(request, client_id)
+        payload = GstinCheckRequestSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        data = payload.validated_data
+        enforce(request, self, "gstverify")
+        party = None
+        gstin = data.get("gstin", "")
+        if data.get("party"):
+            party = Party.objects.filter(client=client, pk=data["party"]).first()
+            if party is None:
+                raise NotFound("No such party for this client.")
+            gstin = party.gstin
+            if not gstin:
+                raise services.GstError(f"{party.canonical_name} has no GSTIN to check.")
+        try:
+            result = verify.check_gstin(client.firm_id, gstin, refresh=data["refresh"])
+        except verify.GstinCheckRefused as exc:
+            raise services.GstError(str(exc)) from exc
+        compared = verify.compare_with_party(result, party.canonical_name) if party else {
+            "name_matches": None, "cancelled": result.status in ("cancelled", "suspended"),
+        }
+        return Response({
+            "gstin": result.gstin, "outcome": result.outcome, "status": result.status, "details": result.details,
+            "checked_at": result.checked_at, "from_cache": result.from_cache, "provider": result.provider,
+            "message": result.message, "party_name": party.canonical_name if party else "", **compared,
+        })

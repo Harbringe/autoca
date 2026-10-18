@@ -43,7 +43,7 @@ from api.views.documents import (
     DocumentPreviewView,
     FirmDocumentListView,
 )
-from api.views.gst import RegistrationViewSet, RunSignOffView, RunViewSet
+from api.views.gst import GstinCheckView, RegistrationViewSet, RunSignOffView, RunViewSet
 from api.views.invoices import InvoiceReadingViewSet
 from api.views.ledger import (
     ApprovalView,
@@ -269,6 +269,11 @@ urlpatterns = [
         name="tally-import-undo",
     ),
     # GST reconciliation -- a removable add-on: delete this block, api/views/gst.py and gst/.
+    path(
+        "clients/<uuid:client_id>/gst/gstin-check/",
+        GstinCheckView.as_view({"post": "create"}),
+        name="gst-gstin-check",
+    ),
     path(
         "clients/<uuid:client_id>/gst/registrations/",
         RegistrationViewSet.as_view({"get": "list", "post": "create"}),

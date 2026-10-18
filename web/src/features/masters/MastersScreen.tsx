@@ -25,6 +25,7 @@ import { Switch } from '@/components/ui/switch'
 import { Checkbox, Select } from '@/components/ui/controls'
 import { Money } from '@/components/ca/Money'
 import { PagedList } from '@/components/ca/Pager'
+import { GstinCheckPanel } from '@/features/gst/GstinCheck'
 import { PartiesFound } from '@/features/statements/PartiesFound'
 import { DataTable } from '@/components/ui/table'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
@@ -801,6 +802,9 @@ function PartyEditor({ clientId, party, onClose }: { clientId: string; party: Pa
           {(p) => <Input {...p} className="font-mono uppercase" maxLength={15} value={gstin} onChange={(e) => setGstin(e.target.value)} />}
         </Field>
       </div>
+      {party?.gstin && gstin.trim().toUpperCase() === party.gstin && (
+        <GstinCheckPanel clientId={clientId} partyId={party.id} bookName={name} onUseName={setName} />
+      )}
       <div className="grid items-start gap-3 sm:grid-cols-2">
         <Field label="Role" error={errors.role}>
           {(p) => (

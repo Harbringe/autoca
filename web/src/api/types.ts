@@ -226,6 +226,7 @@ export interface Page<T> {
 // --- GST reconciliation (generated) -----------------------------------------
 
 export type GstRegistration = Schemas['Registration']
+export type GstinCheck = Schemas['GstinCheck']
 export type GstRun = Schemas['RunListItem']
 export type GstReport = Schemas['RunReport']
 export type GstGroup = Schemas['ReportGroup']

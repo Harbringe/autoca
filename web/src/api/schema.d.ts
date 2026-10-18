@@ -840,6 +840,28 @@ export interface paths {
         patch: operations["clients_employees_partial_update"];
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/gst/gstin-check/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Check a GSTIN against the GST portal
+         * @description Returns what the portal says (names, status, address) beside the party's name in the books. An answer under 30 days old is reused unless `refresh`; a firm has a monthly allowance of live checks. Nothing in the books changes. When the portal cannot be reached the last answer is returned with `from_cache` and a `message`. Requires `gst.view`.
+         *
+         *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched) (not a valid GSTIN, or the month's allowance is used up).
+         */
+        post: operations["clients_gst_gstin_check_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/gst/registrations/": {
         parameters: {
             query?: never;
@@ -4772,6 +4794,43 @@ export interface components {
             /** @description A sentence for a person; show it as it is. */
             detail: string;
         };
+        GstinCheck: {
+            gstin: string;
+            outcome: components["schemas"]["OutcomeEnum"];
+            /** @description The portal's registration status, lower-cased: active, cancelled, suspended... */
+            status: string;
+            /** @description legal_name, trade_name, registration_type, address, state, pincode, registered_on, cancelled_on. */
+            details: {
+                [key: string]: unknown;
+            };
+            /** Format: date-time */
+            checked_at: string | null;
+            /** @description True when this is an earlier answer, reused or the last known after a failed attempt. */
+            from_cache: boolean;
+            provider: string;
+            /** @description A sentence for a person when the check could not be made or found nothing; else empty. */
+            message: string;
+            /** @description The party's name in the books (empty when a GSTIN was typed). */
+            party_name: string;
+            /** @description Whether the portal's names fit the party's; null when there was nothing to compare. */
+            name_matches: boolean | null;
+            /** @description The portal shows the registration cancelled or suspended. */
+            cancelled: boolean;
+        };
+        GstinCheckRequestRequest: {
+            /**
+             * Format: uuid
+             * @description Check this party's GSTIN and compare the portal's names with the party.
+             */
+            party?: string;
+            /** @description Or a GSTIN typed in. */
+            gstin?: string;
+            /**
+             * @description Ask the portal again instead of reusing an answer under 30 days old.
+             * @default false
+             */
+            refresh: boolean;
+        };
         HeadRequest: {
             /**
              * Format: uuid
@@ -5925,6 +5984,13 @@ export interface components {
             remaining_paise: number;
             remaining_display: string;
         };
+        /**
+         * @description * `found` - found
+         *     * `not_found` - not_found
+         *     * `unavailable` - unavailable
+         * @enum {string}
+         */
+        OutcomeEnum: "found" | "not_found" | "unavailable";
         Outstanding: {
             side: components["schemas"]["SideEnum"];
             /** Format: date */
@@ -10422,6 +10488,65 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Employee"];
+                };
+            };
+        };
+    };
+    clients_gst_gstin_check_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["GstinCheckRequestRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["GstinCheckRequestRequest"];
+                "multipart/form-data": components["schemas"]["GstinCheckRequestRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstinCheck"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
                 };
             };
         };

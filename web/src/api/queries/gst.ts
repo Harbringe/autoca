@@ -5,7 +5,7 @@
 
 import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query'
 import { raw } from '@/api/client'
-import type { GstReport, GstRegistration, GstRun, Page } from '@/api/types'
+import type { GstReport, GstRegistration, GstRun, GstinCheck, Page } from '@/api/types'
 import { V1 } from './clients'
 
 export const gstKeys = {
@@ -95,3 +95,10 @@ export function useGstActions(clientId: string) {
 
 /** The Excel working paper. Returns the file and the name the server gave it. */
 export const gstExport = (clientId: string, runId: string) => raw.blob(`${base(clientId)}/runs/${runId}/export/`)
+
+/** Ask the GST portal about a party's GSTIN (or a typed one). Informs only; nothing in the books changes. */
+export function useGstinCheck(clientId: string) {
+  return useMutation({
+    mutationFn: (body: { party?: string; gstin?: string; refresh?: boolean }) => raw.post<GstinCheck>(`${base(clientId)}/gstin-check/`, body),
+  })
+}

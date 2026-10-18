@@ -1662,6 +1662,67 @@ paths:
               schema:
                 $ref: '#/components/schemas/Employee'
           description: ''
+  /api/v1/clients/{client_id}/gst/gstin-check/:
+    post:
+      operationId: clients_gst_gstin_check_create
+      description: |-
+        Returns what the portal says (names, status, address) beside the party's name in the books. An answer under 30 days old is reused unless `refresh`; a firm has a monthly allowance of live checks. Nothing in the books changes. When the portal cannot be reached the last answer is returned with `from_cache` and a `message`. Requires `gst.view`.
+
+        Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched) (not a valid GSTIN, or the month's allowance is used up).
+      summary: Check a GSTIN against the GST portal
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - gst
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GstinCheckRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GstinCheckRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GstinCheckRequestRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstinCheck'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
   /api/v1/clients/{client_id}/gst/registrations/:
     get:
       operationId: clients_gst_registrations_list
@@ -10297,6 +10358,77 @@ components:
       required:
       - code
       - detail
+    GstinCheck:
+      type: object
+      properties:
+        gstin:
+          type: string
+        outcome:
+          $ref: '#/components/schemas/OutcomeEnum'
+        status:
+          type: string
+          description: 'The portal''s registration status, lower-cased: active, cancelled,
+            suspended...'
+        details:
+          type: object
+          additionalProperties: {}
+          description: legal_name, trade_name, registration_type, address, state,
+            pincode, registered_on, cancelled_on.
+        checked_at:
+          type: string
+          format: date-time
+          nullable: true
+        from_cache:
+          type: boolean
+          description: True when this is an earlier answer, reused or the last known
+            after a failed attempt.
+        provider:
+          type: string
+        message:
+          type: string
+          description: A sentence for a person when the check could not be made or
+            found nothing; else empty.
+        party_name:
+          type: string
+          description: The party's name in the books (empty when a GSTIN was typed).
+        name_matches:
+          type: boolean
+          nullable: true
+          description: Whether the portal's names fit the party's; null when there
+            was nothing to compare.
+        cancelled:
+          type: boolean
+          description: The portal shows the registration cancelled or suspended.
+      required:
+      - cancelled
+      - checked_at
+      - details
+      - from_cache
+      - gstin
+      - message
+      - name_matches
+      - outcome
+      - party_name
+      - provider
+      - status
+    GstinCheckRequestRequest:
+      type: object
+      properties:
+        party:
+          type: string
+          format: uuid
+          description: Check this party's GSTIN and compare the portal's names with
+            the party.
+        gstin:
+          type: string
+          minLength: 1
+          description: Or a GSTIN typed in.
+          maxLength: 15
+        refresh:
+          type: boolean
+          default: false
+          description: Ask the portal again instead of reusing an answer under 30
+            days old.
     HeadRequest:
       type: object
       properties:
@@ -12754,6 +12886,16 @@ components:
       - opening_paise
       - remaining_display
       - remaining_paise
+    OutcomeEnum:
+      enum:
+      - found
+      - not_found
+      - unavailable
+      type: string
+      description: |-
+        * `found` - found
+        * `not_found` - not_found
+        * `unavailable` - unavailable
     Outstanding:
       type: object
       properties:

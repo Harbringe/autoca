@@ -18,6 +18,7 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
 
+from integrations.gstverify.base import GstinVerifier
 from integrations.kms.base import KMSAdapter
 from integrations.llm.base import LLMAdapter
 from integrations.ocr.base import OCRAdapter
@@ -32,6 +33,7 @@ INTERFACES = {
     "queue": QueueAdapter,
     "kms": KMSAdapter,
     "llm": LLMAdapter,
+    "gstverify": GstinVerifier,
 }
 
 _cache: dict[str, object] = {}
@@ -109,3 +111,7 @@ def get_llm() -> LLMAdapter:
     from . import debug_archive
 
     return debug_archive.wrap(get_adapter("llm"))
+
+
+def get_gstverify() -> GstinVerifier:
+    return get_adapter("gstverify")

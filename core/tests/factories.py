@@ -31,6 +31,7 @@ from core.models import AuditLog, Client, ClientAssignment, Firm, FirmMembership
 from documents.models import Document, DocumentKind
 from gst.models import (
     DecisionKind,
+    GstinCheck,
     Gstr2bInvoice,
     GstRegistration,
     ReconDecision,
@@ -313,6 +314,14 @@ def _gst_registration(firm, **kw):
     return reg
 
 
+def _gstin_check(firm, **kw):
+    row = GstinCheck(firm=firm, status="active", provider="StubGstinVerifier", checked_at=django_timezone.now())
+    row.set_gstin(kw.get("gstin", "27AAAPL1234C1Z5"))
+    row.set_details({"legal_name": "Test Legal Name"})
+    row.save()
+    return row
+
+
 def _gst_run(firm, **kw):
     registration = kw.get("registration") or _gst_registration(firm)
     return ReconRun.objects.create(
@@ -543,6 +552,7 @@ FACTORIES = {
     Job: _job,
     Document: _document,
     GstRegistration: _gst_registration,
+    GstinCheck: _gstin_check,
     ReconRun: _gst_run,
     RegisterInvoice: _gst_register_invoice,
     Gstr2bInvoice: _gst_portal_invoice,

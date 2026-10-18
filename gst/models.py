@@ -67,6 +67,11 @@ class GstRegistration(UUIDModel, FirmScopedModel, GstinMixin):
         max_length=16, choices=RegistrationType.choices, default=RegistrationType.REGULAR
     )
     is_active = models.BooleanField(default=True)
+    #: The taxpayer's GST portal username and the provider's session token for it, both encrypted. The token lasts hours and is
+    #: renewed or replaced by an OTP; the portal password is never asked for or kept.
+    portal_username_enc = models.BinaryField(blank=True, null=True)
+    portal_session_enc = models.BinaryField(blank=True, null=True)
+    portal_session_expires = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         db_table = "gst_registration"
@@ -79,6 +84,23 @@ class GstRegistration(UUIDModel, FirmScopedModel, GstinMixin):
 
     def __str__(self) -> str:
         return f"GSTIN registration, state {self.state_code}"
+
+    @property
+    def portal_username(self) -> str:
+        if not self.portal_username_enc:
+            return ""
+        return decrypt_text_for_firm(bytes(self.portal_username_enc), self.firm_id, CRYPTO_PURPOSE)
+
+    @property
+    def portal_session(self) -> str:
+        if not self.portal_session_enc:
+            return ""
+        return decrypt_text_for_firm(bytes(self.portal_session_enc), self.firm_id, CRYPTO_PURPOSE)
+
+    def set_portal_session(self, username: str, token: str, expires) -> None:
+        self.portal_username_enc = encrypt_for_firm(username, self.firm_id, CRYPTO_PURPOSE)
+        self.portal_session_enc = encrypt_for_firm(token, self.firm_id, CRYPTO_PURPOSE) if token else None
+        self.portal_session_expires = expires if token else None
 
 
 class RunStatus(models.TextChoices):

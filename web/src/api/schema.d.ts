@@ -912,6 +912,72 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/gst/registrations/{id}/portal/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Disconnect from the GST portal
+         * @description Forgets the stored session and username. Requires `gst.prepare`.
+         *
+         *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong).
+         */
+        delete: operations["clients_gst_registrations_portal_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/gst/registrations/{id}/portal/otp/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Send the taxpayer an OTP from the GST portal
+         * @description Step one of connecting. The taxpayer must have enabled API access on the portal (View Profile, Manage API Access). Requires `gst.prepare`.
+         *
+         *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched) (the portal or provider refused).
+         */
+        post: operations["clients_gst_registrations_portal_otp_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/gst/registrations/{id}/portal/verify/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Finish connecting with the OTP
+         * @description Step two. The session is kept encrypted and renewed when used. Requires `gst.prepare`.
+         *
+         *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched) (wrong OTP, or refused).
+         */
+        post: operations["clients_gst_registrations_portal_verify_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/gst/runs/": {
         parameters: {
             query?: never;
@@ -1022,6 +1088,28 @@ export interface paths {
          *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched); `422 gst_file_unreadable` (the file could not be read as a register or GSTR-2B).
          */
         post: operations["clients_gst_runs_portal_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/gst/runs/{id}/portal-fetch/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fetch GSTR-2B from the GST portal
+         * @description Downloads this return's GSTR-2B through the taxpayer's portal session and loads it as an uploaded file would be, replacing any earlier GSTR-2B. `409 gst_rule` when the taxpayer has not connected or the session has ended (sign in again), the portal has no GSTR-2B for the month yet, or the run is signed off. Requires `gst.prepare`.
+         *
+         *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched).
+         */
+        post: operations["clients_gst_runs_portal_fetch_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -6936,6 +7024,16 @@ export interface components {
             /** @description How many rows became certain enough to be posted automatically. */
             readonly auto_posted: number;
         };
+        PortalOtpRequestRequest: {
+            /** @description The username the taxpayer uses on the GST portal (never the password). */
+            username: string;
+        };
+        PortalVerifyRequest: {
+            /** @description The username the taxpayer uses on the GST portal (never the password). */
+            username: string;
+            /** @description The OTP the portal sent to the taxpayer. */
+            otp: string;
+        };
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         Portfolio: {
             totals: components["schemas"]["OverviewTotals"];
@@ -7313,6 +7411,12 @@ export interface components {
             readonly id: string;
             gstin: string;
             readonly state_code: string;
+            /** @description The taxpayer has signed in to the GST portal and the session is still live. */
+            readonly portal_connected: boolean;
+            /** @description The portal username given at sign-in; empty when never connected. */
+            readonly portal_username: string;
+            /** Format: date-time */
+            readonly portal_session_expires: string | null;
             /** @default regular */
             registration_type: components["schemas"]["RegistrationTypeEnum"];
         };
@@ -10697,6 +10801,162 @@ export interface operations {
             };
         };
     };
+    clients_gst_registrations_portal_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+        };
+    };
+    clients_gst_registrations_portal_otp_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortalOtpRequestRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PortalOtpRequestRequest"];
+                "multipart/form-data": components["schemas"]["PortalOtpRequestRequest"];
+            };
+        };
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+        };
+    };
+    clients_gst_registrations_portal_verify_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortalVerifyRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PortalVerifyRequest"];
+                "multipart/form-data": components["schemas"]["PortalVerifyRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Registration"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+        };
+    };
     clients_gst_runs_list: {
         parameters: {
             query?: {
@@ -10981,6 +11241,60 @@ export interface operations {
                 };
             };
             422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+        };
+    };
+    clients_gst_runs_portal_fetch_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UploadResult"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstError"];
+                };
+            };
+            409: {
                 headers: {
                     [name: string]: unknown;
                 };

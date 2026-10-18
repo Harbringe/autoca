@@ -96,6 +96,35 @@ export function useGstActions(clientId: string) {
 /** The Excel working paper. Returns the file and the name the server gave it. */
 export const gstExport = (clientId: string, runId: string) => raw.blob(`${base(clientId)}/runs/${runId}/export/`)
 
+/** Signing a GSTIN in to the GST portal (an OTP to the taxpayer) and fetching GSTR-2B through that session. */
+export function usePortalActions(clientId: string) {
+  const queryClient = useQueryClient()
+  const registrations = () => void queryClient.invalidateQueries({ queryKey: gstKeys.registrations(clientId) })
+  return {
+    sendOtp: useMutation({
+      mutationFn: ({ id, username }: { id: string; username: string }) => raw.post<void>(`${base(clientId)}/registrations/${id}/portal/otp/`, { username }),
+    }),
+    connect: useMutation({
+      mutationFn: ({ id, username, otp }: { id: string; username: string; otp: string }) =>
+        raw.post<GstRegistration>(`${base(clientId)}/registrations/${id}/portal/verify/`, { username, otp }),
+      onSuccess: registrations,
+    }),
+    disconnect: useMutation({
+      mutationFn: (id: string) => raw.delete(`${base(clientId)}/registrations/${id}/portal/`),
+      onSuccess: registrations,
+    }),
+    fetch: useMutation({
+      mutationFn: (runId: string) => raw.post<{ rows: number; run: GstReport }>(`${base(clientId)}/runs/${runId}/portal-fetch/`),
+      onSuccess: (result) => {
+        queryClient.setQueryData(gstKeys.run(clientId, result.run.id), result.run)
+        void queryClient.invalidateQueries({ queryKey: gstKeys.runs(clientId) })
+      },
+      // A session that has ended is found out by trying: the registration's flag is then stale.
+      onError: registrations,
+    }),
+  }
+}
+
 /** Ask the GST portal about a party's GSTIN (or a typed one). Informs only; nothing in the books changes. */
 export function useGstinCheck(clientId: string) {
   return useMutation({

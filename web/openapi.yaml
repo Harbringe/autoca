@@ -1880,6 +1880,178 @@ paths:
               schema:
                 $ref: '#/components/schemas/GstError'
           description: ''
+  /api/v1/clients/{client_id}/gst/registrations/{id}/portal/:
+    delete:
+      operationId: clients_gst_registrations_portal_destroy
+      description: |-
+        Forgets the stored session and username. Requires `gst.prepare`.
+
+        Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong).
+      summary: Disconnect from the GST portal
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - gst
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+  /api/v1/clients/{client_id}/gst/registrations/{id}/portal/otp/:
+    post:
+      operationId: clients_gst_registrations_portal_otp_create
+      description: |-
+        Step one of connecting. The taxpayer must have enabled API access on the portal (View Profile, Manage API Access). Requires `gst.prepare`.
+
+        Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched) (the portal or provider refused).
+      summary: Send the taxpayer an OTP from the GST portal
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - gst
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalOtpRequestRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PortalOtpRequestRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PortalOtpRequestRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+  /api/v1/clients/{client_id}/gst/registrations/{id}/portal/verify/:
+    post:
+      operationId: clients_gst_registrations_portal_verify_create
+      description: |-
+        Step two. The session is kept encrypted and renewed when used. Requires `gst.prepare`.
+
+        Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched) (wrong OTP, or refused).
+      summary: Finish connecting with the OTP
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - gst
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PortalVerifyRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PortalVerifyRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PortalVerifyRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Registration'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
   /api/v1/clients/{client_id}/gst/runs/:
     get:
       operationId: clients_gst_runs_list
@@ -2201,6 +2373,62 @@ paths:
                 $ref: '#/components/schemas/GstError'
           description: ''
         '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+  /api/v1/clients/{client_id}/gst/runs/{id}/portal-fetch/:
+    post:
+      operationId: clients_gst_runs_portal_fetch_create
+      description: |-
+        Downloads this return's GSTR-2B through the taxpayer's portal session and loads it as an uploaded file would be, replacing any earlier GSTR-2B. `409 gst_rule` when the taxpayer has not connected or the session has ended (sign in again), the portal has no GSTR-2B for the month yet, or the run is signed off. Requires `gst.prepare`.
+
+        Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched).
+      summary: Fetch GSTR-2B from the GST portal
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - gst
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadResult'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstError'
+          description: ''
+        '409':
           content:
             application/json:
               schema:
@@ -14714,6 +14942,34 @@ components:
       - classification
       - rule_created
       - rule_learned
+    PortalOtpRequestRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 1
+          description: The username the taxpayer uses on the GST portal (never the
+            password).
+          maxLength: 100
+      required:
+      - username
+    PortalVerifyRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 1
+          description: The username the taxpayer uses on the GST portal (never the
+            password).
+          maxLength: 100
+        otp:
+          type: string
+          minLength: 1
+          description: The OTP the portal sent to the taxpayer.
+          pattern: ^\d{4,8}$
+      required:
+      - otp
+      - username
     Portfolio:
       type: object
       description: Adds a ``*_display`` string beside every ``*_paise`` field named
@@ -15426,6 +15682,20 @@ components:
         state_code:
           type: string
           readOnly: true
+        portal_connected:
+          type: boolean
+          readOnly: true
+          description: The taxpayer has signed in to the GST portal and the session
+            is still live.
+        portal_username:
+          type: string
+          readOnly: true
+          description: The portal username given at sign-in; empty when never connected.
+        portal_session_expires:
+          type: string
+          format: date-time
+          readOnly: true
+          nullable: true
         registration_type:
           allOf:
           - $ref: '#/components/schemas/RegistrationTypeEnum'
@@ -15433,6 +15703,9 @@ components:
       required:
       - gstin
       - id
+      - portal_connected
+      - portal_session_expires
+      - portal_username
       - state_code
     RegistrationRequest:
       type: object

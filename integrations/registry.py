@@ -18,6 +18,7 @@ from django.conf import settings
 from django.core.exceptions import ImproperlyConfigured
 from django.utils.module_loading import import_string
 
+from integrations.gstportal.base import GstPortal
 from integrations.gstverify.base import GstinVerifier
 from integrations.kms.base import KMSAdapter
 from integrations.llm.base import LLMAdapter
@@ -34,6 +35,7 @@ INTERFACES = {
     "kms": KMSAdapter,
     "llm": LLMAdapter,
     "gstverify": GstinVerifier,
+    "gstportal": GstPortal,
 }
 
 _cache: dict[str, object] = {}
@@ -115,3 +117,7 @@ def get_llm() -> LLMAdapter:
 
 def get_gstverify() -> GstinVerifier:
     return get_adapter("gstverify")
+
+
+def get_gstportal() -> GstPortal:
+    return get_adapter("gstportal")

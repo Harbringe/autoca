@@ -506,6 +506,7 @@ INTEGRATIONS = {
     "kms": env("KMS_BACKEND", "integrations.kms.local_fernet.LocalFernetKMSAdapter"),
     "llm": env("LLM_BACKEND", "integrations.llm.stub.StubLLMAdapter"),
     "gstverify": env("GSTVERIFY_BACKEND", "integrations.gstverify.stub.StubGstinVerifier"),
+    "gstportal": env("GSTPORTAL_BACKEND", "integrations.gstportal.stub.StubGstPortal"),
 }
 
 INTEGRATION_OPTIONS = {
@@ -530,7 +531,9 @@ INTEGRATION_OPTIONS = {
         "key_id": env("KMS_KEY_ID"),
         "region": env("KMS_REGION"),
     },
-    "gstverify": {},
+    # Sandbox (sandbox.co.in): one account serves the GSTIN check and the GSTR-2B fetch. Test keys talk to the test host.
+    "gstverify": {"api_key": env("SANDBOX_API_KEY"), "api_secret": env("SANDBOX_API_SECRET"), "base_url": env("SANDBOX_BASE_URL")},
+    "gstportal": {"api_key": env("SANDBOX_API_KEY"), "api_secret": env("SANDBOX_API_SECRET"), "base_url": env("SANDBOX_BASE_URL")},
     "llm": {
         # The provider's key, model and endpoint. LLM_* names work for any provider; the GROQ_* names are
         # kept so an existing Groq setup keeps working untouched.
@@ -630,7 +633,7 @@ REST_FRAMEWORK = {
     "COERCE_DECIMAL_TO_STRING": True,
     "DATETIME_FORMAT": "iso-8601",
     # Per signed-in person; see api/throttles.py. Backstops, well above real use.
-    "DEFAULT_THROTTLE_RATES": {"upload": "120/hour", "model": "1500/hour", "preview": "3000/hour", "gstverify": "300/hour"},
+    "DEFAULT_THROTTLE_RATES": {"upload": "120/hour", "model": "1500/hour", "preview": "3000/hour", "gstverify": "300/hour", "gstportal": "60/hour"},
 }
 
 SPECTACULAR_SETTINGS = {

@@ -41,6 +41,9 @@ class RegistrationSerializer(serializers.Serializer):
     id = serializers.UUIDField(read_only=True)
     gstin = serializers.CharField(max_length=15)
     state_code = serializers.CharField(read_only=True)
+    portal_connected = serializers.BooleanField(read_only=True, help_text="The taxpayer has signed in to the GST portal and the session is still live.")
+    portal_username = serializers.CharField(read_only=True, help_text="The portal username given at sign-in; empty when never connected.")
+    portal_session_expires = serializers.DateTimeField(read_only=True, allow_null=True)
     registration_type = serializers.ChoiceField(
         choices=RegistrationType.choices, default=RegistrationType.REGULAR
     )
@@ -286,6 +289,9 @@ def _registration_data(reg: GstRegistration) -> dict:
         "gstin": reg.gstin,
         "state_code": reg.state_code,
         "registration_type": reg.registration_type,
+        "portal_connected": services.portal_connected(reg),
+        "portal_username": reg.portal_username,
+        "portal_session_expires": reg.portal_session_expires,
     }
 
 
@@ -485,6 +491,24 @@ class RunViewSet(viewsets.GenericViewSet):
 
     @extend_schema(
         request=None,
+        summary="Fetch GSTR-2B from the GST portal",
+        description=(
+            "Downloads this return's GSTR-2B through the taxpayer's portal session and loads it as an uploaded file would be, "
+            "replacing any earlier GSTR-2B. `409 gst_rule` when the taxpayer has not connected or the session has ended (sign in "
+            "again), the portal has no GSTR-2B for the month yet, or the run is signed off. Requires `gst.prepare`." + _ERRORS + _RULE + "."
+        ),
+        responses=_responses(UploadResultSerializer, rule=True),
+    )
+    def portal_fetch(self, request, client_id=None, pk=None):
+        client = get_visible_client(request, client_id)
+        run = _run_of(client, pk)
+        enforce(request, self, "gstportal")
+        count = services.fetch_portal(run, request.user)
+        run.refresh_from_db()
+        return Response({"rows": count, "run": report.run_report(run)})
+
+    @extend_schema(
+        request=None,
         summary="Match the register against GSTR-2B",
         description=(
             "Rebuilds the matches from the two uploads; earlier decisions are kept because they "
@@ -643,3 +667,68 @@ class GstinCheckView(viewsets.GenericViewSet):
             "checked_at": result.checked_at, "from_cache": result.from_cache, "provider": result.provider,
             "message": result.message, "party_name": party.canonical_name if party else "", **compared,
         })
+
+
+class PortalOtpRequestSerializer(serializers.Serializer):
+    username = serializers.CharField(max_length=100, help_text="The username the taxpayer uses on the GST portal (never the password).")
+
+
+class PortalVerifySerializer(PortalOtpRequestSerializer):
+    otp = serializers.RegexField(r"^\d{4,8}$", help_text="The OTP the portal sent to the taxpayer.")
+
+
+@extend_schema(tags=["gst"])
+class PortalConnectViewSet(viewsets.GenericViewSet):
+    """Signing a GSTIN in to the GST portal through the provider: an OTP to the taxpayer, then a session of some hours."""
+
+    serializer_class = RegistrationSerializer
+    permission_classes = [HasFirmPermission]
+    pagination_class = None
+    required_permission = {"POST": "gst.prepare", "DELETE": "gst.prepare"}
+
+    def _reg(self, request, client_id, pk) -> GstRegistration:
+        client = get_visible_client(request, client_id)
+        reg = GstRegistration.objects.filter(client=client, is_active=True, pk=pk).first()
+        if reg is None:
+            raise NotFound("No such GST registration for this client.")
+        return reg
+
+    @extend_schema(
+        request=PortalOtpRequestSerializer,
+        summary="Send the taxpayer an OTP from the GST portal",
+        description=(
+            "Step one of connecting. The taxpayer must have enabled API access on the portal (View Profile, Manage API Access). "
+            "Requires `gst.prepare`." + _ERRORS + _RULE + " (the portal or provider refused)."
+        ),
+        responses={204: None, 400: GstErrorSerializer, 403: GstErrorSerializer, 404: GstErrorSerializer, 409: GstErrorSerializer},
+    )
+    def otp(self, request, client_id=None, pk=None):
+        reg = self._reg(request, client_id, pk)
+        enforce(request, self, "gstportal")
+        payload = PortalOtpRequestSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        services.portal_start(reg, payload.validated_data["username"])
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @extend_schema(
+        request=PortalVerifySerializer,
+        summary="Finish connecting with the OTP",
+        description="Step two. The session is kept encrypted and renewed when used. Requires `gst.prepare`." + _ERRORS + _RULE + " (wrong OTP, or refused).",
+        responses=_responses(RegistrationSerializer, rule=True),
+    )
+    def verify(self, request, client_id=None, pk=None):
+        reg = self._reg(request, client_id, pk)
+        enforce(request, self, "gstportal")
+        payload = PortalVerifySerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        services.portal_finish(reg, payload.validated_data["username"], payload.validated_data["otp"])
+        return Response(_registration_data(reg))
+
+    @extend_schema(
+        summary="Disconnect from the GST portal",
+        description="Forgets the stored session and username. Requires `gst.prepare`." + _ERRORS + ".",
+        responses={204: None, 403: GstErrorSerializer, 404: GstErrorSerializer},
+    )
+    def destroy(self, request, client_id=None, pk=None):
+        services.portal_disconnect(self._reg(request, client_id, pk))
+        return Response(status=status.HTTP_204_NO_CONTENT)

@@ -43,7 +43,13 @@ from api.views.documents import (
     DocumentPreviewView,
     FirmDocumentListView,
 )
-from api.views.gst import GstinCheckView, RegistrationViewSet, RunSignOffView, RunViewSet
+from api.views.gst import (
+    GstinCheckView,
+    PortalConnectViewSet,
+    RegistrationViewSet,
+    RunSignOffView,
+    RunViewSet,
+)
 from api.views.invoices import InvoiceReadingViewSet
 from api.views.ledger import (
     ApprovalView,
@@ -278,6 +284,26 @@ urlpatterns = [
         "clients/<uuid:client_id>/gst/registrations/",
         RegistrationViewSet.as_view({"get": "list", "post": "create"}),
         name="gst-registrations",
+    ),
+    path(
+        "clients/<uuid:client_id>/gst/registrations/<uuid:pk>/portal/otp/",
+        PortalConnectViewSet.as_view({"post": "otp"}),
+        name="gst-portal-otp",
+    ),
+    path(
+        "clients/<uuid:client_id>/gst/registrations/<uuid:pk>/portal/verify/",
+        PortalConnectViewSet.as_view({"post": "verify"}),
+        name="gst-portal-verify",
+    ),
+    path(
+        "clients/<uuid:client_id>/gst/registrations/<uuid:pk>/portal/",
+        PortalConnectViewSet.as_view({"delete": "destroy"}),
+        name="gst-portal-disconnect",
+    ),
+    path(
+        "clients/<uuid:client_id>/gst/runs/<uuid:pk>/portal-fetch/",
+        RunViewSet.as_view({"post": "portal_fetch"}),
+        name="gst-run-portal-fetch",
     ),
     path(
         "clients/<uuid:client_id>/gst/registrations/<uuid:pk>/",

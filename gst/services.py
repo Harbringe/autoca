@@ -43,7 +43,8 @@ from gst.models import (
     RunStatus,
 )
 from gst.parsers import parse_gstr2b_json, parse_register
-from integrations.registry import get_storage
+from integrations.gstportal.base import PortalError, PortalSessionExpired
+from integrations.registry import get_gstportal, get_storage
 
 
 class GstError(RuntimeError):
@@ -492,3 +493,83 @@ def summarise(run: ReconRun) -> dict:
         "unclaimed_in_2b_paise": unclaimed,
         "unresolved": unresolved(run),
     }
+
+
+# ---------------------------------------------------------------------------
+# The GST portal as the taxpayer: sign in once with an OTP, then fetch returns
+# ---------------------------------------------------------------------------
+
+#: A session closer to its end than this is renewed before it is used.
+SESSION_RENEW_BEFORE = datetime.timedelta(minutes=15)
+
+
+def portal_connected(reg: GstRegistration) -> bool:
+    return bool(reg.portal_session_enc) and reg.portal_session_expires is not None and reg.portal_session_expires > timezone.now()
+
+
+def portal_start(reg: GstRegistration, username: str) -> None:
+    """Ask the portal to send the taxpayer an OTP. The password is never involved."""
+    username = (username or "").strip()
+    if not username:
+        raise GstError("Give the username the taxpayer uses on the GST portal.")
+    try:
+        get_gstportal().request_otp(reg.gstin, username)
+    except PortalError as exc:
+        raise GstError(str(exc)) from exc
+
+
+def portal_finish(reg: GstRegistration, username: str, otp: str) -> GstRegistration:
+    """Complete the sign-in with the OTP and keep the session, encrypted."""
+    username = (username or "").strip()
+    try:
+        session = get_gstportal().verify_otp(reg.gstin, username, (otp or "").strip())
+    except PortalError as exc:
+        raise GstError(str(exc)) from exc
+    reg.set_portal_session(username, session.token, session.expires_at)
+    reg.save(update_fields=["portal_username_enc", "portal_session_enc", "portal_session_expires"])
+    return reg
+
+
+def portal_disconnect(reg: GstRegistration) -> None:
+    reg.set_portal_session("", "", None)
+    reg.portal_username_enc = None
+    reg.save(update_fields=["portal_username_enc", "portal_session_enc", "portal_session_expires"])
+
+
+def _end_session(reg: GstRegistration) -> None:
+    reg.set_portal_session(reg.portal_username, "", None)
+    reg.save(update_fields=["portal_session_enc", "portal_session_expires"])
+
+
+def _live_token(reg: GstRegistration) -> str:
+    """The session token, renewed first when it is near its end. Raises ``GstError`` when the taxpayer must sign in again."""
+    if not portal_connected(reg):
+        raise GstError("Connect to the GST portal first: the taxpayer signs in once with an OTP.")
+    token = reg.portal_session
+    if reg.portal_session_expires - timezone.now() < SESSION_RENEW_BEFORE:
+        try:
+            session = get_gstportal().refresh(token)
+        except PortalSessionExpired as exc:
+            _end_session(reg)
+            raise GstError("The portal session has ended. Sign in again with a new OTP.") from exc
+        except PortalError as exc:
+            raise GstError(str(exc)) from exc
+        reg.set_portal_session(reg.portal_username, session.token, session.expires_at)
+        reg.save(update_fields=["portal_session_enc", "portal_session_expires"])
+        token = session.token
+    return token
+
+
+def fetch_portal(run: ReconRun, user: User | None) -> int:
+    """Download this return's GSTR-2B from the portal and load it exactly as an uploaded file is loaded."""
+    _require_open(run)
+    reg = run.registration
+    token = _live_token(reg)
+    try:
+        data = get_gstportal().fetch_gstr2b(token, run.period_start.year, run.period_start.month)
+    except PortalSessionExpired as exc:
+        _end_session(reg)
+        raise GstError("The portal session has ended. Sign in again with a new OTP.") from exc
+    except PortalError as exc:
+        raise GstError(str(exc)) from exc
+    return load_portal(run, data, f"gstr2b-{run.period_start:%Y-%m}-from-portal.json", user)

@@ -28,6 +28,7 @@ import { Reveal } from '@/components/ui/collapse'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { DecisionDialog } from './DecisionDialog'
+import { PortalFetch } from './PortalFetch'
 import {
   currentStep,
   DECISION_BADGE,
@@ -129,6 +130,8 @@ export function RunPage({ clientId, runId }: { clientId: string; runId: string }
       </div>
 
       <Steps
+        clientId={clientId}
+        onFetched={() => setStale(true)}
         report={report}
         canPrepare={canPrepare}
         gate={gate}
@@ -217,6 +220,8 @@ function InlineError({ error }: { error: unknown }) {
 }
 
 function Steps({
+  clientId,
+  onFetched,
   report,
   canPrepare,
   gate,
@@ -228,6 +233,8 @@ function Steps({
   onMatch,
   onSignOff,
 }: {
+  clientId: string
+  onFetched: () => void
   report: GstReport
   canPrepare: boolean
   gate: ReturnType<typeof signOffGate>
@@ -355,6 +362,7 @@ function Steps({
                   <Button variant={prim('portal')} size="sm" loading={uploading === 'portal'} disabled={busy.upload && uploading !== 'portal'} onClick={() => portalInput.current?.click()}>
                     <Upload /> {report.has_portal ? 'Replace GSTR-2B' : 'Upload GSTR-2B'}
                   </Button>
+                  <PortalFetch clientId={clientId} report={report} variant="secondary" disabled={busy.upload} onFetched={onFetched} />
                 </>
               )}
               {step.key === 'match' && canPrepare && (

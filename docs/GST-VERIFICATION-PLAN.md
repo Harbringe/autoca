@@ -74,3 +74,17 @@ Phases 1 to 2 are the part that matches Tally's screen; 3 and 4 are what makes i
 2. **Volume.** Roughly how many distinct GSTINs across all clients, and how often should they be re-checked? This sets the cost.
 3. **Scope of the first release.** Party screen only, or invoices as well from the start?
 4. **Terms.** Whether the provider's terms allow keeping results (the plan stores them, encrypted, for 30 days of reuse).
+
+## Update 2026-10-18: provider chosen, Sandbox (sandbox.co.in)
+
+Built against Sandbox's published API reference; nothing has been run against their servers yet (no key).
+
+- **GSTIN check**: `integrations/gstverify/sandbox.py` (public "search GSTIN", needs only the application token). Selected with
+  `GSTVERIFY_BACKEND=integrations.gstverify.sandbox.SandboxGstinVerifier`.
+- **GSTR-2B fetch**: `integrations/gstportal/sandbox.py`. The taxpayer enables API access on the GST portal, gives the portal username,
+  enters the OTP; the 6-hour session is kept encrypted on the registration and renewed before use. Selected with
+  `GSTPORTAL_BACKEND=integrations.gstportal.sandbox.SandboxGstPortal`. The fetched JSON goes through the same loader as an upload.
+- **Keys**: `SANDBOX_API_KEY`, `SANDBOX_API_SECRET` and (for the test environment) `SANDBOX_BASE_URL=https://test-api.sandbox.co.in`
+  (live: `https://api.sandbox.co.in`), set on the server with the same script as the model key; never in the repository or in chat.
+- **To confirm on the first real call in their test environment**: the month format in the GSTR-2B path (sent as `09`), where the page
+  count sits when a return is split into files (`fc`), and the per-call prices on their pricing page.

@@ -115,6 +115,6 @@ def test_a_signed_off_run_is_not_fetched_into(api, client_record):
 
 
 def test_another_firm_cannot_connect_a_registration_it_cannot_see(api, client_record):
-    base, reg, _run = _setup(api, client_record)
     stranger = sign_in(member(create_firm("Other Firm"), Role.FIRM_ADMIN, email="x@other.example").user)
+    base, reg, _run = _setup(api, client_record)
     assert stranger.post(f"{base}/registrations/{reg}/portal/otp/", {"username": "u"}, format="json").status_code == 404

@@ -11,6 +11,9 @@ STUB_OTP = "123456"
 
 
 class StubGstPortal(GstPortal):
+    def __init__(self, **_ignored):  # settings pass the real provider's options (keys); the stub needs none
+        pass
+
     def request_otp(self, gstin: str, username: str) -> None:
         if not username:
             raise PortalError("Give the portal username.")

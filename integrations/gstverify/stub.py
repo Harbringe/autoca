@@ -13,6 +13,9 @@ STATES = {"27": "Maharashtra", "24": "Gujarat", "29": "Karnataka", "07": "Delhi"
 
 
 class StubGstinVerifier(GstinVerifier):
+    def __init__(self, **_ignored):  # settings pass the real provider's options (keys); the stub needs none
+        pass
+
     def lookup(self, gstin: str) -> TaxpayerDetails:
         gstin = (gstin or "").strip().upper()
         if gstin[12:13] == "8":

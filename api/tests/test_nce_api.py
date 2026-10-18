@@ -50,7 +50,7 @@ def test_each_line_is_taken_apart_in_its_note_by_ledger(api, client_record):
     notes = {note["number"]: note for note in report["notes"]}
     assert [r["label"] for r in notes[9]["rows"]] == ["Ravi Traders"]
     assert notes[9]["total_current_paise"] == 10_000_00
-    assert notes[21]["rows"][0]["current_paise"] == 10_000_00
+    assert 21 not in notes  # Purchases of Stock-in-Trade carries no note; its figure is on the face
 
 
 def test_the_previous_year_is_beside_the_current_one(api, client_record):
@@ -177,7 +177,7 @@ def test_the_statements_download_as_a_workbook(api, client_record):
     assert response.status_code == 200
     assert "spreadsheetml" in response["Content-Type"]
     wb = load_workbook(io.BytesIO(response.content))
-    assert wb.sheetnames == ["Balance Sheet", "Statement of P&L", "Notes 1 to 3", "Notes 4 to 25"]
+    assert wb.sheetnames == ["Balance Sheet", "Statement of P&L", "Notes 1 to 3", "Notes 4 to 26"]
     cells = [c.value for row in wb["Balance Sheet"].iter_rows() for c in row if c.value is not None]
     assert "Trade payables" in " ".join(str(c) for c in cells)
 
@@ -243,7 +243,10 @@ def test_a_ledger_can_be_pinned_to_a_sub_head_of_its_note_and_a_catch_all_is_fla
     # No bill posted to it yet, so it is not in the note; pin and unpin are still validated.
     assert api.patch(f"{base(client_record)}/ledgers/{other['id']}/", {"nce_section": "Rent"}, format="json").status_code == 200
     assert api.patch(f"{base(client_record)}/ledgers/{other['id']}/", {"nce_section": "Not a sub-head"}, format="json").status_code == 400
-    assert "Rent" in notes[21]["choices"] or notes[21]["choices"] is not None
+    from ledger.nce import section_choices
+
+    assert "Rent" in section_choices()[26] and 21 not in section_choices()
+    assert notes is not None
 
 
 def test_rounding_each_ledger_first_keeps_the_sheet_adding_up_and_shows_the_gap(api, client_record):

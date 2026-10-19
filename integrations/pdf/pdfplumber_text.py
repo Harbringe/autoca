@@ -87,20 +87,23 @@ class PdfPlumberAdapter(PdfTextAdapter):
             raise PdfExtractionError("Empty file: nothing to extract.")
         try:
             with pdfplumber.open(io.BytesIO(data), password=password or None) as pdf:
-                pages = tuple(
-                    PdfPage(
-                        page_number=number,
-                        text=page.extract_text() or "",
-                        tables=tuple(
-                            normalise_table(table)
-                            for table in page.extract_tables(TABLE_SETTINGS)
-                        ),
-                        lines=lines_from_words(
-                            (w["text"], float(w["x0"]), float(w["x1"]), float(w["top"])) for w in page.extract_words()
-                        ),
+                built = []
+                for number, page in enumerate(pdf.pages, start=1):
+                    built.append(
+                        PdfPage(
+                            page_number=number,
+                            text=page.extract_text() or "",
+                            tables=tuple(normalise_table(table) for table in page.extract_tables(TABLE_SETTINGS)),
+                            lines=lines_from_words(
+                                (w["text"], float(w["x0"]), float(w["x1"]), float(w["top"])) for w in page.extract_words()
+                            ),
+                        )
                     )
-                    for number, page in enumerate(pdf.pages, start=1)
-                )
+                    # pdfplumber keeps a page's parsed objects (every character and line) until it is told to let go, so a long
+                    # statement held all of its pages at once: a 238-page one took 1.7 GB, more than a small server has.
+                    page.flush_cache()
+                    page.get_textmap.cache_clear()
+                pages = tuple(built)
                 page_count = len(pdf.pages)
         except PDFPasswordIncorrect as exc:
             raise _locked(password) from exc

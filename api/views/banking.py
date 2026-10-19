@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import logging
+import time
 
 from django.utils.decorators import method_decorator
 from django.views.decorators.debug import sensitive_post_parameters
@@ -148,6 +150,15 @@ def _ingest(*, client, data, filename, user, allow_gap, layout=None, password=No
     client created before the seeds existed would otherwise never get them, and
     the operation is idempotent.
     """
+    started = laps = time.monotonic()
+    timings: dict[str, float] = {}
+
+    def lap(stage: str) -> None:
+        nonlocal laps
+        now = time.monotonic()
+        timings[stage] = round(now - laps, 1)
+        laps = now
+
     result = ingest_statement(
         client=client,
         data=data,
@@ -157,8 +168,10 @@ def _ingest(*, client, data, filename, user, allow_gap, layout=None, password=No
         layout=layout,
         password=password,
     )
+    lap("read_and_save")
     seed_client(client, created_by=user)
     classified = classify_statement(result.statement)
+    lap("classify")
 
     # Money moved between the client's own accounts shows as a withdrawal in one statement and a deposit in the other. Pairing the two
     # sides places both in each other's account, instead of one looking like a payment and the other like a sale. A failure here must
@@ -168,15 +181,15 @@ def _ingest(*, client, data, filename, user, allow_gap, layout=None, password=No
 
         pair_own_transfers(client)
     except Exception:  # noqa: BLE001
-        import logging
-
         logging.getLogger(__name__).exception("Pairing own-account transfers failed after a statement upload")
+    lap("pair_transfers")
 
     # A row that is plainly the payment of an invoice already on the books is settled against it here, before it is
     # sent anywhere to be guessed at.
     from ledger.matching import match_client
 
     matched = match_client(client)
+    lap("match_invoices")
 
     # Whatever the rules left waits for the assistant, which reads it a few rows at a
     # time through the next-batch endpoint. The model is never asked from here: a
@@ -191,6 +204,11 @@ def _ingest(*, client, data, filename, user, allow_gap, layout=None, password=No
     from ledger.approval import auto_post_client
 
     auto_posted = auto_post_client(client)
+    lap("auto_post")
+    # Where an upload's time went, so a slow one can be explained from the log (rows, then seconds per stage).
+    logging.getLogger("autoca.upload").info(
+        "statement upload: %d rows, %.1fs in all: %s", len(result.parsed) if result.parsed is not None else 0, time.monotonic() - started, timings
+    )
 
     return {
         "statement": str(result.statement.pk),

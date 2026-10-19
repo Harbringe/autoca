@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDate } from '@/lib/format'
 import { useSession } from '@/session/session'
+import { PortalConnection } from '@/features/gst/PortalConnection'
 import { initials } from './clientsView'
 import { CONSTITUTIONS, draftOf, labelOf, MSME_CATEGORIES, patchOf, type FieldDef } from './profileView'
 
@@ -108,7 +109,12 @@ export function ProfileSections({ clientId }: { clientId: string }) {
   return (
     <>
       <Section clientId={clientId} profile={p} title="About the client" fields={IDENTITY} />
-      <Section clientId={clientId} profile={p} title="Registrations" fields={REGISTRATIONS} after={<GstinRow clientId={clientId} />} note={<SharedPan names={p.pan_shared_with} />} />
+      <Section clientId={clientId} profile={p} title="Registrations" fields={REGISTRATIONS} after={
+          <>
+            <GstinRow clientId={clientId} />
+            <PortalConnection clientId={clientId} />
+          </>
+        } note={<SharedPan names={p.pan_shared_with} />} />
       <Section clientId={clientId} profile={p} title="Contacts and address" fields={CONTACTS} />
       <Section clientId={clientId} profile={p} title="Notes" fields={NOTES} />
     </>

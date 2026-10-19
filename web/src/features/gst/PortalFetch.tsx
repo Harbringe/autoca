@@ -77,11 +77,12 @@ export function PortalFetch({
   )
 }
 
-function SignIn({
+export function SignIn({
   clientId,
   registrationId,
   gstin,
   username: known,
+  confirmLabel = 'Connect and fetch',
   onClose,
   onConnected,
 }: {
@@ -89,6 +90,7 @@ function SignIn({
   registrationId: string
   gstin: string
   username: string
+  confirmLabel?: string
   onClose: () => void
   onConnected: () => void
 }) {
@@ -150,7 +152,7 @@ function SignIn({
           </Button>
           {sent ? (
             <Button loading={actions.connect.isPending} disabled={otp.length < 4} onClick={() => void connect()}>
-              Connect and fetch
+              {confirmLabel}
             </Button>
           ) : (
             <Button loading={actions.sendOtp.isPending} disabled={!username.trim()} onClick={() => void send()}>

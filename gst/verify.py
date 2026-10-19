@@ -47,7 +47,7 @@ class CheckResult:
 
 
 def _provider_name() -> str:
-    return type(get_gstverify()).__name__
+    return get_gstverify().label
 
 
 def _month_start(now: datetime.datetime) -> datetime.datetime:
@@ -78,14 +78,17 @@ def _check_locked(firm_id, gstin: str, refresh: bool) -> CheckResult:
     row.set_gstin(gstin)
     existing = GstinCheck.objects.filter(firm_id=firm_id, gstin_hash=row.gstin_hash).first()
     now = timezone.now()
-    if existing is not None and not refresh and now - existing.checked_at < datetime.timedelta(days=REUSE_DAYS):
-        return _result(existing, from_cache=True)
+    # An answer from another provider or environment (a test one, before switching to live) is not the portal's: it is never reused
+    # or shown as the last answer. Its row is still the one overwritten, since a GSTIN has one row.
+    cached = existing if existing is not None and existing.provider == _provider_name() else None
+    if cached is not None and not refresh and now - cached.checked_at < datetime.timedelta(days=REUSE_DAYS):
+        return _result(cached, from_cache=True)
 
-    if existing is not None and now - existing.checked_at < datetime.timedelta(minutes=REFRESH_MIN_MINUTES):
-        return _result(existing, from_cache=True)
+    if cached is not None and now - cached.checked_at < datetime.timedelta(minutes=REFRESH_MIN_MINUTES):
+        return _result(cached, from_cache=True)
     if lookups_this_month(firm_id) >= settings.GSTIN_CHECKS_PER_MONTH:
-        if existing is not None:
-            return dataclasses.replace(_result(existing, from_cache=True), message="This month's allowance of GSTIN checks is used up; showing the last answer.")
+        if cached is not None:
+            return dataclasses.replace(_result(cached, from_cache=True), message="This month's allowance of GSTIN checks is used up; showing the last answer.")
         raise GstinCheckRefused("This month's allowance of GSTIN checks for the firm is used up.")
 
     try:
@@ -94,8 +97,8 @@ def _check_locked(firm_id, gstin: str, refresh: bool) -> CheckResult:
         _save(existing or row, status="not found", details={}, now=now)
         return CheckResult(gstin, "not_found", {}, "not found", now, False, _provider_name(), "The portal has no record of this GSTIN.")
     except GstinLookupError as exc:
-        if existing is not None:
-            return dataclasses.replace(_result(existing, from_cache=True), message=f"Could not check just now ({exc}); showing the last answer.")
+        if cached is not None:
+            return dataclasses.replace(_result(cached, from_cache=True), message=f"Could not check just now ({exc}); showing the last answer.")
         return CheckResult(gstin, "unavailable", {}, "", None, False, _provider_name(), f"Could not check just now ({exc}).")
 
     saved = _save(existing or row, status=(details.status or "").lower(), details=_details_dict(details), now=now)

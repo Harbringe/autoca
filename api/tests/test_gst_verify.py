@@ -70,6 +70,14 @@ def test_refresh_asks_the_portal_again_but_not_within_the_hour(api, client_recor
     assert body["from_cache"] is False and GstinCheck.objects.count() == 1
 
 
+def test_an_answer_from_another_environment_is_not_reused(api, client_record):
+    api.post(URL.format(client_record.pk), {"gstin": ACTIVE}, format="json")
+    GstinCheck.objects.update(provider="Sandbox (test)")  # as if made before switching to live
+    body = api.post(URL.format(client_record.pk), {"gstin": ACTIVE}, format="json").json()
+    assert body["from_cache"] is False and body["provider"] == "StubGstinVerifier"
+    assert GstinCheck.objects.count() == 1
+
+
 def test_a_party_is_compared_with_the_portal_and_a_cancelled_gstin_is_flagged(api, client_record):
     party = make_party(api, client_record, name="Stub Trade Name AAAPL1234C", gstin=CANCELLED)
     body = api.post(URL.format(client_record.pk), {"party": party["id"]}, format="json").json()

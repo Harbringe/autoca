@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from integrations.sandbox_client import SandboxClient, SandboxError
+from integrations.sandbox_client import LIVE_URL, SandboxClient, SandboxError
 
 from .base import GstinLookupError, GstinNotFound, GstinVerifier, TaxpayerDetails
 
@@ -17,6 +17,10 @@ def _address(addr: dict) -> str:
 class SandboxGstinVerifier(GstinVerifier):
     def __init__(self, api_key: str = "", api_secret: str = "", base_url: str = "", timeout: float = 30.0, **_ignored):
         self.client = SandboxClient(api_key, api_secret, base_url, timeout)
+
+    @property
+    def label(self) -> str:
+        return "Sandbox (live)" if self.client.base_url.rstrip("/") == LIVE_URL else "Sandbox (test)"
 
     def lookup(self, gstin: str) -> TaxpayerDetails:
         try:

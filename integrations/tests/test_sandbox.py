@@ -126,3 +126,9 @@ def test_an_unconfigured_client_and_a_non_https_address_do_not_call_out():
         SandboxClient().call("GET", "/x", token="t")
     with pytest.raises(SandboxError):
         SandboxClient("k", "s", "http://example.test").call("GET", "/x", token="t")
+
+
+def test_the_label_names_the_environment():
+    assert SandboxGstinVerifier("k", "s", "https://api.sandbox.co.in").label == "Sandbox (live)"
+    assert SandboxGstinVerifier("k", "s", "https://test-api.sandbox.co.in").label == "Sandbox (test)"
+    assert SandboxGstinVerifier("k", "s").label == "Sandbox (test)"

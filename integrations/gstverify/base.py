@@ -39,6 +39,12 @@ class TaxpayerDetails:
 
 
 class GstinVerifier(abc.ABC):
+    @property
+    def label(self) -> str:
+        """Names this provider *and its environment* (e.g. test or live). A stored answer is reused only under the same label, so
+        switching from a provider's test environment to live never shows a test answer as if the portal had given it."""
+        return type(self).__name__
+
     @abc.abstractmethod
     def lookup(self, gstin: str) -> TaxpayerDetails:
         """Return the portal's details, or raise ``GstinNotFound`` / ``GstinLookupError``."""

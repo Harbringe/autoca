@@ -118,6 +118,18 @@ export const LEDGER_GROUPS = [
   ['DIRECT_EXPENSE', 'Direct Expenses'],
   ['INDIRECT_EXPENSE', 'Indirect Expenses'],
   ['SUSPENSE', 'Suspense A/c'],
+  ['SALES', 'Sales Accounts'],
+  ['PURCHASE', 'Purchase Accounts'],
+  ['FIXED_ASSET', 'Fixed Assets'],
+  ['STOCK', 'Stock-in-Hand'],
+  ['CURRENT_ASSET', 'Current Assets'],
+  ['LOAN_ADVANCE', 'Loans & Advances (Asset)'],
+  ['DEPOSIT', 'Deposits (Asset)'],
+  ['MISC_EXPENDITURE', 'Misc. Expenses (Asset)'],
+  ['BANK_OD', 'Bank OD A/c'],
+  ['CURRENT_LIABILITY', 'Current Liabilities'],
+  ['PROVISION', 'Provisions'],
+  ['RESERVES', 'Reserves & Surplus'],
 ] as const
 
 export type LedgerGroup = (typeof LEDGER_GROUPS)[number][0]

@@ -62,6 +62,15 @@ class ClientViewSet(FirmScopedViewSet):
         "DELETE": "client.delete",
     }
 
+    def perform_create(self, serializer):
+        super().perform_create(serializer)
+        # Every client starts with the ledgers every business needs (Cash-in-Hand, Suspense, the bank's own, Sales, Purchases, the GST
+        # and common expense ledgers) in Tally's groups, so the first statement or Tally import finds a chart to place entries in.
+        from classify.seeds import seed_client, seed_starter_ledgers
+
+        seed_client(serializer.instance, created_by=self.request.user)
+        seed_starter_ledgers(serializer.instance)
+
     def get_queryset(self):
         from django.db.models import Exists, OuterRef
 

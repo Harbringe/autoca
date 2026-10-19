@@ -22,6 +22,11 @@ So only two kinds of rule are seeded:
 Everything else is left to the review queue on the first statement and to
 learned rules thereafter. A firm reaches near-full automation within two or
 three months that way, and never has to hunt for a wrong seeded assumption.
+
+The one deliberate exception is ``STARTER_LEDGERS``: names and groups, no rules. A new client starts with the ledgers nearly every
+Indian business books to (Sales, Purchases, the GST and common expense ledgers) so the first statement or Tally import finds a chart
+instead of an empty one. It carries no judgement about the trade: nothing is posted to one of them unless a person, or a rule they
+taught, chooses it.
 """
 
 from __future__ import annotations
@@ -51,6 +56,69 @@ SEED_LEDGERS = [
     ("Bank Charges", LedgerGroup.INDIRECT_EXPENSE),
     ("Cash-in-Hand", LedgerGroup.CASH),
     ("Suspense A/c", LedgerGroup.SUSPENSE),
+]
+
+#: The ledgers every new client starts with beyond the four above: the ones nearly every Indian business books to, in the groups Tally
+#: itself files them under (Sales and Purchases in their own Sales and Purchase Accounts, GST under Duties & Taxes). A firm that
+#: wants something else renames or removes it; none of these carries a rule, so nothing is posted to them without a person or a
+#: learned rule choosing them. The names are the ones ``classify.standard_ledgers`` steers a proposal to, so a proposal reuses a
+#: starter ledger instead of opening a second one. Not here: "Profit & Loss A/c", which the reports compute as the profit brought
+#: forward (a ledger of that name would be counted twice), and Tally's group-like names (Sundry Debtors, Secured Loans, ...).
+STARTER_LEDGERS = [
+    ("Sales", LedgerGroup.SALES),
+    ("Purchases", LedgerGroup.PURCHASE),
+    ("Service Income", LedgerGroup.DIRECT_INCOME),
+    ("Freight & Cartage", LedgerGroup.DIRECT_EXPENSE),
+    ("Wages", LedgerGroup.DIRECT_EXPENSE),
+    ("Rent", LedgerGroup.INDIRECT_EXPENSE),
+    ("Salaries", LedgerGroup.INDIRECT_EXPENSE),
+    ("Electricity Charges", LedgerGroup.INDIRECT_EXPENSE),
+    ("Telephone & Internet", LedgerGroup.INDIRECT_EXPENSE),
+    ("Office Expenses", LedgerGroup.INDIRECT_EXPENSE),
+    ("Printing & Stationery", LedgerGroup.INDIRECT_EXPENSE),
+    ("Postage & Courier", LedgerGroup.INDIRECT_EXPENSE),
+    ("Travelling Expenses", LedgerGroup.INDIRECT_EXPENSE),
+    ("Conveyance", LedgerGroup.INDIRECT_EXPENSE),
+    ("Fuel Expenses", LedgerGroup.INDIRECT_EXPENSE),
+    ("Vehicle Running & Maintenance", LedgerGroup.INDIRECT_EXPENSE),
+    ("Repairs & Maintenance", LedgerGroup.INDIRECT_EXPENSE),
+    ("Staff Welfare", LedgerGroup.INDIRECT_EXPENSE),
+    ("Professional Fees", LedgerGroup.INDIRECT_EXPENSE),
+    ("Audit Fees", LedgerGroup.INDIRECT_EXPENSE),
+    ("Legal Expenses", LedgerGroup.INDIRECT_EXPENSE),
+    ("Insurance", LedgerGroup.INDIRECT_EXPENSE),
+    ("Software & Subscriptions", LedgerGroup.INDIRECT_EXPENSE),
+    ("Advertisement", LedgerGroup.INDIRECT_EXPENSE),
+    ("Business Promotion", LedgerGroup.INDIRECT_EXPENSE),
+    ("Interest Paid", LedgerGroup.INDIRECT_EXPENSE),
+    ("Depreciation", LedgerGroup.INDIRECT_EXPENSE),
+    ("Round Off", LedgerGroup.INDIRECT_EXPENSE),
+    ("Employer PF Contribution", LedgerGroup.INDIRECT_EXPENSE),
+    ("Employer ESI Contribution", LedgerGroup.INDIRECT_EXPENSE),
+    ("Interest Received", LedgerGroup.INDIRECT_INCOME),
+    ("Commission Received", LedgerGroup.INDIRECT_INCOME),
+    ("Rent Received", LedgerGroup.INDIRECT_INCOME),
+    ("Discount Received", LedgerGroup.INDIRECT_INCOME),
+    ("Miscellaneous Income", LedgerGroup.INDIRECT_INCOME),
+    ("Input CGST", LedgerGroup.DUTIES_AND_TAXES),
+    ("Input SGST", LedgerGroup.DUTIES_AND_TAXES),
+    ("Input IGST", LedgerGroup.DUTIES_AND_TAXES),
+    ("Input Cess", LedgerGroup.DUTIES_AND_TAXES),
+    ("Output CGST", LedgerGroup.DUTIES_AND_TAXES),
+    ("Output SGST", LedgerGroup.DUTIES_AND_TAXES),
+    ("Output IGST", LedgerGroup.DUTIES_AND_TAXES),
+    ("Output Cess", LedgerGroup.DUTIES_AND_TAXES),
+    ("Input GST (RCM)", LedgerGroup.DUTIES_AND_TAXES),
+    ("GST Payable (RCM)", LedgerGroup.DUTIES_AND_TAXES),
+    ("TDS Payable", LedgerGroup.DUTIES_AND_TAXES),
+    ("PF Payable", LedgerGroup.DUTIES_AND_TAXES),
+    ("ESI Payable", LedgerGroup.DUTIES_AND_TAXES),
+    ("Professional Tax", LedgerGroup.DUTIES_AND_TAXES),
+    ("Advance Tax", LedgerGroup.DUTIES_AND_TAXES),
+    ("TDS Receivable", LedgerGroup.CURRENT_ASSET),
+    ("TCS Receivable", LedgerGroup.CURRENT_ASSET),
+    ("Capital Introduced", LedgerGroup.CAPITAL),
+    ("Drawings", LedgerGroup.CAPITAL),
 ]
 
 #: (ledger name, match type, pattern, direction)
@@ -123,6 +191,19 @@ def seed_client(client, *, created_by=None) -> dict[str, int]:
         rules_created += created
 
     return {"ledgers": ledgers_created, "rules": rules_created}
+
+
+def seed_starter_ledgers(client) -> int:
+    """Give a new ``client`` the starter chart (``STARTER_LEDGERS``). Idempotent; a ledger of that name is left as it is.
+
+    Called when a client is created, and only then: an existing client's chart is its own, and adding to it behind a firm's back
+    would put ledgers it never asked for among the ones it uses. Returns how many were created.
+    """
+    created = 0
+    for name, group in STARTER_LEDGERS:
+        _, made = LedgerAccount.objects.get_or_create(firm_id=client.firm_id, client=client, name=name, defaults={"group": group})
+        created += made
+    return created
 
 
 class LedgerRenameError(ValueError):

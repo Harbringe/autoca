@@ -1,6 +1,6 @@
 """Conventional ledger names a model should reach for before inventing one.
 
-Not seeded into any client. These are the names a proposal is steered towards,
+Not seeded as a whole (a new client's starter chart is the shorter ``classify.seeds.STARTER_LEDGERS``). These are the names a proposal is steered towards,
 so two clients proposing a rent ledger both get "Rent" rather than "Rent Paid"
 and "Office Rent A/c". The client's own names still win -- imported from their Tally company, or renamed by a CA
 on acceptance when they use a different spelling.

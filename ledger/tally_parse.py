@@ -144,7 +144,9 @@ G = LedgerGroup
 
 #: Tally's predefined groups -> ours. Keyed by ``normal_name``. Predefined groups are
 #: not in an export, so a ledger's chain of parents ends at one of these names.
-#: UNVERIFIED: needs a real sample (exact spellings, e.g. "Bank OCC A/c", "Branch / Divisions").
+#: Checked against Tally's own "List of Groups" and its List of Ledgers export (a demo company, Oct 2026): every predefined group in
+#: both is below. "Profit & Loss A/c" is not: it is a ledger in Tally, and here the reports compute it as the profit brought forward.
+#: A group a firm made for itself (a "Salary" group, say) is not predefined; it is walked up to the predefined group it sits under.
 TALLY_GROUPS: dict[str, str] = {
     "sundry debtors": G.DEBTOR,
     "sundry creditors": G.CREDITOR,
@@ -174,6 +176,8 @@ TALLY_GROUPS: dict[str, str] = {
     "deposits (asset)": G.DEPOSIT,
     "misc. expenses (asset)": G.MISC_EXPENDITURE,
     "current liabilities": G.CURRENT_LIABILITY,
+    # Tally's inter-branch accounts: a liability-side primary group with no stricter home here.
+    "branch / divisions": G.CURRENT_LIABILITY,
     "provisions": G.PROVISION,
     "reserves & surplus": G.RESERVES,
     "retained earnings": G.RESERVES,

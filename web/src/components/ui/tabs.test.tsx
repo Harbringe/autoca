@@ -1,5 +1,7 @@
 import { createMemoryHistory, createRootRoute, createRoute, createRouter, Outlet, RouterProvider } from '@tanstack/react-router'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import { vi } from 'vitest'
 import { TabNav } from './tabs'
 
 // Tabs that share one path and differ only by ?report= must not all look current, and choosing one
@@ -41,7 +43,7 @@ describe('TabNav with search tabs', () => {
   })
 })
 
-// A long row keeps seven in the row and folds the rest under "More", which names the current one when you are on it.
+// A long row keeps every tab in one row that scrolls sideways, with an arrow on each side that has more tabs beyond it.
 async function renderLong(url: string) {
   const root = createRootRoute({ component: Outlet })
   const names = ['One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten']
@@ -49,26 +51,43 @@ async function renderLong(url: string) {
     createRoute({
       getParentRoute: () => root,
       path: `/${name.toLowerCase()}`,
-      component: () => (
-        <TabNav label="Sections" maxVisible={7} items={names.map((n) => ({ to: `/${n.toLowerCase()}`, label: n, exact: true }))} />
-      ),
+      component: () => <TabNav label="Sections" items={names.map((n) => ({ to: `/${n.toLowerCase()}`, label: n, exact: true }))} />,
     }),
   )
   const router = createRouter({ routeTree: root.addChildren(routes), history: createMemoryHistory({ initialEntries: [url] }) })
   render(<RouterProvider router={router} />)
-  await screen.findByRole('navigation', { name: 'Sections' })
+  return screen.findByRole('navigation', { name: 'Sections' })
+}
+
+function overflow(nav: HTMLElement, { scrollLeft, clientWidth, scrollWidth }: { scrollLeft: number; clientWidth: number; scrollWidth: number }) {
+  Object.defineProperty(nav, 'clientWidth', { configurable: true, value: clientWidth })
+  Object.defineProperty(nav, 'scrollWidth', { configurable: true, value: scrollWidth })
+  nav.scrollLeft = scrollLeft
+  fireEvent.scroll(nav)
 }
 
 describe('TabNav with more tabs than fit', () => {
-  it('shows seven and puts the rest under More', async () => {
+  it('keeps every tab in the row and shows no arrows while they all fit', async () => {
     await renderLong('/one')
-    expect(screen.getAllByRole('link')).toHaveLength(7)
-    expect(screen.getByRole('button', { name: 'More' })).toBeInTheDocument()
-    expect(screen.queryByRole('link', { name: 'Ten' })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('link')).toHaveLength(10)
+    expect(screen.queryByRole('button', { name: /scroll sections/i })).not.toBeInTheDocument()
   })
-  it('names the current tab on the More button when it is one of the folded ones', async () => {
-    await renderLong('/nine')
-    expect(screen.getByRole('button', { name: 'Nine' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'More' })).not.toBeInTheDocument()
+  it('shows a right arrow when tabs run past the edge, and a left one once scrolled', async () => {
+    const nav = await renderLong('/one')
+    overflow(nav, { scrollLeft: 0, clientWidth: 300, scrollWidth: 900 })
+    expect(await screen.findByRole('button', { name: 'Scroll Sections right' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Scroll Sections left' })).not.toBeInTheDocument()
+    overflow(nav, { scrollLeft: 600, clientWidth: 300, scrollWidth: 900 })
+    expect(await screen.findByRole('button', { name: 'Scroll Sections left' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Scroll Sections right' })).not.toBeInTheDocument()
+  })
+  it('moves the row when an arrow is pressed', async () => {
+    const nav = await renderLong('/one')
+    const scrollBy = vi.fn()
+    nav.scrollBy = scrollBy
+    overflow(nav, { scrollLeft: 0, clientWidth: 300, scrollWidth: 900 })
+    await userEvent.click(await screen.findByRole('button', { name: 'Scroll Sections right' }))
+    expect(scrollBy).toHaveBeenCalledWith(expect.objectContaining({ left: expect.any(Number) }))
+    expect(scrollBy.mock.calls[0]?.[0].left).toBeGreaterThan(0)
   })
 })

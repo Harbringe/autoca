@@ -135,7 +135,7 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
         </div>
       </header>
 
-      {tabs.length > 0 && !onItemPage && <TabNav label={`${title} sections`} items={tabs} maxVisible={7} />}
+      {tabs.length > 0 && !onItemPage && <TabNav label={`${title} sections`} items={tabs} />}
 
       {explicit && latestYear !== undefined && !dataYears.includes(fy) && (
         <p className="no-print -mt-2 text-[13px] text-muted-foreground">

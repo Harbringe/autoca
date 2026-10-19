@@ -39,6 +39,7 @@ from .bob import BankOfBarodaParser
 from .card import CardStatementParser
 from .generic import GenericStatementParser
 from .icici import IciciStatementParser
+from .positional import PositionalStatementParser
 
 #: Tried first, in order. Each must recognise only its own bank.
 DEDICATED_PARSERS: tuple[type[StatementParser], ...] = (AxisStatementParser, BankOfBarodaParser, IciciStatementParser)
@@ -52,6 +53,7 @@ __all__ = [
     "DEDICATED_PARSERS",
     "FALLBACK_PARSER",
     "PARSERS",
+    "PositionalStatementParser",
     "BalanceChainError",
     "NoTextLayerError",
     "ParsedStatement",
@@ -100,6 +102,8 @@ def detect_parser(document: PdfDocument, layout: dict | None = None) -> Statemen
     kind = _not_a_bank_account(document)
     if kind == "loan":
         # Read as a loan, on the strength of its title: the balance is what is owed and rises with a debit.
+        if not layout and not GenericStatementParser.detect(document) and PositionalStatementParser.detect(document):
+            return PositionalStatementParser(liability=True)
         return GenericStatementParser(liability=True, layout=layout)
     if kind == "credit card":
         # Read as a card, on the strength of its title: what is owed rises with a purchase, and the proof is the printed
@@ -128,6 +132,10 @@ def detect_parser(document: PdfDocument, layout: dict | None = None) -> Statemen
 
     if FALLBACK_PARSER.detect(document):
         return FALLBACK_PARSER()
+
+    # No ruled table with a row per transaction: the rows may still be there as words in columns on the page.
+    if PositionalStatementParser.detect(document):
+        return PositionalStatementParser()
 
     raise UnsupportedBankError(
         "Nothing in this document looks like a transaction table: no page has "

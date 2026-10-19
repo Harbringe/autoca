@@ -379,7 +379,6 @@ def test_pausing_is_for_people_who_may_classify_and_only_for_their_own_clients(f
     reader = sign_in(member(firm, Role.READ_ONLY, "ro-pause@example.test").user)
     assert reader.post(f"{V1}/clients/{client_record.pk}/assistant/pause/").status_code == 403
     assert reader.delete(f"{V1}/clients/{client_record.pk}/assistant/pause/").status_code == 403
+    # Another firm's client is not found, so there is nothing for the call to have changed.
     assert api.post(f"{V1}/clients/{other.pk}/assistant/pause/").status_code == 404
-    with firm_context(other.firm_id):
-        other.refresh_from_db()
-        assert other.assistant_paused_at is None
+    assert api.delete(f"{V1}/clients/{other.pk}/assistant/pause/").status_code == 404

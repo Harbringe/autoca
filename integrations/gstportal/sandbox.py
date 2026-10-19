@@ -26,14 +26,16 @@ def _expiry(data: dict) -> datetime.datetime:
     return datetime.datetime.now(datetime.UTC) + datetime.timedelta(hours=5)
 
 
-def _check(reply: dict) -> dict:
-    """The inner ``data`` of an answer, or the right error. Failures often arrive as HTTP 200 with ``status_cd`` 0."""
+def _check(reply: dict, *, signing_in: bool = False) -> dict:
+    """The inner ``data`` of an answer, or the right error. Failures often arrive as HTTP 200 with ``status_cd`` 0.
+
+    While signing in there is no session to have ended, so a session-style code is the provider's own refusal and is shown as it is."""
     outer = reply.get("data") or {}
     error = outer.get("error") or {}
     code = error.get("error_cd")
     if code in NOT_READY:
         raise PortalNotReady(str(error.get("message") or "The portal has no GSTR-2B for that month yet."))
-    if code in SESSION_ERRORS:
+    if code in SESSION_ERRORS and not signing_in:
         raise PortalSessionExpired("The portal session has ended. Sign in again with a new OTP.")
     if str(outer.get("status_cd", "1")) == "0" or error:
         raise PortalError(str(error.get("message") or "The portal refused the request."))
@@ -48,18 +50,21 @@ class SandboxGstPortal(GstPortal):
         try:
             return self.client.call(*args, **kwargs)
         except SandboxError as exc:
-            if exc.status in (401, 403):
+            # Only a call made with the taxpayer's own token can find that session ended; for the application's calls a
+            # 401 or 403 is the provider refusing us, and its own words are what a person needs.
+            if exc.status in (401, 403) and kwargs.get("token"):
                 raise PortalSessionExpired("The portal session has ended. Sign in again with a new OTP.") from exc
-            raise PortalError(str(exc)) from exc
+            detail = f" (HTTP {exc.status})" if exc.status else ""
+            raise PortalError(f"{exc}{detail}") from exc
 
     def request_otp(self, gstin: str, username: str) -> None:
-        _check(self._call("POST", "/gst/compliance/tax-payer/otp", body={"username": username, "gstin": gstin}))
+        _check(self._call("POST", "/gst/compliance/tax-payer/otp", body={"username": username, "gstin": gstin}), signing_in=True)
 
     def verify_otp(self, gstin: str, username: str, otp: str) -> PortalSession:
         if not str(otp).isdigit():
             raise PortalError("The OTP is digits only.")
         reply = self._call("POST", "/gst/compliance/tax-payer/otp/verify", params={"otp": int(otp)}, body={"username": username, "gstin": gstin})
-        data = _check(reply)
+        data = _check(reply, signing_in=True)
         if not data.get("access_token"):
             raise PortalError("The portal did not start a session.")
         return PortalSession(data["access_token"], _expiry(data))

@@ -86,6 +86,17 @@ def test_a_refused_otp_and_a_dead_session_are_told_apart():
         portal().verify_otp(GSTIN, "u", "12ab")
 
 
+def test_a_refusal_while_signing_in_is_the_providers_own_words_not_a_dead_session():
+    with pytest.raises(PortalError) as refused:
+        portal(SandboxError("API access is not enabled for this GSTIN", status=403)).request_otp(GSTIN, "u")
+    assert not isinstance(refused.value, PortalSessionExpired) and "API access is not enabled" in str(refused.value)
+    with pytest.raises(PortalError) as maxed:
+        portal({"code": 200, "data": {"status_cd": "0", "error": {"error_cd": "AUTH403", "message": "Maximum sessions exceeded"}}}).request_otp(GSTIN, "u")
+    assert not isinstance(maxed.value, PortalSessionExpired) and "Maximum sessions" in str(maxed.value)
+    with pytest.raises(PortalSessionExpired):  # with the taxpayer's own token a 401 does mean the session ended
+        portal(SandboxError("Unauthorized", status=401)).refresh("T")
+
+
 def test_gstr2b_comes_back_in_the_shape_the_upload_reads():
     inner = {"gstin": GSTIN, "rtnprd": "092026", "docdata": {"b2b": [{"ctin": "29ABCPE1234F1ZA", "inv": [{"inum": "INV-1"}]}]}}
     p = portal({"code": 200, "data": {"status_cd": "1", "data": inner}})

@@ -146,6 +146,11 @@ class Client(UUIDModel, FirmScopedModel):
         max_length=12, choices=ClosePeriod.choices, default=ClosePeriod.QUARTERLY, db_default=ClosePeriod.QUARTERLY
     )
 
+    #: Set when a person pauses the assistant for this client: the background worker reads none of its waiting rows, and the
+    #: next-batch call answers "paused", until a person clears it. Rows stay queued meanwhile, and the rules still place what
+    #: they can. Kept in the database, not the cache, so a restart does not quietly end a pause someone chose.
+    assistant_paused_at = models.DateTimeField(null=True, blank=True)
+
     # --- the client's profile: who they are, how to reach them, what they are registered as -----------------------
     #: None of this reaches the model tier. Only ``business_profile`` does, and it is masked first.
     trade_name = models.CharField(max_length=255, blank=True, default="", db_default="")

@@ -392,6 +392,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/assistant/pause/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Pause the assistant for this client
+         * @description Stops the background worker reading this client's waiting rows, and makes `next-batch` answer `paused` (`paused_by_person`). Nothing is lost: rows stay queued, rules still place what they can, and a statement can still be uploaded. It stays paused until someone resumes it (a restart does not end it). Pausing a paused client changes nothing. Requires `transaction.classify`.
+         */
+        post: operations["clients_assistant_pause_create"];
+        /**
+         * Resume the assistant for this client
+         * @description The worker reads this client's waiting rows again, within a few seconds. Resuming a client that is not paused changes nothing.
+         */
+        delete: operations["clients_assistant_pause_destroy"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/bank-accounts/": {
         parameters: {
             query?: never;
@@ -3613,15 +3637,25 @@ export interface components {
             /** @description Reports directly to the person asking. */
             on_my_team: boolean;
         };
+        AssistantPause: {
+            /** @description True while the assistant is paused for this client. */
+            paused: boolean;
+            /**
+             * Format: date-time
+             * @description When it was paused. Null when it is running.
+             */
+            paused_at: string | null;
+        };
         /**
          * @description * `` -
          *     * `rate_limit` - rate_limit
          *     * `daily_limit` - daily_limit
          *     * `provider_down` - provider_down
          *     * `assistant_off` - assistant_off
+         *     * `paused_by_person` - paused_by_person
          * @enum {string}
          */
-        AssistantReasonEnum: "rate_limit" | "daily_limit" | "provider_down" | "assistant_off";
+        AssistantReasonEnum: "rate_limit" | "daily_limit" | "provider_down" | "assistant_off" | "paused_by_person";
         /**
          * @description * `working` - working
          *     * `idle` - idle
@@ -5844,6 +5878,7 @@ export interface components {
              *     * `daily_limit` - daily_limit
              *     * `provider_down` - provider_down
              *     * `assistant_off` - assistant_off
+             *     * `paused_by_person` - paused_by_person
              */
             reason: components["schemas"]["AssistantReasonEnum"] | components["schemas"]["BlankEnum"];
             /** @description One plain sentence to show. */
@@ -7727,13 +7762,14 @@ export interface components {
             /** @description Rows queued for the assistant that it has not finished with. A background worker reads them; nobody needs a page open. */
             assistant_waiting: number;
             /**
-             * @description Why the assistant is not reading right now. Blank when it is working or has nothing to do.
+             * @description Why the assistant is not reading right now. Blank when it is working or has nothing to do. `paused_by_person`: someone paused it for this client and it stays paused until they resume it.
              *
              *     * `` -
              *     * `rate_limit` - rate_limit
              *     * `daily_limit` - daily_limit
              *     * `provider_down` - provider_down
              *     * `assistant_off` - assistant_off
+             *     * `paused_by_person` - paused_by_person
              */
             assistant_reason: components["schemas"]["AssistantReasonEnum"] | components["schemas"]["BlankEnum"];
             /** @description When it reads again, for a pause. Null otherwise. */
@@ -9928,6 +9964,48 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["NextBatch"];
+                };
+            };
+        };
+    };
+    clients_assistant_pause_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantPause"];
+                };
+            };
+        };
+    };
+    clients_assistant_pause_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AssistantPause"];
                 };
             };
         };

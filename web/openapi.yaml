@@ -719,6 +719,56 @@ paths:
               schema:
                 $ref: '#/components/schemas/NextBatch'
           description: ''
+  /api/v1/clients/{client_id}/assistant/pause/:
+    post:
+      operationId: clients_assistant_pause_create
+      description: 'Stops the background worker reading this client''s waiting rows,
+        and makes `next-batch` answer `paused` (`paused_by_person`). Nothing is lost:
+        rows stay queued, rules still place what they can, and a statement can still
+        be uploaded. It stays paused until someone resumes it (a restart does not
+        end it). Pausing a paused client changes nothing. Requires `transaction.classify`.'
+      summary: Pause the assistant for this client
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssistantPause'
+          description: ''
+    delete:
+      operationId: clients_assistant_pause_destroy
+      description: The worker reads this client's waiting rows again, within a few
+        seconds. Resuming a client that is not paused changes nothing.
+      summary: Resume the assistant for this client
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AssistantPause'
+          description: ''
   /api/v1/clients/{client_id}/bank-accounts/:
     get:
       operationId: clients_bank_accounts_list
@@ -7721,15 +7771,31 @@ components:
       - on_my_team
       - role
       - role_display
+    AssistantPause:
+      type: object
+      properties:
+        paused:
+          type: boolean
+          description: True while the assistant is paused for this client.
+        paused_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: When it was paused. Null when it is running.
+      required:
+      - paused
+      - paused_at
     AssistantReasonEnum:
       enum:
       - rate_limit
       - daily_limit
       - provider_down
       - assistant_off
+      - paused_by_person
       type: string
       description: "* `` - \n* `rate_limit` - rate_limit\n* `daily_limit` - daily_limit\n\
-        * `provider_down` - provider_down\n* `assistant_off` - assistant_off"
+        * `provider_down` - provider_down\n* `assistant_off` - assistant_off\n* `paused_by_person`\
+        \ - paused_by_person"
     AssistantStateEnum:
       enum:
       - working
@@ -12667,7 +12733,8 @@ components:
         reason:
           description: "Why the assistant is paused or idle. Blank when it is working.\n\
             \n* `` - \n* `rate_limit` - rate_limit\n* `daily_limit` - daily_limit\n\
-            * `provider_down` - provider_down\n* `assistant_off` - assistant_off"
+            * `provider_down` - provider_down\n* `assistant_off` - assistant_off\n\
+            * `paused_by_person` - paused_by_person"
           oneOf:
           - $ref: '#/components/schemas/AssistantReasonEnum'
           - $ref: '#/components/schemas/BlankEnum'
@@ -16285,9 +16352,11 @@ components:
             A background worker reads them; nobody needs a page open.
         assistant_reason:
           description: "Why the assistant is not reading right now. Blank when it\
-            \ is working or has nothing to do.\n\n* `` - \n* `rate_limit` - rate_limit\n\
-            * `daily_limit` - daily_limit\n* `provider_down` - provider_down\n* `assistant_off`\
-            \ - assistant_off"
+            \ is working or has nothing to do. `paused_by_person`: someone paused\
+            \ it for this client and it stays paused until they resume it.\n\n* ``\
+            \ - \n* `rate_limit` - rate_limit\n* `daily_limit` - daily_limit\n* `provider_down`\
+            \ - provider_down\n* `assistant_off` - assistant_off\n* `paused_by_person`\
+            \ - paused_by_person"
           oneOf:
           - $ref: '#/components/schemas/AssistantReasonEnum'
           - $ref: '#/components/schemas/BlankEnum'

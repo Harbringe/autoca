@@ -45,6 +45,15 @@ export const reviewSummary = (id: string) =>
     queryFn: () => raw.get<ReviewSummary>(`${V1}/clients/${id}/review-queue/summary/`),
   })
 
+/** Pause or resume the assistant for one client. The review summary says which it is, so it is read again afterwards. */
+export function useAssistantPause(id: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (pause: boolean) => (pause ? raw.post<void>(`${V1}/clients/${id}/assistant/pause/`) : raw.delete(`${V1}/clients/${id}/assistant/pause/`)),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: clientKeys.part(id, 'summary') }),
+  })
+}
+
 export const booksStatus = (id: string) =>
   queryOptions({
     queryKey: clientKeys.part(id, 'books'),

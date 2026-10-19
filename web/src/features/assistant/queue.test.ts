@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ReviewSummary } from '@/api/types'
-import { assistantLine, assistantShort, IDLE_STATUS, statusFromSummary, type AssistantStatus } from './queue'
+import { assistantLine, assistantShort, IDLE_STATUS, isPausedByPerson, isProcessing, statusFromSummary, type AssistantStatus } from './queue'
 
 const status = (over: Partial<AssistantStatus> = {}): AssistantStatus => ({ ...IDLE_STATUS, state: 'working', waiting: 80, total: 120, ...over })
 
@@ -67,5 +67,28 @@ describe('the words', () => {
     expect(assistantLine(status({ state: 'idle', reason: 'assistant_off' }), 0)).toBe('The assistant is off, so rows are placed by rules and by you.')
     expect(assistantShort(status({ state: 'idle', reason: 'assistant_off' }), 0)).toBeNull()
     expect(assistantLine(IDLE_STATUS, 0)).toBeNull()
+  })
+})
+
+describe('a pause a person chose', () => {
+  it('is paused with no time to resume, and stays visible with nothing waiting (so Resume stays)', () => {
+    const held = statusFromSummary(status(), summary({ assistant_reason: 'paused_by_person', assistant_waiting: 40 }), 1000)
+    expect(held).toMatchObject({ state: 'paused', reason: 'paused_by_person', waiting: 40, resumeAt: null })
+    expect(isPausedByPerson(held)).toBe(true)
+    expect(isProcessing(held)).toBe(false)
+    const empty = statusFromSummary(status(), summary({ assistant_reason: 'paused_by_person', assistant_waiting: 0 }), 1000)
+    expect(empty.state).toBe('paused')
+  })
+  it('says so in words, with and without rows waiting, and in the top bar', () => {
+    const held = statusFromSummary(IDLE_STATUS, summary({ assistant_reason: 'paused_by_person', assistant_waiting: 40 }), 0)
+    expect(assistantLine(held, 0)).toBe('Assistant paused: 40 rows wait until you resume it')
+    expect(assistantShort(held, 0)).toBe('Assistant paused')
+    const none = statusFromSummary(IDLE_STATUS, summary({ assistant_reason: 'paused_by_person', assistant_waiting: 0 }), 0)
+    expect(assistantLine(none, 0)).toBe('Assistant paused for this client')
+  })
+  it('is over as soon as the summary stops saying it', () => {
+    const resumed = statusFromSummary(IDLE_STATUS, summary({ assistant_reason: '', assistant_waiting: 40 }), 0)
+    expect(resumed.state).toBe('working')
+    expect(isPausedByPerson(resumed)).toBe(false)
   })
 })

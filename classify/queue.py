@@ -81,7 +81,7 @@ class BatchOutcome:
     waiting: int
     state: str  # working | idle | paused
     retry_after_seconds: int | None
-    reason: str  # "" | rate_limit | daily_limit | provider_down | assistant_off
+    reason: str  # "" | rate_limit | daily_limit | provider_down | assistant_off | paused_by_person
     message: str
     #: Of the rows suggested, how many were very sure and went straight into the books.
     auto_posted: int = 0
@@ -191,6 +191,14 @@ def _paused_outcome(entry: dict, waiting: int, *, processed=0, declined=0) -> Ba
     return BatchOutcome(processed, 0, declined, waiting, "paused", seconds, reason, message)
 
 
+def assistant_paused(client) -> bool:
+    """True when a person has paused the assistant for this client. Read fresh from the database (inside a firm context), so a
+    pause made a moment ago holds even for a client object loaded before it."""
+    from core.models import Client
+
+    return Client.objects.filter(pk=client.pk, assistant_paused_at__isnull=False).exists()
+
+
 def assistant_state(firm_id) -> tuple[str, int | None]:
     """What the screens may say about the assistant right now: ``(reason, seconds)``.
 
@@ -233,6 +241,15 @@ def process_next_batch(client, *, max_rows: int | None = None) -> BatchOutcome:
         return BatchOutcome(
             0, 0, 0, left, "idle", None, "assistant_off",
             "The assistant is switched off, so the rows wait for a person.",
+        )
+
+    with firm_context(firm_id):
+        by_person = assistant_paused(client)
+        left = waiting_count(client) if by_person else 0
+    if by_person:
+        return BatchOutcome(
+            0, 0, 0, left, "paused", None, "paused_by_person",
+            f"The assistant is paused for this client, so {left} row{'s' if left != 1 else ''} wait until it is resumed.",
         )
 
     paused = _current_pause(firm_id)

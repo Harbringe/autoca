@@ -17,7 +17,7 @@ from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
 from api.views.assets import AssetViewSet
-from api.views.assistant import NextBatchView
+from api.views.assistant import AssistantPauseView, NextBatchView
 from api.views.audit import AuditLogView
 from api.views.banking import (
     BankAccountViewSet,
@@ -142,6 +142,11 @@ urlpatterns = [
         "clients/<uuid:client_id>/assistant/next-batch/",
         NextBatchView.as_view(),
         name="assistant-next-batch",
+    ),
+    path(
+        "clients/<uuid:client_id>/assistant/pause/",
+        AssistantPauseView.as_view(),
+        name="assistant-pause",
     ),
     path(
         "clients/<uuid:client_id>/profile/",

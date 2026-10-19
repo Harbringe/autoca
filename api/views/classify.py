@@ -602,6 +602,8 @@ class ReviewQueueViewSet(
     def summary(self, request, client_id=None):
         summary = review_summary(self.client)
         reason, retry = assistant_state(self.client.firm_id)
+        if self.client.assistant_paused_at and reason != "assistant_off":
+            reason, retry = "paused_by_person", None
         return Response(
             ReviewSummarySerializer(
                 {

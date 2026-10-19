@@ -352,7 +352,7 @@ class NextBatchSerializer(serializers.Serializer):
     )
     retry_after_seconds = serializers.IntegerField(allow_null=True, help_text="When to call again. Null when the call may be repeated straight away.")
     reason = serializers.ChoiceField(
-        choices=["", "rate_limit", "daily_limit", "provider_down", "assistant_off"],
+        choices=["", "rate_limit", "daily_limit", "provider_down", "assistant_off", "paused_by_person"],
         help_text="Why the assistant is paused or idle. Blank when it is working.",
     )
     message = serializers.CharField(help_text="One plain sentence to show.")
@@ -685,8 +685,11 @@ class ReviewSummarySerializer(serializers.Serializer):
         help_text="Rows queued for the assistant that it has not finished with. A background worker reads them; nobody needs a page open."
     )
     assistant_reason = serializers.ChoiceField(
-        choices=["", "rate_limit", "daily_limit", "provider_down", "assistant_off"],
-        help_text="Why the assistant is not reading right now. Blank when it is working or has nothing to do.",
+        choices=["", "rate_limit", "daily_limit", "provider_down", "assistant_off", "paused_by_person"],
+        help_text=(
+            "Why the assistant is not reading right now. Blank when it is working or has nothing to do. "
+            "`paused_by_person`: someone paused it for this client and it stays paused until they resume it."
+        ),
     )
     assistant_retry_seconds = serializers.IntegerField(
         allow_null=True, help_text="When it reads again, for a pause. Null otherwise."
@@ -752,3 +755,8 @@ class PlacementResultSerializer(serializers.Serializer):
         read_only=True,
         help_text="How many rows became certain enough to be posted automatically.",
     )
+
+
+class AssistantPauseSerializer(serializers.Serializer):
+    paused = serializers.BooleanField(help_text="True while the assistant is paused for this client.")
+    paused_at = serializers.DateTimeField(allow_null=True, help_text="When it was paused. Null when it is running.")

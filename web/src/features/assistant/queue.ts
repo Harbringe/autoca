@@ -11,7 +11,7 @@ import { plural } from '@/lib/format'
 export type AssistantReason = ReviewSummary['assistant_reason']
 
 export interface AssistantStatus {
-  /** `working` while rows are waiting and the assistant can read them; `paused` for a limit or an outage; `idle` otherwise. */
+  /** `working` while rows are waiting and the assistant can read them; `paused` for a limit, an outage or a person's pause; `idle` otherwise. */
   state: 'working' | 'paused' | 'idle'
   reason: AssistantReason
   /** Rows still waiting for the assistant. */
@@ -34,6 +34,8 @@ export function statusFromSummary(
 ): AssistantStatus {
   const waiting = summary.assistant_waiting
   const reason = summary.assistant_reason
+  // A person's pause is shown even with nothing waiting: the button to resume has to stay, and a later upload would not be read.
+  if (reason === 'paused_by_person') return { state: 'paused', reason, waiting, total: 0, resumeAt: null, startedAt: null }
   if (waiting <= 0 && reason !== 'assistant_off') return IDLE_STATUS
   const paused = reason === 'rate_limit' || reason === 'daily_limit' || reason === 'provider_down'
   return {
@@ -51,11 +53,20 @@ const secondsLeft = (status: AssistantStatus, now: number) => Math.max(0, Math.c
 
 /** True while the assistant is, or is about to be, at work on rows, so the line should keep moving. */
 export const isProcessing = (status: AssistantStatus): boolean =>
-  status.waiting > 0 && status.reason !== 'assistant_off' && status.reason !== 'daily_limit' && status.reason !== 'provider_down'
+  status.waiting > 0 &&
+  status.reason !== 'assistant_off' &&
+  status.reason !== 'daily_limit' &&
+  status.reason !== 'provider_down' &&
+  status.reason !== 'paused_by_person'
+
+/** True while a person has paused the assistant for this client. */
+export const isPausedByPerson = (status: AssistantStatus): boolean => status.reason === 'paused_by_person'
 
 /** The sentence for a strip on Bank statements and Review, or null when the assistant has nothing to say. */
 export function assistantLine(status: AssistantStatus, now: number): string | null {
   if (status.reason === 'assistant_off') return 'The assistant is off, so rows are placed by rules and by you.'
+  if (status.reason === 'paused_by_person')
+    return status.waiting > 0 ? `Assistant paused: ${plural(status.waiting, 'row')} wait until you resume it` : 'Assistant paused for this client'
   if (status.waiting <= 0) return null
   if (status.reason === 'daily_limit') return `Assistant allowance used for today, ${plural(status.waiting, 'row')} left for you`
   if (status.reason === 'provider_down') return `The assistant is not answering. Trying again in ${secondsLeft(status, now)} s`
@@ -72,6 +83,7 @@ export function assistantLine(status: AssistantStatus, now: number): string | nu
 
 /** The short form for the top bar, or null when there is nothing to show there. */
 export function assistantShort(status: AssistantStatus, _now: number): string | null {
+  if (status.reason === 'paused_by_person') return 'Assistant paused'
   if (status.waiting <= 0 || status.reason === 'assistant_off') return null
   if (status.reason === 'daily_limit') return 'Assistant: allowance used'
   if (status.reason === 'provider_down') return 'Assistant not answering'

@@ -676,7 +676,7 @@ SPECTACULAR_SETTINGS = {
     # Named so a generic "state" or "reason" choice set does not claim a bare component name.
     "ENUM_NAME_OVERRIDES": {
         "AssistantStateEnum": ["working", "idle", "paused"],
-        "AssistantReasonEnum": ["", "rate_limit", "daily_limit", "provider_down", "assistant_off"],
+        "AssistantReasonEnum": ["", "rate_limit", "daily_limit", "provider_down", "assistant_off", "paused_by_person"],
         # Bills and settlements. Several models share the field names "role" and "direction", and without a name
         # each choice set takes a hash.
         "AllocationKindEnum": ["AGAINST_BILL", "ON_ACCOUNT", "ADVANCE"],

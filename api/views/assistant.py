@@ -2,12 +2,17 @@
 
 from __future__ import annotations
 
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.permissions import HasFirmPermission
-from api.serializers.classify import NextBatchRequestSerializer, NextBatchSerializer
+from api.serializers.classify import (
+    AssistantPauseSerializer,
+    NextBatchRequestSerializer,
+    NextBatchSerializer,
+)
 from api.throttles import enforce
 from classify.queue import process_next_batch
 from core.access import get_visible_client
@@ -54,3 +59,41 @@ class NextBatchView(APIView):
         # A poll that did nothing leaves no permanent audit row.
         request._request.audit_skip = outcome.processed == 0
         return Response(NextBatchSerializer(outcome.as_dict()).data)
+
+
+@extend_schema(tags=["review"])
+class AssistantPauseView(APIView):
+    """Pause the assistant for one client, and resume it."""
+
+    permission_classes = [HasFirmPermission]
+    required_permission = "transaction.classify"
+
+    @extend_schema(
+        summary="Pause the assistant for this client",
+        description=(
+            "Stops the background worker reading this client's waiting rows, and makes `next-batch` answer `paused` "
+            "(`paused_by_person`). Nothing is lost: rows stay queued, rules still place what they can, and a statement can still be "
+            "uploaded. It stays paused until someone resumes it (a restart does not end it). Pausing a paused client changes nothing. "
+            "Requires `transaction.classify`."
+        ),
+        request=None,
+        responses={200: AssistantPauseSerializer},
+    )
+    def post(self, request, client_id=None):
+        client = get_visible_client(request, client_id)
+        if client.assistant_paused_at is None:
+            client.assistant_paused_at = timezone.now()
+            client.save(update_fields=["assistant_paused_at"])
+        return Response(AssistantPauseSerializer({"paused": True, "paused_at": client.assistant_paused_at}).data)
+
+    @extend_schema(
+        summary="Resume the assistant for this client",
+        description="The worker reads this client's waiting rows again, within a few seconds. Resuming a client that is not paused changes nothing.",
+        responses={200: AssistantPauseSerializer},
+    )
+    def delete(self, request, client_id=None):
+        client = get_visible_client(request, client_id)
+        if client.assistant_paused_at is not None:
+            client.assistant_paused_at = None
+            client.save(update_fields=["assistant_paused_at"])
+        return Response(AssistantPauseSerializer({"paused": False, "paused_at": None}).data)

@@ -330,3 +330,55 @@ def test_tick_reads_several_batches_at_once_and_counts_them(monkeypatch):
     monkeypatch.setattr(run_assistant, "connections", SimpleNamespace(close_all=lambda: None))
     assert run_assistant.tick(parallel=4) == 30
     assert len(seen) == 4
+
+
+# ---------------------------------------------------------------------------
+# A person pauses the assistant for one client
+# ---------------------------------------------------------------------------
+
+
+def test_a_paused_client_is_not_read_and_says_why_until_it_is_resumed(api, client_record, model):
+    _queued_books(client_record)
+    url = f"{V1}/clients/{client_record.pk}/assistant"
+
+    paused = api.post(f"{url}/pause/")
+    assert paused.status_code == 200 and paused.json()["paused"] is True and paused.json()["paused_at"]
+    # Pausing again changes nothing, including when it was paused.
+    assert api.post(f"{url}/pause/").json()["paused_at"] == paused.json()["paused_at"]
+
+    summary = api.get(f"{V1}/clients/{client_record.pk}/review-queue/summary/").json()
+    assert summary["assistant_reason"] == "paused_by_person" and summary["assistant_waiting"] > 0
+
+    held = api.post(f"{url}/next-batch/").json()
+    assert held["state"] == "paused" and held["reason"] == "paused_by_person" and held["processed"] == 0
+    assert model.calls == 0  # the model was never asked
+    with firm_context(client_record.firm_id):
+        assert not TransactionClassification.objects.filter(model_state=ModelState.CLAIMED).exists()  # no row was taken
+
+    resumed = api.delete(f"{url}/pause/")
+    assert resumed.status_code == 200 and resumed.json() == {"paused": False, "paused_at": None}
+    assert api.delete(f"{url}/pause/").json()["paused"] is False  # resuming a running client changes nothing
+    assert api.get(f"{V1}/clients/{client_record.pk}/review-queue/summary/").json()["assistant_reason"] == ""
+    assert api.post(f"{url}/next-batch/").json()["processed"] == 10 and model.calls == 1
+
+
+def test_the_background_worker_skips_a_paused_client(api, client_record, model):
+    from classify.management.commands.run_assistant import clients_waiting
+
+    _queued_books(client_record)
+    assert [c.pk for c in clients_waiting(client_record.firm_id)] == [client_record.pk]
+    api.post(f"{V1}/clients/{client_record.pk}/assistant/pause/")
+    assert clients_waiting(client_record.firm_id) == []
+    api.delete(f"{V1}/clients/{client_record.pk}/assistant/pause/")
+    assert [c.pk for c in clients_waiting(client_record.firm_id)] == [client_record.pk]
+
+
+def test_pausing_is_for_people_who_may_classify_and_only_for_their_own_clients(firm, api, client_record):
+    reader = sign_in(member(firm, Role.READ_ONLY, "ro-pause@example.test").user)
+    assert reader.post(f"{V1}/clients/{client_record.pk}/assistant/pause/").status_code == 403
+    assert reader.delete(f"{V1}/clients/{client_record.pk}/assistant/pause/").status_code == 403
+    other = create_client(create_firm("Another Firm"), "Not Yours", datetime.date(2025, 4, 1))
+    assert api.post(f"{V1}/clients/{other.pk}/assistant/pause/").status_code == 404
+    with firm_context(other.firm_id):
+        other.refresh_from_db()
+        assert other.assistant_paused_at is None

@@ -43,7 +43,8 @@ def clients_waiting(firm_id) -> list[Client]:
                 ledger__isnull=True, model_state__in=[ModelState.WAITING, ModelState.CLAIMED]
             ).values_list("transaction__bank_account__client_id", flat=True)
         )
-        return list(Client.objects.filter(pk__in=ids)) if ids else []
+        # A client a person has paused is not read (process_next_batch refuses it too; this saves asking).
+        return list(Client.objects.filter(pk__in=ids, assistant_paused_at__isnull=True)) if ids else []
 
 
 def _one_batch(client):

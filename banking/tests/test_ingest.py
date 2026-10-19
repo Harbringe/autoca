@@ -170,3 +170,30 @@ def test_a_second_firm_cannot_see_the_first_firms_statements(client):
         assert Statement.objects.count() == 0
         assert StatementTransaction.objects.count() == 0
         assert Document.objects.count() == 0
+
+
+def test_two_identical_looking_rows_in_one_statement_are_both_kept(client):
+    """Payment, then a credit of the same amount, then the same payment again leave the balance where it was, so rows 1 and 3 match on
+    everything printed but their reference. They are two payments, and the second must not collide with the first."""
+    from banking.ingest import _persist_rows
+    from banking.parsers.base import ParsedStatement, ParsedTransaction
+
+    day = datetime.date(2025, 7, 13)
+    pay = {"date": day, "narration": "FT-1759-GREENSTAR FERTILIZERS", "debit_paise": 25_000_000, "balance_paise": -100_000_000}
+    rows = (
+        ParsedTransaction(row_number=1, cheque_number="0001", **pay),
+        ParsedTransaction(row_number=2, date=day, narration="REVERSAL", credit_paise=25_000_000, balance_paise=-75_000_000),
+        ParsedTransaction(row_number=3, cheque_number="0003", **pay),
+    )
+    parsed = ParsedStatement(
+        bank_code="GENERIC", account_number="50200012345678", period_start=day, period_end=day,
+        opening_balance_paise=-75_000_000, closing_balance_paise=-100_000_000, transactions=rows,
+    )
+    with firm_context(client.firm_id):
+        result = ingest_statement(client=client, data=b"%PDF-1.4 axis")
+        statement, account = result.statement, result.bank_account
+        StatementTransaction.objects.filter(statement=statement).delete()
+        created, skipped = _persist_rows(statement, account, parsed)
+        assert (created, skipped) == (3, 0)
+        # The same statement read again finds all three already there, by the same hashes.
+        assert _persist_rows(statement, account, parsed) == (0, 3)

@@ -394,15 +394,23 @@ def _persist_rows(
     """
     rows = []
     digests = set()
+    seen: dict[str, int] = {}
     for txn in parsed.transactions:
-        digest = StatementTransaction.compute_dedupe_hash(
-            account_hash=account.account_number_hash,
-            value_date=txn.date,
-            narration=txn.narration,
-            debit_paise=txn.debit_paise,
-            credit_paise=txn.credit_paise,
-            balance_paise=txn.balance_paise,
-        )
+        fields = {
+            "account_hash": account.account_number_hash,
+            "value_date": txn.date,
+            "narration": txn.narration,
+            "debit_paise": txn.debit_paise,
+            "credit_paise": txn.credit_paise,
+            "balance_paise": txn.balance_paise,
+        }
+        digest = StatementTransaction.compute_dedupe_hash(**fields)
+        # A row identical to an earlier one in this statement (same day, payee, amount and balance, with others between that
+        # cancel out) is a row of its own, told apart by its position among the identical ones; the first keeps its hash.
+        repeat = seen.get(digest, 0)
+        seen[digest] = repeat + 1
+        if repeat:
+            digest = StatementTransaction.compute_dedupe_hash(**fields, occurrence=repeat)
         digests.add(digest)
         rows.append(
             StatementTransaction(

@@ -297,7 +297,7 @@ class StatementTransaction(UUIDModel, FirmScopedModel):
     @staticmethod
     def compute_dedupe_hash(
         *, account_hash: str, value_date, narration: str, debit_paise: int, credit_paise: int,
-        balance_paise: int,
+        balance_paise: int, occurrence: int = 0,
     ) -> str:
         """Identity of a transaction, independent of which file it arrived in.
 
@@ -308,6 +308,12 @@ class StatementTransaction(UUIDModel, FirmScopedModel):
 
         Keyed on the account's blind index rather than its number, so no
         plaintext account number is reconstructible from this column.
+
+        The balance tells apart two same-day payments of one amount to one payee, unless something between them
+        brings the balance back (a payment, then a credit for the same amount, then the same payment again): the
+        rows are then identical on everything printed except their reference number. ``occurrence`` numbers such
+        repeats within one statement (0 for the first, 1 for the next, ...). The first keeps the hash it always
+        had, so rows already stored still match; only a repeat gets a different one.
         """
         parts = [
             account_hash,
@@ -317,4 +323,6 @@ class StatementTransaction(UUIDModel, FirmScopedModel):
             str(int(credit_paise)),
             str(int(balance_paise)),
         ]
+        if occurrence:
+            parts.append(f"#{int(occurrence)}")
         return hashlib.sha256("|".join(parts).encode()).hexdigest()

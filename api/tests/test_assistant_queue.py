@@ -374,10 +374,11 @@ def test_the_background_worker_skips_a_paused_client(api, client_record, model):
 
 
 def test_pausing_is_for_people_who_may_classify_and_only_for_their_own_clients(firm, api, client_record):
+    # The other firm is made before any request: a second firm cannot be opened once one's context is active.
+    other = create_client(create_firm("Another Firm"), "Not Yours", datetime.date(2025, 4, 1))
     reader = sign_in(member(firm, Role.READ_ONLY, "ro-pause@example.test").user)
     assert reader.post(f"{V1}/clients/{client_record.pk}/assistant/pause/").status_code == 403
     assert reader.delete(f"{V1}/clients/{client_record.pk}/assistant/pause/").status_code == 403
-    other = create_client(create_firm("Another Firm"), "Not Yours", datetime.date(2025, 4, 1))
     assert api.post(f"{V1}/clients/{other.pk}/assistant/pause/").status_code == 404
     with firm_context(other.firm_id):
         other.refresh_from_db()

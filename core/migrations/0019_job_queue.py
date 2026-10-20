@@ -13,7 +13,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='job',
             name='attempts',
-            field=models.PositiveSmallIntegerField(default=0),
+            field=models.PositiveSmallIntegerField(db_default=0, default=0),
         ),
         migrations.AddField(
             model_name='job',
@@ -28,7 +28,7 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='job',
             name='payload',
-            field=models.JSONField(blank=True, default=dict),
+            field=models.JSONField(blank=True, db_default={}, default=dict),
         ),
         migrations.AddField(
             model_name='job',
@@ -38,11 +38,11 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='job',
             name='staged_key',
-            field=models.CharField(blank=True, max_length=512),
+            field=models.CharField(blank=True, db_default='', max_length=512),
         ),
         migrations.AddField(
             model_name='job',
             name='worker_id',
-            field=models.CharField(blank=True, max_length=64),
+            field=models.CharField(blank=True, db_default='', max_length=64),
         ),
     ]

@@ -9,11 +9,15 @@ A password is never stored, so an upload that carries one is not given to a work
 
 from __future__ import annotations
 
+from django.core.exceptions import PermissionDenied
+
 from banking.ingest import already_ingested, read_statement_file
 from core import jobqueue
+from core.access import can_see_client
 from core.db.session import firm_context
 from core.jobs import JobResult, enqueue_job, mark_staged
-from core.models import Client, Job
+from core.models import Client, FirmMembership, Job
+from core.rbac import has_permission
 from documents.models import Document
 from integrations.registry import get_storage
 
@@ -44,6 +48,23 @@ def enqueue_statement_upload(*, client, data: bytes, filename: str, user, allow_
     return outcome
 
 
+NO_LONGER_ALLOWED = "You no longer have access to upload statements for this client, so this file was not read. Nothing was imported."
+
+
+def _still_allowed(firm_id, user, client) -> None:
+    """Raise PermissionDenied unless the person who uploaded may still do it.
+
+    The upload was allowed when it was accepted; the worker runs it later, and access can be taken away in between (a person removed from
+    the firm, a role changed, a client reassigned). The same rules the request used decide again: an active account, an active membership
+    in this firm with ``document.upload``, and the client still one they may see.
+    """
+    membership = (
+        FirmMembership.objects.filter(firm_id=firm_id, user=user, is_active=True).first() if user is not None and user.is_active else None
+    )
+    if membership is None or not has_permission(membership, "document.upload") or not can_see_client(membership, client):
+        raise PermissionDenied(NO_LONGER_ALLOWED)
+
+
 def run(ctx: jobqueue.JobContext) -> None:
     """The worker's half. Reads with no transaction open, then writes (and records success) in one."""
     # The same placing of the rows the inline path has always done.
@@ -54,6 +75,7 @@ def run(ctx: jobqueue.JobContext) -> None:
         job = Job.objects.select_related("created_by").get(pk=claim.job_id)
         meta, staged_key, user = job.payload, job.staged_key, job.created_by
         client = Client.objects.get(pk=meta["client"])
+        _still_allowed(claim.firm_id, user, client)
 
     ctx.say("Reading the PDF")
     data = get_storage().get(staged_key)
@@ -66,6 +88,7 @@ def run(ctx: jobqueue.JobContext) -> None:
     ctx.hold()  # about to write: only if the job is still this worker's
     ctx.say("Saving the rows")
     with firm_context(claim.firm_id):
+        _still_allowed(claim.firm_id, user, client)  # again: the read took a while, and nothing is written for someone who lost access
         result = _ingest(
             client=client,
             data=data,

@@ -21,7 +21,7 @@ from banking.models import Statement, StatementTransaction
 from core import jobqueue
 from core.db.session import firm_context
 from core.jobs import enqueue_job
-from core.models import Job, JobStatus
+from core.models import FirmMembership, Job, JobStatus, Role, User
 from core.provisioning import create_client, create_firm
 from integrations.registry import get_storage
 from ledger.models import JournalEntry
@@ -322,6 +322,36 @@ def test_two_readers_cannot_take_the_same_job(api, client_record):
 
     assert jobqueue.claim_next("one") is not None
     assert jobqueue.claim_next("two") is None
+
+
+# ---------------------------------------------------------------------------
+# Access can change while a file waits
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("change", ["deactivated", "made_read_only", "account_disabled"])
+def test_a_person_who_lost_access_while_the_file_waited_has_nothing_read_for_them(api, firm, senior, client_record, change):
+    upload(api, client_record)
+    with firm_context(firm.pk):
+        if change == "deactivated":
+            FirmMembership.objects.filter(pk=senior.pk).update(is_active=False)
+        elif change == "made_read_only":
+            FirmMembership.objects.filter(pk=senior.pk).update(role=Role.READ_ONLY)
+        else:
+            User.objects.filter(pk=senior.user_id).update(is_active=False)
+    key = only_job(firm).staged_key
+
+    assert work() == "failed"
+    job = only_job(firm)
+    assert job.status == JobStatus.FAILED and job.error_code == "forbidden" and job.error == banking.upload_jobs.NO_LONGER_ALLOWED
+    assert counts(firm) == {"statements": 0, "rows": 0, "entries": 0}
+    assert job.staged_key == "" and not get_storage().exists(key)
+
+
+def test_access_that_is_still_there_is_not_in_the_way(api, firm, client_record):
+    upload(api, client_record)
+
+    assert work() == "succeeded"
 
 
 # ---------------------------------------------------------------------------

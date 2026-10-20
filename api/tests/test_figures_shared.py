@@ -133,5 +133,5 @@ def test_a_change_under_one_client_costs_only_that_clients_checks_again(firm, cl
     after_record = count_get()
     # A repeat costs the least. A change under a client costs the overview and that client's checks, so the client with the books costs more
     # than the empty one, and neither costs as much as the first time (which checks both).
-    counts = dict(cold=cold, repeat=repeat, after_other=after_other, after_record=after_record)
+    counts = {"cold": cold, "repeat": repeat, "after_other": after_other, "after_record": after_record}
     assert repeat < after_other < after_record <= cold, counts

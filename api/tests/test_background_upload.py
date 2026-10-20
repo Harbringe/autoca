@@ -38,6 +38,24 @@ def background(settings):
     cache.clear()
 
 
+#: The firms this test made. The reader finds firms with a database function that needs the platform reader role, which a test database
+#: does not have (production does: the assistant uses the same one), so these tests give it the list instead.
+KNOWN_FIRMS: list = []
+
+
+@pytest.fixture(autouse=True)
+def known_firms(monkeypatch, firm):
+    KNOWN_FIRMS.clear()
+    KNOWN_FIRMS.append(firm.pk)
+    monkeypatch.setattr(jobqueue, "firm_ids", lambda: list(KNOWN_FIRMS))
+
+
+def new_firm(name):
+    created = create_firm(name)
+    KNOWN_FIRMS.append(created.pk)
+    return created
+
+
 class QuietBeat:
     """The heartbeat without its thread: a test's uncommitted data cannot be seen from a second connection."""
 
@@ -129,8 +147,7 @@ def test_when_the_file_cannot_be_stored_no_job_is_left_behind(api, firm, client_
         raise OSError("storage is down")
 
     monkeypatch.setattr(type(get_storage()), "put", refuse)
-    with pytest.raises(OSError):
-        upload(api, client_record)
+    assert upload(api, client_record).status_code == 500  # an unexpected failure, reported as one
     with firm_context(firm.pk):
         assert Job.objects.count() == 0
 
@@ -408,7 +425,7 @@ def waiting_job(firm, key, *, finished_ago=None, created_ago=0):
 
 
 def test_a_firm_served_longest_ago_goes_before_one_served_recently_and_a_firm_never_served_goes_first(db):
-    never, long_ago, recently = (create_firm(name) for name in ("Never Served", "Long Ago", "Recently"))
+    never, long_ago, recently = (new_firm(name) for name in ("Never Served", "Long Ago", "Recently"))
     waiting_job(never, "n")
     waiting_job(long_ago, "a")
     waiting_job(long_ago, "a-done", finished_ago=86400 * 30)
@@ -419,7 +436,7 @@ def test_a_firm_served_longest_ago_goes_before_one_served_recently_and_a_firm_ne
 
 
 def test_a_failed_job_counts_as_the_firm_being_served(db):
-    failed, fresh = create_firm("Failed Last"), create_firm("Other")
+    failed, fresh = new_firm("Failed Last"), new_firm("Other")
     waiting_job(failed, "f")
     waiting_job(fresh, "o")
     waiting_job(fresh, "o-done", finished_ago=3600)
@@ -431,7 +448,7 @@ def test_a_failed_job_counts_as_the_firm_being_served(db):
 
 
 def test_firms_with_equal_standing_are_ordered_by_id_and_a_firm_with_many_does_not_hold_up_another(db):
-    one, two = create_firm("One"), create_firm("Two")
+    one, two = new_firm("One"), new_firm("Two")
     for n in range(3):
         waiting_job(one, f"one-{n}", created_ago=100 - n)
     waiting_job(two, "two-0")
@@ -446,7 +463,7 @@ def test_firms_with_equal_standing_are_ordered_by_id_and_a_firm_with_many_does_n
 
 
 def test_within_a_firm_the_oldest_job_is_taken_first(db):
-    firm = create_firm("Ordering")
+    firm = new_firm("Ordering")
     newer = waiting_job(firm, "newer", created_ago=10)
     older = waiting_job(firm, "older", created_ago=500)
 

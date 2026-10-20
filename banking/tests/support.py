@@ -33,7 +33,7 @@ class FixturePdfAdapter(PdfTextAdapter):
     def __init__(self, **_ignored):
         pass
 
-    def extract(self, data: bytes) -> PdfDocument:
+    def extract(self, data: bytes, password: str | None = None) -> PdfDocument:
         return PdfDocument.from_dict(AXIS_FIXTURE)
 
 

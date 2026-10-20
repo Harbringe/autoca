@@ -471,6 +471,45 @@ def test_within_a_firm_the_oldest_job_is_taken_first(db):
     assert jobqueue.claim_next("r").job_id == newer.pk
 
 
+def client_job(firm, key, client, *, created_ago=0, finished_ago=None):
+    with firm_context(firm.pk):
+        job = Job.objects.create(
+            firm=firm, kind="statement.ingest", idempotency_key=key, status=JobStatus.PENDING, payload={"client": client}, staged_key=f"k/{key}"
+        )
+        fields = {"created_at": timezone.now() - timedelta(seconds=created_ago), "staged_at": timezone.now()}
+        if finished_ago is not None:
+            fields.update(status=JobStatus.SUCCEEDED, finished_at=timezone.now() - timedelta(seconds=finished_ago))
+        Job.objects.filter(pk=job.pk).update(**fields)
+    return job
+
+
+def test_clients_of_one_firm_take_turns_instead_of_one_client_going_first_with_everything(db):
+    firm = new_firm("Turns")
+    a1 = client_job(firm, "a1", "A", created_ago=400)
+    a2 = client_job(firm, "a2", "A", created_ago=300)
+    a3 = client_job(firm, "a3", "A", created_ago=200)
+    b1 = client_job(firm, "b1", "B", created_ago=10)
+
+    order = []
+    for _ in range(4):
+        claim = jobqueue.claim_next("r")
+        order.append(claim.job_id)
+        with firm_context(firm.pk):
+            Job.objects.filter(pk=claim.job_id).update(status=JobStatus.SUCCEEDED, finished_at=timezone.now())
+
+    assert order == [a1.pk, b1.pk, a2.pk, a3.pk]  # A's first, then B's turn, then A's two in the order they came
+
+
+def test_a_client_never_served_goes_before_one_served_a_moment_ago(db):
+    firm = new_firm("Served")
+    client_job(firm, "done", "A", finished_ago=5)
+    a = client_job(firm, "a", "A", created_ago=500)
+    b = client_job(firm, "b", "B", created_ago=1)
+
+    assert jobqueue.claim_next("r").job_id == b.pk
+    assert jobqueue.claim_next("r").job_id == a.pk
+
+
 # ---------------------------------------------------------------------------
 # What a person is told while waiting
 # ---------------------------------------------------------------------------

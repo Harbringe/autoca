@@ -133,17 +133,43 @@ def ranked_firms(kinds) -> list:
     return [firm_id for _rank, _text, firm_id in ranked]
 
 
+def next_client(kinds) -> str | None:
+    """Within a firm, whose turn it is: the client with a file waiting whose last job finished longest ago, a client never served first.
+
+    Called inside the firm's context. Files of one client stay in the order they came; only the clients take turns, so a client with
+    four files waiting does not keep another client's one file behind all four.
+    """
+    waiting = list(
+        Job.objects.filter(kind__in=kinds, status=JobStatus.PENDING, staged_at__isnull=False)
+        .order_by("created_at", "id")
+        .values_list("payload__client", flat=True)
+    )
+    clients = list(dict.fromkeys(c for c in waiting if c))  # first-come order, which breaks ties
+    if len(clients) < 2:
+        return None
+    last = dict(
+        Job.objects.filter(kind__in=kinds, status__in=JobStatus.terminal(), payload__client__in=clients)
+        .values("payload__client")
+        .annotate(m=Max("finished_at"))
+        .values_list("payload__client", "m")
+    )
+    return min(clients, key=lambda c: (0, 0.0) if last.get(c) is None else (1, last[c].timestamp()))
+
+
 def claim_next(worker_id: str, kinds=None) -> Claim | None:
     """Take the next job: a short transaction that ends with the job RUNNING under a new lease."""
     kinds = list(kinds or HANDLERS)
     for firm_id in ranked_firms(kinds):
         with firm_context(firm_id):
-            job = (
-                Job.objects.select_for_update(skip_locked=True)
-                .filter(kind__in=kinds, status=JobStatus.PENDING, staged_at__isnull=False)
-                .order_by("created_at", "id")
-                .first()
+            ready = Job.objects.select_for_update(skip_locked=True).filter(
+                kind__in=kinds, status=JobStatus.PENDING, staged_at__isnull=False
             )
+            turn = next_client(kinds)
+            job = None
+            if turn is not None:
+                job = ready.filter(payload__client=turn).order_by("created_at", "id").first()
+            if job is None:
+                job = ready.order_by("created_at", "id").first()
             if job is None:
                 continue
             token = uuid.uuid4()

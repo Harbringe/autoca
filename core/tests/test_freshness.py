@@ -154,3 +154,56 @@ def test_reads_failures_other_paths_and_anonymous_requests_change_nothing():
     _after("POST", "/auth/login/", firm="firm-n")
     _after("POST", "/api/v1/clients/", firm=None)
     assert freshness.version("firm-n") == before
+
+
+def test_a_change_under_one_client_forgets_that_clients_results_and_not_the_others():
+    a, b = "client-a", "client-b"
+    calls_a, compute_a = counter()
+    calls_b, compute_b = counter()
+    freshness.remember("firm-c", "detail", [a], compute_a, ttl=60, client_id=a)
+    freshness.remember("firm-c", "detail", [b], compute_b, ttl=60, client_id=b)
+    freshness.bump("firm-c", a)
+    freshness.remember("firm-c", "detail", [a], compute_a, ttl=60, client_id=a)
+    freshness.remember("firm-c", "detail", [b], compute_b, ttl=60, client_id=b)
+    assert len(calls_a) == 2 and len(calls_b) == 1  # a was worked out again; b's was kept
+
+
+def test_a_change_under_a_client_still_forgets_what_spans_clients():
+    calls, compute = counter()
+    freshness.remember("firm-d", "overview", ["m1"], compute)
+    freshness.bump("firm-d", "client-a")
+    freshness.remember("firm-d", "overview", ["m1"], compute)
+    assert len(calls) == 2
+
+
+def test_a_firm_level_change_forgets_every_clients_results():
+    calls_a, compute_a = counter()
+    calls_b, compute_b = counter()
+    freshness.remember("firm-e", "detail", ["a"], compute_a, ttl=60, client_id="client-a")
+    freshness.remember("firm-e", "detail", ["b"], compute_b, ttl=60, client_id="client-b")
+    freshness.bump("firm-e")  # the team, a new client: not under any one client
+    freshness.remember("firm-e", "detail", ["a"], compute_a, ttl=60, client_id="client-a")
+    freshness.remember("firm-e", "detail", ["b"], compute_b, ttl=60, client_id="client-b")
+    assert len(calls_a) == 2 and len(calls_b) == 2
+
+
+def test_the_middleware_reads_the_client_from_the_address_and_moves_only_that_clients_version():
+    cid = "11111111-2222-3333-4444-555555555555"
+    other = "99999999-2222-3333-4444-555555555555"
+    calls, compute = counter()
+    calls_other, compute_other = counter()
+    freshness.remember("firm-f", "detail", [cid], compute, ttl=60, client_id=cid)
+    freshness.remember("firm-f", "detail", [other], compute_other, ttl=60, client_id=other)
+    _after("POST", f"/api/v1/clients/{cid.upper()}/assistant/pause/", firm="firm-f")  # an upper-case address is the same client
+    freshness.remember("firm-f", "detail", [cid], compute, ttl=60, client_id=cid)
+    freshness.remember("firm-f", "detail", [other], compute_other, ttl=60, client_id=other)
+    assert len(calls) == 2 and len(calls_other) == 1
+
+
+def test_a_change_that_is_not_under_a_client_moves_the_structural_version():
+    cid = "11111111-2222-3333-4444-555555555555"
+    calls, compute = counter()
+    freshness.remember("firm-g", "detail", [cid], compute, ttl=60, client_id=cid)
+    _after("POST", "/api/v1/clients/", firm="firm-g")  # creating a client: nothing in the address names one
+    freshness.remember("firm-g", "detail", [cid], compute, ttl=60, client_id=cid)
+    assert len(calls) == 2

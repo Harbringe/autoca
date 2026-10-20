@@ -91,11 +91,15 @@ def client_alerts(
     detailed: bool = True,
     status=None,
     report=None,
+    part: str = "both",
 ) -> list[Alert]:
     """Every alert for one client. ``base`` is the client's row from the firm overview.
 
     ``status`` and ``report`` may be passed when the caller already has them, so the close page is not computed twice.
     Without ``detailed`` only what the overview already knows is reported, which keeps a very large firm quick.
+
+    ``part`` splits the work: ``"overview"`` is what ``base`` already says (no queries), ``"detail"`` is what needs the client's books looked
+    at (the controls, the open items, the seal dates, TDS), and ``"both"`` is everything, as it always was.
     """
     name, out = client.name, []
 
@@ -119,7 +123,7 @@ def client_alerts(
             )
         )
 
-    if base["unresolved"]:
+    if part != "detail" and base["unresolved"]:
         n = base["unresolved"]
         add(
             "review",
@@ -131,7 +135,7 @@ def client_alerts(
             {"stage": "unresolved"},
             count=n,
         )
-    if base["pending_approval"]:
+    if part != "detail" and base["pending_approval"]:
         n = base["pending_approval"]
         add(
             "review",
@@ -143,7 +147,7 @@ def client_alerts(
             {"stage": "pending_approval"},
             count=n,
         )
-    if base["months_missing"]:
+    if part != "detail" and base["months_missing"]:
         n = len(base["months_missing"])
         add(
             "statements",
@@ -154,7 +158,7 @@ def client_alerts(
             "statements",
             count=n,
         )
-    if base["ai_unchecked"]:
+    if part != "detail" and base["ai_unchecked"]:
         n = base["ai_unchecked"]
         add(
             "unchecked",
@@ -165,7 +169,7 @@ def client_alerts(
             "daybook",
             count=n,
         )
-    if base["review_pending"]:
+    if part != "detail" and base["review_pending"]:
         add(
             "review_pending",
             "medium",
@@ -175,7 +179,7 @@ def client_alerts(
             "books",
         )
 
-    if not detailed:
+    if not detailed or part == "overview":
         return out
 
     status = status or books.status(client)
@@ -292,18 +296,28 @@ def client_alerts(
 def client_alerts_shared(
     client, *, base: dict, today: datetime.date, include_money: bool = True, detailed: bool = True
 ) -> list[Alert]:
-    """``client_alerts`` for one client, shared for a few seconds (``core.freshness``) between everyone who may see that client.
+    """``client_alerts`` for one client, with the costly part shared (``core.freshness``) between everyone who may see that client.
 
-    This is the costly part (a books-closing report for the client), and it depends on the client, not on who is asking, so it is kept per
-    client and not per person: ten people opening the app cost one computation per client, not ten. Who may see which client is decided by
-    the caller before this is reached, as it always was.
+    What the overview already says (rows waiting, months missing, ...) is built fresh from ``base``, with no queries. What needs the
+    client's books looked at (a books-closing report: the controls, the open items, the seal dates, TDS) depends on the client and not on who
+    is asking, so it is kept per client and not per person, for ``settings.FRESHNESS_DETAIL_TTL`` seconds, and forgotten when a change is made
+    under that client. Thirty-three clients cost thirty-three of these once, then one again for each client that is changed. Who may see which
+    client is decided by the caller before this is reached, as it always was.
     """
+    from django.conf import settings
+
     from core import freshness
 
-    return freshness.remember(
-        client.firm_id, "client-alerts-body", [client.pk, int(include_money), int(detailed), today.isoformat()],
-        lambda: client_alerts(client, base=base, today=today, include_money=include_money, detailed=detailed),
+    quick = client_alerts(client, base=base, today=today, include_money=include_money, detailed=False)
+    if not detailed:
+        return quick
+    ttl = getattr(settings, "FRESHNESS_DETAIL_TTL", 120)
+    deep = freshness.remember(
+        client.firm_id, "client-alerts-detail", [client.pk, int(include_money), today.isoformat()],
+        lambda: client_alerts(client, base=base, today=today, include_money=include_money, part="detail"),
+        ttl=ttl, client_id=client.pk,
     )
+    return quick + deep
 
 
 def sort_alerts(alerts: list[Alert]) -> list[Alert]:

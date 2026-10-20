@@ -400,6 +400,9 @@ CACHES = {
 # Seconds the firm overview and alerts are shared between requests (core.freshness); 0 turns the sharing off. A person's own changes are
 # seen at once whatever this is; only what no request did (a worker's postings, the date) can be this old.
 FRESHNESS_TTL = int(env("FRESHNESS_TTL", "30"))
+# How long a client's costly alert checks (the books-closing report) are kept, in seconds. A change under that client forgets them at once;
+# only what no request did (a worker's postings, the date) can be this old. 0 turns it off.
+FRESHNESS_DETAIL_TTL = int(env("FRESHNESS_DETAIL_TTL", "120"))
 
 THROTTLE_LIMITS = {
     # Sign-in is counted three ways (core.throttle.sign_in_*): per address and account together, so one person

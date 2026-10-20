@@ -22,6 +22,7 @@ V1 = "/api/v1"
 @pytest.fixture(autouse=True)
 def sharing_on(settings):
     settings.FRESHNESS_TTL = 60
+    settings.FRESHNESS_DETAIL_TTL = 120
 
 
 def test_the_second_ask_for_the_overview_costs_no_queries(senior, client_record, django_assert_num_queries):
@@ -95,3 +96,34 @@ def test_a_second_person_reuses_the_work_already_done_for_the_first(firm, client
         theirs = second.get(f"{V1}/firm/alerts/").json()
     assert mine["alerts"] and mine == theirs  # the same client's alerts, for each of them
     assert len(two) < len(one)
+
+
+def test_splitting_a_clients_alerts_into_a_fresh_part_and_a_kept_part_changes_nothing(senior, client_record, statement):
+    from ledger import alerts as alerts_mod
+
+    today = datetime.date.today()
+    with firm_context(senior.firm_id):
+        base = firm_overview(senior)["clients"][0]
+        whole = alerts_mod.client_alerts(client_record, base=base, today=today, include_money=True)
+        shared = alerts_mod.client_alerts_shared(client_record, base=base, today=today, include_money=True)
+        again = alerts_mod.client_alerts_shared(client_record, base=base, today=today, include_money=True)
+    assert whole and shared == whole and again == whole
+
+
+def test_a_change_under_one_client_costs_only_that_clients_checks_again(firm, client_record, statement, django_capture_on_commit_callbacks):
+    # A second client, made before any request (a second tenant context cannot be opened once a request has set one).
+    other = create_client(firm, "Second Client", datetime.date(2025, 4, 1))
+    assert other.pk != client_record.pk
+    admin = sign_in(member(firm, Role.FIRM_ADMIN, "per-client-admin@example.test").user)
+    feed = f"{V1}/firm/alerts/"
+    with CaptureQueriesContext(connection) as cold:
+        admin.get(feed)
+    with CaptureQueriesContext(connection) as repeat:
+        admin.get(feed)
+    with django_capture_on_commit_callbacks(execute=True):
+        assert admin.post(f"{V1}/clients/{client_record.pk}/assistant/pause/").status_code == 200
+    with CaptureQueriesContext(connection) as after_one_change:
+        admin.get(feed)
+    # First time: the overview and both clients' checks. After a change under one client: the overview and that client's checks only.
+    # A repeat: nothing.
+    assert len(cold) > len(after_one_change) > len(repeat)

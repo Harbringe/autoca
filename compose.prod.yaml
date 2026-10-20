@@ -137,6 +137,10 @@ services:
       DJANGO_SETTINGS_MODULE: config.settings.prod
       CACHE_URL: redis://redis:6379/1
     command: ["python", "manage.py", "run_assistant"]
+    # The image's own health check asks for a web page, which a worker never serves: left in, it reported "unhealthy" for good and
+    # hid the one time it would have meant something. A worker has no page to ask.
+    healthcheck:
+      disable: true
     depends_on:
       migrate:
         condition: service_completed_successfully

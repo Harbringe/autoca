@@ -45,13 +45,15 @@ def test_a_second_request_for_the_alerts_does_less_work_and_says_the_same(api, c
     assert len(filtered) <= len(second) and all(a["module"] == "bank" for a in bank["alerts"])
 
 
-def test_a_persons_own_change_is_seen_at_once_whatever_is_remembered(firm, client_record):
+def test_a_persons_own_change_is_seen_at_once_whatever_is_remembered(firm, client_record, django_capture_on_commit_callbacks):
     admin = sign_in(member(firm, Role.FIRM_ADMIN, "fresh-admin@example.test").user)
     before = admin.get(f"{V1}/firm/overview/").json()
     assert before["totals"]["clients"] == 1
     assert admin.get(f"{V1}/firm/overview/").json() == before  # remembered
 
-    created = admin.post(f"{V1}/clients/", {"name": "Second Client", "fy_start": "2026-04-01"}, format="json")
+    # The forgetting is scheduled for after the change commits; a test's own transaction never commits, so its callbacks are run here.
+    with django_capture_on_commit_callbacks(execute=True):
+        created = admin.post(f"{V1}/clients/", {"name": "Second Client", "fy_start": "2026-04-01"}, format="json")
     assert created.status_code == 201, created.content
 
     after = admin.get(f"{V1}/firm/overview/").json()
@@ -67,13 +69,14 @@ def test_one_firm_never_reads_what_was_remembered_for_another(firm, client_recor
     assert [c["name"] for c in mine.get(f"{V1}/firm/overview/").json()["clients"]] == ["Acme Traders"]
 
 
-def test_a_changed_client_alert_is_seen_at_once_too(firm, client_record, statement):
+def test_a_changed_client_alert_is_seen_at_once_too(firm, client_record, statement, django_capture_on_commit_callbacks):
     admin = sign_in(member(firm, Role.FIRM_ADMIN, "alerts-admin@example.test").user)
     mine = f"{V1}/clients/{client_record.pk}/alerts/"
     before = admin.get(mine).json()
     assert before["alerts"]
     assert admin.get(mine).json() == before
-    paused = admin.post(f"{V1}/clients/{client_record.pk}/assistant/pause/")  # any successful change through the API
+    with django_capture_on_commit_callbacks(execute=True):
+        paused = admin.post(f"{V1}/clients/{client_record.pk}/assistant/pause/")  # any successful change through the API
     assert paused.status_code == 200
     with CaptureQueriesContext(connection) as worked_out_again:
         admin.get(mine)

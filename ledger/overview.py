@@ -21,8 +21,8 @@ from collections import defaultdict
 
 from django.db.models import Count, F, OuterRef, Q, Subquery
 
-from banking.models import Statement
-from classify.engine import unposted_in
+from banking.models import BankAccount, Statement
+from classify.engine import unposted_in_accounts
 from classify.models import ModelState
 from core.access import visible_clients
 from ledger.models import BooksAction, BooksEvent, EntryMarker, JournalEntry
@@ -94,7 +94,7 @@ def firm_overview(membership) -> dict:
 
 
 def _compute_firm_overview(membership) -> dict:
-    """One row per client ``membership`` may see, plus firm totals. Four queries."""
+    """One row per client ``membership`` may see, plus firm totals. A fixed number of queries."""
     visible = visible_clients(membership)
     ids = visible.values("pk")
 
@@ -106,16 +106,23 @@ def _compute_firm_overview(membership) -> dict:
     )
 
     waiting_states = [ModelState.WAITING, ModelState.CLAIMED]
-    queue = {
-        row["transaction__bank_account__client_id"]: row
-        for row in unposted_in(membership.firm_id, ids)
-        .values("transaction__bank_account__client_id")
+    # Counted per bank account (no join to the accounts table, see unposted_in_accounts), then added up per client.
+    account_client = dict(
+        BankAccount.objects.filter(firm_id=membership.firm_id, client__in=ids).values_list("pk", "client_id")
+    )
+    queue: dict = {}
+    for row in (
+        unposted_in_accounts(membership.firm_id, list(account_client))
+        .values("transaction__bank_account_id")
         .annotate(
             unresolved=Count("pk", filter=Q(ledger__isnull=True)),
             pending=Count("pk", filter=Q(ledger__isnull=False)),
             waiting=Count("pk", filter=Q(ledger__isnull=True, model_state__in=waiting_states)),
         )
-    }
+    ):
+        total = queue.setdefault(account_client[row["transaction__bank_account_id"]], {"unresolved": 0, "pending": 0, "waiting": 0})
+        for key in total:
+            total[key] += row[key]
 
     # Entries after the client's own sign-off date, as the books screen counts them.
     unchecked = {

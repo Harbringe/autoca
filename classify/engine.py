@@ -534,6 +534,20 @@ def unposted_in(firm_id, clients):
     multi-valued relations quietly removed every row, which showed up as an
     empty review queue the first time this ran against a real statement.
     """
+    return _unposted_where(firm_id, transaction__bank_account__client__in=clients)
+
+
+def unposted_in_accounts(firm_id, account_ids):
+    """The same rows for a list of bank account ids, without joining the accounts table.
+
+    For counting across many clients: with the accounts table in the join, Postgres (which guessed one account
+    where there were eighteen) paired every account with every row before looking up the transaction, and the
+    firm overview spent 0.6 s of database time on it. Here the account is only a filter on the transaction.
+    """
+    return _unposted_where(firm_id, transaction__bank_account_id__in=account_ids)
+
+
+def _unposted_where(firm_id, **where):
     from ledger.models import JournalEntry
 
     # Only entries that came from a bank row. A purchase, sales or note voucher has no bank row, so its
@@ -545,9 +559,9 @@ def unposted_in(firm_id, clients):
 
     return TransactionClassification.objects.filter(
         firm_id=firm_id,
-        transaction__bank_account__client__in=clients,
         # The other side of an own-account transfer is done once its twin is posted.
         mirrored_entry_id__isnull=True,
+        **where,
     ).exclude(transaction_id__in=posted)
 
 

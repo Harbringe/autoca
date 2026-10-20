@@ -18,6 +18,7 @@ from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 
 from django.db.models import F, Q, Sum
+from django.db.models.functions import Coalesce
 
 from core.money import format_inr
 from ledger import billing
@@ -110,15 +111,18 @@ def unallocated_settlements(client):
     bill_entries = Bill.objects.filter(firm_id=client.firm_id, client=client, entry__isnull=False).values("entry_id")
     # Only lines on the party's OWN ledger. The bank flow also tags a party on the expense line of a payment booked
     # straight to an expense head; that is not money on a party's account and must not be reported as such.
+    # What each line has had allocated is summed in the same query (it was one query per line), and only a line with something left comes back.
     lines = (
         JournalLine.objects.filter(
             firm_id=client.firm_id, entry__client=client, party__isnull=False, ledger_account_id=F("party__ledger_id")
         )
         .exclude(entry_id__in=bill_entries)
+        .annotate(allocated=Coalesce(Sum("allocations__amount_paise"), 0))
+        .filter(amount_paise__gt=F("allocated"))
         .select_related("entry", "party")
     )
     for line in lines:
-        left = billing.line_unallocated(line)
+        left = line.amount_paise - line.allocated
         if left > 0:
             yield OpenItem(
                 kind="payment_unallocated",
@@ -153,8 +157,10 @@ def parties_out_of_balance(client):
     """The first control-account check: every party's ledger must equal what its bills and settlements explain."""
     from classify.models import Party
 
-    for party in Party.objects.filter(firm_id=client.firm_id, client=client, ledger__isnull=False).select_related("ledger"):
-        position = billing.party_position(party)
+    parties = list(Party.objects.filter(firm_id=client.firm_id, client=client, ledger__isnull=False).select_related("ledger"))
+    positions = billing.party_positions(client, parties)  # every party's figures at once; party_position asked per bill and per line
+    for party in parties:
+        position = positions[party.pk]
         if not position.reconciles:
             yield OpenItem(
                 kind="party_out_of_balance",

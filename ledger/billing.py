@@ -683,3 +683,82 @@ def party_position(party: Party) -> PartyPosition:
         open_bills_paise=open_bills,
         unapplied_paise=unapplied,
     )
+
+
+
+def party_positions(client, parties=None) -> dict:
+    """``{party pk: PartyPosition}`` for the client's parties that have a ledger, in a fixed number of queries.
+
+    The same answer as ``party_position`` for each party, which asks several questions per bill and per journal line: for a client with
+    hundreds of parties that is tens of thousands of queries each time the alerts or the month-end close are worked out. Here every figure
+    is read once for all the parties (their openings, what is posted to their ledgers, their bills and what has settled them, their ledger
+    lines and what has been allocated against bills) and combined in memory by the same rules.
+    """
+    from collections import defaultdict
+
+    from classify.models import Party
+
+    firm_id = client.firm_id
+    parties = (
+        list(Party.objects.filter(firm_id=firm_id, client=client, ledger__isnull=False)) if parties is None else list(parties)
+    )
+    parties = [party for party in parties if party.ledger_id]
+    if not parties:
+        return {}
+    ledger_ids = {party.ledger_id for party in parties}
+    party_ids = [party.pk for party in parties]
+
+    openings: dict = {}
+    for ledger_id, signed in (
+        LedgerOpening.objects.filter(firm_id=firm_id, ledger_id__in=ledger_ids)
+        .order_by("ledger_id", "financial_year")
+        .values_list("ledger_id", "signed_paise")
+    ):
+        openings.setdefault(ledger_id, signed)  # the earliest year's, as party_position takes
+    posted = dict(
+        JournalLine.objects.filter(firm_id=firm_id, ledger_account_id__in=ledger_ids)
+        .values_list("ledger_account_id")
+        .annotate(total=Sum("signed_paise"))
+    )
+
+    settled = dict(
+        BillAllocation.objects.filter(firm_id=firm_id, client=client, bill__isnull=False)
+        .values_list("bill_id")
+        .annotate(total=Sum("amount_paise"))
+    )
+    open_bills: dict = defaultdict(int)
+    bill_entries: dict = defaultdict(set)
+    for bill_id, party_id, direction, total, entry_id in Bill.objects.filter(
+        firm_id=firm_id, client=client, party_id__in=party_ids
+    ).values_list("id", "party_id", "direction", "total_paise", "entry_id"):
+        open_bills[party_id] += (1 if direction == DR else -1) * (total - settled.get(bill_id, 0))
+        if entry_id:
+            bill_entries[party_id].add(entry_id)
+
+    against = dict(
+        BillAllocation.objects.filter(
+            firm_id=firm_id, client=client, kind=AllocationKind.AGAINST_BILL, line__ledger_account_id__in=ledger_ids
+        )
+        .values_list("line_id")
+        .annotate(total=Sum("amount_paise"))
+    )
+    on_ledger: dict = defaultdict(list)
+    for party in parties:
+        on_ledger[party.ledger_id].append(party)
+    unapplied: dict = defaultdict(int)
+    for line_id, ledger_id, entry_id, direction, amount in JournalLine.objects.filter(
+        firm_id=firm_id, ledger_account_id__in=ledger_ids
+    ).values_list("id", "ledger_account_id", "entry_id", "direction", "amount_paise"):
+        left = (1 if direction == DR else -1) * (amount - against.get(line_id, 0))
+        for party in on_ledger[ledger_id]:
+            if entry_id not in bill_entries[party.pk]:
+                unapplied[party.pk] += left
+
+    return {
+        party.pk: PartyPosition(
+            ledger_balance_paise=openings.get(party.ledger_id, 0) + (posted.get(party.ledger_id) or 0),
+            open_bills_paise=open_bills[party.pk],
+            unapplied_paise=unapplied[party.pk],
+        )
+        for party in parties
+    }

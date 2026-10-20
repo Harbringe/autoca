@@ -60,10 +60,11 @@ the upload lost half-way) and, with 2 vCPUs, slow every other person's page whil
    goes ahead of one served a second ago; that is what "longest wait since service" means.)
 8. **Staging is content-addressed and idempotent.** The staged key is `clients/<client>/uploads/<file hash>`, so two simultaneous requests for the same
    file write identical bytes to one object. The existing unique constraint on the idempotency key decides the winner: the loser returns the winner's
-   job and deletes nothing. An object is deleted only when its job is final **and no other non-final job references the same key**. If storage
-   succeeds and job creation then fails, the object is an orphan; a periodic sweep (every worker loop, at most hourly) removes objects under
-   `uploads/` older than an hour that no non-final job references. (This needs the storage adapter to list a prefix: checked when the staging step is
-   built, and added to the local and S3 adapters if missing.)
+   job and deletes nothing. An object is deleted only when its job is final **and no other non-final job references the same key**. The job is recorded *before* the file is stored and
+   becomes claimable only when `staged_at` is set after the put succeeds, so there is no object without a job row: a put that fails deletes its job;
+   a request that dies in between leaves a job with no `staged_at`, which the sweep (every worker loop, at most hourly) removes with its object after
+   10 minutes, and which a repeat upload replaces after 2. The sweep is driven from the job table, so it needs no storage listing (and no extra
+   storage permission). Finished jobs whose delete failed are found the same way.
 9. **Cleanup order.** The final state commits first, then the staged object is deleted. A failed delete is logged and left for the sweep; it never
    changes a job's result.
 10. **Progress.** Stage boundaries only ("Reading the PDF", "Placing rows", "Matching invoices", "Posting what the rules are sure of"). Waiting jobs say

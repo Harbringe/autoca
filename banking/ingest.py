@@ -86,21 +86,20 @@ class _ScanReader:
     version = "scan-1"
 
 
-def ingest_statement(
-    *,
-    client: Client,
-    data: bytes,
-    filename: str = "",
-    uploaded_by=None,
-    store_original: bool = True,
-    allow_gap: bool = False,
-    layout: dict | None = None,
-    password: str | None = None,
-) -> IngestResult:
-    """Parse ``data`` as a bank statement for ``client`` and persist its rows."""
-    digest = Document.digest(data)
+@dataclass(frozen=True)
+class FileRead:
+    """A statement file read and proved, before anything is written: what :func:`ingest_statement` persists."""
 
-    existing = Document.objects.filter(firm_id=client.firm_id, client=client, sha256=digest).first()
+    loaded: object
+    document: object
+    parsed: ParsedStatement
+    parser: object
+    tier: str
+
+
+def already_ingested(client: Client, data: bytes) -> IngestResult | None:
+    """The original result if this very file already produced a statement for ``client`` (it is then not read again)."""
+    existing = Document.objects.filter(firm_id=client.firm_id, client=client, sha256=Document.digest(data)).first()
     if existing is not None and hasattr(existing, "statement"):
         statement = existing.statement
         return IngestResult(
@@ -111,7 +110,17 @@ def ingest_statement(
             rows_already_present=statement.transaction_count,
             is_new=False,
         )
+    return None
 
+
+def read_statement_file(
+    *, client: Client, data: bytes, filename: str = "", layout: dict | None = None, password: str | None = None
+) -> FileRead:
+    """Open, read and prove a statement file. The slow part (about 19 s for 238 pages) and the part with no database in it.
+
+    Nothing is written and no tenant is needed for the text path, so a caller can run it with no transaction open. The one
+    thing that can reach out is the model reading a scanned page, and it too writes nothing here.
+    """
     loaded = files.load(data, filename, password)
     document = loaded.document
     tier = PipelineTier.TEXT_LAYER
@@ -142,6 +151,43 @@ def ingest_statement(
                     "stated_total_credit_paise": parsed.stated_total_credit_paise,
                 },
             )
+    return FileRead(loaded=loaded, document=document, parsed=parsed, parser=parser, tier=tier)
+
+
+def ingest_statement(
+    *,
+    client: Client,
+    data: bytes,
+    filename: str = "",
+    uploaded_by=None,
+    store_original: bool = True,
+    allow_gap: bool = False,
+    layout: dict | None = None,
+    password: str | None = None,
+    read: FileRead | None = None,
+) -> IngestResult:
+    """Parse ``data`` as a bank statement for ``client`` and persist its rows.
+
+    ``read`` is the file already read by :func:`read_statement_file` (a worker reads first, outside any transaction, then
+    writes); without it the file is read here.
+    """
+    digest = Document.digest(data)
+
+    existing = Document.objects.filter(firm_id=client.firm_id, client=client, sha256=digest).first()
+    if existing is not None and hasattr(existing, "statement"):
+        statement = existing.statement
+        return IngestResult(
+            statement=statement,
+            document=existing,
+            parsed=None,
+            rows_created=0,
+            rows_already_present=statement.transaction_count,
+            is_new=False,
+        )
+
+    if read is None:
+        read = read_statement_file(client=client, data=data, filename=filename, layout=layout, password=password)
+    loaded, document, parsed, parser, tier = read.loaded, read.document, read.parsed, read.parser, read.tier
 
     account = _account_for(client, parsed)
     _refuse_over_tally_history(account, parsed)

@@ -11184,6 +11184,9 @@ components:
 
         ``result`` is whatever the work produced -- its shape depends on ``kind``
         and is documented on the endpoint that starts the job.
+
+        A job waiting in the queue also says how many are ahead of it in the firm (approximate: others finish or arrive between polls, so it is
+        not a time) and whether a reader process is looking at the queue, which is how a screen can tell "waiting its turn" from "nobody is reading".
       properties:
         id:
           type: string
@@ -11225,6 +11228,18 @@ components:
           format: date-time
           readOnly: true
           nullable: true
+        queue_ahead:
+          type: integer
+          nullable: true
+          readOnly: true
+          description: Jobs of this kind in the firm queued before this one and not
+            yet finished; null unless waiting.
+        reader_running:
+          type: boolean
+          nullable: true
+          readOnly: true
+          description: Whether a reader process is looking at the queue; null unless
+            waiting.
       required:
       - created_at
       - error
@@ -11234,6 +11249,8 @@ components:
       - kind
       - message
       - progress
+      - queue_ahead
+      - reader_running
       - result
       - started_at
       - status

@@ -18,6 +18,22 @@ export async function waitForJob(job: Job, onUpdate?: (job: Job) => void): Promi
   return current
 }
 
+/**
+ * What to tell a person whose job is still waiting in the queue, or null when nothing needs saying. How many are ahead is approximate (others
+ * finish or arrive between polls), so it is never shown as a time. "Not running" is said only when a reader has not looked at the queue AND the
+ * job has waited two minutes: a pending job alone is not proof that nobody is reading.
+ */
+export function waitingNote(job: Job | undefined, now: number = Date.now()): string | null {
+  if (!job || job.status !== 'PENDING') return null
+  const waited = now - new Date(job.created_at).getTime()
+  if (job.reader_running === false && waited > 2 * 60 * 1000) {
+    return 'The reader is not running right now. Your file is safe and will be read as soon as it starts.'
+  }
+  const ahead = job.queue_ahead ?? 0
+  if (ahead > 0) return `Waiting its turn: ${ahead} ${ahead === 1 ? 'file is' : 'files are'} ahead of this one.`
+  return 'Waiting to be read.'
+}
+
 /** What went wrong with an upload, in the words a CA needs, keyed by the job's error code. */
 export const UPLOAD_PROBLEMS: Record<string, { title: string; help: string }> = {
   password_required: {

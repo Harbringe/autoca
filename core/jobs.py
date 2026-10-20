@@ -131,6 +131,51 @@ def run_job(
     return JobResult(job=job)
 
 
+#: A job still waiting for its file to reach storage this long after it was made belongs to a request that died, not to one in progress.
+STALLED_STAGING_SECONDS = 120
+
+
+def enqueue_job(
+    *, firm_id, kind: str, idempotency_key: str, user=None, message: str = "", payload: dict | None = None, staged_key: str = ""
+) -> JobResult:
+    """Record a job for a worker to do (``core.jobqueue``) and return at once. The caller then puts the file in storage and calls :func:`mark_staged`.
+
+    The same key is the same job: a finished one is handed back, one still waiting or running is handed back too, and a failed one is
+    replaced, as in :func:`run_job`. ``JobResult.reused`` says the caller did not make this job and must not stage a file for it.
+    """
+    existing = Job.objects.filter(firm_id=firm_id, idempotency_key=idempotency_key).first()
+    if existing is not None:
+        waiting_for_file = existing.status == JobStatus.PENDING and existing.staged_at is None
+        stalled = waiting_for_file and (timezone.now() - existing.created_at).total_seconds() > STALLED_STAGING_SECONDS
+        if existing.status == JobStatus.SUCCEEDED or (not existing.is_finished and not stalled):
+            return JobResult(job=existing, reused=True)
+        existing.delete()  # a failure, or a request that died before its file arrived: this attempt replaces it
+    try:
+        with transaction.atomic():
+            job = Job.objects.create(
+                firm_id=firm_id,
+                kind=kind,
+                idempotency_key=idempotency_key,
+                status=JobStatus.PENDING,
+                message=message,
+                created_by=user,
+                payload=payload or {},
+                staged_key=staged_key,
+            )
+    except IntegrityError:
+        existing = Job.objects.filter(firm_id=firm_id, idempotency_key=idempotency_key).first()
+        if existing is None:
+            raise
+        return JobResult(job=existing, reused=True)
+    return JobResult(job=job)
+
+
+def mark_staged(job: Job) -> None:
+    """The file is in storage: a worker may now claim the job."""
+    Job.objects.filter(pk=job.pk).update(staged_at=timezone.now())
+    job.refresh_from_db()
+
+
 def run_job_sync(**kwargs) -> Job:
     """As :func:`run_job`, but raise on failure instead of returning a failed job.
 
@@ -143,24 +188,21 @@ def run_job_sync(**kwargs) -> Job:
     return outcome.job
 
 
-def _fail(job: Job, exc: Exception, *, expected: bool) -> Job:
-    """Record the failure on the job.
+def describe_failure(exc: Exception, job_id, *, expected: bool) -> tuple[str, str]:
+    """The words and the code a failed job carries.
 
-    An expected failure carries the domain's own message, which was written for
-    the person who will read it. An unexpected one does not: a stray exception
-    from a driver or a library quotes whatever it was holding -- a SQL
-    statement, a file path, a narration -- and none of that belongs in an API
-    response. The traceback is in the log under the job id, which is what the
-    message points at.
+    An expected failure carries the domain's own message, which was written for the person who will read it. An unexpected one does
+    not: a stray exception from a driver or a library quotes whatever it was holding -- a SQL statement, a file path, a narration --
+    and none of that belongs in an API response. The traceback is in the log under the job id, which is what the message points at.
     """
-    name = type(exc).__name__
+    error = str(exc) if expected else f"Something went wrong while running this job. It has been logged (job {job_id})."
+    return error, ERROR_CODES.get(type(exc).__name__, "internal_error")
+
+
+def _fail(job: Job, exc: Exception, *, expected: bool) -> Job:
+    """Record the failure on the job."""
     job.status = JobStatus.FAILED
-    job.error = (
-        str(exc)
-        if expected
-        else f"Something went wrong while running this job. It has been logged (job {job.pk})."
-    )
-    job.error_code = ERROR_CODES.get(name, "internal_error")
+    job.error, job.error_code = describe_failure(exc, job.pk, expected=expected)
     job.finished_at = timezone.now()
     job.save(update_fields=["status", "error", "error_code", "finished_at"])
     return job

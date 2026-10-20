@@ -435,6 +435,9 @@ MAX_TALLY_IMPORT_BYTES = 10 * 1024 * 1024
 # Extraction cost grows with pages, not bytes: a 300 KB file with two thousand
 # blank pages held a request for over two minutes. Checked before any extraction.
 MAX_STATEMENT_PAGES = int(env("MAX_STATEMENT_PAGES", "300"))
+# Where an uploaded statement is read: "inline" in the request (what tests and local development use, and the way back if the worker is ever
+# in doubt) or "background" by the reader process (core.jobqueue), which answers the upload at once and does the 35-second part elsewhere.
+STATEMENT_UPLOAD_MODE = env("STATEMENT_UPLOAD_MODE", "inline")
 DATA_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
 DATA_UPLOAD_MAX_NUMBER_FILES = 5

@@ -534,6 +534,22 @@ class Job(UUIDModel, FirmScopedModel):
         User, on_delete=models.SET_NULL, null=True, blank=True, related_name="jobs"
     )
 
+    # The queue (core.jobqueue). A job made to run in the background waits as PENDING until a worker claims it; none of
+    # this is used by work that runs inline in the request.
+    #: What the worker needs besides the staged file, none of it secret (a password is never kept): client, file name, options.
+    payload = models.JSONField(default=dict, blank=True)
+    #: Where the uploaded file waits for the worker (storage key under the firm's prefix). Empty for work with no file.
+    staged_key = models.CharField(max_length=512, blank=True)
+    #: Set once the file is safely in storage. A job is not claimable before this, so a request that died half-way never hands a worker a file that is not there.
+    staged_at = models.DateTimeField(null=True, blank=True)
+    #: Executions started (1 = the first run; 2 and 3 are recoveries after a worker stopped).
+    attempts = models.PositiveSmallIntegerField(default=0)
+    #: Who holds the job right now. Everything the holder writes carries it, so a worker that lost the job cannot change it.
+    lease_token = models.UUIDField(null=True, blank=True)
+    worker_id = models.CharField(max_length=64, blank=True)
+    #: Refreshed by the worker while it holds the job. Always the database's clock, never a worker's.
+    heartbeat_at = models.DateTimeField(null=True, blank=True)
+
     class Meta:
         db_table = "core_job"
         ordering = ["-created_at"]

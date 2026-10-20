@@ -13,7 +13,7 @@ import { GrowFill } from '@/components/charts/ProgressBar'
 import { createContext, useCallback, useContext, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react'
 import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
-import { UPLOAD_PROBLEMS, waitForJob } from '@/api/jobs'
+import { UPLOAD_PROBLEMS, waitForJob, waitingNote } from '@/api/jobs'
 import { clientDetail, useInvalidateClient, V1 } from '@/api/queries/clients'
 import type { BankAccount, IngestResult, Job, Statement } from '@/api/types'
 import { isLockedCode, PasswordForm } from '@/components/ca/PasswordPrompt'
@@ -431,6 +431,7 @@ function Reading({ file, job }: { file: File; job?: Job }) {
   // The bar is the server's own progress figure (0 to 100), but the server only reports 0 and then 100 (the whole read happens in
   // one step), so while there is no real figure a moving bar says "working" without claiming a percentage.
   const progress = job && job.progress > 0 ? Math.min(100, job.progress) : null
+  const waiting = waitingNote(job)
   return (
     <div className="grid gap-3 py-6" role="status">
       <div className="flex items-center gap-2 font-medium">
@@ -451,8 +452,9 @@ function Reading({ file, job }: { file: File; job?: Job }) {
           <GrowFill id="upload-progress" percent={progress} className="rounded-full bg-primary" />
         )}
       </div>
+      {waiting && <p className="text-[13px] font-medium">{waiting}</p>}
       <p className="text-[13px] text-muted-foreground">
-        {progress === null ? 'Sending the file.' : `${progress}%`} Every row is checked against the running balance, then the client’s rules
+        {progress === null ? (waiting ? 'You can leave this window open; it carries on by itself.' : 'Sending the file.') : `${progress}%`} Every row is checked against the running balance, then the client’s rules
         place what they can. The assistant reads the rest after this, a few rows at a time. A long statement can take up to a minute.
       </p>
     </div>

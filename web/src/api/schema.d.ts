@@ -5177,6 +5177,9 @@ export interface components {
          *
          *     ``result`` is whatever the work produced -- its shape depends on ``kind``
          *     and is documented on the endpoint that starts the job.
+         *
+         *     A job waiting in the queue also says how many are ahead of it in the firm (approximate: others finish or arrive between polls, so it is
+         *     not a time) and whether a reader process is looking at the queue, which is how a screen can tell "waiting its turn" from "nobody is reading".
          */
         Job: {
             /** Format: uuid */
@@ -5195,6 +5198,10 @@ export interface components {
             readonly started_at: string | null;
             /** Format: date-time */
             readonly finished_at: string | null;
+            /** @description Jobs of this kind in the firm queued before this one and not yet finished; null unless waiting. */
+            readonly queue_ahead: number | null;
+            /** @description Whether a reader process is looking at the queue; null unless waiting. */
+            readonly reader_running: boolean | null;
         };
         /**
          * @description * `PENDING` - Queued

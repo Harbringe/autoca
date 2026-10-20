@@ -104,6 +104,9 @@ services:
     environment:
       DJANGO_SETTINGS_MODULE: config.settings.prod
       CACHE_URL: redis://redis:6379/1
+      # "inline" reads an uploaded statement inside the request (the way back); "background" hands it to the worker below.
+      # Switched by a line in .env.prod, so turning it on or off is a restart and not a deploy.
+      STATEMENT_UPLOAD_MODE: ${STATEMENT_UPLOAD_MODE:-inline}
     expose:
       - "8000"
     # The image's own probe asks for http://127.0.0.1:8000/healthz, which production correctly refuses
@@ -141,6 +144,33 @@ services:
     # hid the one time it would have meant something. A worker has no page to ask.
     healthcheck:
       disable: true
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+    logging: *cloudwatch
+    restart: unless-stopped
+
+  # Reads the statements people upload, one at a time, so the web app only records the file and answers (see core/jobqueue.py and
+  # docs/background-uploads-plan.md). The same image and settings as web and assistant; it shares the cache, where it leaves the
+  # signals the screens use to tell "waiting its turn" from "nobody is reading". Idle it is small; reading a 238-page statement takes about
+  # 110 MB more, so the limit leaves room without letting a bad file take the server's memory.
+  worker:
+    image: autoca-app:prod
+    env_file: .env.prod
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      CACHE_URL: redis://redis:6379/1
+    command: ["python", "manage.py", "run_uploads"]
+    # Healthy means a reader has looked at the queue in the last two minutes, not merely that the process exists.
+    healthcheck:
+      test: ["CMD", "python", "manage.py", "run_uploads", "--check"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 60s
+    mem_limit: 450m
     depends_on:
       migrate:
         condition: service_completed_successfully

@@ -6,6 +6,7 @@ import hashlib
 import logging
 import time
 
+from django.conf import settings
 from django.utils.decorators import method_decorator
 from django.views.decorators.debug import sensitive_post_parameters
 from drf_spectacular.types import OpenApiTypes
@@ -34,6 +35,7 @@ from banking.ingest import confirm_opening_balance, ingest_statement
 from banking.models import BankAccount, Statement, StatementTransaction
 from banking.preview import preview as layout_preview
 from banking.removal import remove_statement
+from banking.upload_jobs import enqueue_statement_upload
 from classify.engine import classify_statement
 from classify.queue import mark_waiting
 from classify.seeds import rename_account_ledger, seed_client
@@ -85,6 +87,24 @@ class StatementUploadView(viewsets.GenericViewSet):
         key = _upload_key(client, data)
         _drop_job_for_removed_statement(request.firm.pk, key)
 
+        password = payload.validated_data.get("password") or None
+        # Read by the reader process when it is on: the request only records the file and answers. A password is never kept anywhere
+        # a worker could find it, so an upload that carries one is read here, in the request, as it always was.
+        if settings.STATEMENT_UPLOAD_MODE == "background" and password is None:
+            outcome = enqueue_statement_upload(
+                client=client,
+                data=data,
+                filename=upload.name,
+                user=request.user,
+                allow_gap=payload.validated_data["allow_gap"],
+                layout=payload.validated_data.get("layout"),
+                key=key,
+            )
+            return Response(
+                JobSerializer(outcome.job).data,
+                status=status.HTTP_200_OK if outcome.reused else status.HTTP_202_ACCEPTED,
+            )
+
         outcome = run_job(
             firm_id=request.firm.pk,
             kind="statement.ingest",
@@ -99,7 +119,7 @@ class StatementUploadView(viewsets.GenericViewSet):
                 allow_gap=payload.validated_data["allow_gap"],
                 layout=payload.validated_data.get("layout"),
                 # Used to open this one file and then let go: it is not in the job, the key, a message or the database.
-                password=payload.validated_data.get("password") or None,
+                password=password,
             ),
         )
         return Response(
@@ -143,7 +163,7 @@ def _drop_job_for_removed_statement(firm_id, key: str) -> None:
         job.delete()
 
 
-def _ingest(*, client, data, filename, user, allow_gap, layout=None, password=None) -> dict:
+def _ingest(*, client, data, filename, user, allow_gap, layout=None, password=None, read=None, on_stage=None) -> dict:
     """Ingest, seed the client's baseline ledgers, classify by rules, and queue what is left.
 
     Seeding on every upload rather than at client creation is deliberate: a
@@ -152,6 +172,7 @@ def _ingest(*, client, data, filename, user, allow_gap, layout=None, password=No
     """
     started = laps = time.monotonic()
     timings: dict[str, float] = {}
+    stage = on_stage or (lambda _words: None)  # a worker tells the person where it is, at stage boundaries only
 
     def lap(stage: str) -> None:
         nonlocal laps
@@ -167,8 +188,10 @@ def _ingest(*, client, data, filename, user, allow_gap, layout=None, password=No
         allow_gap=allow_gap,
         layout=layout,
         password=password,
+        read=read,
     )
     lap("read_and_save")
+    stage("Sorting the rows into ledgers")
     seed_client(client, created_by=user)
     classified = classify_statement(result.statement)
     lap("classify")
@@ -183,6 +206,7 @@ def _ingest(*, client, data, filename, user, allow_gap, layout=None, password=No
     except Exception:  # noqa: BLE001
         logging.getLogger(__name__).exception("Pairing own-account transfers failed after a statement upload")
     lap("pair_transfers")
+    stage("Matching payments to invoices")
 
     # A row that is plainly the payment of an invoice already on the books is settled against it here, before it is
     # sent anywhere to be guessed at.
@@ -203,6 +227,7 @@ def _ingest(*, client, data, filename, user, allow_gap, layout=None, password=No
     # suggestions are posted the same way when its batch is applied.
     from ledger.approval import auto_post_client
 
+    stage("Posting what the rules are sure of")
     auto_posted = auto_post_client(client)
     lap("auto_post")
     # Where an upload's time went, so a slow one can be explained from the log (rows, then seconds per stage).

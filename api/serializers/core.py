@@ -9,7 +9,7 @@ from rest_framework import serializers
 
 from core.access import can_post, can_sign_off
 from core.identifiers import is_valid_cin, is_valid_pan, is_valid_tan, is_valid_udyam
-from core.models import CLIENT_IDENTIFIERS, Client, Constitution, Firm, Job
+from core.models import CLIENT_IDENTIFIERS, Client, Constitution, Firm, Job, JobStatus
 from core.rbac import PERMISSIONS, has_permission
 
 
@@ -259,7 +259,13 @@ class JobSerializer(serializers.ModelSerializer):
 
     ``result`` is whatever the work produced -- its shape depends on ``kind``
     and is documented on the endpoint that starts the job.
+
+    A job waiting in the queue also says how many are ahead of it in the firm (approximate: others finish or arrive between polls, so it is
+    not a time) and whether a reader process is looking at the queue, which is how a screen can tell "waiting its turn" from "nobody is reading".
     """
+
+    queue_ahead = serializers.SerializerMethodField(help_text="Jobs of this kind in the firm queued before this one and not yet finished; null unless waiting.")
+    reader_running = serializers.SerializerMethodField(help_text="Whether a reader process is looking at the queue; null unless waiting.")
 
     class Meta:
         model = Job
@@ -275,5 +281,23 @@ class JobSerializer(serializers.ModelSerializer):
             "created_at",
             "started_at",
             "finished_at",
+            "queue_ahead",
+            "reader_running",
         ]
         read_only_fields = fields
+
+    def get_queue_ahead(self, job) -> int | None:
+        if job.status != JobStatus.PENDING:
+            return None
+        return (
+            Job.objects.filter(firm_id=job.firm_id, kind=job.kind, created_at__lt=job.created_at)
+            .exclude(status__in=JobStatus.terminal())
+            .count()
+        )
+
+    def get_reader_running(self, job) -> bool | None:
+        if job.status != JobStatus.PENDING:
+            return None
+        from core import jobqueue
+
+        return jobqueue.reader_running()

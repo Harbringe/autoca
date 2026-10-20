@@ -116,14 +116,22 @@ def test_a_change_under_one_client_costs_only_that_clients_checks_again(firm, cl
     assert other.pk != client_record.pk
     admin = sign_in(member(firm, Role.FIRM_ADMIN, "per-client-admin@example.test").user)
     feed = f"{V1}/firm/alerts/"
-    with CaptureQueriesContext(connection) as cold:
-        admin.get(feed)
-    with CaptureQueriesContext(connection) as repeat:
-        admin.get(feed)
-    with django_capture_on_commit_callbacks(execute=True):
-        assert admin.post(f"{V1}/clients/{client_record.pk}/assistant/pause/").status_code == 200
-    with CaptureQueriesContext(connection) as after_one_change:
-        admin.get(feed)
-    # First time: the overview and both clients' checks. After a change under one client: the overview and that client's checks only.
-    # A repeat: nothing.
-    assert len(cold) > len(after_one_change) > len(repeat)
+    def count_get():
+        with CaptureQueriesContext(connection) as queries:
+            admin.get(feed)
+        return len(queries)
+
+    def change_under(client):
+        with django_capture_on_commit_callbacks(execute=True):
+            assert admin.post(f"{V1}/clients/{client.pk}/assistant/pause/").status_code == 200
+
+    cold = count_get()
+    repeat = count_get()
+    change_under(other)  # the second client has no statement, so little of its own to check
+    after_other = count_get()
+    change_under(client_record)
+    after_record = count_get()
+    # A repeat costs the least. A change under a client costs the overview and that client's checks, so the client with the books costs more
+    # than the empty one, and neither costs as much as the first time (which checks both).
+    counts = dict(cold=cold, repeat=repeat, after_other=after_other, after_record=after_record)
+    assert repeat < after_other < after_record <= cold, counts

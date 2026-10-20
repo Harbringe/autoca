@@ -278,6 +278,22 @@ class PartyViewSet(ClientScopedMixin, FirmScopedViewSet):
         return Response({"created": len(made)}, status=status.HTTP_201_CREATED)
 
     @extend_schema(
+        summary="Open the party's own account",
+        description=(
+            "Returns the party's account in the books, opening it if this is the first time it is needed: under Sundry Debtors for a "
+            "customer and Sundry Creditors for a supplier, named after the party. A row booked to it sits on the party's account, "
+            "which is what lets a payment be settled against the party's bills. An account of the same name the client already "
+            "has (one imported from Tally, say) is adopted rather than duplicated. Safe to repeat. Needs `party.manage`."
+        ),
+        request=None,
+        responses={200: LedgerAccountSerializer},
+    )
+    @action(detail=True, methods=["post"])
+    def account(self, request, client_id=None, pk=None):
+        party = self.get_object()
+        return Response(LedgerAccountSerializer(billing.party_ledger_for(party)).data)
+
+    @extend_schema(
         summary="A party's imported opening balance and how much of it is broken into bills",
         responses={200: OpeningStandingSerializer},
     )

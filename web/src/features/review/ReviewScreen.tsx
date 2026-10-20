@@ -17,7 +17,7 @@ import { isApiError, messageOf } from '@/api/errors'
 import { waitForJob } from '@/api/jobs'
 import { ledgers as ledgersQuery, parties as partiesQuery, reviewQueue, rules as rulesQuery, type ReviewTab, type Stage } from '@/api/queries/books'
 import { bankAccounts, clientDetail, reviewSummary, useInvalidateClient, V1 } from '@/api/queries/clients'
-import { GROUP_LABEL, TDS_SECTIONS, type Classification, type Party, type Job, type JournalEntry, type PlacementResult } from '@/api/types'
+import { GROUP_LABEL, TDS_SECTIONS, type Classification, type LedgerAccount, type Party, type Job, type JournalEntry, type PlacementResult } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
 import { Money } from '@/components/ca/Money'
 import { Pager, usePaged } from '@/components/ca/Pager'
@@ -34,7 +34,7 @@ import { Checkbox, Select } from '@/components/ui/controls'
 import { Input } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
 import { Spinner } from '@/components/ui/spinner'
-import { formatDate, formatPaise, plainAmount, plural } from '@/lib/format'
+import { formatDate, formatPaise, plainAmount, plural, titleCase } from '@/lib/format'
 import { useHotkey } from '@/lib/hotkeys'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
@@ -774,12 +774,17 @@ function Decision({
   const [rcm, setRcm] = useState(row.rcm)
   const [learn, setLearn] = useState(!row.is_self_transfer && !!row.counterparty)
   // Which action is waiting on the server: only that button spins, and the others wait their turn.
-  const [action, setAction] = useState<'place' | 'post' | 'party' | null>(null)
+  const [action, setAction] = useState<'place' | 'post' | 'party' | 'account' | null>(null)
   const busy = action !== null
   const t = row.transaction
   const canPlace = can('transaction.classify')
   const mayUndoRule = can('suggestion.edit')
   const unchanged = ledger === row.ledger && (party || null) === (row.party ?? null) && tds === (row.tds_section ?? '') && rcm === row.rcm
+  // A payee read from the narration that nobody has made a party of, on a row nothing is sure about: offer the payee's own account.
+  const payeeName = titleCase(row.counterparty ?? '')
+  const offerOwnAccount =
+    can('party.manage') && !!payeeName && !row.is_self_transfer && !row.party && !(row.party_candidates?.length > 0) && !party &&
+    row.method !== 'REVIEWED' && row.method !== 'RULE' && (!row.ledger || row.confidence < 0.75)
   const alreadyPlacedByPerson = row.method === 'REVIEWED' && unchanged
 
   function place() {
@@ -850,6 +855,27 @@ function Decision({
   }
 
   async function confirmParty(id: string) {
+  /** Open an account in the payee's own name (a customer's under Sundry Debtors, a supplier's under Sundry Creditors) and book this row to it. */
+  async function bookToTheirOwnAccount() {
+    setAction('account')
+    try {
+      const made = await raw.post<Party>(`${V1}/clients/${clientId}/parties/`, {
+        canonical_name: payeeName,
+        role: t.is_debit ? 'VENDOR' : 'CUSTOMER',
+      })
+      const account = await raw.post<LedgerAccount>(`${V1}/clients/${clientId}/parties/${made.id}/account/`)
+      await invalidate()
+      setParty(made.id)
+      setLedger(account.id)
+      toast.success(`${account.name} opened`, { description: 'Press Place in ledger to book this row to it.' })
+    } catch (e) {
+      const fields = isApiError(e) ? e.fields : {}
+      toast.error(fields.canonical_name?.[0] ?? messageOf(e))
+    } finally {
+      setAction(null)
+    }
+  }
+
     setAction('party')
     try {
       await raw.post(`${V1}/classifications/${row.id}/confirm-party/`, { party: id })
@@ -986,6 +1012,16 @@ function Decision({
       {canPlace ? (
         <div className="grid gap-3">
           <LedgerPicker
+          {offerOwnAccount && (
+            <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed px-3 py-2 text-[13px]">
+              <span className="min-w-0 flex-1">
+                The narration names <strong>{payeeName}</strong>. {t.is_debit ? 'Debit' : 'Credit'} their own account instead of a general head?
+              </span>
+              <Button size="sm" variant="outline" loading={action === 'account'} disabled={busy} onClick={() => void bookToTheirOwnAccount()}>
+                {t.is_debit ? `Open ${payeeName} (supplier)` : `Open ${payeeName} (customer)`}
+              </Button>
+            </div>
+          )}
             clientId={clientId}
             ledgers={ledgers}
             value={ledger}

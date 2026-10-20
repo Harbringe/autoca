@@ -183,3 +183,11 @@ export function formatPeriod(period: string): string {
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n === 1 ? one : many}`
 }
+
+/** A name the bank printed in capitals, as a person would write it: "SAMPLE PERSON" becomes "Sample Person". */
+export function titleCase(text: string): string {
+  return text
+    .trim()
+    .toLowerCase()
+    .replace(/(^|[\s.&'-])([a-z])/g, (_match, edge: string, letter: string) => edge + letter.toUpperCase())
+}

@@ -162,3 +162,13 @@ describe('formatCompact', () => {
     expect(formatCompact(50)).toBe('₹0.50')
   })
 })
+
+describe('titleCase', () => {
+  it('writes a bank-printed name the way a person would', async () => {
+    const { titleCase } = await import('./format')
+    expect(titleCase('SAMPLE PERSON')).toBe('Sample Person')
+    expect(titleCase('SAMPLEPERSONNAME')).toBe('Samplepersonname')
+    expect(titleCase("o'brien & SONS")).toBe("O'Brien & Sons")
+    expect(titleCase('  ')).toBe('')
+  })
+})

@@ -1630,6 +1630,26 @@ export interface paths {
         patch: operations["clients_parties_partial_update"];
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/parties/{id}/account/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open the party's own account
+         * @description Returns the party's account in the books, opening it if this is the first time it is needed: under Sundry Debtors for a customer and Sundry Creditors for a supplier, named after the party. A row booked to it sits on the party's account, which is what lets a payment be settled against the party's bills. An account of the same name the client already has (one imported from Tally, say) is adopted rather than duplicated. Safe to repeat. Needs `party.manage`.
+         */
+        post: operations["clients_parties_account_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/parties/{id}/opening/": {
         parameters: {
             query?: never;
@@ -12279,6 +12299,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Party"];
+                };
+            };
+        };
+    };
+    clients_parties_account_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LedgerAccount"];
                 };
             };
         };

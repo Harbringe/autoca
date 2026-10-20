@@ -502,6 +502,16 @@ _PATTERNS: list[tuple[str, object]] = [
     ),
     # UPI-SWIGGY-9876543210 · UPI-RAMESH KUMAR-ramesh@okicici-...
     (Channel.UPI, re.compile(r"^UPI-(?P<counterparty>[^-]+?)\s*-\s*(?P<reference>.*)$", re.I)),
+    # UPI-RAMESHKUMAR: some banks print only the name after the channel, with no VPA or reference to follow it. Words that mean the bank
+    # itself is speaking (a charge, a refund, a reversal) are left to the patterns below.
+    (
+        Channel.UPI,
+        re.compile(
+            r"^UPI-(?!.*\b(?:CHARGES?|CHRG|FEE|GST|REFUND|REVERSAL|REV|CASHBACK|INTEREST)\b)"
+            r"(?P<counterparty>[A-Za-z][A-Za-z .&']+[A-Za-z.])\s*$",
+            re.I,
+        ),
+    ),
     # ACH D- LIC OF INDIA · NACH DR-TATA CAPITAL-EMI · ACH C- DIVIDEND XYZ LTD
     (Channel.MANDATE, re.compile(r"^N?ACH\s*(?:D|C|DR|CR)?\s*-\s*(?P<counterparty>[^-]+?)\s*(?:-\s*(?P<remark>.*))?$", re.I)),
     # CHQ DEP-000412-CLEARING-MEHTA HARDWARE · CHQ DEP/000412/MEHTA HARDWARE

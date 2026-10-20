@@ -3678,6 +3678,41 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/clients/{client_id}/parties/{id}/account/:
+    post:
+      operationId: clients_parties_account_create
+      description: 'Returns the party''s account in the books, opening it if this
+        is the first time it is needed: under Sundry Debtors for a customer and Sundry
+        Creditors for a supplier, named after the party. A row booked to it sits on
+        the party''s account, which is what lets a payment be settled against the
+        party''s bills. An account of the same name the client already has (one imported
+        from Tally, say) is adopted rather than duplicated. Safe to repeat. Needs
+        `party.manage`.'
+      summary: Open the party's own account
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerAccount'
+          description: ''
   /api/v1/clients/{client_id}/parties/{id}/opening/:
     get:
       operationId: clients_parties_opening_retrieve

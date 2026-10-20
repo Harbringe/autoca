@@ -208,6 +208,8 @@ def test_the_banks_own_charges_are_still_fees(raw):
         ("UPI/410123456789/Payment to BigBasket", Channel.UPI, "BigBasket"),
         ("UPI/501234567890/SOME HOLDER/Payment to ZEPTO MARKETPLACE", Channel.UPI, "ZEPTO MARKETPLACE"),
         ("UPI-SWIGGY-9876543210", Channel.UPI, "SWIGGY"),
+        ("UPI-SAMPLEPERSONNAME", Channel.UPI, "SAMPLEPERSONNAME"),
+        ("UPI-SAMPLE PERSON NAME", Channel.UPI, "SAMPLE PERSON NAME"),
         ("ACH D- LIC OF INDIA", Channel.MANDATE, "LIC OF INDIA"),
         ("NACH DR-TATA CAPITAL-EMI 12", Channel.MANDATE, "TATA CAPITAL"),
         ("CHQ DEP-000412-CLEARING-MEHTA HARDWARE", Channel.CHEQUE, "MEHTA HARDWARE"),
@@ -218,6 +220,21 @@ def test_other_banks_formats_still_name_the_payee(raw, channel, payee):
     facts = analyse(raw)
     assert facts.channel == channel
     assert facts.counterparty == payee
+
+
+@pytest.mark.parametrize("raw", ["UPI-REFUND", "UPI-REVERSAL", "UPI-123456", "UPI-AB"])
+def test_a_bare_upi_line_that_is_the_bank_speaking_or_has_no_name_names_no_payee(raw):
+    """Only a name after ``UPI-`` is a payee; a refund or reversal, a number, or two letters are not."""
+    assert analyse(raw).counterparty == ""
+
+
+@pytest.mark.parametrize("raw", ["UPI-CHARGES", "UPI-GST ON CHARGES"])
+def test_a_bare_upi_line_about_charges_is_still_a_fee(raw):
+    assert analyse(raw).channel == Channel.FEE
+
+
+def test_a_bare_upi_name_is_one_payee_whichever_month_it_comes_in():
+    assert analyse("UPI-SAMPLEPERSONNAME").match_key == analyse("UPI-SAMPLEPERSONNAME").match_key != ""
 
 
 def test_a_monthly_mandate_keeps_one_payee_whatever_the_instalment():

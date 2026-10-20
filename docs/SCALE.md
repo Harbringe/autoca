@@ -36,8 +36,9 @@ Four tests, in the order to run them:
 
 ```sh
 # 1. Get the scripts (read-only; this does not change the running site)
-cd /srv/autoca && sudo git fetch origin dev
-rm -rf /tmp/scale && mkdir /tmp/scale && sudo git archive origin/dev scripts/scale | tar -x -C /tmp/scale
+# (no sudo for git: root has no deploy key on the server; Docker is the only thing that needs sudo)
+cd /srv/autoca && git fetch origin dev
+rm -rf /tmp/scale && mkdir /tmp/scale && git archive origin/dev scripts/scale | tar -x -C /tmp/scale
 cd /tmp/scale/scripts/scale
 
 sh scale.sh check            # disk and memory to spare, and what the live containers are using

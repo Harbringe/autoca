@@ -81,3 +81,11 @@ def _fresh_throttle_counts():
 
     cache.clear()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _figures_not_shared(settings):
+    """The overview and alerts are shared for a few seconds in the app (core.freshness). Tests change the database directly between reads,
+    so they must see what is there now; the tests of the sharing itself turn it on (``settings.FRESHNESS_TTL = 10``)."""
+    settings.FRESHNESS_TTL = 0
+    yield

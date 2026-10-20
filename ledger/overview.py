@@ -86,6 +86,14 @@ def client_missing_months(client) -> list[str]:
 
 
 def firm_overview(membership) -> dict:
+    """One row per client ``membership`` may see, plus firm totals. Shared for a few seconds (``core.freshness``): a client's page asks
+    for it, for the alerts and for its own alerts together, and each used to work it out again."""
+    from core import freshness
+
+    return freshness.remember(membership.firm_id, "overview", [membership.pk], lambda: _compute_firm_overview(membership))
+
+
+def _compute_firm_overview(membership) -> dict:
     """One row per client ``membership`` may see, plus firm totals. Four queries."""
     visible = visible_clients(membership)
     ids = visible.values("pk")

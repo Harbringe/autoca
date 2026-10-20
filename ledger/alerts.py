@@ -298,11 +298,21 @@ def sort_alerts(alerts: list[Alert]) -> list[Alert]:
 def firm_alerts(
     membership, *, today: datetime.date | None = None, include_money: bool = True
 ) -> list[Alert]:
-    """Alerts for every client the person may see, most serious first."""
+    """Alerts for every client the person may see, most serious first. Shared for a few seconds (``core.freshness``): the bell asks for
+    it on every screen, and each module filter of it used to build the whole thing again."""
+    from core import freshness
+
+    today = today or datetime.date.today()
+    return freshness.remember(
+        membership.firm_id, "firm-alerts", [membership.pk, int(include_money), today.isoformat()],
+        lambda: _compute_firm_alerts(membership, today=today, include_money=include_money),
+    )
+
+
+def _compute_firm_alerts(membership, *, today: datetime.date, include_money: bool) -> list[Alert]:
     from core.access import visible_clients
     from ledger.overview import firm_overview
 
-    today = today or datetime.date.today()
     overview = firm_overview(membership)
     detailed = len(overview["clients"]) <= 60
     people = {c.pk: c for c in visible_clients(membership)}
@@ -321,15 +331,20 @@ def firm_alerts(
 def client_alerts_for(
     membership, client, *, today: datetime.date | None = None, include_money: bool = True
 ) -> list[Alert]:
+    from core import freshness
     from ledger.overview import firm_overview
 
     today = today or datetime.date.today()
-    base = next(
-        (row for row in firm_overview(membership)["clients"] if row["id"] == client.pk), None
+
+    def compute() -> list[Alert]:
+        base = next((row for row in firm_overview(membership)["clients"] if row["id"] == client.pk), None)
+        if base is None:
+            return []
+        return sort_alerts(client_alerts(client, base=base, today=today, include_money=include_money))
+
+    return freshness.remember(
+        membership.firm_id, "client-alerts", [membership.pk, client.pk, int(include_money), today.isoformat()], compute
     )
-    if base is None:
-        return []
-    return sort_alerts(client_alerts(client, base=base, today=today, include_money=include_money))
 
 
 def summarise(alerts: list[Alert]) -> dict:

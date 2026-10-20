@@ -24,13 +24,13 @@ from ledger.tests.test_billing import (  # noqa: F401  (fixtures and helpers)
 pytestmark = pytest.mark.django_db
 
 
-def _books_with_activity(books, senior, suppliers=3):
+def _books_with_activity(books, senior, suppliers=3, prefix="Supplier"):
     """Several parties in different states: part-paid, unallocated money, an advance, a customer's receipt, one untouched."""
     parties = []
     for n in range(suppliers):
-        party = make_party(books, f"Supplier {n}", gstin=None if n else "27AAACR5055K1Z7")
-        first = purchase(books, senior, party, reference=f"S{n}-1")
-        second = purchase(books, senior, party, reference=f"S{n}-2")
+        party = make_party(books, f"{prefix} {n}", gstin=None if n else "27AAACR5055K1Z7" if prefix == "Supplier" else None)
+        first = purchase(books, senior, party, reference=f"{prefix[0]}{n}-1")
+        second = purchase(books, senior, party, reference=f"{prefix[0]}{n}-2")
         paid = payment_line(books, party, 5_000_000, on=datetime.date(2025, 10, 20 + n))
         billing.allocate(paid, bill=first, amount_paise=5_000_000)
         payment_line(books, party, 3_000_000, on=datetime.date(2025, 10, 26))  # money moved, tied to nothing
@@ -38,12 +38,12 @@ def _books_with_activity(books, senior, suppliers=3):
         billing.allocate(advance, amount_paise=1_000_000)  # held on account
         assert second is not None
         parties.append(party)
-    customer = make_party(books, "Customer Co", role=PartyRole.CUSTOMER, gstin=None)
+    customer = make_party(books, f"Customer of {prefix}", role=PartyRole.CUSTOMER, gstin=None)
     billing.party_ledger_for(customer)  # a party's account is opened the first time it is used; a receipt is used before any bill
     receipt = payment_line(books, customer, 2_000_000, on=datetime.date(2025, 10, 28), direction=Direction.CREDIT)
     assert receipt is not None
     parties.append(customer)
-    parties.append(make_party(books, "Nobody Yet", gstin=None))  # no bill, no line, so no ledger
+    parties.append(make_party(books, f"Nobody of {prefix}", gstin=None))  # no bill, no line, so no ledger
     return parties
 
 
@@ -105,7 +105,7 @@ def test_the_unallocated_payments_detector_does_not_ask_a_query_per_line(books, 
     _books_with_activity(books, senior, suppliers=1)
     with CaptureQueriesContext(connection) as few:
         list(openitems.open_items(books, only=["payment_unallocated"]))
-    _books_with_activity(books, senior, suppliers=3)
+    _books_with_activity(books, senior, suppliers=3, prefix="More")
     with CaptureQueriesContext(connection) as many:
         list(openitems.open_items(books, only=["payment_unallocated"]))
     assert len(many) == len(few)

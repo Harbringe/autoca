@@ -60,5 +60,35 @@ services:
       db:
         condition: service_healthy
 
+  # The app itself, for the concurrent-users and upload tests (profile "load": scale.sh web-up starts it, web-down removes it). The same image
+  # and gunicorn as production, with two workers instead of three because it shares the 2 GB server with the live site. Reachable only
+  # as web:8000 from this project's own network; the only people who can sign in are the ones the load script creates in the scratch
+  # database.
+  web:
+    image: autoca-app:prod
+    profiles: ["load"]
+    env_file: ${SCALE_ENV}
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+      DATABASE_SSL_REQUIRE: "0"
+      FRONTEND_URL: https://scale.invalid
+      DJANGO_ALLOWED_HOSTS: scale.invalid
+    command: ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "2", "--threads", "2", "--timeout", "120"]
+    mem_limit: 512m
+    cpus: 0.75
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - "import urllib.request; urllib.request.urlopen(urllib.request.Request('http://127.0.0.1:8000/healthz', headers={'Host': 'scale.invalid', 'X-Forwarded-Proto': 'https'}), timeout=4)"
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
 volumes:
   scale_pgdata:

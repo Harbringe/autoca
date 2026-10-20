@@ -1,6 +1,6 @@
 #!/bin/sh
-# Scratch-database scale test, run ON THE SERVER (see docs/SCALE.md). Nothing here touches the live database: it starts a second
-# Postgres in its own Compose project (autoca-scale) and removes it again with `down`.
+# Scratch-database scale and load test, run ON THE SERVER (see docs/SCALE.md). Nothing here touches the live database: it starts a second
+# Postgres (and, for load tests, a second copy of the app) in its own Compose project (autoca-scale) and removes them again with `down`.
 #
 #   sh scale.sh check            how much disk and memory the server has to spare
 #   sh scale.sh up               start the scratch database and build its tables
@@ -8,7 +8,15 @@
 #   sh scale.sh time [--plans]   time the queries behind the slow-prone screens
 #   sh scale.sh stats            table sizes and row counts
 #   sh scale.sh top              the slowest statements Postgres has seen
-#   sh scale.sh down             delete the scratch database, its volume and its passwords
+#   sh scale.sh web-up           start the scratch copy of the app (for load tests)
+#   sh scale.sh load run [args]      many people at once, in phases:  load run --users 5,20,50 --seconds 60
+#   sh scale.sh load uploads [args]  big statements uploaded together: load uploads --concurrency 2 --pages 238
+#   sh scale.sh assistant [args]     the assistant worker over a big queue, with a fake model:  assistant --rows 5000
+#   sh scale.sh web-down         stop the scratch copy of the app
+#   sh scale.sh down             delete everything: database, volume, app and passwords
+#
+# Load, upload and assistant runs sample every container's CPU and memory (the live site's too) and stop themselves if the server has
+# less than SCALE_MIN_FREE_MB (250) of memory left, so a stress test cannot take the live site down with it.
 set -eu
 
 HERE="$(cd "$(dirname "$0")" && pwd)"
@@ -19,7 +27,51 @@ DC="sudo env SCALE_DIR=$SCALE_DIR REPO=$REPO SCALE_ENV=$SCALE_ENV docker compose
 
 need_env() { [ -f "$SCALE_ENV" ] || { echo "scale: run 'sh scale.sh up' first" >&2; exit 1; }; }
 tool() { need_env; $DC run --rm -T tool "$@" </dev/null; }
+assistant_tool() { need_env; $DC run --rm -T -e LLM_BACKEND=fake_llm.FakeLLMAdapter -e PYTHONPATH=/srv/app:/scale tool python /scale/assistant.py "$@" </dev/null; }
 psql_super() { need_env; $DC exec -T db psql -U postgres -d autoca_scale_test "$@" </dev/null; }
+
+web_running() { [ -n "$(sudo docker ps -q --filter label=com.docker.compose.project=autoca-scale --filter label=com.docker.compose.service=web)" ]; }
+
+# Every container of the scratch project except its database.
+kill_scale_work() {
+    sudo docker ps --filter label=com.docker.compose.project=autoca-scale --format '{{.ID}} {{.Names}}' \
+        | grep -v -- '-db-' | awk '{print $1}' | xargs -r sudo docker kill >/dev/null 2>&1 || true
+}
+
+summary() {
+    echo
+    echo "peaks while it ran (100% CPU = one core; the live site's containers are the ones not named autoca-scale-*):"
+    awk '
+      function mb(s,   v) { v = s + 0; if (s ~ /GiB/) v *= 1024; else if (s ~ /KiB/ || s ~ /kB/) v /= 1024; return v }
+      { name = $1; cpu = $2 + 0; m = mb($3); if (cpu > maxc[name]) maxc[name] = cpu; if (m > maxm[name]) maxm[name] = m; seen[name] = 1 }
+      END { for (n in seen) printf "  %-44s cpu %6.1f%%  mem %7.0f MB\n", n, maxc[n], maxm[n] }
+    ' "$1" | sort
+}
+
+with_stats() {
+    log="$(mktemp)"
+    "$@" &
+    pid=$!
+    aborted=0
+    while kill -0 "$pid" 2>/dev/null; do
+        sudo docker stats --no-stream --format '{{.Name}} {{.CPUPerc}} {{.MemUsage}}' >> "$log" 2>/dev/null || true
+        avail="$(free -m | awk '/^Mem:/ {print $7}')"
+        if [ "${avail:-9999}" -lt "${SCALE_MIN_FREE_MB:-250}" ]; then
+            echo "scale: ABORTING, the server has only ${avail} MB of memory left; stopping the test to protect the live site" >&2
+            kill_scale_work
+            kill "$pid" 2>/dev/null || true
+            aborted=1
+            break
+        fi
+        sleep 3
+    done
+    rc=0
+    wait "$pid" 2>/dev/null || rc=$?
+    summary "$log"
+    rm -f "$log"
+    [ "$aborted" -eq 0 ] || rc=3
+    return "$rc"
+}
 
 cmd="${1:-}"
 [ $# -gt 0 ] && shift
@@ -29,7 +81,7 @@ check)
     df -h / | tail -1
     free -m | sed -n '1,2p'
     echo
-    echo "Disk: a 1 million row fill needs about 1.5 GB. Memory: the scratch database is capped at 480 MB, the tool at 256 MB."
+    echo "Disk: a 1 million row fill needs about 1.5 GB. Memory: the scratch database is capped at 480 MB, the tool at 256 MB, the scratch app at 512 MB."
     echo "Live containers right now:"
     sudo docker stats --no-stream --format '  {{.Name}}  cpu {{.CPUPerc}}  mem {{.MemUsage}}' 2>/dev/null | grep -v autoca-scale || true
     ;;
@@ -69,14 +121,32 @@ stats)
 top)
     psql_super -c "select calls, round(mean_exec_time::numeric,1) as mean_ms, round(total_exec_time::numeric/1000,1) as total_s, left(regexp_replace(query, '\s+', ' ', 'g'), 110) as query from pg_stat_statements where query not like '%pg_stat%' order by total_exec_time desc limit 12"
     ;;
+web-up)
+    need_env
+    $DC --profile load up -d --wait web
+    echo "scale: the scratch app is up (web:8000 inside the scratch network). Next: sh scale.sh load run --users 5,20"
+    ;;
+web-down)
+    need_env
+    $DC --profile load stop web
+    $DC --profile load rm -f web
+    ;;
+load)
+    need_env
+    web_running || { echo "scale: the scratch app is not running: sh scale.sh web-up" >&2; exit 1; }
+    with_stats tool python /scale/load.py "$@"
+    ;;
+assistant)
+    with_stats assistant_tool "$@"
+    ;;
 down)
     need_env
-    $DC down -v --remove-orphans
+    $DC --profile load down -v --remove-orphans
     rm -f "$SCALE_ENV"
-    echo "scale: the scratch database, its volume and its passwords are gone."
+    echo "scale: the scratch database, its volume, the scratch app and its passwords are gone."
     ;;
 *)
-    sed -n '2,11p' "$0"
+    sed -n '2,19p' "$0"
     exit 1
     ;;
 esac

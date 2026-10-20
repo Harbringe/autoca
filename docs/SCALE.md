@@ -12,6 +12,29 @@ Four tests, in the order to run them:
 | Big uploads | `load uploads` | Whether several large statements at once (like a 238-page one) exhaust memory or time out. |
 | The assistant worker | `assistant` | How fast it clears a big queue, and what posting costs, with a fake model that answers at once. |
 
+## Where to run it: not on the live server
+
+Run it on a **separate, throwaway server of the same size** (a t3.small), not on the live one. The live t3.small has 1.9 GB of memory and the live
+app and its worker use most of it (about 1.4 GB in use, about 500 MB available when idle), while the scratch database, tool and app are allowed
+480 + 256 + 512 MB. A stress test that needs more memory than the server has makes the operating system kill a process, and the largest is the live
+site. The scale script now **refuses** a step when the server has too little memory free for it, so on the live server it will stop at `up`.
+
+1. In the AWS console (region ap-south-1) launch an EC2 instance: Amazon Linux 2023, t3.small, 20 GB disk, **no inbound ports**, and an instance profile
+   with `AmazonSSMManagedInstanceCore` so you can open a Session Manager shell. Name it `autoca-scale-test`.
+2. Open a Session Manager shell on it and run `curl -fsSL https://raw.githubusercontent.com/Harbringe/autoca/dev/scripts/scale/bootstrap-ec2.sh | sh`
+   (installs Docker and git, clones the repository, builds the same app image).
+3. `cd /srv/autoca/scripts/scale` and follow "Run it" below, from `sh scale.sh check`.
+4. **Terminate the instance when you are done.**
+
+A separate server cannot slow the live site, so there is nothing to watch on it. To see what real clients would feel, use the probe described under
+"The client's own experience" below on the live site.
+
+## The client's own experience
+
+What a client feels is the server's answers plus their own browser drawing them. The first is measured by `load run` on the test server. The second
+(the Review screen drawing a 2,500-row queue, for example) does not depend on the server's load and is measured in a real browser: open the screen with
+the browser's Performance panel, or ask for the page's paint and long-task timings. Run that against a client with a long queue.
+
 ## How it is kept apart from the live site
 
 - A separate Compose project (`autoca-scale`): its own Postgres, network and volume. No port is published.

@@ -38,6 +38,17 @@ kill_scale_work() {
         | grep -v -- '-db-' | awk '{print $1}' | xargs -r sudo docker kill >/dev/null 2>&1 || true
 }
 
+# Refuses a step that would need more memory than the server has to spare, because the operating system's answer to running out is to
+# kill a process, and the biggest one here is the live site. $1 is the memory in MB the step needs free, on top of what is running.
+need_memory() {
+    avail="$(free -m | awk '/^Mem:/ {print $7}')"
+    if [ "${avail:-0}" -lt "$1" ]; then
+        echo "scale: refusing: only ${avail} MB of memory is available and this step needs about $1 MB free (the live site must keep its share)." >&2
+        echo "scale: run this on a separate server instead (scripts/scale/bootstrap-ec2.sh), or when the live site is using less." >&2
+        exit 1
+    fi
+}
+
 summary() {
     echo
     echo "peaks while it ran (100% CPU = one core; the live site's containers are the ones not named autoca-scale-*):"
@@ -86,6 +97,7 @@ check)
     sudo docker stats --no-stream --format '  {{.Name}}  cpu {{.CPUPerc}}  mem {{.MemUsage}}' 2>/dev/null | grep -v autoca-scale || true
     ;;
 up)
+    need_memory 900
     free_kb="$(df --output=avail -k / | tail -1 | tr -d ' ')"
     [ "$free_kb" -gt 8000000 ] || { echo "scale: refusing, less than 8 GB of disk is free" >&2; exit 1; }
     if [ ! -f "$SCALE_ENV" ]; then
@@ -108,9 +120,11 @@ up)
     echo "scale: the scratch database is ready. Next: sh scale.sh fill --txns 300000"
     ;;
 fill)
-    tool python /scale/fill.py "$@"
+    need_memory 650
+    with_stats tool python /scale/fill.py "$@"
     ;;
 time)
+    need_memory 550
     tool python /scale/timing.py "$@"
     ;;
 stats)
@@ -123,6 +137,7 @@ top)
     ;;
 web-up)
     need_env
+    need_memory 950
     $DC --profile load up -d --wait web
     echo "scale: the scratch app is up (web:8000 inside the scratch network). Next: sh scale.sh load run --users 5,20"
     ;;
@@ -134,9 +149,11 @@ web-down)
 load)
     need_env
     web_running || { echo "scale: the scratch app is not running: sh scale.sh web-up" >&2; exit 1; }
+    need_memory 550
     with_stats tool python /scale/load.py "$@"
     ;;
 assistant)
+    need_memory 550
     with_stats assistant_tool "$@"
     ;;
 down)

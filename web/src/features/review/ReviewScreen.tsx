@@ -779,12 +779,12 @@ function Decision({
   const t = row.transaction
   const canPlace = can('transaction.classify')
   const mayUndoRule = can('suggestion.edit')
-  const unchanged = ledger === row.ledger && (party || null) === (row.party ?? null) && tds === (row.tds_section ?? '') && rcm === row.rcm
   // A payee read from the narration that nobody has made a party of, on a row nothing is sure about: offer the payee's own account.
   const payeeName = titleCase(row.counterparty ?? '')
   const offerOwnAccount =
     can('party.manage') && !!payeeName && !row.is_self_transfer && !row.party && !(row.party_candidates?.length > 0) && !party &&
     row.method !== 'REVIEWED' && row.method !== 'RULE' && (!row.ledger || row.confidence < 0.75)
+  const unchanged = ledger === row.ledger && (party || null) === (row.party ?? null) && tds === (row.tds_section ?? '') && rcm === row.rcm
   const alreadyPlacedByPerson = row.method === 'REVIEWED' && unchanged
 
   function place() {
@@ -854,7 +854,6 @@ function Decision({
     }
   }
 
-  async function confirmParty(id: string) {
   /** Open an account in the payee's own name (a customer's under Sundry Debtors, a supplier's under Sundry Creditors) and book this row to it. */
   async function bookToTheirOwnAccount() {
     setAction('account')
@@ -876,6 +875,7 @@ function Decision({
     }
   }
 
+  async function confirmParty(id: string) {
     setAction('party')
     try {
       await raw.post(`${V1}/classifications/${row.id}/confirm-party/`, { party: id })
@@ -1011,7 +1011,6 @@ function Decision({
 
       {canPlace ? (
         <div className="grid gap-3">
-          <LedgerPicker
           {offerOwnAccount && (
             <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed px-3 py-2 text-[13px]">
               <span className="min-w-0 flex-1">
@@ -1022,6 +1021,7 @@ function Decision({
               </Button>
             </div>
           )}
+          <LedgerPicker
             clientId={clientId}
             ledgers={ledgers}
             value={ledger}

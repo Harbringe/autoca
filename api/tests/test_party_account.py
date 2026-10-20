@@ -31,7 +31,7 @@ def test_a_customers_account_is_opened_under_sundry_debtors_named_after_them(api
     body = response.json()
     assert body["name"] == "Sample Person" and body["group"] == LedgerGroup.DEBTOR
     with firm_context(client_record.firm_id):
-        assert Party.objects.get(pk=party_id).ledger_id == body["id"]
+        assert str(Party.objects.get(pk=party_id).ledger_id) == body["id"]
 
 
 def test_a_suppliers_account_is_under_sundry_creditors(api, client_record):

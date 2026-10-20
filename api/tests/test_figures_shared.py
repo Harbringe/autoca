@@ -83,3 +83,15 @@ def test_a_changed_client_alert_is_seen_at_once_too(firm, client_record, stateme
     with CaptureQueriesContext(connection) as remembered:
         admin.get(mine)
     assert len(worked_out_again) > len(remembered)
+
+
+def test_a_second_person_reuses_the_work_already_done_for_the_first(firm, client_record, statement):
+    """The costly part is per client, not per person: ten people opening the app must not cost ten computations."""
+    first = sign_in(member(firm, Role.FIRM_ADMIN, "first-share@example.test").user)
+    second = sign_in(member(firm, Role.SENIOR_CA, "second-share@example.test").user)
+    with CaptureQueriesContext(connection) as one:
+        mine = first.get(f"{V1}/firm/alerts/").json()
+    with CaptureQueriesContext(connection) as two:
+        theirs = second.get(f"{V1}/firm/alerts/").json()
+    assert mine["alerts"] and mine == theirs  # the same client's alerts, for each of them
+    assert len(two) < len(one)

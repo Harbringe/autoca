@@ -289,6 +289,23 @@ def client_alerts(
     return out
 
 
+def client_alerts_shared(
+    client, *, base: dict, today: datetime.date, include_money: bool = True, detailed: bool = True
+) -> list[Alert]:
+    """``client_alerts`` for one client, shared for a few seconds (``core.freshness``) between everyone who may see that client.
+
+    This is the costly part (a books-closing report for the client), and it depends on the client, not on who is asking, so it is kept per
+    client and not per person: ten people opening the app cost one computation per client, not ten. Who may see which client is decided by
+    the caller before this is reached, as it always was.
+    """
+    from core import freshness
+
+    return freshness.remember(
+        client.firm_id, "client-alerts-body", [client.pk, int(include_money), int(detailed), today.isoformat()],
+        lambda: client_alerts(client, base=base, today=today, include_money=include_money, detailed=detailed),
+    )
+
+
 def sort_alerts(alerts: list[Alert]) -> list[Alert]:
     return sorted(
         alerts, key=lambda a: (SEVERITY_ORDER[a.severity], a.client_name.lower(), a.module, a.kind)
@@ -321,7 +338,7 @@ def _compute_firm_alerts(membership, *, today: datetime.date, include_money: boo
         client = people.get(base["id"])
         if client is not None:
             out.extend(
-                client_alerts(
+                client_alerts_shared(
                     client, base=base, today=today, include_money=include_money, detailed=detailed
                 )
             )
@@ -331,20 +348,13 @@ def _compute_firm_alerts(membership, *, today: datetime.date, include_money: boo
 def client_alerts_for(
     membership, client, *, today: datetime.date | None = None, include_money: bool = True
 ) -> list[Alert]:
-    from core import freshness
     from ledger.overview import firm_overview
 
     today = today or datetime.date.today()
-
-    def compute() -> list[Alert]:
-        base = next((row for row in firm_overview(membership)["clients"] if row["id"] == client.pk), None)
-        if base is None:
-            return []
-        return sort_alerts(client_alerts(client, base=base, today=today, include_money=include_money))
-
-    return freshness.remember(
-        membership.firm_id, "client-alerts", [membership.pk, client.pk, int(include_money), today.isoformat()], compute
-    )
+    base = next((row for row in firm_overview(membership)["clients"] if row["id"] == client.pk), None)
+    if base is None:
+        return []
+    return sort_alerts(client_alerts_shared(client, base=base, today=today, include_money=include_money))
 
 
 def summarise(alerts: list[Alert]) -> dict:

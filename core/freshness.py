@@ -22,7 +22,7 @@ import time
 from django.conf import settings
 from django.core.cache import cache
 
-TTL = 10
+TTL = 30
 #: How long a request waits for another one that is working out the same thing, before it works it out itself.
 WAIT_SECONDS = 8.0
 _MISSING = object()

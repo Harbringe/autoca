@@ -399,7 +399,7 @@ CACHES = {
 # attempts within window_seconds -> locked out for lockout_seconds. See core/throttle.py.
 # Seconds the firm overview and alerts are shared between requests (core.freshness); 0 turns the sharing off. A person's own changes are
 # seen at once whatever this is; only what no request did (a worker's postings, the date) can be this old.
-FRESHNESS_TTL = int(env("FRESHNESS_TTL", "10"))
+FRESHNESS_TTL = int(env("FRESHNESS_TTL", "30"))
 
 THROTTLE_LIMITS = {
     # Sign-in is counted three ways (core.throttle.sign_in_*): per address and account together, so one person

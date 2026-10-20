@@ -39,6 +39,7 @@ def _books_with_activity(books, senior, suppliers=3):
         assert second is not None
         parties.append(party)
     customer = make_party(books, "Customer Co", role=PartyRole.CUSTOMER, gstin=None)
+    billing.party_ledger_for(customer)  # a party's account is opened the first time it is used; a receipt is used before any bill
     receipt = payment_line(books, customer, 2_000_000, on=datetime.date(2025, 10, 28), direction=Direction.CREDIT)
     assert receipt is not None
     parties.append(customer)

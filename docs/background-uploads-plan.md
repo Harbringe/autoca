@@ -28,32 +28,53 @@ the upload lost half-way) and, with 2 vCPUs, slow every other person's page whil
    job as `PENDING` with the message "Waiting to be read", and returns `202`. If staging fails, no job is left behind and the person gets an error.
 2. **A worker does the reading.** A new `python manage.py run_uploads` process (a `worker` service in `compose.prod.yaml`, same image as the
    assistant) runs jobs one at a time (`UPLOAD_WORKER_CONCURRENCY`, default 1).
-3. **Claiming is a short transaction, the work is outside it.**
-   1. In one short transaction: select the next eligible `PENDING` job `FOR UPDATE SKIP LOCKED`, set `RUNNING`, `attempts += 1`, a fresh
-      `lease_token` (random) and `worker_id`, `heartbeat_at = now`; commit.
-   2. Run `_ingest` inside the firm's context with no transaction held open across the PDF read.
-   3. In a separate transaction write the outcome with `... WHERE id = ? AND lease_token = ?`. Zero rows updated means the lease was lost (the job was
-      requeued and someone else owns it): the old worker discards its result and does nothing else. The same guard applies to every heartbeat.
-4. **Leases and crash recovery.** A thread in the worker refreshes `heartbeat_at` every 20 s for as long as the job runs, through every stage, so a
-   long read is never mistaken for a dead worker. A `RUNNING` job whose heartbeat is older than 5 minutes is requeued (`PENDING`, token cleared).
-   `attempts` counts executions: attempt 1 is the first run, 2 and 3 are recoveries; if attempt 3 also dies the job is `FAILED` with "The reader
-   stopped while reading this file; upload it again". The staged file stays until the job is final.
-5. **Retry safety (verified before relying on it).** Work already committed when the worker died must not be done twice: the statement is deduped by
-   file hash (re-ingest returns the original), but auto-posting, own-transfer pairing and invoice matching each get checked and tested for being
-   safe to run again on the same statement. Any that is not is made so before this ships. The ingest work and its own writes stay in one transaction,
-   as `run_job` has it today, so a crash mid-way leaves nothing half-done.
-6. **Fairness, stated exactly, with no state to lose.** Among firms that have an eligible `PENDING` job, take the firm whose most recently
-   *finished* upload job is oldest (never-served firms first); within that firm take its oldest job. That is derived from the job table on every claim,
-   so a restart loses nothing, and a firm with twenty files cannot hold up a firm with one.
-7. **Progress people can see.** Stage boundaries only ("Reading the PDF", "Placing rows", "Matching invoices", "Posting what the rules are sure of"),
-   never per row or page. Waiting jobs show "N ahead of you", which is approximate by nature (other jobs finish or arrive between polls) and is
-   shown as such, not as an ETA.
-8. **Cleanup in the right order.** The final state is committed first; then the staged file is deleted. If the delete fails it is logged and left for
-   a periodic sweep (the worker removes staged files whose job is final or gone, older than an hour). A cleanup failure never changes a job's result.
-9. **A switch.** `STATEMENT_UPLOAD_MODE = inline | background`. Tests and local development stay `inline`; production is `background`. Rolling back
-   is one setting.
-10. **Health means progress, not just life.** The worker writes a "last loop" and "last job heartbeat" time to the cache. The health check and the
-    web notice below use those, so a process stuck in a database wait counts as down.
+3. **What the code does today (read, not assumed).** `core.jobs.run_job` wraps the whole of `_ingest` in one `transaction.atomic()`, so today a
+   transaction stays open for the full ~35 s, PDF read included, and the job's final status is written *after* that transaction commits. The PDF
+   read (`files.load`, `detect_parser`, `parser.parse`, the scanned-page reader) touches no database. A retry of an ingest whose file hash already has a
+   statement returns the original statement without re-reading. Own-transfer pairing, invoice matching and auto-posting each act on the rows still
+   pending, so running them again on a finished statement finds nothing to do; each gets a test that proves it rather than a claim.
+4. **Transaction boundaries (a refactor, stated exactly).** `ingest_statement` is split into two parts: a **read** part (no database: load the file,
+   parse it, prove it against the balances) that runs with no transaction open and takes ~19 s, then a **write** part (account, continuity checks, the
+   stored original, document, statement, rows, then classify, pair, match, auto-post) that runs in one transaction in the firm's context. The
+   stored original goes to storage before the transaction (its key is the file's hash, so putting it twice is harmless). Nothing in the write part
+   calls an outside system; the optional scanned-page reader is in the read part.
+5. **Claiming, leases and fencing.**
+   1. *Claim* is its own short transaction: pick the next eligible `PENDING` job `FOR UPDATE SKIP LOCKED`; set `RUNNING`, `attempts += 1`, a new random
+      `lease_token`, `worker_id`, `heartbeat_at = now()`; commit.
+   2. *Lease checks use database time only* (`now()` in SQL, never the worker's clock). The worker checks it still holds the lease before it starts
+      the write part.
+   3. *The write transaction fences itself.* Its last statement is `UPDATE core_job SET status='SUCCEEDED', result=... WHERE id=? AND lease_token=?`,
+      inside the same transaction as the work. If that updates no row the lease was lost, the worker raises, and **all of its writes roll back**. So a stale
+      worker cannot leave rows, postings or matches behind: it commits everything together with the job's success, or nothing. Work and status commit
+      atomically, which also closes today's gap where a crash between the two left finished work on a job still marked running.
+   4. *If two workers did run the write part at once* (a paused process resumed after its job was requeued), they collide on the unique file hash and
+      the loser's transaction fails and rolls back; the lease fence stops any that did not collide.
+   5. *Failures* are recorded in a separate short transaction with the same `WHERE ... AND lease_token = ?` guard.
+6. **Heartbeat and recovery.** A thread in the worker sets `heartbeat_at = now()` (database time, guarded by the token) every 20 s through every
+   stage. Recovery is one conditional statement: back to `PENDING` with the token cleared where `status = 'RUNNING'` and `heartbeat_at` is older than
+   5 minutes by database time and `attempts < 3`; `FAILED` ("The reader stopped while reading this file; upload it again") where `attempts >= 3`.
+   Attempt 1 is the first run, 2 and 3 are recoveries. The staged file stays until the job is final.
+7. **Fairness, stated exactly and stateless.** Among firms with an eligible `PENDING` job, rank by the finish time of that firm's most recent upload job
+   of *any* terminal status (a failure counts as being served), never-served firms first, then oldest finish first, ties by firm id. Within the chosen
+   firm: `created_at`, then job id. Computed from the job table on each claim, so a restart loses nothing. (A firm last served months ago correctly
+   goes ahead of one served a second ago; that is what "longest wait since service" means.)
+8. **Staging is content-addressed and idempotent.** The staged key is `clients/<client>/uploads/<file hash>`, so two simultaneous requests for the same
+   file write identical bytes to one object. The existing unique constraint on the idempotency key decides the winner: the loser returns the winner's
+   job and deletes nothing. An object is deleted only when its job is final **and no other non-final job references the same key**. If storage
+   succeeds and job creation then fails, the object is an orphan; a periodic sweep (every worker loop, at most hourly) removes objects under
+   `uploads/` older than an hour that no non-final job references. (This needs the storage adapter to list a prefix: checked when the staging step is
+   built, and added to the local and S3 adapters if missing.)
+9. **Cleanup order.** The final state commits first, then the staged object is deleted. A failed delete is logged and left for the sweep; it never
+   changes a job's result.
+10. **Progress.** Stage boundaries only ("Reading the PDF", "Placing rows", "Matching invoices", "Posting what the rules are sure of"). Waiting jobs say
+    "N ahead of you", approximate by nature and shown as such, not an ETA.
+11. **A switch.** `STATEMENT_UPLOAD_MODE = inline | background`. Tests and local development stay `inline`; production is `background`.
+12. **Health is three separate signals** written to the cache by the worker: *last successful queue poll*, *last successful job heartbeat*, and
+    *the job it is on (id and attempt)*. The container health check and the web notice use them. The web says "the reader is not running" only when
+    jobs are waiting **and** the queue poll is missing or older than 2 minutes. A pending job alone is not proof the worker is down: if the poll is
+    fresh and a job is running it says "reading another file, N ahead".
+13. **Accepting is fast, and that is a target, not a promise.** Validation, storage I/O and job creation have to happen in the request. It is
+    measured against realistic storage latency and concurrent requests (see the tests and the live run), not asserted.
 
 ### What serial processing does and does not promise
 
@@ -86,7 +107,10 @@ has never been claimed) is missing or old, say "The reader is not running; the f
 * Same file twice while pending returns the same job; after success returns the original.
 * Every error code the inline path produces comes back identically from the worker.
 * Two workers claim concurrently: they cannot take the same job.
-* A worker that lost its lease cannot write a result or a heartbeat over the newer owner's job.
+* A worker that lost its lease cannot write a result or a heartbeat over the newer owner's job, **and its statement, rows, postings and matches are rolled back**, not left behind.
+* Two simultaneous uploads of the same file: one job, one staged object, the loser deletes nothing; an object whose job creation failed is swept, one a pending job references is not.
+* Fairness ties and failures: a firm whose last job failed counts as served; equal finish times order by firm id.
+* Health: a worker whose queue poll is stale shows the "not running" notice; a busy but polling worker does not.
 * Crash after the ingest committed but before the job was marked done: the retry duplicates no statement, row, posting or match.
 * Attempts: crash twice and it runs a third time; crash a third time and it fails with the stated message.
 * A long job keeps its heartbeat through every stage and is not requeued.
@@ -102,7 +126,9 @@ has never been claimed) is missing or old, say "The reader is not running; the f
 3. The upload view in background mode; progress messages from `_ingest`; tests.
 4. Compose `worker` service (memory-limited), deploy checklist, health via heartbeat.
 5. Web: waiting text, stale-worker notice.
-6. Re-run the live tests: 1, 2 and 4 uploads at once, with a probe of other pages throughout; expect nobody's pages to slow noticeably and no upload to fail.
+6. Re-run the live tests: 1, 2 and 4 uploads at once (large statements, several clients; more than one firm is covered by the tests and the scratch
+   server, since live has one real firm), recording queue wait, execution time per job, worker and web memory, worker health signals, and the latency of
+   unrelated page requests throughout. A successful upload alone does not show the original problem is solved; unaffected pages and no timeouts do.
 
 ## Not in this change
 

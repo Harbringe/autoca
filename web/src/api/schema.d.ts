@@ -8936,7 +8936,7 @@ export interface components {
             will_post: number;
             will_make_bill: number;
             skipped: number;
-            /** @description Bank vouchers left out (no bank account in AuditFlow, a loan or card account, or more than two lines); the bank ledger is incomplete. */
+            /** @description Bank vouchers left out (no bank account in AutoCA, a loan or card account, or more than two lines); the bank ledger is incomplete. */
             bank_waiting: number;
             /** @description Statement rows the bank vouchers will write. */
             bank_rows: number;
@@ -9170,7 +9170,7 @@ export interface components {
          *     | firm.owner_changed | actor, member, from, to |
          *     | firm.renamed | actor, from, to |
          *
-         *     `actor` is "AuditFlow platform" for a change made by the platform owner.
+         *     `actor` is "AutoCA platform" for a change made by the platform owner.
          */
         TeamEventDetail: {
             actor?: string;

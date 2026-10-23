@@ -1,4 +1,4 @@
-# AuditFlow
+# AutoCA
 
 Multi-tenant automation platform for CA firms. One deployment serves many firms;
 every firm's data is isolated from every other firm's by PostgreSQL row-level

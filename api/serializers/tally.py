@@ -281,7 +281,7 @@ class TallyVoucherCountsSerializer(serializers.Serializer):
     will_make_bill = serializers.IntegerField()
     skipped = serializers.IntegerField()
     bank_waiting = serializers.IntegerField(
-        help_text="Bank vouchers left out (no bank account in AuditFlow, a loan or card account, or more than two lines); the bank ledger is incomplete."
+        help_text="Bank vouchers left out (no bank account in AutoCA, a loan or card account, or more than two lines); the bank ledger is incomplete."
     )
     bank_rows = serializers.IntegerField(help_text="Statement rows the bank vouchers will write.")
     stock_lines = serializers.IntegerField(help_text="Stock item lines that will go into the stock register.")

@@ -5,9 +5,9 @@ export function Brand({ className }: { className?: string }) {
   return (
     <div className={`flex items-center gap-2.5 ${className ?? ''}`}>
       <span className="grid size-8 place-items-center rounded-md bg-brand text-[13px] font-bold tracking-tight text-white" aria-hidden>
-        CA
+        AF
       </span>
-      <span className="text-lg font-semibold tracking-tight">AutoCA</span>
+      <span className="text-lg font-semibold tracking-tight">AuditFlow</span>
     </div>
   )
 }

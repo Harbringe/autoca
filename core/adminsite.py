@@ -37,8 +37,8 @@ from core.http import client_ip
 class PlatformAdminSite(admin.AdminSite):
     """An admin site only the platform owner can open."""
 
-    site_header = "AutoCA platform"
-    site_title = "AutoCA platform"
+    site_header = "AuditFlow platform"
+    site_title = "AuditFlow platform"
     index_title = "Platform administration"
 
     def has_permission(self, request):

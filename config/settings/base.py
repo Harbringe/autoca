@@ -135,9 +135,9 @@ ADMIN_ACCESS = "superadmin.firmless.allow_admin"
 # ---------------------------------------------------------------------------
 
 JAZZMIN_SETTINGS = {
-    "site_title": "AutoCA platform",
-    "site_header": "AutoCA",
-    "site_brand": "AutoCA platform",
+    "site_title": "AuditFlow platform",
+    "site_header": "AuditFlow",
+    "site_brand": "AuditFlow platform",
     "welcome_sign": "Platform administration",
     "copyright": "",
     "site_logo": None,
@@ -340,7 +340,7 @@ LOGIN_URL = "/auth/login/"
 #: -- and Django's default, /accounts/profile/, is a URL this project does
 #: not serve. Signing in at /admin/login/ directly would 404 without this.
 LOGIN_REDIRECT_URL = "/admin/"
-OTP_TOTP_ISSUER = env("OTP_TOTP_ISSUER", "AutoCA")
+OTP_TOTP_ISSUER = env("OTP_TOTP_ISSUER", "AuditFlow")
 
 # Paths that answer with JSON rather than HTML. Used to decide whether a
 # half-authenticated request is redirected to the MFA page or told in a body
@@ -649,7 +649,7 @@ REST_FRAMEWORK = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "AutoCA API",
+    "TITLE": "AuditFlow API",
     "VERSION": "1.0.0",
     "DESCRIPTION": (
         "Bank statements in, approved double-entry journal entries out.\n\n"

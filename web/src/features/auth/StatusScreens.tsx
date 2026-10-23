@@ -9,7 +9,7 @@ export function BlockedScreen({ detail }: { detail: string }) {
     <AuthLayout title="No access right now" subtitle={detail}>
       <p className="mb-5 text-sm text-muted-foreground">
         Your firm&rsquo;s owner or administrator can switch your access back on. If the whole firm is deactivated,
-        contact AutoCA.
+        contact AuditFlow.
       </p>
       <Button className="w-full" onClick={() => void signOut()}>
         Sign out

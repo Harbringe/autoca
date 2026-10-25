@@ -18017,6 +18017,12 @@ components:
         master_files:
           type: integer
           description: Ledger-list files whose groups were read from Tally itself.
+        ignored:
+          type: array
+          items:
+            $ref: '#/components/schemas/TallyIgnoredFile'
+          description: Files that could not be used, each with why; the rest were
+            read.
         reports:
           type: array
           items:
@@ -18031,6 +18037,7 @@ components:
             $ref: '#/components/schemas/TallyAccountProposal'
       required:
       - accounts
+      - ignored
       - ledgers
       - master_files
       - reports
@@ -18051,6 +18058,16 @@ components:
       required:
       - code
       - detail
+    TallyIgnoredFile:
+      type: object
+      properties:
+        file:
+          type: string
+        reason:
+          type: string
+      required:
+      - file
+      - reason
     TallyImportDetail:
       type: object
       properties:

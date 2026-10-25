@@ -121,6 +121,19 @@ export function SetupStep({ clientId }: { clientId: string }) {
             )}
           </p>
 
+          {found.ignored.length > 0 && (
+            <div role="status" className="rounded-md border border-warning/40 bg-warning-bg p-3 text-sm" data-testid="ignored">
+              <p className="font-medium">{plural(found.ignored.length, 'file')} could not be used and {found.ignored.length === 1 ? 'was' : 'were'} left out:</p>
+              <ul className="mt-1 list-disc pl-5 text-muted-foreground">
+                {found.ignored.map((f) => (
+                  <li key={f.file}>
+                    <span className="font-mono">{f.file}</span>: {f.reason}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
           {unnamed.map((r) => (
             <div key={r.file} className="flex flex-wrap items-end gap-2 text-sm">
               <label className="grid gap-1">

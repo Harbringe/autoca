@@ -145,6 +145,7 @@ export interface Discovery {
   vouchers: number
   voucher_files: number
   master_files: number
+  ignored: { file: string; reason: string }[]
   reports: { file: string; ledger: string; rows: number; left_out: number }[]
   ledgers: LedgerProposal[]
   accounts: AccountProposal[]

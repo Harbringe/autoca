@@ -14,6 +14,7 @@ const found = (over: Partial<Discovery> = {}): Discovery => ({
   vouchers: 40,
   voucher_files: 1,
   master_files: 0,
+  ignored: [],
   reports: [],
   ledgers: [
     { name: 'Acme Traders', group: 'DEBTOR', reason: 'The customer on a sale', uses: 12, unsure: false },
@@ -46,6 +47,17 @@ describe('SetupStep', () => {
     expect(await screen.findByTestId('discovery')).toHaveTextContent('40 vouchers in 1 file')
     expect(screen.getByText(/The customer on a sale/)).toBeInTheDocument()
     expect(screen.getByText(/Check this one: An expense paid from the bank/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Create 2 ledgers and 1 bank account/ })).toBeEnabled()
+  })
+
+  it('lists the files that could not be used and why, and still shows what the others imply', async () => {
+    post.mockResolvedValueOnce(found({ ignored: [{ file: 'Books 2B.xml', reason: 'No vouchers were found in this file.' }] }))
+    renderStep()
+    choose()
+    const note = await screen.findByTestId('ignored')
+    expect(note).toHaveTextContent('1 file could not be used and was left out')
+    expect(note).toHaveTextContent('Books 2B.xml')
+    expect(note).toHaveTextContent('No vouchers were found in this file.')
     expect(screen.getByRole('button', { name: /Create 2 ledgers and 1 bank account/ })).toBeEnabled()
   })
 

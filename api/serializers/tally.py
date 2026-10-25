@@ -354,10 +354,16 @@ class TallyReportFileSerializer(serializers.Serializer):
     left_out = serializers.IntegerField(help_text="Rows a bank report cannot rebuild (several ledgers on the voucher).")
 
 
+class TallyIgnoredFileSerializer(serializers.Serializer):
+    file = serializers.CharField()
+    reason = serializers.CharField()
+
+
 class TallyDiscoveryResponseSerializer(serializers.Serializer):
     vouchers = serializers.IntegerField()
     voucher_files = serializers.IntegerField()
     master_files = serializers.IntegerField(help_text="Ledger-list files whose groups were read from Tally itself.")
+    ignored = TallyIgnoredFileSerializer(many=True, help_text="Files that could not be used, each with why; the rest were read.")
     reports = TallyReportFileSerializer(many=True)
     ledgers = TallyLedgerProposalSerializer(many=True)
     accounts = TallyAccountProposalSerializer(many=True)

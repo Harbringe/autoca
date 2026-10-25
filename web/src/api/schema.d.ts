@@ -8624,6 +8624,8 @@ export interface components {
             voucher_files: number;
             /** @description Ledger-list files whose groups were read from Tally itself. */
             master_files: number;
+            /** @description Files that could not be used, each with why; the rest were read. */
+            ignored: components["schemas"]["TallyIgnoredFile"][];
             reports: components["schemas"]["TallyReportFile"][];
             ledgers: components["schemas"]["TallyLedgerProposal"][];
             accounts: components["schemas"]["TallyAccountProposal"][];
@@ -8633,6 +8635,10 @@ export interface components {
             code: string;
             /** @description A sentence for a person; show it as it is. */
             detail: string;
+        };
+        TallyIgnoredFile: {
+            file: string;
+            reason: string;
         };
         TallyImportDetail: {
             /** Format: uuid */

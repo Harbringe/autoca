@@ -214,3 +214,18 @@ def test_a_bank_report_needs_an_account_for_each_file(api, client_record):
     data = bank_report_xml([report_row("4-Apr-25", "Cash", "Rcpt", debit=1.0)])
     response = api.post(url(client_record, "bank-report"), {"files": _files(("a.xml", data))}, format="multipart")
     assert response.status_code == 400
+
+
+def test_discover_skips_a_file_it_cannot_use_and_says_why_instead_of_failing_the_rest(api, firm, client_record):
+    not_vouchers = b"<ENVELOPE><SOMETHINGELSE>a GST report, not vouchers</SOMETHINGELSE></ENVELOPE>"
+    files = _files(("vouchers.xml", vouchers_xml([sale()])), ("report.xml", not_vouchers))
+    response = api.post(url(client_record, "discover"), {"files": files}, format="multipart")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["vouchers"] == 1 and body["voucher_files"] == 1
+    assert [f["file"] for f in body["ignored"]] == ["report.xml"] and body["ignored"][0]["reason"]
+
+
+def test_discover_still_refuses_when_no_file_is_usable(api, firm, client_record):
+    response = api.post(url(client_record, "discover"), {"files": _files(("report.xml", b"<ENVELOPE><X/></ENVELOPE>"))}, format="multipart")
+    assert response.status_code in (400, 422)

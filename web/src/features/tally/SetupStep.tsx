@@ -80,15 +80,16 @@ export function SetupStep({ clientId }: { clientId: string }) {
     <Card className="grid gap-3 p-4">
       <h2 className="font-medium">Set up from your Tally files</h2>
       <p className="text-sm text-muted-foreground">
-        The quickest way to start a new client. Choose the voucher exports and the bank reports together, and the ledgers, bank accounts and their groups are worked
-        out from them. You check the list before anything is created.
+        The quickest way to start a new client. Choose the voucher exports, the bank reports and, best of all, Tally&apos;s list of ledgers together: the ledgers,
+        bank accounts and their groups come from them, and the groups are exactly Tally&apos;s when the ledger list is included. You check the list before
+        anything is created.
       </p>
       <div>
         <input
           ref={input}
           type="file"
           multiple
-          accept=".xml,text/xml"
+          accept=".xml,text/xml,.xlsx,.csv"
           aria-label="Tally files"
           className="sr-only"
           onChange={(e) => {
@@ -110,8 +111,14 @@ export function SetupStep({ clientId }: { clientId: string }) {
       {found && (
         <div className="grid gap-3">
           <p className="text-sm" data-testid="discovery">
-            {plural(found.vouchers, 'voucher')} in {plural(found.voucher_files, 'file')} and {plural(found.reports.length, 'bank report')}. {found.ledgers.length} ledgers
-            and {found.accounts.length} bank accounts are not in this client yet.
+            {plural(found.vouchers, 'voucher')} in {plural(found.voucher_files, 'file')}, {plural(found.reports.length, 'bank report')} and{' '}
+            {plural(found.master_files, 'ledger list')}. {found.ledgers.length} ledgers and {found.accounts.length} bank accounts are not in this client yet.
+            {found.master_files === 0 && found.ledgers.length > 0 && (
+              <>
+                {' '}
+                Their groups are guesses from the money; add Tally&apos;s ledger list (Masters &gt; Ledgers, exported from Tally) to use the real groups.
+              </>
+            )}
           </p>
 
           {unnamed.map((r) => (

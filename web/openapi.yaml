@@ -18014,6 +18014,9 @@ components:
           type: integer
         voucher_files:
           type: integer
+        master_files:
+          type: integer
+          description: Ledger-list files whose groups were read from Tally itself.
         reports:
           type: array
           items:
@@ -18029,6 +18032,7 @@ components:
       required:
       - accounts
       - ledgers
+      - master_files
       - reports
       - voucher_files
       - vouchers

@@ -111,3 +111,64 @@ def test_a_bank_report_proposes_its_own_account_and_guesses_the_others_as_unsure
     assert (by["Rent Paid"].group, by["Rent Paid"].unsure) == (G.INDIRECT_EXPENSE, True)
     assert by["Cash"].group == G.CASH
     assert [(a.ledger, a.kind, a.bank_code, a.account_number) for a in d.accounts] == [("SBI SB A/C 62139251173", "BANK", "SBI", "62139251173")]
+
+
+# --- Tally's own list of ledgers settles the groups -------------------------------------------------------------------------------------
+
+
+MASTERS_XML = (
+    b"<ENVELOPE>"
+    b"<GROUP NAME='Fertilizer Dealers'><PARENT>Sundry Debtors</PARENT></GROUP>"
+    b"<LEDGER NAME='Sample Dealer One'><PARENT>Fertilizer Dealers</PARENT></LEDGER>"
+    b"<LEDGER NAME='Sample Supplier Two'><PARENT>Sundry Creditors</PARENT></LEDGER>"
+    b"<LEDGER NAME='Sample Shop Rent'><PARENT>Indirect Expenses</PARENT></LEDGER>"
+    b"<LEDGER NAME='Sample Odd Head'><PARENT>Firm Own Group</PARENT></LEDGER>"
+    b"<LEDGER NAME='Profit &amp; Loss A/c'><PARENT>Primary</PARENT></LEDGER>"
+    b"</ENVELOPE>"
+)
+
+
+def masters():
+    from ledger.tally_discover import master_groups
+    from ledger.tally_parse import parse_masters
+
+    return master_groups(parse_masters(MASTERS_XML, "ledgers.xml", max_bytes=MAX))
+
+
+def test_a_ledger_list_gives_each_ledger_its_real_group_even_under_a_firms_own_subgroup():
+    found = discover([], [], set(), masters())
+    got = {p.name: (p.group, p.unsure) for p in found.ledgers}
+    assert got["Sample Dealer One"] == (G.DEBTOR, False)  # Fertilizer Dealers sits under Sundry Debtors
+    assert got["Sample Supplier Two"] == (G.CREDITOR, False)
+    assert got["Sample Shop Rent"] == (G.INDIRECT_EXPENSE, False)
+    assert "Profit & Loss A/c" not in got  # Tally's own, not a client ledger
+
+
+def test_a_group_we_cannot_place_is_proposed_as_a_guess_and_says_so():
+    found = discover([], [], set(), masters())
+    odd = next(p for p in found.ledgers if p.name == "Sample Odd Head")
+    assert odd.unsure and "Firm Own Group" in odd.reason
+
+
+def test_the_ledger_list_beats_what_the_money_says():
+    # A bank report would guess a receipt from a person as income; Tally says the person is a customer.
+    parsed = report(report_row("4-Apr-25", "Sample Dealer One", "Rcpt", debit=500.0, number="1"))
+    found = discover([], [("HDFC Bank A/c 1234567890", parsed)], set(), masters())
+    dealer = next(p for p in found.ledgers if p.name == "Sample Dealer One")
+    assert (dealer.group, dealer.unsure, dealer.uses) == (G.DEBTOR, False, 1)
+    assert dealer.reason.startswith("Its group in Tally")
+
+
+def test_a_ledger_the_client_already_has_is_not_proposed_from_the_list():
+    found = discover([], [], {"sample dealer one"}, masters())
+    assert "Sample Dealer One" not in [p.name for p in found.ledgers]
+
+
+def test_a_ledger_list_is_told_from_vouchers_and_bank_reports_in_either_encoding():
+    from ledger.tally_setup import looks_like_masters
+
+    assert looks_like_masters("ledgers.xml", MASTERS_XML)
+    assert looks_like_masters("ledgers.xml", MASTERS_XML.decode().encode("utf-16"))
+    assert looks_like_masters("accounts.xlsx", b"PK")
+    assert not looks_like_masters("vouchers.xml", vouchers_xml([]))
+    assert not looks_like_masters("bank.xml", bank_report_xml([report_row("4-Apr-25", "Cash", "Rcpt", debit=1.0)]))

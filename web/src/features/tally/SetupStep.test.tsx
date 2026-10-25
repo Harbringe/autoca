@@ -13,6 +13,7 @@ vi.mock('@/api/client', async (importOriginal) => ({
 const found = (over: Partial<Discovery> = {}): Discovery => ({
   vouchers: 40,
   voucher_files: 1,
+  master_files: 0,
   reports: [],
   ledgers: [
     { name: 'Acme Traders', group: 'DEBTOR', reason: 'The customer on a sale', uses: 12, unsure: false },

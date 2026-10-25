@@ -357,6 +357,7 @@ class TallyReportFileSerializer(serializers.Serializer):
 class TallyDiscoveryResponseSerializer(serializers.Serializer):
     vouchers = serializers.IntegerField()
     voucher_files = serializers.IntegerField()
+    master_files = serializers.IntegerField(help_text="Ledger-list files whose groups were read from Tally itself.")
     reports = TallyReportFileSerializer(many=True)
     ledgers = TallyLedgerProposalSerializer(many=True)
     accounts = TallyAccountProposalSerializer(many=True)

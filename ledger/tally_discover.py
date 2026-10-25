@@ -17,7 +17,7 @@ from dataclasses import dataclass, field
 from classify.models import LedgerGroup as G
 from ledger.models import VoucherType
 from ledger.tally_bankreport import ParsedBankReport
-from ledger.tally_parse import normal_name
+from ledger.tally_parse import ParsedMasters, normal_name, resolve_group
 from ledger.tally_vouchers import ParsedVoucher
 
 _BANK_WORDS = re.compile(r"\b(bank|a/c|ac|sb|current|savings)\b")
@@ -89,12 +89,39 @@ def _account_for(name: str, group: str) -> AccountProposal | None:
     return AccountProposal(ledger=name, kind="LOAN" if group == G.LOAN else "BANK", bank_code=code, account_number=number)
 
 
-def discover(vouchers: list[ParsedVoucher], reports: list[tuple[str, ParsedBankReport]], existing: set[str]) -> Discovery:
+#: Tally's own books-wide ledgers, which a masters export lists but no client of ours needs created.
+_TALLY_OWN = {"profit & loss a/c"}
+
+
+def master_groups(masters: ParsedMasters) -> dict[str, tuple[str, str, str | None]]:
+    """Each ledger of a masters export: normalised name -> (name as written, the group Tally puts it in, that group or None when not ours).
+
+    The group is read from the ledger's own parent in the file, walked up to the nearest group we know, so a firm's own sub-group
+    (a "Fertilizer Dealers" group under Sundry Debtors) still lands on Sundry Debtors.
+    """
+    out: dict[str, tuple[str, str, str | None]] = {}
+    for ledger in masters.ledgers:
+        key = normal_name(ledger.name)
+        if key in _TALLY_OWN:
+            continue
+        resolved = resolve_group(ledger.parent, masters.groups)
+        out[key] = (ledger.name, ledger.parent, resolved.group)
+    return out
+
+
+def discover(
+    vouchers: list[ParsedVoucher],
+    reports: list[tuple[str, ParsedBankReport]],
+    existing: set[str],
+    masters: dict[str, tuple[str, str, str | None]] | None = None,
+) -> Discovery:
     """Propose the ledgers (and bank accounts) the files use that the client does not have yet.
 
     ``reports`` pairs each bank report with the name of the bank ledger it is the report of. ``existing`` is the normalised names of the
-    client's ledgers, which are left alone.
+    client's ledgers, which are left alone. ``masters`` (from ``master_groups``) is what Tally itself says each ledger's group is: it
+    settles the group outright, so a ledger named in it is never a guess, and a ledger only the masters list is proposed too.
     """
+    masters = masters or {}
     votes: dict[str, Counter] = defaultdict(Counter)
     spelled: dict[str, str] = {}
     uses: Counter = Counter()
@@ -144,9 +171,25 @@ def discover(vouchers: list[ParsedVoucher], reports: list[tuple[str, ParsedBankR
             else:
                 vote(row.counter, G.INDIRECT_EXPENSE if paid else G.INDIRECT_INCOME, "An expense paid from the bank" if paid else "Income received in the bank", weak=True)
 
+    for key, (written, _parent, _group) in masters.items():
+        spelled.setdefault(key, written)
+        votes.setdefault(key, Counter())
+
     out = Discovery()
     for key, counts in sorted(votes.items(), key=lambda kv: spelled[kv[0]].lower()):
         if key in existing:
+            continue
+        if key in masters:
+            written, parent, settled_group = masters[key]
+            if settled_group is not None:
+                group, reason, unsure = settled_group, f"Its group in Tally: {parent or 'none given'}", False
+            else:  # the file puts it under a group of the firm's own that we cannot place
+                guess = counts.most_common(1)[0][0] if counts else (G.SUSPENSE, "")
+                group, reason, unsure = guess[0], f"Tally puts it under {parent!r}, which is not a standard group; check it", True
+            out.ledgers.append(Proposal(name=spelled[key], group=group, reason=reason, uses=uses.get(key, 0), unsure=unsure))
+            account = _account_for(spelled[key], group)
+            if account is not None:
+                out.accounts.append(account)
             continue
         (group, reason), top = counts.most_common(1)[0]
         split = len({g for g, _r in counts}) > 1

@@ -8622,6 +8622,8 @@ export interface components {
         TallyDiscoveryResponse: {
             vouchers: number;
             voucher_files: number;
+            /** @description Ledger-list files whose groups were read from Tally itself. */
+            master_files: number;
             reports: components["schemas"]["TallyReportFile"][];
             ledgers: components["schemas"]["TallyLedgerProposal"][];
             accounts: components["schemas"]["TallyAccountProposal"][];

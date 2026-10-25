@@ -16,9 +16,16 @@ from django.db import transaction
 from banking.models import AccountKind, BankAccount
 from classify.models import LedgerAccount, LedgerGroup
 from ledger.tally_bankreport import looks_like_bank_report, parse_bank_report
-from ledger.tally_discover import discover
+from ledger.tally_discover import discover, master_groups
 from ledger.tally_import import TallyImportError, _require_rights
-from ledger.tally_parse import TallyParseError, clean_text, normal_name
+from ledger.tally_parse import (
+    TallyParseError,
+    TallyTooLargeError,
+    _decode,
+    clean_text,
+    normal_name,
+    parse_masters,
+)
 from ledger.tally_vouchers import parse_vouchers
 
 MAX_FILES = 12
@@ -26,6 +33,25 @@ _DIGITS = re.compile(r"\d{3,}")
 
 #: The group a bank, loan or card account's own ledger sits in.
 _ACCOUNT_GROUP = {AccountKind.BANK: LedgerGroup.BANK, AccountKind.LOAN: LedgerGroup.LOAN, AccountKind.CARD: LedgerGroup.CURRENT_LIABILITY}
+
+
+_MASTER_LEDGER = re.compile(r"<LEDGER[ >]")
+_VOUCHER = re.compile(r"<VOUCHER[ >]")
+
+
+def looks_like_masters(filename: str, data: bytes) -> bool:
+    """A Tally ledger-masters export (the list of ledgers with each one's group), as opposed to vouchers or a bank report.
+
+    A spreadsheet or csv is only ever masters here, since vouchers and bank reports come as XML. In XML a masters export has LEDGER
+    elements and no VOUCHER elements. Tally writes UTF-16 as often as UTF-8, so the text is decoded the way the readers do.
+    """
+    if (filename or "").lower().endswith((".xlsx", ".csv")):
+        return True
+    try:
+        text = _decode(data)
+    except TallyParseError:
+        return False
+    return bool(_MASTER_LEDGER.search(text)) and not _VOUCHER.search(text)
 
 
 def _subject_for(filename: str, names: set[str], given: str) -> str:
@@ -49,10 +75,16 @@ def discover_files(client, membership, files: list[tuple[str, bytes]], bank_ledg
         raise TallyImportError(f"Choose at most {MAX_FILES} files at a time.")
     bank_ledgers = bank_ledgers or {}
     cap = settings.MAX_TALLY_IMPORT_BYTES
-    vouchers, loaded_reports, voucher_files = [], [], 0
+    vouchers, loaded_reports, voucher_files, masters, master_files = [], [], 0, {}, 0
     for name, data in files:
         if looks_like_bank_report(data):
             loaded_reports.append((name, parse_bank_report(data, name, max_bytes=cap)))
+        elif looks_like_masters(name, data):
+            try:
+                masters.update(master_groups(parse_masters(data, name, max_bytes=cap)))
+            except (TallyParseError, TallyTooLargeError) as exc:
+                raise TallyImportError(f"{name}: {exc}") from exc
+            master_files += 1
         else:
             parsed = parse_vouchers(data, name, max_bytes=cap)
             if len(parsed.companies) > 1:
@@ -68,13 +100,14 @@ def discover_files(client, membership, files: list[tuple[str, bytes]], bank_ledg
         if subject:
             named.append((subject, report))
     existing = {normal_name(n) for n in LedgerAccount.objects.filter(firm_id=client.firm_id, client=client).values_list("name", flat=True)}
-    found = discover(vouchers, named, existing)
+    found = discover(vouchers, named, existing, masters)
     have_accounts = {
         normal_name(n) for n in BankAccount.objects.filter(firm_id=client.firm_id, client=client).values_list("ledger_name", flat=True)
     }
     return {
         "vouchers": len(vouchers),
         "voucher_files": voucher_files,
+        "master_files": master_files,
         "reports": reports,
         "ledgers": [asdict(p) for p in found.ledgers],
         # A bank account whose ledger the client already has an account for is not proposed twice.

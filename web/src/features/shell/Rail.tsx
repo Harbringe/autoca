@@ -46,10 +46,10 @@ export function Rail({ onShortcuts }: { onShortcuts: () => void }) {
     <div className="flex h-full w-20 flex-col items-center overflow-y-auto overscroll-contain border-r border-white/10 bg-sidebar py-3 text-sidebar-foreground [scrollbar-width:none]">
       <Link
         to={(items[0] ? railHref(items[0], can) : '/clients') as never}
-        aria-label="AuditFlow home"
+        aria-label="AutoCA home"
         className="mb-3 grid size-9 shrink-0 place-items-center rounded-md bg-brand text-[13px] font-bold tracking-tight text-white"
       >
-        AF
+        CA
       </Link>
       <nav aria-label="Main" className="flex w-full flex-col items-center gap-1 px-2">
         {items.map((item) => {

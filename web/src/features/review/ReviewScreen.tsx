@@ -17,7 +17,7 @@ import { isApiError, messageOf } from '@/api/errors'
 import { waitForJob } from '@/api/jobs'
 import { ledgers as ledgersQuery, parties as partiesQuery, reviewQueue, rules as rulesQuery, type ReviewTab, type Stage } from '@/api/queries/books'
 import { bankAccounts, clientDetail, reviewSummary, useInvalidateClient, V1 } from '@/api/queries/clients'
-import { GROUP_LABEL, TDS_SECTIONS, type Classification, type LedgerAccount, type Party, type Job, type JournalEntry, type PlacementResult } from '@/api/types'
+import { GROUP_LABEL, TDS_SECTIONS, type Classification, type Party, type Job, type JournalEntry, type PlacementResult } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
 import { Money } from '@/components/ca/Money'
 import { Pager, usePaged } from '@/components/ca/Pager'
@@ -34,11 +34,12 @@ import { Checkbox, Select } from '@/components/ui/controls'
 import { Input } from '@/components/ui/input'
 import { Kbd } from '@/components/ui/kbd'
 import { Spinner } from '@/components/ui/spinner'
-import { formatDate, formatPaise, plainAmount, plural, titleCase } from '@/lib/format'
+import { formatDate, formatPaise, plainAmount, plural } from '@/lib/format'
 import { useHotkey } from '@/lib/hotkeys'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { isHighReady, summariseBulk, type BulkSummary } from './bulkPost'
+import { namedGroups, namedPayee, openOwnAccount, type NamedGroup } from './ownAccount'
 import { LedgerIdeasBanner } from './LedgerIdeasBanner'
 import { SimilarGroupList } from './SimilarGroupList'
 import { groupKeyOf, groupSimilar, type SimilarGroup } from './similarGroups'
@@ -112,6 +113,9 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
   // Frozen when the dialog opens: the live count drops to 0 the moment the posting succeeds.
   const [bulk, setBulk] = useState<{ count: number; summary: BulkSummary | null }>({ count: 0, summary: null })
   const [confirmTicked, setConfirmTicked] = useState(false)
+  // Rows whose narration names a person: one click gives each person their own account and places their rows in it.
+  const [confirmNamed, setConfirmNamed] = useState<NamedGroup[] | null>(null)
+  const knownParties = useQuery(partiesQuery(clientId))
   // Alike rows seen as groups, one decision each; and one group's rows when it is opened.
   const [view, setView] = useState<'rows' | 'groups'>('rows')
   const [groupKey, setGroupKey] = useState<string | null>(null)
@@ -192,6 +196,37 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
     const timer = setTimeout(() => document.getElementById(`decision-${selectedId}`)?.scrollIntoView?.({ block: 'nearest', behavior: 'smooth' }), 300)
     return () => clearTimeout(timer)
   }, [selectedId])
+
+  const canPlaceNamed = can('party.manage') && can('transaction.classify')
+  const namedToPlace = useMemo(() => namedGroups(rows, canPlaceNamed), [rows, canPlaceNamed])
+  const namedRowCount = namedToPlace.reduce((n, g) => n + g.rows.length, 0)
+
+  /** For each person named: make them a party, open their own account, and place every one of their rows in it. A person who fails is reported; the rest still go. */
+  async function placeNamed(groups: NamedGroup[]) {
+    let placed = 0
+    let accountsOpened = 0
+    const failed: string[] = []
+    for (const group of groups) {
+      try {
+        const { party, account } = await openOwnAccount(clientId, group.name, group.debit, knownParties.data)
+        accountsOpened += 1
+        for (const [i, row] of group.rows.entries()) {
+          await raw.post<PlacementResult>(`${V1}/classifications/${row.id}/review/`, { ledger: account.id, party: party.id, rcm: false, tds_section: '', learn: i === 0 })
+          placed += 1
+        }
+      } catch {
+        failed.push(group.name)
+      }
+    }
+    await invalidate()
+    if (placed) {
+      toast.success(`${plural(placed, 'row')} placed on ${plural(accountsOpened, 'own account')}`, {
+        description: failed.length ? `Not done for ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? ` and ${failed.length - 5} more` : ''}; open those rows to place them one by one.` : 'Look them over in Ready to post, then post.',
+      })
+    } else {
+      toast.error('Nothing was placed', { description: failed.length ? `Could not open accounts for ${failed.slice(0, 5).join(', ')}.` : undefined })
+    }
+  }
 
   const canPost = can('journal.approve') && !!client.data?.can_post
   // A row on a party's account is never ticked or posted in bulk: a person says which bills it settles, one row at a time.
@@ -281,6 +316,11 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
       <div className="flex flex-wrap items-center justify-between gap-3">
         <StageNav clientId={clientId} active={stage} />
         <div className="flex flex-wrap gap-2">
+          {namedToPlace.length > 1 && (
+            <Button variant="outline" onClick={() => setConfirmNamed(namedToPlace)}>
+              <Sparkles /> Give {namedToPlace.length} named people their own accounts ({namedRowCount})
+            </Button>
+          )}
           {canPost && highCount > 0 && (
             <Button variant={tickedRows.length ? 'outline' : 'primary'} onClick={askBulk}>
               <CheckCheck /> Post all high-confidence{scopedHigh ? (chosenStatements!.length > 1 ? ' in these statements' : ' in this statement') : ''} ({highCount})
@@ -673,6 +713,28 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
         )}
       </Confirm>
       <Confirm
+        open={!!confirmNamed}
+        onOpenChange={(open) => !open && setConfirmNamed(null)}
+        title={confirmNamed ? `Give ${plural(confirmNamed.length, 'named person', 'named people')} their own accounts?` : ''}
+        confirmLabel={confirmNamed ? `Place ${confirmNamed.reduce((n, g) => n + g.rows.length, 0)} rows` : 'Place'}
+        onConfirm={async () => {
+          if (confirmNamed) await placeNamed(confirmNamed)
+        }}
+      >
+        {confirmNamed && (
+          <>
+            <p>
+              {confirmNamed.slice(0, 8).map((g) => `${g.name} (${g.debit ? 'supplier' : 'customer'}, ${plural(g.rows.length, 'row')})`).join('; ')}
+              {confirmNamed.length > 8 ? ` and ${confirmNamed.length - 8} more` : ''}.
+            </p>
+            <p>
+              Each person becomes a customer (receipts) or supplier (payments) with an account in their own name, and their rows are placed in it. Nothing is posted: the
+              rows go to Ready to post, where you can look them over first.
+            </p>
+          </>
+        )}
+      </Confirm>
+      <Confirm
         open={confirmTicked}
         onOpenChange={setConfirmTicked}
         title={`Post ${plural(tickedRows.length, 'ticked row')}?`}
@@ -780,25 +842,44 @@ function Decision({
   const canPlace = can('transaction.classify')
   const mayUndoRule = can('suggestion.edit')
   // A payee read from the narration that nobody has made a party of, on a row nothing is sure about: offer the payee's own account.
-  const payeeName = titleCase(row.counterparty ?? '')
-  const offerOwnAccount =
-    can('party.manage') && !!payeeName && !row.is_self_transfer && !row.party && !(row.party_candidates?.length > 0) && !party &&
-    row.method !== 'REVIEWED' && row.method !== 'RULE' && (!row.ledger || row.confidence < 0.75)
-  const unchanged = ledger === row.ledger && (party || null) === (row.party ?? null) && tds === (row.tds_section ?? '') && rcm === row.rcm
+  const payeeName = namedPayee(row, can('party.manage')) ?? ''
+  const offerOwnAccount = !!payeeName && !party
+  // The offer starts chosen: a named payee's own account is preferred to a general head. The account is opened only when the row is placed.
+  const [useOwn, setUseOwn] = useState(true)
+  const ownActive = offerOwnAccount && useOwn
+  const unchanged = !ownActive && ledger === row.ledger && (party || null) === (row.party ?? null) && tds === (row.tds_section ?? '') && rcm === row.rcm
   const alreadyPlacedByPerson = row.method === 'REVIEWED' && unchanged
 
   function place() {
+    if (ownActive) return placeOwn()
     if (!ledger) return ledgerInput.current?.focus()
     return placeIn(ledger)
   }
 
+  /** Open the payee's own account (a customer's for a receipt, a supplier's for a payment) and place the row in it. */
+  async function placeOwn() {
+    setAction('account')
+    try {
+      const { party: made, account } = await openOwnAccount(clientId, payeeName, t.is_debit, parties.data)
+      await invalidate()
+      setParty(made.id)
+      setLedger(account.id)
+      await placeIn(account.id, made.id)
+    } catch (e) {
+      const fields = isApiError(e) ? e.fields : {}
+      toast.error(fields.canonical_name?.[0] ?? messageOf(e))
+    } finally {
+      setAction(null)
+    }
+  }
+
   /** Place the row in ``chosen``. Takes the ledger as an argument, so a ledger created a moment ago is not lost to stale state. */
-  async function placeIn(chosen: string) {
+  async function placeIn(chosen: string, chosenParty?: string) {
     setAction('place')
     try {
       const result = await raw.post<PlacementResult>(`${V1}/classifications/${row.id}/review/`, {
         ledger: chosen,
-        party: party || null,
+        party: chosenParty || party || null,
         rcm,
         tds_section: tds,
         learn,
@@ -854,27 +935,6 @@ function Decision({
     }
   }
 
-  /** Open an account in the payee's own name (a customer's under Sundry Debtors, a supplier's under Sundry Creditors) and book this row to it. */
-  async function bookToTheirOwnAccount() {
-    setAction('account')
-    try {
-      const made = await raw.post<Party>(`${V1}/clients/${clientId}/parties/`, {
-        canonical_name: payeeName,
-        role: t.is_debit ? 'VENDOR' : 'CUSTOMER',
-      })
-      const account = await raw.post<LedgerAccount>(`${V1}/clients/${clientId}/parties/${made.id}/account/`)
-      await invalidate()
-      setParty(made.id)
-      setLedger(account.id)
-      toast.success(`${account.name} opened`, { description: 'Press Place in ledger to book this row to it.' })
-    } catch (e) {
-      const fields = isApiError(e) ? e.fields : {}
-      toast.error(fields.canonical_name?.[0] ?? messageOf(e))
-    } finally {
-      setAction(null)
-    }
-  }
-
   async function confirmParty(id: string) {
     setAction('party')
     try {
@@ -896,7 +956,7 @@ function Decision({
   // The entry as it will be posted with what is chosen now, not as it was suggested.
   const chosenLedger = ledgers.find((l) => l.id === ledger)
   const chosenParty = parties.data?.find((p) => p.id === party)
-  const legs = (row.entry_legs ?? []).map((leg) => (leg.is_bank ? leg : { ...leg, ledger: chosenLedger?.name ?? null }))
+  const legs = (row.entry_legs ?? []).map((leg) => (leg.is_bank ? leg : { ...leg, ledger: ownActive ? payeeName : (chosenLedger?.name ?? null) }))
   const extras = [chosenParty?.canonical_name, tds && `TDS ${tds}`, rcm && 'Reverse charge'].filter(Boolean).join(' · ')
   return (
     <Card className={cn('grid content-start gap-4 p-4', flat ? 'border-0 bg-transparent p-0 shadow-none' : 'xl:sticky xl:top-20 xl:max-h-[calc(100svh-6rem)] xl:overflow-auto xl:overscroll-contain')}>
@@ -970,7 +1030,7 @@ function Decision({
             </table>
           </div>
           {extras && <p className="mt-1 text-xs text-muted-foreground">{extras}</p>}
-          {ledger !== row.ledger && ledger && <p className="mt-1 text-xs text-info">Not saved yet: press Enter or Place in ledger.</p>}
+          {((ledger !== row.ledger && ledger) || ownActive) && <p className="mt-1 text-xs text-info">Not saved yet: press Enter or Place in ledger.</p>}
         </div>
       )}
 
@@ -1014,27 +1074,38 @@ function Decision({
           {offerOwnAccount && (
             <div className="flex flex-wrap items-center gap-2 rounded-md border border-dashed px-3 py-2 text-[13px]">
               <span className="min-w-0 flex-1">
-                The narration names <strong>{payeeName}</strong>. {t.is_debit ? 'Debit' : 'Credit'} their own account instead of a general head?
+                {ownActive ? (
+                  <>
+                    {t.is_debit ? 'Debit' : 'Credit'} <strong>{payeeName}</strong>’s own account (a new {t.is_debit ? 'supplier' : 'customer'} account, opened when you place
+                    the row) instead of a general head.
+                  </>
+                ) : (
+                  <>
+                    The narration names <strong>{payeeName}</strong>. {t.is_debit ? 'Debit' : 'Credit'} their own account instead of a general head?
+                  </>
+                )}
               </span>
-              <Button size="sm" variant="outline" loading={action === 'account'} disabled={busy} onClick={() => void bookToTheirOwnAccount()}>
-                {t.is_debit ? `Open ${payeeName} (supplier)` : `Open ${payeeName} (customer)`}
+              <Button size="sm" variant="outline" disabled={busy} onClick={() => setUseOwn((on) => !on)}>
+                {ownActive ? 'Use a different ledger' : `Use ${payeeName}’s own account`}
               </Button>
             </div>
           )}
-          <LedgerPicker
-            clientId={clientId}
-            ledgers={ledgers}
-            value={ledger}
-            onChange={setLedger}
-            inputRef={ledgerInput}
-            label="Ledger (the other side of the entry)"
-            suggestedGroup={t.is_debit ? 'INDIRECT_EXPENSE' : 'INDIRECT_INCOME'}
-          />
+          {!ownActive && (
+            <LedgerPicker
+              clientId={clientId}
+              ledgers={ledgers}
+              value={ledger}
+              onChange={setLedger}
+              inputRef={ledgerInput}
+              label="Ledger (the other side of the entry)"
+              suggestedGroup={t.is_debit ? 'INDIRECT_EXPENSE' : 'INDIRECT_INCOME'}
+            />
+          )}
 
           {row.counterparty && !row.is_self_transfer ? (
             <Checkbox
               className="-mt-1.5 items-start [&>input]:mt-0.5"
-              label={`Also place future ${t.is_debit ? 'payments to' : 'receipts from'} ${row.counterparty} in ${chosenLedger?.name ?? 'the ledger you choose'}`}
+              label={`Also place future ${t.is_debit ? 'payments to' : 'receipts from'} ${row.counterparty} in ${ownActive ? `${payeeName}’s own account` : (chosenLedger?.name ?? 'the ledger you choose')}`}
               checked={learn}
               onChange={(e) => setLearn(e.target.checked)}
             />
@@ -1128,7 +1199,7 @@ function Decision({
             <span className="flex flex-wrap items-center justify-end gap-2 max-sm:w-full max-sm:[&>*]:flex-1">
             {!alreadyPlacedByPerson && (
               <Button variant={row.ledger && unchanged ? 'outline' : 'primary'} onClick={() => void place()} loading={action === 'place'} disabled={busy}>
-                {row.ledger && ledger === row.ledger ? 'Confirm ledger' : 'Place in ledger'} <Kbd className={cn('ml-1 max-sm:hidden', row.ledger && unchanged ? 'border-border-strong bg-transparent' : 'border-primary-foreground/30 bg-transparent text-primary-foreground/80')}>Enter</Kbd>
+                {!ownActive && row.ledger && ledger === row.ledger ? 'Confirm ledger' : 'Place in ledger'} <Kbd className={cn('ml-1 max-sm:hidden', row.ledger && unchanged ? 'border-border-strong bg-transparent' : 'border-primary-foreground/30 bg-transparent text-primary-foreground/80')}>Enter</Kbd>
               </Button>
             )}
             {canPost && row.ledger && unchanged && !row.on_party_account && (

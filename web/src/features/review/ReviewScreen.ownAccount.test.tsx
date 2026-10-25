@@ -77,7 +77,7 @@ function renderReview(rows: Classification[]) {
   )
 }
 
-const offer = () => screen.queryByRole('button', { name: /^Open Sample Person/ })
+const offer = () => screen.queryByRole('button', { name: /Use a different ledger|^Use Sample Person/ })
 
 beforeEach(() => {
   permissions.party = true
@@ -96,32 +96,51 @@ beforeEach(() => {
 describe("offering the payee's own account when the narration names a person", () => {
   it('names the payee as a person would write it and offers a customer account for a receipt', async () => {
     renderReview([row()])
-    expect(await screen.findByRole('button', { name: 'Open Sample Person (customer)' })).toBeInTheDocument()
-    expect(screen.getByText(/Credit their own account instead of a general head/)).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Use a different ledger' })).toBeInTheDocument()
+    expect(screen.getByText(/own account \(a new customer account/)).toBeInTheDocument()
   })
 
   it('offers a supplier account, and says debit, for a payment', async () => {
     renderReview([row({ transaction: { id: 't1', value_date: '2025-04-01', narration: 'UPI-SAMPLEPERSON', amount_display: '₹500.00', amount_paise: 50000, is_debit: true, bank_account: 'b1' } })])
-    expect(await screen.findByRole('button', { name: 'Open Sample Person (supplier)' })).toBeInTheDocument()
-    expect(screen.getByText(/Debit their own account instead of a general head/)).toBeInTheDocument()
+    expect(await screen.findByRole('button', { name: 'Use a different ledger' })).toBeInTheDocument()
+    expect(screen.getByText(/own account \(a new supplier account/)).toBeInTheDocument()
   })
 
-  it('makes the party and its account, then books the row to that account under that party', async () => {
+  it('is chosen from the start: placing the row makes the party and its account, then books the row to that account under that party', async () => {
     renderReview([row()])
-    fireEvent.click(await screen.findByRole('button', { name: 'Open Sample Person (customer)' }))
+    expect(await screen.findByText(/Not saved yet/)).toBeInTheDocument()
+    // Nothing is made or booked until the person places the row.
+    expect(vi.mocked(raw.post)).not.toHaveBeenCalled()
 
-    await waitFor(() => expect(vi.mocked(raw.post).mock.calls.some(([url]) => String(url).endsWith('/parties/p1/account/'))).toBe(true))
+    fireEvent.click(await screen.findByRole('button', { name: /Place in ledger/ }))
+    await waitFor(() => expect(vi.mocked(raw.post).mock.calls.some(([url]) => String(url).includes('/review/'))).toBe(true))
     const made = vi.mocked(raw.post).mock.calls.find(([url]) => String(url).endsWith('/parties/'))
     expect(made![1]).toEqual({ canonical_name: 'Sample Person', role: 'CUSTOMER' })
-
-    // Nothing is booked until the person presses Place: the account is only chosen.
-    expect(await screen.findByText(/Not saved yet/)).toBeInTheDocument()
-    expect(vi.mocked(raw.post).mock.calls.some(([url]) => String(url).includes('/review/'))).toBe(false)
-
-    fireEvent.click(screen.getByRole('button', { name: /Place in ledger/ }))
-    await waitFor(() => expect(vi.mocked(raw.post).mock.calls.some(([url]) => String(url).includes('/review/'))).toBe(true))
+    expect(vi.mocked(raw.post).mock.calls.some(([url]) => String(url).endsWith('/parties/p1/account/'))).toBe(true)
     const placed = vi.mocked(raw.post).mock.calls.find(([url]) => String(url).includes('/review/'))
     expect(placed![1]).toMatchObject({ ledger: 'L9', party: 'p1' })
+  })
+
+  it('can be set aside for a general ledger, and then the ledger picker is back', async () => {
+    renderReview([row()])
+    fireEvent.click(await screen.findByRole('button', { name: 'Use a different ledger' }))
+    expect(await screen.findByRole('button', { name: 'Use Sample Person’s own account' })).toBeInTheDocument()
+    expect(screen.getByLabelText(/Ledger \(the other side of the entry\)/)).toBeInTheDocument()
+  })
+
+  it('offers to give every named person their own account at once, and places each one’s rows', async () => {
+    renderReview([
+      row(),
+      row({ id: 'r2', transaction: { id: 't2', value_date: '2025-04-02', narration: 'UPI-OTHERPERSON', amount_display: '₹200.00', amount_paise: 20000, is_debit: false, bank_account: 'b1' }, counterparty: 'OTHER PERSON' }),
+    ])
+    fireEvent.click(await screen.findByRole('button', { name: /Give 2 named people their own accounts \(2\)/ }))
+    fireEvent.click(await screen.findByRole('button', { name: 'Place 2 rows' }))
+
+    await waitFor(() => expect(vi.mocked(raw.post).mock.calls.filter(([url]) => String(url).includes('/review/')).length).toBe(2))
+    const names = vi.mocked(raw.post).mock.calls.filter(([url]) => String(url).endsWith('/parties/')).map(([, body]) => (body as { canonical_name: string }).canonical_name)
+    expect(names.sort()).toEqual(['Other Person', 'Sample Person'])
+    const placed = vi.mocked(raw.post).mock.calls.filter(([url]) => String(url).includes('/review/')).map(([, body]) => body)
+    expect(placed.every((b) => (b as { ledger: string }).ledger === 'L9')).toBe(true)
   })
 
   it.each([

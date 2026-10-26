@@ -286,7 +286,7 @@ def _shown_link(page: str):
 def _what_the_page_says(page: str) -> str:
     """For a failing assertion: whether the onboarding panel rendered at all, and the start of it."""
     at = page.find("Onboarding")
-    return f"panel={'Onboarding' in page} invite_in_page={'/invite/' in page} excerpt={page[max(at, 0): max(at, 0) + 700]!r}"
+    return f"panel={'Onboarding' in page} could_not_read={'could not be read' in page} invite_in_page={'/invite/' in page} excerpt={page[max(at, 0): max(at, 0) + 700]!r}"
 
 
 def test_a_new_firms_owner_is_invited_and_the_link_is_shown_once(views, operator):

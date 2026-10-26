@@ -23,6 +23,7 @@ work, done in the app.
 from __future__ import annotations
 
 import datetime
+import logging
 
 from django import forms
 from django.conf import settings
@@ -294,7 +295,9 @@ class PlatformFirmAdmin(admin.ModelAdmin):
         try:
             extra["onboarding"] = service.platform_firm_onboarding(object_id)
         except Exception:  # noqa: BLE001 -- the page must open even if a count cannot be read
+            logging.getLogger("autoca.superadmin").warning("the onboarding panel could not be built", exc_info=True)
             extra["onboarding"] = None
+            extra["onboarding_error"] = True
         return super().change_view(request, object_id, form_url, extra)
 
 

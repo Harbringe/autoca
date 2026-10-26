@@ -1106,7 +1106,7 @@ def platform_firm_limits(firm_id) -> dict:
     from core.db.session import firm_context
     from core.models import Firm
 
-    with firm_context(firm_id):
+    with firm_context(firm_id), transaction.atomic():  # in a transaction: outside one, the firm's context would not outlive its first query
         firm = Firm.objects.filter(pk=firm_id).first()
         if firm is None:
             raise TeamError("That firm no longer exists.")
@@ -1165,7 +1165,7 @@ def platform_firm_onboarding(firm_id) -> dict:
     from banking.models import Statement
     from core.db.session import firm_context
 
-    with firm_context(firm_id):
+    with firm_context(firm_id), transaction.atomic():
         owner = FirmMembership.objects.filter(firm_id=firm_id, is_owner=True).select_related("user").first()
         latest = Invite.objects.filter(firm_id=firm_id, make_owner=True).order_by("-created_at").first()
         now = timezone.now()

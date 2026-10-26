@@ -4,6 +4,7 @@ The firm page doubles as the onboarding page: the owner's invitation link (shown
 of what has happened since, and the buttons to replace or cancel the invitation. Nothing of the firm's books is shown here.
 {% endcomment %}
 {% block content %}
+{% if onboarding_error %}<div class="alert alert-danger">The onboarding panel could not be read. Check the server log.</div>{% endif %}
 {% if original and onboarding %}
 <div class="card card-outline card-primary mb-3">
   <div class="card-header"><h3 class="card-title">Onboarding</h3></div>

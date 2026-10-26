@@ -44,6 +44,14 @@ class Firm(UUIDModel):
 
     name = models.CharField(max_length=255)
     is_active = models.BooleanField(default=True)
+    #: What the platform owner has agreed for this firm. Null means no limit. ``max_members`` counts active people and
+    #: invitations still waiting; ``max_clients`` counts the firm's clients. Set from the platform admin only.
+    max_members = models.PositiveIntegerField(null=True, blank=True)
+    max_clients = models.PositiveIntegerField(null=True, blank=True)
+    #: When the firm's trial ends. Informs (a banner, a flag for the platform owner); nothing switches off by itself.
+    trial_ends_at = models.DateTimeField(null=True, blank=True)
+    #: Shown to the firm's people when ``is_active`` is off and they try to sign in.
+    suspended_message = models.CharField(max_length=500, blank=True, db_default="")
 
     class Meta:
         db_table = "core_firm"

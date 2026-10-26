@@ -1,0 +1,45 @@
+{% extends "admin/change_form.html" %}
+{% comment %}
+The firm page doubles as the onboarding page: the owner's invitation link (shown once, straight after it is made), a checklist
+of what has happened since, and the buttons to replace or cancel the invitation. Nothing of the firm's books is shown here.
+{% endcomment %}
+{% block content %}
+{% if original and onboarding %}
+<div class="card card-outline card-primary mb-3">
+  <div class="card-header"><h3 class="card-title">Onboarding</h3></div>
+  <div class="card-body">
+    {% if owner_link %}
+    <div class="alert alert-warning">
+      <strong>The owner's invitation link</strong> (shown now and not again; to get another, make a new one below):
+      <div class="mt-2"><input type="text" class="form-control" readonly value="{{ owner_link }}" onclick="this.select()"></div>
+      <small>Send it to {{ onboarding.owner_invite_email }}. It works once and lasts 14 days. They choose their own password and set up their own authenticator.</small>
+    </div>
+    {% endif %}
+    <ul class="list-unstyled mb-3">
+      <li>{% if onboarding.owner_invite != "none" %}&#10003;{% else %}&#9744;{% endif %} Owner invited{% if onboarding.owner_invite_email %} ({{ onboarding.owner_invite_email }}){% endif %}
+        {% if onboarding.owner_invite == "pending" %}&mdash; waiting, expires {{ onboarding.owner_invite_expires|date:"j M Y" }}{% elif onboarding.owner_invite == "expired" %}&mdash; expired{% elif onboarding.owner_invite == "revoked" %}&mdash; cancelled{% endif %}</li>
+      <li>{% if onboarding.owner_joined %}&#10003;{% else %}&#9744;{% endif %} Owner joined{% if onboarding.owner_email %} ({{ onboarding.owner_email }}){% endif %}</li>
+      <li>{% if onboarding.owner_has_authenticator %}&#10003;{% else %}&#9744;{% endif %} Authenticator set up</li>
+      <li>{% if onboarding.clients %}&#10003;{% else %}&#9744;{% endif %} First client added ({{ onboarding.clients }})</li>
+      <li>{% if onboarding.statements %}&#10003;{% else %}&#9744;{% endif %} First statement uploaded ({{ onboarding.statements }})</li>
+    </ul>
+    {% if not onboarding.owner_joined %}
+    <form method="post" action="{% url 'admin:superadmin_platformfirm_owner_link' original.pk %}" class="form-inline mb-2">
+      {% csrf_token %}
+      {% if onboarding.owner_invite == "none" or onboarding.owner_invite == "expired" or onboarding.owner_invite == "revoked" %}
+      <input type="email" name="owner_email" class="form-control mr-2" placeholder="Owner's email" value="{{ onboarding.owner_invite_email }}" required>
+      {% endif %}
+      <button type="submit" class="btn btn-primary">{% if onboarding.owner_invite == "pending" %}Make a new link{% else %}Invite the owner{% endif %}</button>
+    </form>
+    {% if onboarding.owner_invite == "pending" %}
+    <form method="post" action="{% url 'admin:superadmin_platformfirm_owner_revoke' original.pk %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-outline-danger btn-sm">Cancel the invitation</button>
+    </form>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{{ block.super }}
+{% endblock %}

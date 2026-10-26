@@ -22,8 +22,12 @@ work, done in the app.
 
 from __future__ import annotations
 
+import datetime
+
 from django import forms
-from django.contrib import admin
+from django.conf import settings
+from django.contrib import admin, messages
+from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import OuterRef, Subquery
 from django.http import HttpResponseRedirect
@@ -116,9 +120,48 @@ class FirmClientsInline(ReadOnlyInline):
 
 
 class FirmForm(forms.ModelForm):
+    """The firm's name and whether it is in service, plus what is agreed with it.
+
+    Adding a firm is one step: its name, the person who will own it (who is sent an invitation, never a password), and any limits.
+    The limits are not columns of the firm's directory view, so they are read and written through the service, in the firm's own
+    context.
+    """
+
+    owner_name = forms.CharField(label="Owner's name", required=False, max_length=255)
+    owner_email = forms.EmailField(
+        label="Owner's email",
+        required=False,
+        help_text="They are sent an invitation to set their own password and authenticator. Nobody else ever sees either.",
+    )
+    max_members = forms.IntegerField(label="Limit on people", required=False, min_value=1, help_text="Active people and invitations waiting. Empty means no limit.")
+    max_clients = forms.IntegerField(label="Limit on clients", required=False, min_value=1, help_text="Empty means no limit.")
+    trial_ends_on = forms.DateField(label="Trial ends on", required=False, widget=forms.DateInput(attrs={"type": "date"}), help_text="Shows a banner to the firm's administrators in the last 14 days. Nothing switches off by itself.")
+    suspended_message = forms.CharField(
+        label="Message when out of service",
+        required=False,
+        max_length=500,
+        help_text="Shown to the firm's people if they try to sign in while the firm is switched off.",
+    )
+
     class Meta:
         model = PlatformFirm
         fields = ("name", "is_active")
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        if self.instance and self.instance.pk:
+            try:
+                limits = service.platform_firm_limits(self.instance.pk)
+            except TeamError:
+                limits = {}
+            self.initial.setdefault("max_members", limits.get("max_members"))
+            self.initial.setdefault("max_clients", limits.get("max_clients"))
+            ends = limits.get("trial_ends_at")
+            self.initial.setdefault("trial_ends_on", ends.date() if ends else None)
+            self.initial.setdefault("suspended_message", limits.get("suspended_message", ""))
+        else:
+            self.fields["owner_email"].required = True
+            del self.fields["suspended_message"]
 
     def clean_name(self):
         name = (self.cleaned_data.get("name") or "").strip()
@@ -126,15 +169,24 @@ class FirmForm(forms.ModelForm):
             raise forms.ValidationError("Give the firm a name.")
         return name
 
+    def trial_end(self):
+        """The end of the trial day as a moment in time, or None."""
+        day = self.cleaned_data.get("trial_ends_on")
+        if day is None:
+            return None
+        return timezone.make_aware(datetime.datetime.combine(day, datetime.time(23, 59, 59)))
+
 
 @admin.register(PlatformFirm)
 class PlatformFirmAdmin(admin.ModelAdmin):
-    """Every firm on the platform. Create one, rename it, take it out of service.
+    """Every firm on the platform. Create one, rename it, take it out of service, and see how far its onboarding has got.
 
     Creating is the case that looks impossible under row-level security and is
     not: ``create_firm`` mints the id, opens a context for it, and inserts the
     row into its own context. Deleting is not offered; a firm owns clients,
     books and an audit trail, and ``is active`` is what "we stopped" means.
+
+    A new firm's owner is invited, not given a login: the page shows the link once, and a checklist of what has happened since.
     """
 
     form = FirmForm
@@ -143,11 +195,15 @@ class PlatformFirmAdmin(admin.ModelAdmin):
     search_fields = ("name",)
     readonly_fields = ("member_count", "client_count", "created_at")
     inlines = (FirmMembersInline, FirmClientsInline)
+    change_form_template = "admin/superadmin/platformfirm/change_form.html"
 
     def get_fields(self, request, obj=None):
         if obj is None:
-            return ("name", "is_active")
-        return ("name", "is_active", "member_count", "client_count", "created_at")
+            return ("name", "owner_name", "owner_email", "is_active", "max_members", "max_clients", "trial_ends_on")
+        return (
+            "name", "is_active", "suspended_message", "max_members", "max_clients", "trial_ends_on",
+            "member_count", "client_count", "created_at",
+        )
 
     def get_inlines(self, request, obj):
         return self.inlines if obj is not None else ()
@@ -157,17 +213,87 @@ class PlatformFirmAdmin(admin.ModelAdmin):
 
     def save_model(self, request, obj, form, change):
         name, is_active = form.cleaned_data["name"], form.cleaned_data["is_active"]
+        limits = {
+            "max_members": form.cleaned_data.get("max_members"),
+            "max_clients": form.cleaned_data.get("max_clients"),
+            "trial_ends_at": form.trial_end(),
+            "suspended_message": form.cleaned_data.get("suspended_message", ""),
+        }
         if change:
             service.platform_update_firm(obj.pk, name=name, is_active=is_active)
+            service.platform_set_limits(obj.pk, **limits)
             return
         from core.provisioning import create_firm
 
         created = create_firm(name)
         if not is_active:
             service.platform_update_firm(created.pk, name=name, is_active=False)
+        service.platform_set_limits(created.pk, **limits)
+        record, link = service.platform_invite_owner(
+            created.pk, email=form.cleaned_data["owner_email"], full_name=form.cleaned_data.get("owner_name", "")
+        )
+        self._show_link_once(request, created.pk, link)
         # The admin redirects to the new row's page and logs the addition by
         # primary key, so it needs to know which firm was made.
         obj.pk = created.pk
+
+    # -- the owner's invitation ------------------------------------------------
+
+    @staticmethod
+    def _show_link_once(request, firm_id, link: str) -> None:
+        """Keep the link for the next page view only, in the server-side session; it is never stored anywhere else."""
+        request.session["owner_link"] = {"firm": str(firm_id), "link": f"{settings.FRONTEND_URL}/invite/{link}"}
+
+    def get_urls(self):
+        from django.urls import path
+
+        wrap = self.admin_site.admin_view
+        return [
+            path("<path:object_id>/owner-link/", wrap(self.owner_link_view), name="superadmin_platformfirm_owner_link"),
+            path("<path:object_id>/owner-revoke/", wrap(self.owner_revoke_view), name="superadmin_platformfirm_owner_revoke"),
+            *super().get_urls(),
+        ]
+
+    def _back(self, object_id):
+        return HttpResponseRedirect(reverse("admin:superadmin_platformfirm_change", args=[object_id]))
+
+    def owner_link_view(self, request, object_id):
+        """POST: a new link for the owner's invitation, or a first invitation to the address typed."""
+        if request.method != "POST" or not self.has_change_permission(request):
+            raise PermissionDenied
+        try:
+            state = service.platform_firm_onboarding(object_id)
+            if state["owner_invite_id"]:
+                _record, link = service.platform_reissue_invite(state["owner_invite_id"], object_id)
+            else:
+                email = (request.POST.get("owner_email") or state["owner_invite_email"]).strip()
+                _record, link = service.platform_invite_owner(object_id, email=email, full_name=request.POST.get("owner_name", ""))
+        except TeamError as exc:
+            messages.error(request, "; ".join(exc.messages))
+            return self._back(object_id)
+        self._show_link_once(request, object_id, link)
+        return self._back(object_id)
+
+    def owner_revoke_view(self, request, object_id):
+        """POST: cancel the owner's pending invitation."""
+        if request.method != "POST" or not self.has_change_permission(request):
+            raise PermissionDenied
+        state = service.platform_firm_onboarding(object_id)
+        if state["owner_invite_id"]:
+            service.platform_revoke_invite(state["owner_invite_id"], object_id)
+            messages.success(request, "The invitation was cancelled. Its link no longer works.")
+        return self._back(object_id)
+
+    def change_view(self, request, object_id, form_url="", extra_context=None):
+        extra = dict(extra_context or {})
+        shown = request.session.get("owner_link")
+        if shown and shown.get("firm") == str(object_id):
+            extra["owner_link"] = request.session.pop("owner_link")["link"]
+        try:
+            extra["onboarding"] = service.platform_firm_onboarding(object_id)
+        except Exception:  # noqa: BLE001 -- the page must open even if a count cannot be read
+            extra["onboarding"] = None
+        return super().change_view(request, object_id, form_url, extra)
 
 
 # ---------------------------------------------------------------------------

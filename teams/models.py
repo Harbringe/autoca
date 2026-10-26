@@ -103,6 +103,10 @@ class TeamEventKind(models.TextChoices):
     LEAD_CHANGED = "client.lead_changed", "Client lead changed"
     ASSIGNED = "client.assigned", "Assigned to client"
     UNASSIGNED = "client.unassigned", "Removed from client"
+    #: A pending invite was replaced by a new link for the same person (the old link stops working).
+    INVITE_REISSUED = "invite.reissued", "Invite link replaced"
+    #: The platform owner changed a firm's limits, trial date or suspension message.
+    FIRM_LIMITS_CHANGED = "firm.limits_changed", "Firm limits changed"
 
 
 class TeamEvent(UUIDModel, FirmScopedModel):

@@ -61,7 +61,15 @@ REVOKE ALL ON FUNCTION app.trim_audit_log(integer, boolean) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app.trim_audit_log(integer, boolean) TO {OWNER_ROLE};
 """
 
-CREATE_SQL = FUNCTION_SQL + PRIVILEGES_SQL
+# Handing a function to a new owner requires that owner to hold CREATE on the schema, which the platform views' own install takes
+# back (superadmin/sql.py) once it is done. So this grants it for the instant of the ALTER and revokes it again, the same way,
+# and installs correctly whichever of the two ran first.
+SCHEMA_GRANT_SQL = f"GRANT USAGE, CREATE ON SCHEMA app TO {READER_ROLE};
+"
+SCHEMA_REVOKE_SQL = f"REVOKE CREATE ON SCHEMA app FROM {READER_ROLE};
+"
+
+CREATE_SQL = FUNCTION_SQL + SCHEMA_GRANT_SQL + PRIVILEGES_SQL + SCHEMA_REVOKE_SQL
 
 DROP_SQL = "DROP FUNCTION IF EXISTS app.trim_audit_log(integer, boolean);\n"
 

@@ -283,6 +283,12 @@ def _shown_link(page: str):
     return found.group(1) if found else None
 
 
+def _what_the_page_says(page: str) -> str:
+    """For a failing assertion: whether the onboarding panel rendered at all, and the start of it."""
+    at = page.find("Onboarding")
+    return f"panel={'Onboarding' in page} invite_in_page={'/invite/' in page} excerpt={page[max(at, 0): max(at, 0) + 700]!r}"
+
+
 def test_a_new_firms_owner_is_invited_and_the_link_is_shown_once(views, operator):
     from django.test import Client as HttpClient
 
@@ -296,7 +302,7 @@ def test_a_new_firms_owner_is_invited_and_the_link_is_shown_once(views, operator
     assert created.status_code == 302, created.content[:500]
     page = http.get(created["Location"]).content.decode()
     link = _shown_link(page)
-    assert link, "the owner's link is shown on the firm's page"
+    assert link, _what_the_page_says(page)
     assert "olive@onboarded.test" in page and "Owner invited" in page
     assert _shown_link(http.get(created["Location"]).content.decode()) is None  # shown once, never stored
 
@@ -319,8 +325,9 @@ def test_the_owners_link_can_be_replaced_and_cancelled_from_the_firm_page(views,
         "/admin/superadmin/platformfirm/add/", {"name": "Relink Co", "owner_email": "o@relink.test", "is_active": "on", "_save": "Save"}
     )
     page_url = created["Location"]
-    first = _shown_link(http.get(page_url).content.decode())
-    assert first
+    first_page = http.get(page_url).content.decode()
+    first = _shown_link(first_page)
+    assert first, _what_the_page_says(first_page)
 
     firm_id = page_url.rstrip("/").split("/")[-2]
     assert http.post(f"/admin/superadmin/platformfirm/{firm_id}/owner-link/").status_code == 302

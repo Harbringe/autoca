@@ -43,6 +43,8 @@ from superadmin.models import (
     PlatformClient,
     PlatformClientAssignment,
     PlatformFirm,
+    PlatformFirmStats,
+    PlatformInvite,
     PlatformJob,
     PlatformMembership,
 )
@@ -620,3 +622,178 @@ class PlatformProfileAdmin(ProfileAdmin):
                 for e in events
             ],
         )
+
+
+# ---------------------------------------------------------------------------
+# Invitations across every firm
+# ---------------------------------------------------------------------------
+
+
+@admin.register(PlatformInvite)
+class PlatformInviteAdmin(ReadOnlyAdmin):
+    """Every firm's invitations in one list: who is waiting, who is stuck, and which ones ran out.
+
+    A link's secret is never stored, so it cannot be shown again. "Make a new link" replaces a waiting or expired invitation with a
+    fresh one, whose link is shown once on the page that follows and then forgotten; "Cancel" stops a waiting one.
+    """
+
+    list_display = ("email", "firm_name", "role_label", "state", "created_at", "expires_at", "created_by_email")
+    list_filter = ("state", "role", "make_owner")
+    search_fields = ("email", "firm_name")
+    ordering = ("-created_at",)
+    actions = ("new_links", "cancel")
+    list_per_page = 100
+
+    @admin.display(description="Role", ordering="role")
+    def role_label(self, obj):
+        return "Firm owner" if obj.make_owner else obj.get_role_display()
+
+    def get_urls(self):
+        from django.urls import path
+
+        return [
+            path("links/", self.admin_site.admin_view(self.links_view), name="superadmin_platforminvite_links"),
+            *super().get_urls(),
+        ]
+
+    @admin.action(description="Make a new link for the selected invitations (waiting or expired)")
+    def new_links(self, request, queryset):
+        made, failed = [], 0
+        for invite in queryset.filter(state__in=("pending", "expired")):
+            try:
+                _record, link = service.platform_reissue_invite(invite.pk, invite.firm_id)
+            except TeamError:
+                failed += 1
+                continue
+            made.append({"firm": invite.firm_name, "email": invite.email, "link": f"{settings.FRONTEND_URL}/invite/{link}"})
+        if failed:
+            messages.warning(request, f"{failed} could not be given a new link.")
+        if not made:
+            messages.info(request, "Nothing to replace: only waiting or expired invitations can be given a new link.")
+            return None
+        request.session["invite_links"] = made  # shown once on the next page, in the server-side session
+        return HttpResponseRedirect(reverse("admin:superadmin_platforminvite_links"))
+
+    @admin.action(description="Cancel the selected waiting invitations")
+    def cancel(self, request, queryset):
+        count = 0
+        for invite in queryset.filter(state="pending"):
+            service.platform_revoke_invite(invite.pk, invite.firm_id)
+            count += 1
+        messages.success(request, f"{count} invitation{'s' if count != 1 else ''} cancelled. Their links no longer work.")
+
+    def links_view(self, request):
+        from django.template.response import TemplateResponse
+
+        links = request.session.pop("invite_links", [])
+        context = {**self.admin_site.each_context(request), "title": "New invitation links", "links": links, "opts": self.model._meta}
+        return TemplateResponse(request, "admin/superadmin/platforminvite/links.html", context)
+
+
+# ---------------------------------------------------------------------------
+# The platform dashboard: every firm at a glance
+# ---------------------------------------------------------------------------
+
+QUIET_DAYS = 14
+TRIAL_WARNING_DAYS = 14
+
+
+class NeedsAttentionFilter(admin.SimpleListFilter):
+    title = "needs attention"
+    parameter_name = "flag"
+
+    def lookups(self, request, model_admin):
+        return (
+            ("quiet", f"No activity for {QUIET_DAYS} days"),
+            ("trial", "Trial ending or ended"),
+            ("full", "At a limit"),
+            ("failing", "Failed jobs"),
+            ("no_owner", "Owner has not joined"),
+        )
+
+    def queryset(self, request, queryset):
+        from django.db.models import F, Q
+
+        now = timezone.now()
+        value = self.value()
+        if value == "quiet":
+            return queryset.filter(is_active=True).filter(Q(last_activity__lt=now - datetime.timedelta(days=QUIET_DAYS)) | Q(last_activity__isnull=True))
+        if value == "trial":
+            return queryset.filter(trial_ends_at__isnull=False, trial_ends_at__lt=now + datetime.timedelta(days=TRIAL_WARNING_DAYS))
+        if value == "full":
+            taken = queryset.annotate(taken=F("active_members") + F("pending_invites"))
+            return taken.filter(
+                Q(max_members__isnull=False, taken__gte=F("max_members")) | Q(max_clients__isnull=False, clients__gte=F("max_clients"))
+            )
+        if value == "failing":
+            return queryset.filter(failed_jobs_30d__gt=0)
+        if value == "no_owner":
+            return queryset.exclude(id__in=PlatformMembership.objects.filter(is_owner=True, is_active=True).values("firm_id"))
+        return queryset
+
+
+@admin.register(PlatformFirmStats)
+class PlatformDashboardAdmin(ReadOnlyAdmin):
+    """Every firm on one page: people, clients, how lively it has been, what the models cost it, and what is agreed with it.
+
+    Counts, dates and money only. Nothing a firm wrote is here, and nothing can be changed from this page: a firm's own page is
+    where its limits, trial and suspension are set.
+    """
+
+    list_display = ("name", "in_service", "people", "invites_waiting", "client_count", "statements_this_month", "last_seen", "model_spend", "trial", "failed_jobs_30d")
+    list_filter = ("is_active", NeedsAttentionFilter)
+    search_fields = ("name",)
+    ordering = ("name",)
+    list_per_page = 100
+
+    def changelist_view(self, request, extra_context=None):
+        self._spend = _spend_by_firm()
+        return super().changelist_view(request, extra_context)
+
+    @admin.display(description="In service", boolean=True, ordering="is_active")
+    def in_service(self, obj):
+        return obj.is_active
+
+    @admin.display(description="People", ordering="active_members")
+    def people(self, obj):
+        return f"{obj.active_members} / {obj.max_members}" if obj.max_members else str(obj.active_members)
+
+    @admin.display(description="Invites waiting", ordering="pending_invites")
+    def invites_waiting(self, obj):
+        return obj.pending_invites
+
+    @admin.display(description="Clients", ordering="clients")
+    def client_count(self, obj):
+        return f"{obj.clients} / {obj.max_clients}" if obj.max_clients else str(obj.clients)
+
+    @admin.display(description="Last activity", ordering="last_activity")
+    def last_seen(self, obj):
+        if obj.last_activity is None:
+            return "never"
+        days = (timezone.now() - obj.last_activity).days
+        return "today" if days <= 0 else f"{days} day{'s' if days != 1 else ''} ago"
+
+    @admin.display(description="Model spend (30 days)")
+    def model_spend(self, obj):
+        from usage.pricing import inr
+
+        micro = getattr(self, "_spend", {}).get(str(obj.pk), 0)
+        return inr(micro) if micro else "—"
+
+    @admin.display(description="Trial", ordering="trial_ends_at")
+    def trial(self, obj):
+        if obj.trial_ends_at is None:
+            return "—"
+        days = (obj.trial_ends_at - timezone.now()).days
+        return f"ends in {days} day{'s' if days != 1 else ''}" if days >= 0 else f"ended {-days} day{'s' if days != -1 else ''} ago"
+
+
+def _spend_by_firm() -> dict[str, int]:
+    """What the models cost each firm over the last thirty days, in millionths of a dollar, from the recorded calls."""
+    from django.db.models import Sum
+
+    from usage.models import UsageEvent
+
+    since = timezone.now() - datetime.timedelta(days=30)
+    rows = UsageEvent.objects.filter(at__gte=since).exclude(firm_id=None).values("firm_id").annotate(cost=Sum("cost_micro_usd"))
+    return {str(r["firm_id"]): int(r["cost"] or 0) for r in rows}

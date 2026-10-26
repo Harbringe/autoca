@@ -49,6 +49,7 @@ TABLES = (
     "banking_statement",
     "core_client_assignment",
     "core_job",
+    "teams_invite",
 )
 
 FUNCTIONS = (
@@ -208,6 +209,8 @@ VIEWS = (
     "app.platform_client_assignments",
     "app.platform_audit_log",
     "app.platform_jobs",
+    "app.platform_invites",
+    "app.platform_firm_stats",
 )
 
 _VIEW = "WITH (security_barrier = true) AS"
@@ -286,6 +289,35 @@ SELECT j.id, j.firm_id, f.name::text AS firm_name, j.kind::text AS kind,
 FROM core_job j
 JOIN core_firm f ON f.id = j.firm_id
 LEFT JOIN core_user cu ON cu.id = j.created_by_id
+{_GATE};
+
+-- Every firm's invitations, with where each stands. The link's secret is never stored (only a hash), so it is not here and cannot be.
+CREATE VIEW app.platform_invites {_VIEW}
+SELECT i.id, i.firm_id, f.name::text AS firm_name, i.email::text AS email, i.full_name::text AS full_name,
+       i.role::text AS role, i.make_owner, i.created_at, i.expires_at, i.used_at, i.revoked_at,
+       cu.email::text AS created_by_email,
+       CASE WHEN i.used_at IS NOT NULL THEN 'accepted'
+            WHEN i.revoked_at IS NOT NULL THEN 'revoked'
+            WHEN i.expires_at <= now() THEN 'expired'
+            ELSE 'pending' END AS state
+FROM teams_invite i
+JOIN core_firm f ON f.id = i.firm_id
+LEFT JOIN core_user cu ON cu.id = i.created_by_id
+{_GATE};
+
+-- One row per firm: how big it is, how lively, and what has been agreed with it. Counts and dates only: nothing a firm wrote.
+CREATE VIEW app.platform_firm_stats {_VIEW}
+SELECT f.id, f.name::text AS name, f.is_active, f.created_at, f.max_members, f.max_clients, f.trial_ends_at,
+       (SELECT count(*) FROM core_firm_membership m WHERE m.firm_id = f.id AND m.is_active) AS active_members,
+       (SELECT count(*) FROM teams_invite i
+         WHERE i.firm_id = f.id AND i.used_at IS NULL AND i.revoked_at IS NULL AND i.expires_at > now()) AS pending_invites,
+       (SELECT count(*) FROM core_client c WHERE c.firm_id = f.id) AS clients,
+       (SELECT count(*) FROM banking_statement s
+         WHERE s.firm_id = f.id AND s.created_at >= date_trunc('month', now())) AS statements_this_month,
+       (SELECT max(l.created_at) FROM core_audit_log l WHERE l.firm_id = f.id) AS last_activity,
+       (SELECT count(*) FROM core_job j
+         WHERE j.firm_id = f.id AND j.status = 'FAILED' AND j.created_at > now() - interval '30 days') AS failed_jobs_30d
+FROM core_firm f
 {_GATE};
 """
 )

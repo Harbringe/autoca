@@ -16,31 +16,37 @@ pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("fixture_adapters")
 V1 = "/api/v1"
 
 
+@pytest.fixture
+def admin_http(firm):
+    """Only a firm administrator may add clients."""
+    return sign_in(member(firm, Role.FIRM_ADMIN, "admin@example.test").user)
+
+
 def new_client(http, name):
     return http.post(f"{V1}/clients/", {"name": name, "fy_start": "2026-04-01"}, format="json")
 
 
-def test_a_firm_at_its_client_limit_cannot_add_another(api, firm):
+def test_a_firm_at_its_client_limit_cannot_add_another(admin_http, firm):
     service.platform_set_limits(firm.pk, max_clients=1)
-    assert new_client(api, "First").status_code == 201
-    refused = new_client(api, "Second")
+    assert new_client(admin_http, "First").status_code == 201
+    refused = new_client(admin_http, "Second")
     assert refused.status_code == 409
     assert "plan allows 1 client." in refused.json()["detail"]
 
 
-def test_a_larger_limit_allows_up_to_it_and_no_limit_allows_any_number(api, firm):
+def test_a_larger_limit_allows_up_to_it_and_no_limit_allows_any_number(admin_http, firm):
     service.platform_set_limits(firm.pk, max_clients=2)
-    assert [new_client(api, f"C{n}").status_code for n in range(3)] == [201, 201, 409]
+    assert [new_client(admin_http, f"C{n}").status_code for n in range(3)] == [201, 201, 409]
     service.platform_set_limits(firm.pk)  # cleared
-    assert new_client(api, "Another").status_code == 201
+    assert new_client(admin_http, "Another").status_code == 201
 
 
-def test_raising_the_limit_lets_the_firm_carry_on(api, firm):
+def test_raising_the_limit_lets_the_firm_carry_on(admin_http, firm):
     service.platform_set_limits(firm.pk, max_clients=1)
-    new_client(api, "First")
-    assert new_client(api, "Second").status_code == 409
+    new_client(admin_http, "First")
+    assert new_client(admin_http, "Second").status_code == 409
     service.platform_set_limits(firm.pk, max_clients=5)
-    assert new_client(api, "Second").status_code == 201
+    assert new_client(admin_http, "Second").status_code == 201
 
 
 def test_a_switched_off_firm_tells_its_people_why(firm):

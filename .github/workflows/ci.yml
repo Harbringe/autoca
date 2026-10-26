@@ -79,6 +79,11 @@ jobs:
           -- here first is what lets us grant membership before the run.
           CREATE ROLE autoca_app NOLOGIN NOSUPERUSER NOBYPASSRLS;
           GRANT autoca_app TO autoca_ci WITH INHERIT TRUE;
+
+          -- The platform owner's cross-firm views (superadmin/sql.py) are installed by a migration only if this role exists and
+          -- the migrating role is a member of it. With it here, the platform admin tests run instead of being skipped.
+          CREATE ROLE autoca_platform_reader NOLOGIN BYPASSRLS NOSUPERUSER NOCREATEDB NOCREATEROLE;
+          GRANT autoca_platform_reader TO autoca_ci WITH INHERIT TRUE;
           SQL
 
       - name: Lint

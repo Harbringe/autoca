@@ -234,12 +234,14 @@ def test_an_invite_never_attaches_a_platform_account_to_a_firm(firm, lead):
         assert not FirmMembership.objects.filter(user=owner).exists()
 
 
-def test_making_invites_is_limited_per_address_and_per_sender(firm, lead, settings):
+def test_making_invites_is_limited_per_address(firm, lead):
     for _ in range(3):
         _invite_for(lead, "same.address@example.test")
     refused = sign_in(lead.user).post(f"{TEAM}/members/", {"email": "same.address@example.test", "role": Role.STAFF}, format="json")
     assert refused.status_code == 429
 
+
+def test_making_invites_is_limited_per_sender(firm, lead, settings):
     settings.THROTTLE_LIMITS = {**settings.THROTTLE_LIMITS, "invite_create": {"attempts": 2, "window_seconds": 3600, "lockout_seconds": 3600}}
     _invite_for(lead, "one@example.test")
     _invite_for(lead, "two@example.test")

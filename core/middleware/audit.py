@@ -68,7 +68,8 @@ class AuditMiddleware:
             # No tenant context: nothing to attach the row to. Log it instead --
             # a mutating request with no firm is unusual enough to want visible.
             logger.warning(
-                "unattributed mutating request %s %s -> %s (request_id=%s)",
+                # %r, not %s: the path is whatever the caller sent, decoded, and may hold a newline that would start a forged log line.
+                "unattributed mutating request %s %r -> %s (request_id=%s)",
                 request.method,
                 request.path,
                 response.status_code,
@@ -102,7 +103,7 @@ class AuditMiddleware:
             # so a persistent failure surfaces rather than silently disabling
             # the trail.
             logger.exception(
-                "failed to write audit row for %s %s (request_id=%s)",
+                "failed to write audit row for %s %r (request_id=%s)",
                 request.method,
                 request.path,
                 request.request_id,

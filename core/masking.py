@@ -41,7 +41,7 @@ from dataclasses import dataclass, field
 
 #: Applied in this order. Each entry is (placeholder, pattern).
 PATTERNS: tuple[tuple[str, re.Pattern], ...] = (
-    ("<EMAIL>", re.compile(r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")),
+    ("<EMAIL>", re.compile(r"(?<![A-Za-z0-9._%+-])[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}")),
     # A UPI address, name@handle: an e-mail shape with no dotted domain.
     ("<UPI_ID>", re.compile(r"(?<![\w.%+-])[A-Za-z0-9._-]{2,}@[A-Za-z][A-Za-z0-9]{1,}\b")),
     # 22AAAAA0000A1Z5 -- state code, PAN, entity number, Z, check character.
@@ -83,10 +83,16 @@ class Masked:
         return bool(self.removed)
 
 
+#: A narration is a line or two. Anything past this is cut before any pattern runs, so one enormous cell cannot hold a worker; the
+#: cut text is what goes on to the model, so nothing beyond it is sent anywhere.
+MAX_TEXT_LENGTH = 2_000
+
+
 def mask(text: str) -> Masked:
     """Replace every identifier in ``text`` with a typed placeholder."""
     if not text:
         return Masked(text=text or "")
+    text = text[:MAX_TEXT_LENGTH]
     removed: dict[str, int] = {}
     for placeholder, pattern in PATTERNS:
         text, count = pattern.subn(placeholder, text)

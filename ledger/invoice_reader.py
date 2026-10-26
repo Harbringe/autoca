@@ -517,6 +517,14 @@ def _paise(token: str) -> int | None:
     return -value if negative else value
 
 
+#: A printed line of an invoice is short. A longer one is cut here before any pattern is run over it, so a cell holding
+#: hundreds of thousands of digits cannot make a pattern slow; what lies past this is not an amount anyone printed.
+MAX_LINE_LENGTH = 300
+#: A rate such as ``9%`` or ``2.5 %``. Possessive, and starting only where a number starts, so a long run of digits with no ``%``
+#: is read once and not once from every position in it.
+_RATE = re.compile(r"(?<![\d.])\d++(?:\.\d++)?+\s*+%")
+
+
 def _amounts_on(lines: list[str], label: re.Pattern, name: str) -> list[int]:
     """The last amount on each line that names ``label``, in page order.
 
@@ -525,12 +533,13 @@ def _amounts_on(lines: list[str], label: re.Pattern, name: str) -> list[int]:
     """
     found: list[int] = []
     for line in lines:
+        line = line[:MAX_LINE_LENGTH]
         if not label.search(line):
             continue
         # The "total" label also appears inside "total before tax" and "taxable"; those are other lines.
         if name == "total" and _LABELS["taxable"].search(line):
             continue
-        cleaned = re.sub(r"\d+(?:\.\d+)?\s*%", " ", line)
+        cleaned = _RATE.sub(" ", line)
         tokens = _NUMBER.findall(cleaned)
         with_decimals = [t for t in tokens if "." in t]
         picked = with_decimals or tokens

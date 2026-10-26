@@ -8,12 +8,13 @@ import logging
 
 from django.conf import settings
 from django.contrib.auth import authenticate, login
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import Count
 from django.http import Http404, JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
+from drf_spectacular.utils import extend_schema
 from rest_framework import serializers
 from rest_framework.exceptions import Throttled as ApiThrottled
 from rest_framework.response import Response
@@ -25,7 +26,7 @@ from core.access import visible_clients
 from core.db.session import TenantContextError, firm_context
 from core.http import client_ip
 from core.models import Client, ClientAssignment, Firm, FirmMembership, Role, User
-from teams import activity, schemas, service
+from teams import activity, mail, schemas, service
 from teams.models import Invite, TeamEventKind, hash_token
 
 security_log = logging.getLogger("autoca.security")
@@ -154,6 +155,24 @@ class InviteSerializer(serializers.Serializer):
     manager = serializers.UUIDField(required=False, allow_null=True)
 
 
+class BulkInviteSerializer(serializers.Serializer):
+    rows = serializers.ListField(child=InviteSerializer(), min_length=1, max_length=50, help_text="Up to 50 people.")
+
+
+class BulkInviteRowSerializer(serializers.Serializer):
+    email = serializers.CharField()
+    ok = serializers.BooleanField()
+    error = serializers.CharField(required=False, help_text="Why this row was not invited.")
+    link = serializers.CharField(required=False)
+    emailed = serializers.BooleanField(required=False)
+    role_display = serializers.CharField(required=False)
+    expires_at = serializers.DateTimeField(required=False)
+
+
+class BulkInviteResultSerializer(serializers.Serializer):
+    results = BulkInviteRowSerializer(many=True)
+
+
 class MemberUpdateSerializer(serializers.Serializer):
     role = serializers.ChoiceField(choices=Role.choices, required=False)
     manager = serializers.UUIDField(required=False, allow_null=True)
@@ -202,32 +221,11 @@ class MembersView(TeamView):
 
     @schemas.members_post(InviteSerializer)
     def post(self, request):
-        actor = request.membership
         payload = InviteSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         data = payload.validated_data
-        manager = _any_member(actor, data["manager"]) if data.get("manager") else None
-        # The link goes to the person who sends it (there is no email), so an invite is a way to try an address and a password against
-        # the whole platform. Making them is limited per sender and per address.
-        issuer, target = str(request.user.pk), data["email"].strip().lower()
-        try:
-            throttle.check("invite_create", issuer)
-            throttle.check("invite_target", target)
-        except throttle.Throttled as exc:
-            raise ApiThrottled(wait=exc.retry_after) from exc
-        record, link = service.invite(
-            actor,
-            email=data["email"],
-            full_name=data.get("full_name", ""),
-            role=data["role"],
-            manager=manager,
-        )
-        throttle.record_failure("invite_create", issuer)
-        throttle.record_failure("invite_target", target)
-        return Response(
-            {**_invite(record), "link": f"{settings.FRONTEND_URL}/invite/{link}"},
-            status=201,
-        )
+        record, url, emailed = _issue_invite(request, data)
+        return Response({**_invite(record), "link": url, "emailed": emailed}, status=201)
 
 
 class MemberView(TeamView):
@@ -397,6 +395,55 @@ class ClientTeamView(TeamView):
 # ---------------------------------------------------------------------------
 
 
+def _issue_invite(request, data) -> tuple[Invite, str, bool]:
+    """One invitation, with the limits on making them. Returns the record, the link, and whether it was also emailed.
+
+    The link goes to the person who sends it (there is no email unless the platform has been set up for it), so an invitation is a way
+    to try an address and a password against the whole platform. Making them is limited per sender and per address, and a bulk
+    request counts every row.
+    """
+    actor = request.membership
+    manager = _any_member(actor, data["manager"]) if data.get("manager") else None
+    issuer, target = str(request.user.pk), data["email"].strip().lower()
+    try:
+        throttle.check("invite_create", issuer)
+        throttle.check("invite_target", target)
+    except throttle.Throttled as exc:
+        raise ApiThrottled(wait=exc.retry_after) from exc
+    record, link = service.invite(
+        actor,
+        email=data["email"],
+        full_name=data.get("full_name", ""),
+        role=data["role"],
+        manager=manager,
+    )
+    throttle.record_failure("invite_create", issuer)
+    throttle.record_failure("invite_target", target)
+    return record, *_deliver(request, record, link)
+
+
+def _deliver(request, record: Invite, link: str) -> tuple[str, bool]:
+    """The link as a URL, and an attempt to email it (which does nothing unless emailing has been switched on)."""
+    url = f"{settings.FRONTEND_URL}/invite/{link}"
+    actor = request.membership
+    emailed = mail.send_invite(
+        to=record.email,
+        firm_name=Firm.objects.get(pk=actor.firm_id).name,
+        inviter=service.label(actor),
+        role="Firm owner" if record.make_owner else Role(record.role).label,
+        url=url,
+        expires_days=max((record.expires_at - timezone.now()).days, 1),
+    )
+    return url, emailed
+
+
+def _status(record: Invite) -> str:
+    left = record.expires_at - timezone.now()
+    if left <= datetime.timedelta(0):
+        return "expired"
+    return "expiring_soon" if left < datetime.timedelta(hours=48) else "pending"
+
+
 def _invite(record: Invite) -> dict:
     return {
         "id": str(record.pk),
@@ -406,6 +453,7 @@ def _invite(record: Invite) -> dict:
         "role_display": Role(record.role).label,
         "manager": _person(record.manager),
         "expires_at": record.expires_at,
+        "status": _status(record),
         "created_at": record.created_at,
         "created_by": getattr(record.created_by, "email", None),
     }
@@ -416,7 +464,8 @@ class InvitesView(TeamView):
 
     @schemas.invites_get
     def get(self, request):
-        invites = service.visible_invites(request.membership).filter(expires_at__gt=timezone.now())
+        # Expired ones stay listed for a month, so they can be replaced with a new link instead of being forgotten.
+        invites = service.visible_invites(request.membership).filter(expires_at__gt=timezone.now() - datetime.timedelta(days=30))
         return Response({"results": [_invite(i) for i in invites]})
 
 
@@ -430,6 +479,85 @@ class InviteView(TeamView):
             raise Http404("No such invite.")
         service.revoke_invite(request.membership, record)
         return Response(status=204)
+
+
+class MembersBulkView(TeamView):
+    required_permission = "member.invite"
+
+    @extend_schema(
+        tags=["team"],
+        summary="Invite several people at once",
+        description=(
+            "Up to 50 rows. Each is checked and limited like a single invitation; one that cannot be made says why and the others "
+            "still go. Every link is shown only in this response."
+        ),
+        request=BulkInviteSerializer,
+        responses={200: BulkInviteResultSerializer},
+    )
+    def post(self, request):
+        payload = BulkInviteSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        results = []
+        for row in payload.validated_data["rows"]:
+            try:
+                with transaction.atomic():
+                    record, url, emailed = _issue_invite(request, row)
+            except ApiThrottled:
+                results.append({"email": row["email"], "ok": False, "error": "Too many invitations just now. Try again in a while."})
+            except service.TeamError as exc:
+                results.append({"email": row["email"], "ok": False, "error": "; ".join(exc.messages)})
+            except (PermissionDenied, Http404) as exc:
+                results.append({"email": row["email"], "ok": False, "error": str(exc) or "Not allowed."})
+            except (ValidationError, serializers.ValidationError) as exc:
+                results.append({"email": row["email"], "ok": False, "error": "; ".join(getattr(exc, "messages", None) or [str(exc)])})
+            else:
+                results.append(
+                    {
+                        "email": record.email,
+                        "ok": True,
+                        "link": url,
+                        "emailed": emailed,
+                        "role_display": Role(record.role).label,
+                        "expires_at": record.expires_at,
+                    }
+                )
+        return Response({"results": results})
+
+
+class InviteRegenerateView(TeamView):
+    required_permission = "member.invite"
+
+    @extend_schema(
+        tags=["team"],
+        summary="Replace an invitation's link",
+        description="The secret in a link is never stored, so a lost link cannot be shown again: this makes a new one and the old one stops working.",
+        request=None,
+        responses={201: schemas.InviteCreatedSerializer},
+    )
+    def post(self, request, pk):
+        record = service.visible_invites(request.membership).filter(pk=pk).first()
+        if record is None:
+            raise Http404("No such invite.")
+        fresh, link = service.regenerate_invite(request.membership, record)
+        url, emailed = _deliver(request, fresh, link)
+        return Response({**_invite(fresh), "link": url, "emailed": emailed}, status=201)
+
+
+class InviteExtendView(TeamView):
+    required_permission = "member.invite"
+
+    @extend_schema(
+        tags=["team"],
+        summary="Give an invitation another week",
+        description="Adds seven days, never going past thirty days after the invitation was made.",
+        request=None,
+        responses={200: schemas.InviteRecordSerializer},
+    )
+    def post(self, request, pk):
+        record = service.visible_invites(request.membership).filter(pk=pk).first()
+        if record is None:
+            raise Http404("No such invite.")
+        return Response(_invite(service.extend_invite(request.membership, record)))
 
 
 class EventsView(TeamView):

@@ -221,6 +221,7 @@ def invite(
     elif role in TEAM_ROLES and manager is None and not _senior_exists(actor.firm_id):
         manager = _fallback_manager(actor.firm_id)
     _valid_parent(actor, role, manager)
+    check_seats(actor.firm_id)
     return issue_invite(
         actor.firm_id,
         email=email,
@@ -290,6 +291,33 @@ def issue_invite(
     return record, f"{firm_id}.{secret}"
 
 
+def _seat_message(limit: int) -> str:
+    return f"Your firm's plan allows {limit} people, counting invitations still waiting. Ask the platform owner to raise it."
+
+
+def check_seats(firm_id, *, replacing: Invite | None = None, accepting: Invite | None = None) -> None:
+    """Refuse when the firm is at its limit on people. Active people and invitations still waiting both count.
+
+    ``replacing`` is an invitation being swapped for a new link, which takes no extra seat. ``accepting`` is the invitation being
+    redeemed: it is already counted as waiting, and becomes a person, so it does not count twice. Run inside the firm's context.
+    """
+    from core.models import Firm
+
+    limit = Firm.objects.filter(pk=firm_id).values_list("max_members", flat=True).first()
+    if limit is None:
+        return
+    people = FirmMembership.objects.filter(firm_id=firm_id, is_active=True).count()
+    waiting = Invite.objects.filter(
+        firm_id=firm_id, used_at__isnull=True, revoked_at__isnull=True, expires_at__gt=timezone.now()
+    )
+    for skip in (replacing, accepting):
+        if skip is not None:
+            waiting = waiting.exclude(pk=skip.pk)
+    needed = people + waiting.count() + 1  # plus the person being invited, the replacement link, or the person joining
+    if needed > limit:
+        raise TeamError(_seat_message(limit))
+
+
 def reissue(record: Invite, *, created_by: User | None, actor_label: str) -> tuple[Invite, str]:
     """Replace a pending invite with a new link for the same person. Run inside the firm's context and a transaction.
 
@@ -321,6 +349,45 @@ def reissue(record: Invite, *, created_by: User | None, actor_label: str) -> tup
         detail={"actor": actor_label, "email": record.email, "role": "Firm owner" if record.make_owner else Role(record.role).label},
     )
     return fresh, f"{record.firm_id}.{secret}"
+
+
+@transaction.atomic
+def regenerate_invite(actor: FirmMembership, record: Invite) -> tuple[Invite, str]:
+    """A new link for a pending (or expired) invitation of this firm; the old link stops working. Same people may do it as may revoke."""
+    _same_firm(actor, record)
+    _require(
+        is_admin(actor) or record.created_by_id == actor.user_id,
+        "Only the person who sent this invite or a firm administrator can replace its link.",
+    )
+    check_seats(actor.firm_id, replacing=record)
+    return reissue(record, created_by=actor.user, actor_label=label(actor))
+
+
+#: An invite can be extended in steps of this much, but never to more than MAX_INVITE_AGE after it was made.
+INVITE_EXTENSION = datetime.timedelta(days=7)
+MAX_INVITE_AGE = datetime.timedelta(days=30)
+
+
+@transaction.atomic
+def extend_invite(actor: FirmMembership, record: Invite) -> Invite:
+    """Give a pending invitation another week, up to 30 days after it was made (an expired one is counted from now)."""
+    _same_firm(actor, record)
+    _require(
+        is_admin(actor) or record.created_by_id == actor.user_id,
+        "Only the person who sent this invite or a firm administrator can extend it.",
+    )
+    if record.used_at is not None or record.revoked_at is not None:
+        raise TeamError("This invitation is no longer open.")
+    now = timezone.now()
+    ceiling = record.created_at + MAX_INVITE_AGE
+    extended = min(max(record.expires_at, now) + INVITE_EXTENSION, ceiling)
+    if extended <= max(record.expires_at, now):
+        raise TeamError("This invitation is too old to extend. Make a new link instead.")
+    before = record.expires_at
+    record.expires_at = extended
+    record.save(update_fields=["expires_at"])
+    _event(actor, TeamEventKind.INVITE_EXTENDED, email=record.email, **{"from": before.isoformat(), "to": extended.isoformat()})
+    return record
 
 
 def visible_invites(actor: FirmMembership):
@@ -405,6 +472,7 @@ def accept(record: Invite, *, full_name: str, password: str, existing_user: User
     ``existing_user`` is set only after the caller has checked that account's
     own password: an invite never sets the password of an account that exists.
     """
+    check_seats(record.firm_id, accepting=record)
     if existing_user is None:
         if User.objects.filter(email=record.email).exists():
             raise TeamError("This email already has an AutoCA account. Enter its password.")

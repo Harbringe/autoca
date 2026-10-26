@@ -123,12 +123,14 @@ class InviteRecordSerializer(serializers.Serializer):
     role_display = serializers.CharField()
     manager = PersonSerializer(allow_null=True)
     expires_at = serializers.DateTimeField()
+    status = serializers.CharField(help_text="pending, expiring_soon (under 48 hours left) or expired (kept listed for a month so it can be replaced).")
     created_at = serializers.DateTimeField()
     created_by = serializers.EmailField(allow_null=True)
 
 
 class InviteCreatedSerializer(InviteRecordSerializer):
     link = serializers.CharField(help_text="The one-time link to send the person. Shown only now.")
+    emailed = serializers.BooleanField(help_text="True only when the platform is set up to email invitations and the email was accepted.")
 
 
 class InvitesResponseSerializer(serializers.Serializer):

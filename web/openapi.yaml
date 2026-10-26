@@ -7108,6 +7108,54 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/team/invites/{id}/extend/:
+    post:
+      operationId: team_invites_extend_create
+      description: Adds seven days, never going past thirty days after the invitation
+        was made.
+      summary: Give an invitation another week
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteRecord'
+          description: ''
+  /api/v1/team/invites/{id}/regenerate/:
+    post:
+      operationId: team_invites_regenerate_create
+      description: 'The secret in a link is never stored, so a lost link cannot be
+        shown again: this makes a new one and the old one stops working.'
+      summary: Replace an invitation's link
+      parameters:
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - team
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/InviteCreated'
+          description: ''
   /api/v1/team/members/:
     get:
       operationId: team_members_retrieve
@@ -7251,6 +7299,36 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/MemberWorkResponse'
+          description: ''
+  /api/v1/team/members/bulk/:
+    post:
+      operationId: team_members_bulk_create
+      description: Up to 50 rows. Each is checked and limited like a single invitation;
+        one that cannot be made says why and the others still go. Every link is shown
+        only in this response.
+      summary: Invite several people at once
+      tags:
+      - team
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BulkInviteRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BulkInviteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BulkInviteRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BulkInviteResult'
           description: ''
   /api/v1/transactions/:
     get:
@@ -9064,6 +9142,49 @@ components:
         * `31-60` - 31-60
         * `61-90` - 61-90
         * `Over 90` - Over 90
+    BulkInviteRequest:
+      type: object
+      properties:
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/InviteRequest'
+          description: Up to 50 people.
+          maxItems: 50
+          minItems: 1
+      required:
+      - rows
+    BulkInviteResult:
+      type: object
+      properties:
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/BulkInviteRow'
+      required:
+      - results
+    BulkInviteRow:
+      type: object
+      properties:
+        email:
+          type: string
+        ok:
+          type: boolean
+        error:
+          type: string
+          description: Why this row was not invited.
+        link:
+          type: string
+        emailed:
+          type: boolean
+        role_display:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+      required:
+      - email
+      - ok
     ByClient:
       type: object
       description: Counts of work in the period, one per metric in `metrics`. Keys
@@ -10939,6 +11060,10 @@ components:
         expires_at:
           type: string
           format: date-time
+        status:
+          type: string
+          description: pending, expiring_soon (under 48 hours left) or expired (kept
+            listed for a month so it can be replaced).
         created_at:
           type: string
           format: date-time
@@ -10949,10 +11074,15 @@ components:
         link:
           type: string
           description: The one-time link to send the person. Shown only now.
+        emailed:
+          type: boolean
+          description: True only when the platform is set up to email invitations
+            and the email was accepted.
       required:
       - created_at
       - created_by
       - email
+      - emailed
       - expires_at
       - full_name
       - id
@@ -10960,6 +11090,7 @@ components:
       - manager
       - role
       - role_display
+      - status
     InviteRecord:
       type: object
       properties:
@@ -10982,6 +11113,10 @@ components:
         expires_at:
           type: string
           format: date-time
+        status:
+          type: string
+          description: pending, expiring_soon (under 48 hours left) or expired (kept
+            listed for a month so it can be replaced).
         created_at:
           type: string
           format: date-time
@@ -10999,6 +11134,7 @@ components:
       - manager
       - role
       - role_display
+      - status
     InviteRequest:
       type: object
       properties:

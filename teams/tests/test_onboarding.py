@@ -139,4 +139,5 @@ def test_limits_are_set_cleared_and_recorded(new_firm):
 def test_a_limit_below_one_is_refused(new_firm, field):
     with pytest.raises(service.TeamError, match="at least 1"):
         service.platform_set_limits(new_firm.pk, **{field: 0})
-    assert Firm.objects.filter(pk=new_firm.pk).exists()
+    with firm_context(new_firm.pk):
+        assert Firm.objects.filter(pk=new_firm.pk).exists()

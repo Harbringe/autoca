@@ -325,6 +325,32 @@ def find_invite(secret: str) -> Invite | None:
     )
 
 
+def revoke_pending_invites_from(user_id, firm_id) -> int:
+    """Cancel every unused invite this person issued. Their authority to grant a seat ends when their own seat changes or ends."""
+    return Invite.objects.filter(
+        firm_id=firm_id, created_by_id=user_id, used_at__isnull=True, revoked_at__isnull=True
+    ).update(revoked_at=timezone.now())
+
+
+def _issuer_may_still_grant(record: Invite) -> bool:
+    """Is the person who issued this invite still in the firm, and still allowed to hand out the seat it carries?
+
+    An invite made by the platform (no issuer, or a platform account with no seat in the firm) is not judged here.
+    """
+    if record.created_by_id is None:
+        return True
+    issuer = FirmMembership.objects.filter(firm_id=record.firm_id, user_id=record.created_by_id, is_active=True).first()
+    if issuer is None:
+        return bool(getattr(record.created_by, "is_superuser", False) or getattr(record.created_by, "is_staff", False))
+    if record.make_owner:
+        return can_manage_admins(issuer)
+    if is_lead(issuer):
+        return record.role in TEAM_ROLES
+    if is_admin(issuer):
+        return record.role != Role.FIRM_ADMIN or can_manage_admins(issuer)
+    return False
+
+
 def invite_problem(record: Invite | None) -> str | None:
     if record is None or record.revoked_at is not None:
         return "This invite link isn't valid. Ask for a new one."
@@ -332,6 +358,8 @@ def invite_problem(record: Invite | None) -> str | None:
         return "This invite has already been used. Sign in instead."
     if record.expires_at <= timezone.now():
         return "This invite has expired. Ask for a new one."
+    if not _issuer_may_still_grant(record):
+        return "This invite link isn't valid. Ask for a new one."
     return None
 
 
@@ -481,6 +509,7 @@ def update_member(
         if role in {Role.FIRM_ADMIN, Role.SENIOR_CA, Role.STAFF, Role.READ_ONLY}:
             _valid_parent(actor, role, target.manager, target.pk)
         target.save(update_fields=["role", "manager"])
+        revoke_pending_invites_from(target.user_id, target.firm_id)
         _event(actor, TeamEventKind.ROLE_CHANGED, member=target, **{"from": before, "to": target.get_role_display()})
 
     if manager is not ...:
@@ -527,6 +556,8 @@ def update_member(
                 raise TeamError(problem)
         target.is_active = is_active
         target.save(update_fields=["is_active"])
+        if not is_active:
+            revoke_pending_invites_from(target.user_id, target.firm_id)
         _event(actor, TeamEventKind.REACTIVATED if is_active else TeamEventKind.DEACTIVATED, member=target)
 
     return target
@@ -887,4 +918,5 @@ def platform_remove(membership_id, firm_id) -> None:
         if problem := _handover_needed(target):
             raise TeamError(problem)
         _platform_event(firm_id, TeamEventKind.REMOVED, member=target, role=role_label(target))
+        revoke_pending_invites_from(target.user_id, firm_id)
         target.delete()

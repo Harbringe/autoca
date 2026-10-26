@@ -15,6 +15,7 @@ from django.http import Http404, JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
 from rest_framework import serializers
+from rest_framework.exceptions import Throttled as ApiThrottled
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -22,6 +23,7 @@ from api.permissions import HasFirmPermission
 from core import throttle
 from core.access import visible_clients
 from core.db.session import TenantContextError, firm_context
+from core.http import client_ip
 from core.models import Client, ClientAssignment, Firm, FirmMembership, Role, User
 from teams import activity, schemas, service
 from teams.models import Invite, TeamEventKind, hash_token
@@ -205,6 +207,14 @@ class MembersView(TeamView):
         payload.is_valid(raise_exception=True)
         data = payload.validated_data
         manager = _any_member(actor, data["manager"]) if data.get("manager") else None
+        # The link goes to the person who sends it (there is no email), so an invite is a way to try an address and a password against
+        # the whole platform. Making them is limited per sender and per address.
+        issuer, target = str(request.user.pk), data["email"].strip().lower()
+        try:
+            throttle.check("invite_create", issuer)
+            throttle.check("invite_target", target)
+        except throttle.Throttled as exc:
+            raise ApiThrottled(wait=exc.retry_after) from exc
         record, link = service.invite(
             actor,
             email=data["email"],
@@ -212,6 +222,8 @@ class MembersView(TeamView):
             role=data["role"],
             manager=manager,
         )
+        throttle.record_failure("invite_create", issuer)
+        throttle.record_failure("invite_target", target)
         return Response(
             {**_invite(record), "link": f"{settings.FRONTEND_URL}/invite/{link}"},
             status=201,
@@ -524,31 +536,83 @@ def _body(request) -> dict:
         return {}
 
 
+def _throttled_response(exc: throttle.Throttled) -> JsonResponse:
+    response = _json_error(
+        "too_many_attempts", f"Too many attempts. Try again in {max(exc.retry_after // 60, 1)} minutes.", 429
+    )
+    response["Retry-After"] = str(exc.retry_after)
+    return response
+
+
+_INVALID = "This invite link isn't valid. Ask for a new one."
+
+
+def _describe(token: str) -> JsonResponse:
+    """What an invite is for. It says nothing about whether the address already has an account: whoever holds the link may be the one
+    who made it, and could otherwise use it to learn who has an account on the platform."""
+    parts = service.split_link(token)
+    if parts is None:
+        return _json_error("invalid_invite", _INVALID, 404)
+    firm_id, secret = parts
+    throttle_key = hash_token(secret)
+    try:
+        throttle.check("invite", throttle_key)
+    except throttle.Throttled as exc:
+        return _throttled_response(exc)
+    try:
+        with transaction.atomic(), firm_context(firm_id):
+            record = service.find_invite(secret)
+            problem = service.invite_problem(record)
+            if problem:
+                throttle.record_failure("invite", throttle_key)
+                return _json_error("invalid_invite", problem, 410 if record else 404)
+            firm = Firm.objects.get(pk=record.firm_id)
+            return JsonResponse(
+                {
+                    "email": record.email,
+                    "full_name": record.full_name,
+                    "firm": firm.name,
+                    "role_display": "Firm owner" if record.make_owner else Role(record.role).label,
+                    "team": service.label(record.manager) if record.manager else "",
+                }
+            )
+    except TenantContextError:
+        return _json_error("invalid_invite", _INVALID, 404)
+
+
+@require_http_methods(["POST"])
+def describe_invite(request):
+    """POST {token} describes the invite. The token travels in the body, not the URL: a URL is written to access logs, browser history
+    and Referer headers, and the token is a credential."""
+    return _describe(str(_body(request).get("token", ""))[:200])
+
+
 @require_http_methods(["GET", "POST"])
 def accept_invite(request):
-    """GET ?token= describes the invite; POST {token, full_name, password} redeems it.
+    """POST {token, full_name, password} redeems an invite; GET ?token= describes it (kept for links already in use).
 
     The token carries the firm id so the lookup can run under that firm's
-    tenant context before anyone is signed in. Throttled on the token itself.
+    tenant context before anyone is signed in. Throttled on the token itself,
+    and, when the address already has an account, on the sign-in counters too.
     Redeeming signs the person in with a password only; the MFA middleware then
     sends them to enrol an authenticator before anything else.
     """
-    data = request.GET if request.method == "GET" else _body(request)
+    if request.method == "GET":
+        return _describe(str(request.GET.get("token", ""))[:200])
+
+    data = _body(request)
     token = str(data.get("token", ""))[:200]
     parts = service.split_link(token)
     if parts is None:
-        return _json_error("invalid_invite", "This invite link isn't valid. Ask for a new one.", 404)
+        return _json_error("invalid_invite", _INVALID, 404)
     firm_id, secret = parts
     throttle_key = hash_token(secret)
+    address = client_ip(request) or ""
 
     try:
         throttle.check("invite", throttle_key)
     except throttle.Throttled as exc:
-        response = _json_error(
-            "too_many_attempts", f"Too many attempts. Try again in {max(exc.retry_after // 60, 1)} minutes.", 429
-        )
-        response["Retry-After"] = str(exc.retry_after)
-        return response
+        return _throttled_response(exc)
 
     try:
         with transaction.atomic(), firm_context(firm_id):
@@ -559,26 +623,20 @@ def accept_invite(request):
                 return _json_error("invalid_invite", problem, 410 if record else 404)
 
             existing = User.objects.filter(email=record.email).first()
-            if request.method == "GET":
-                firm = Firm.objects.get(pk=record.firm_id)
-                return JsonResponse(
-                    {
-                        "email": record.email,
-                        "full_name": record.full_name,
-                        "firm": firm.name,
-                        "role_display": "Firm owner" if record.make_owner else Role(record.role).label,
-                        "team": service.label(record.manager) if record.manager else "",
-                        "has_account": existing is not None,
-                    }
-                )
-
             password = str(data.get("password", ""))
             if existing is not None:
-                if authenticate(request, username=existing.email, password=password) is None:
+                # A password is being tried against an account anywhere on the platform, so it counts against that account and that
+                # address like any sign-in, not only against this one invite (which a sender can replace at will).
+                try:
+                    throttle.sign_in_check(address, existing.email)
+                except throttle.Throttled as exc:
+                    security_log.warning("invite sign-in refused (locked out) ip=%s", address)
+                    return _throttled_response(exc)
+                # A platform owner or staff account is never attached to a firm by an invite; it answers as a wrong password does.
+                if existing.is_superuser or existing.is_staff or authenticate(request, username=existing.email, password=password) is None:
                     throttle.record_failure("invite", throttle_key)
-                    return _json_error(
-                        "invalid_credentials", "That isn't the password for this account.", 401
-                    )
+                    throttle.sign_in_failed(address, existing.email)
+                    return _json_error("invalid_credentials", "That isn't the password for this account.", 401)
             try:
                 membership = service.accept(
                     record,
@@ -599,7 +657,7 @@ def accept_invite(request):
                 )
             user = membership.user
     except TenantContextError:
-        return _json_error("invalid_invite", "This invite link isn't valid. Ask for a new one.", 404)
+        return _json_error("invalid_invite", _INVALID, 404)
 
     user.backend = settings.AUTHENTICATION_BACKENDS[0]
     login(request, user)

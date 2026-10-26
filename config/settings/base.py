@@ -417,6 +417,9 @@ THROTTLE_LIMITS = {
     # Keyed on the invite token, not the address: a wrong password against an
     # existing account's invite should not lock out an office behind one IP.
     "invite": {"attempts": 8, "window_seconds": 15 * 60, "lockout_seconds": 15 * 60},
+    # Making invites: the sender holds the link, so each one is a chance to probe an address. Per sender per hour, and per address per day.
+    "invite_create": {"attempts": 30, "window_seconds": 60 * 60, "lockout_seconds": 60 * 60},
+    "invite_target": {"attempts": 3, "window_seconds": 24 * 60 * 60, "lockout_seconds": 24 * 60 * 60},
 }
 
 # How many reverse proxies stand between the internet and this process. Zero

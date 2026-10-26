@@ -13,7 +13,7 @@ from core.db.session import firm_context
 from core.models import FirmMembership, Role, User
 from core.provisioning import create_client, create_firm
 from gst import services
-from gst.models import DecisionKind, ReconDecision, RunStatus
+from gst.models import DecisionKind, ReconDecision, ReconRun, RunStatus
 from gst.services import GstError
 
 pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("fixture_adapters")]
@@ -177,6 +177,26 @@ def test_sign_off_needs_a_senior_and_no_open_rows_then_freezes_the_run(client, r
             services.reconcile_run(run)
         with pytest.raises(GstError, match="signed off"):
             services.decide(run, run.matches.first(), DecisionKind.NOTE, "x", senior.user)
+
+
+def test_a_change_is_refused_when_the_run_was_signed_off_after_this_copy_of_it_was_read(client, run, senior):
+    """A large upload is parsed for seconds before anything is written. The freeze is judged on the run as it is now, not as it was read."""
+    with firm_context(client.firm_id):
+        match = run.matches.first()
+        stale = ReconRun.objects.get(pk=run.pk)  # read while the run was still open
+        assert stale.status != RunStatus.SIGNED_OFF
+        ReconRun.objects.filter(pk=run.pk).update(status=RunStatus.SIGNED_OFF)  # the lead signs it off in the meantime
+
+        with pytest.raises(GstError, match="signed off"):
+            services.load_register(stale, REGISTER, "reg.csv", None)
+        with pytest.raises(GstError, match="signed off"):
+            services.load_portal(stale, portal_json(), "2b.json", None)
+        with pytest.raises(GstError, match="signed off"):
+            services.reconcile_run(stale)
+        with pytest.raises(GstError, match="signed off"):
+            services.decide(stale, match, DecisionKind.NOTE, "late", senior.user)
+        assert stale.status == RunStatus.SIGNED_OFF  # and the copy in hand now says so
+        assert run.register_rows.exists() and run.portal_rows.exists()  # nothing was replaced
 
 
 def test_decisions_are_append_only(client, run, staff):

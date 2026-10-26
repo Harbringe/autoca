@@ -37,6 +37,9 @@ from core.models import FirmMembership
 logger = logging.getLogger("autoca.tenancy")
 
 
+CSRF_PATH = "/auth/csrf/"
+
+
 def resolve_membership(user):
     """The active membership for ``user``, or None.
 
@@ -81,6 +84,13 @@ class TenantContextMiddleware:
         user = getattr(request, "user", None)
 
         if not user or not user.is_authenticated:
+            request.firm = None
+            request.membership = None
+            return self.get_response(request)
+
+        if request.path == CSRF_PATH:
+            # Hands out a token and reads no data. Refusing it for an account with no active firm would show that person
+            # "Could not start a secure session" instead of the real reason, which the next request tells them.
             request.firm = None
             request.membership = None
             return self.get_response(request)

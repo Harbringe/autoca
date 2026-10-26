@@ -59,6 +59,7 @@ PRIVILEGES_SQL = f"""
 ALTER FUNCTION app.trim_audit_log(integer, boolean) OWNER TO {READER_ROLE};
 REVOKE ALL ON FUNCTION app.trim_audit_log(integer, boolean) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION app.trim_audit_log(integer, boolean) TO {OWNER_ROLE};
+GRANT SELECT, DELETE ON core_audit_log TO {READER_ROLE};
 """
 
 # Handing a function to a new owner requires that owner to hold CREATE on the schema, which the platform views' own install takes

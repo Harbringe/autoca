@@ -240,6 +240,13 @@ class PlatformFirmAdmin(admin.ModelAdmin):
         # primary key, so it needs to know which firm was made.
         obj.pk = created.pk
 
+    def response_add(self, request, obj, post_url_continue=None):
+        """A new firm lands on its own page, where the owner's link is shown once, not back on the list."""
+        if "_addanother" not in request.POST:
+            request.POST = request.POST.copy()
+            request.POST["_continue"] = "1"
+        return super().response_add(request, obj, post_url_continue)
+
     # -- the owner's invitation ------------------------------------------------
 
     @staticmethod

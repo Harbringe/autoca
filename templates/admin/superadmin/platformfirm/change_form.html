@@ -17,12 +17,12 @@ of what has happened since, and the buttons to replace or cancel the invitation.
     </div>
     {% endif %}
     <ul class="list-unstyled mb-3">
-      <li>{% if onboarding.owner_invite != "none" %}&#10003;{% else %}&#9744;{% endif %} Owner invited{% if onboarding.owner_invite_email %} ({{ onboarding.owner_invite_email }}){% endif %}
+      <li>{% if onboarding.owner_invite != "none" %}Done:{% else %}Waiting:{% endif %} Owner invited{% if onboarding.owner_invite_email %} ({{ onboarding.owner_invite_email }}){% endif %}
         {% if onboarding.owner_invite == "pending" %}&mdash; waiting, expires {{ onboarding.owner_invite_expires|date:"j M Y" }}{% elif onboarding.owner_invite == "expired" %}&mdash; expired{% elif onboarding.owner_invite == "revoked" %}&mdash; cancelled{% endif %}</li>
-      <li>{% if onboarding.owner_joined %}&#10003;{% else %}&#9744;{% endif %} Owner joined{% if onboarding.owner_email %} ({{ onboarding.owner_email }}){% endif %}</li>
-      <li>{% if onboarding.owner_has_authenticator %}&#10003;{% else %}&#9744;{% endif %} Authenticator set up</li>
-      <li>{% if onboarding.clients %}&#10003;{% else %}&#9744;{% endif %} First client added ({{ onboarding.clients }})</li>
-      <li>{% if onboarding.statements %}&#10003;{% else %}&#9744;{% endif %} First statement uploaded ({{ onboarding.statements }})</li>
+      <li>{% if onboarding.owner_joined %}Done:{% else %}Waiting:{% endif %} Owner joined{% if onboarding.owner_email %} ({{ onboarding.owner_email }}){% endif %}</li>
+      <li>{% if onboarding.owner_has_authenticator %}Done:{% else %}Waiting:{% endif %} Authenticator set up</li>
+      <li>{% if onboarding.clients %}Done:{% else %}Waiting:{% endif %} First client added ({{ onboarding.clients }})</li>
+      <li>{% if onboarding.statements %}Done:{% else %}Waiting:{% endif %} First statement uploaded ({{ onboarding.statements }})</li>
     </ul>
     {% if not onboarding.owner_joined %}
     <form method="post" action="{% url 'admin:superadmin_platformfirm_owner_link' original.pk %}" class="form-inline mb-2">

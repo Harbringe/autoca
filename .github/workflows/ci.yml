@@ -84,6 +84,8 @@ jobs:
           -- the migrating role is a member of it. The role is made here; the membership is granted later, after the system checks,
           -- because a check (superadmin.W002) rightly warns when the application's own role is a member.
           CREATE ROLE autoca_platform_reader NOLOGIN BYPASSRLS NOSUPERUSER NOCREATEDB NOCREATEROLE;
+          -- The retention function is granted to the owner role by name; the tests that install it need the name to exist.
+          CREATE ROLE autoca_owner NOLOGIN;
           SQL
 
       - name: Lint

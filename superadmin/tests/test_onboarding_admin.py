@@ -67,7 +67,9 @@ def test_the_limits_must_be_positive_and_the_trial_date_becomes_the_end_of_that_
     assert form.is_valid()
     end = form.trial_end()
     assert timezone.is_aware(end) and (end.year, end.month, end.day, end.hour) == (2026, 12, 31, 23)
-    assert add_form().trial_end() is None
+    plain = add_form()
+    assert plain.is_valid()
+    assert plain.trial_end() is None
 
 
 def test_saving_the_add_form_makes_the_firm_invites_its_owner_and_keeps_the_link_for_one_view(page, request_for):

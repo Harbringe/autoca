@@ -61,14 +61,15 @@ def test_the_ledger_name_matches_tallys_convention(client):
 
 
 def test_two_accounts_ending_alike_do_not_share_a_ledger(client):
-    """Sharing one would merge two accounts' books; the second falls back to its full number."""
+    """Sharing one would merge two accounts' books; the second is numbered, never named by its account number (the column is plaintext)."""
     with firm_context(client.firm_id):
         first = ingest_statement(client=client, data=b"%PDF-1.4 axis").bank_account
         twin = BankAccount(firm_id=client.firm_id, client=client, bank_code="AXIS")
         twin.set_account_number("922020000000001")
         twin.save()
 
-        assert twin.ledger_name == "Axis Bank A/c 922020000000001"
+        assert twin.ledger_name == "Axis Bank A/c 0001 (2)"
+        assert "922020000000001" not in twin.ledger_name
         assert twin.ledger_name != first.ledger_name
 
 

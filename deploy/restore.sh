@@ -27,9 +27,10 @@ echo "restore: stopping the web app and the proxy"
 compose stop web caddy
 
 echo "restore: loading $key"
-# A one-off web container does the download (it holds the S3 tooling and the role); --clean drops each object
-# before recreating it, so the database-level grants made when it was first created are kept.
-compose run --rm --no-deps -T web python -m integrations.backup.s3 get "$key" < /dev/null \
+# A one-off container does the download (it holds the S3 tooling and the role); --clean drops each object
+# before recreating it, so the database-level grants made when it was first created are kept. It is the `tools` service, whose
+# output is not sent to the log group: what it prints here is the whole database dump.
+compose run --rm --no-deps -T tools python -m integrations.backup.s3 get "$key" < /dev/null \
     | compose exec -T db pg_restore -U postgres -d autoca --clean --if-exists --no-password
 
 echo "restore: starting everything again (migrations run first)"

@@ -36,4 +36,5 @@ CMD ["gunicorn", "config.wsgi:application", \
      "--workers", "3", "--threads", "2", \
      "--timeout", "120", \
      "--access-logfile", "-", "--error-logfile", "-", \
+     "--access-logformat", "%(h)s %(l)s %(u)s %(t)s \"%(m)s %(U)s %(H)s\" %(s)s %(b)s", \
      "--forwarded-allow-ips", "*"]

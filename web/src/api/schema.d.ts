@@ -5709,6 +5709,7 @@ export interface components {
             readonly role_display: string | null;
             readonly is_owner: boolean;
             readonly permissions: string[];
+            readonly trial: components["schemas"]["Trial"] | null;
         };
         /**
          * @description A member of the firm, as named beside a client or in a list.
@@ -9380,6 +9381,12 @@ export interface components {
             readonly expense_display: string | null;
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly profit_display: string | null;
+        };
+        Trial: {
+            /** Format: date-time */
+            ends_at: string;
+            /** @description Negative once the trial has ended. */
+            days_left: number;
         };
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         TrialBalance: {

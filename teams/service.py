@@ -318,6 +318,15 @@ def check_seats(firm_id, *, replacing: Invite | None = None, accepting: Invite |
         raise TeamError(_seat_message(limit))
 
 
+def check_client_limit(firm_id) -> None:
+    """Refuse a new client when the firm is at the limit the platform owner agreed. Run inside the firm's context."""
+    from core.models import Firm
+
+    limit = Firm.objects.filter(pk=firm_id).values_list("max_clients", flat=True).first()
+    if limit is not None and Client.objects.filter(firm_id=firm_id).count() >= limit:
+        raise TeamError(f"Your firm's plan allows {limit} client{'s' if limit != 1 else ''}. Ask the platform owner to raise it.")
+
+
 def reissue(record: Invite, *, created_by: User | None, actor_label: str) -> tuple[Invite, str]:
     """Replace a pending invite with a new link for the same person. Run inside the firm's context and a transaction.
 

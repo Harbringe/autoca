@@ -118,7 +118,8 @@ class TenantContextMiddleware:
             # policy guarantees it is that firm's row and no other.
             firm = membership.firm
             if not firm.is_active:
-                return _refuse(request, "firm_inactive", "This firm has been deactivated.")
+                # The platform owner can leave a message for the firm's people (why, and who to ask).
+                return _refuse(request, "firm_inactive", firm.suspended_message or "This firm has been deactivated.")
 
             request.firm = firm
             request.membership = membership

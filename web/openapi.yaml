@@ -12301,6 +12301,11 @@ components:
           items:
             type: string
           readOnly: true
+        trial:
+          allOf:
+          - $ref: '#/components/schemas/Trial'
+          readOnly: true
+          nullable: true
       required:
       - email
       - firm
@@ -12311,6 +12316,7 @@ components:
       - permissions
       - role
       - role_display
+      - trial
     Member:
       type: object
       description: |-
@@ -19403,6 +19409,18 @@ components:
       - month
       - profit_display
       - profit_paise
+    Trial:
+      type: object
+      properties:
+        ends_at:
+          type: string
+          format: date-time
+        days_left:
+          type: integer
+          description: Negative once the trial has ended.
+      required:
+      - days_left
+      - ends_at
     TrialBalance:
       type: object
       description: Adds a ``*_display`` string beside every ``*_paise`` field named

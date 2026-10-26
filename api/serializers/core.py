@@ -215,6 +215,28 @@ class ClientProfileSerializer(serializers.ModelSerializer):
         return instance
 
 
+class TrialSerializer(serializers.Serializer):
+    ends_at = serializers.DateTimeField()
+    days_left = serializers.IntegerField(help_text="Negative once the trial has ended.")
+
+
+#: A firm's administrators are told about the trial this long before it ends, and for as long after.
+TRIAL_NOTICE_DAYS = 14
+
+
+def _trial_notice(firm, membership) -> dict | None:
+    """The trial end for a firm administrator, only while it is close (or has just passed); nobody else is told."""
+    from django.utils import timezone
+
+    ends = getattr(firm, "trial_ends_at", None)
+    if ends is None or membership is None or membership.role != "FIRM_ADMIN":
+        return None
+    days = (ends - timezone.now()).days
+    if not -TRIAL_NOTICE_DAYS <= days <= TRIAL_NOTICE_DAYS:
+        return None
+    return {"ends_at": ends, "days_left": days}
+
+
 class MeSerializer(serializers.Serializer):
     """The session, the firm it is bound to, and the permissions it carries.
 
@@ -232,6 +254,7 @@ class MeSerializer(serializers.Serializer):
     role_display = serializers.CharField(read_only=True, allow_null=True)
     is_owner = serializers.BooleanField(read_only=True)
     permissions = serializers.ListField(child=serializers.CharField(), read_only=True)
+    trial = TrialSerializer(read_only=True, allow_null=True)
 
     @classmethod
     def for_request(cls, request) -> dict:
@@ -251,6 +274,7 @@ class MeSerializer(serializers.Serializer):
             ),
             "is_owner": bool(membership and membership.is_owner),
             "permissions": sorted(PERMISSIONS.get(membership.role, set())) if membership else [],
+            "trial": _trial_notice(getattr(request, "firm", None), membership),
         }
 
 

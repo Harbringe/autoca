@@ -18,6 +18,7 @@ import { useAssistantShort, useAssistantStatus } from '@/features/assistant/useA
 import { Brand } from '@/features/auth/AuthLayout'
 import { INVOICE_UPLOAD_KEY } from '@/api/queries/bills'
 import { AlertBell, AlertDot, useAlertDot } from '@/features/alerts/AlertBell'
+import { formatDate } from '@/lib/format'
 import { clientScreenName, parentPath } from '@/lib/clientNav'
 import { useHotkey } from '@/lib/hotkeys'
 import { JUMP_KEYS, moduleHref, type JumpKey } from '@/lib/jump'
@@ -184,6 +185,25 @@ function JumpKeys() {
 function JumpKeyBinding({ jump, allowed, onGo, clientId }: { jump: JumpKey; allowed: boolean; onGo: (to: string) => void; clientId?: string }) {
   useHotkey(`g ${jump.key}`, jump.label, () => allowed && onGo(moduleHref(jump.module, clientId)), 'Go to')
   return null
+}
+
+/** Told to a firm's administrators in the last two weeks of the trial, and just after: the platform owner agreed it, so the way on is to ask. */
+export function TrialStrip() {
+  const { me } = useSession()
+  const trial = me?.trial
+  if (!trial) return null
+  const left = trial.days_left
+  const text =
+    left > 1
+      ? `Your trial ends in ${left} days, on ${formatDate(trial.ends_at)}.`
+      : left >= 0
+        ? `Your trial ends ${left === 0 ? 'today' : 'tomorrow'}.`
+        : `Your trial ended on ${formatDate(trial.ends_at)}.`
+  return (
+    <div role="status" className="no-print border-b border-accent-edge bg-accent px-4 py-2 text-center text-[13px] font-medium text-accent-foreground">
+      {text} Contact the platform owner to carry on.
+    </div>
+  )
 }
 
 /** Said once, at the top, while the browser has no network: nothing typed now would be saved. */
@@ -358,6 +378,7 @@ export function Shell() {
 
       <div className="flex min-w-0 flex-1 flex-col">
         <OfflineStrip />
+        <TrialStrip />
         <header
           aria-label="Top bar"
           data-region="header"

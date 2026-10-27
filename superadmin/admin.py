@@ -788,7 +788,7 @@ class PlatformDashboardAdmin(ReadOnlyAdmin):
         from usage.pricing import inr
 
         micro = getattr(self, "_spend", {}).get(str(obj.pk), 0)
-        return inr(micro) if micro else "—"
+        return f"Rs {inr(micro):,.2f}" if micro else "—"
 
     @admin.display(description="Trial", ordering="trial_ends_at")
     def trial(self, obj):

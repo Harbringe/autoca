@@ -20,7 +20,7 @@ def test_a_headerless_table_with_dozens_of_money_columns_is_refused_quickly():
     with pytest.raises(ColumnInferenceError):
         infer_columns(None, wide_table(59))
     # About 195,000 layouts used to be tried; the search is now capped, so this ends in a moment.
-    assert time.perf_counter() - started < 5.0
+    assert time.perf_counter() - started < 20.0  # generous: a busy CI runner took 5.1 s once; unbounded, it ran for minutes
 
 
 def test_the_search_gives_up_after_a_fixed_number_of_layouts(monkeypatch):

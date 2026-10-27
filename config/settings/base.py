@@ -159,6 +159,8 @@ JAZZMIN_SETTINGS = {
         "superadmin.PlatformClient": "fas fa-briefcase",
         "superadmin.PlatformAuditLog": "fas fa-clipboard-list",
         "superadmin.PlatformJob": "fas fa-gears",
+        "superadmin.PlatformInvite": "fas fa-envelope-open-text",
+        "superadmin.PlatformFirmStats": "fas fa-chart-line",
         "otp_totp.TOTPDevice": "fas fa-mobile-screen",
         "otp_static.StaticDevice": "fas fa-key",
     },

@@ -531,3 +531,16 @@ def test_the_memberships_list_opens_the_persons_profile(views, operator, firm_a)
     response = sign_in(operator).get(f"/admin/superadmin/platformmembership/{person.pk}/change/")
     assert response.status_code == 302
     assert response["Location"] == f"/admin/core/profile/{profile.pk}/change/"
+
+
+def test_the_firm_page_shows_five_steps_and_the_limits(views, operator):
+    http = sign_in(operator)
+    created = http.post(
+        "/admin/superadmin/platformfirm/add/",
+        {"name": "Steps Co", "owner_email": "o@steps.test", "max_members": "5", "max_clients": "20", "is_active": "on", "_save": "Save"},
+    )
+    page = http.get(created["Location"]).content.decode()
+    for step in ("Owner invited", "Owner joined", "Authenticator set up", "First client added", "First statement uploaded"):
+        assert step in page
+    assert page.count('class="pf-mark">Done<') == 1  # only the invitation is done
+    assert "Plan and limits" in page and "1 of 5" in page and "0 of 20" in page

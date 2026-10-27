@@ -294,6 +294,43 @@ class PlatformFirmAdmin(admin.ModelAdmin):
             messages.success(request, "The invitation was cancelled. Its link no longer works.")
         return self._back(object_id)
 
+    @staticmethod
+    def _limits_for(object_id) -> list[dict]:
+        """People, clients and trial for the firm page's limits card, from the gated stats view."""
+        from superadmin.home import _pct, _state
+
+        try:
+            stats = PlatformFirmStats.objects.filter(pk=object_id).first()
+        except Exception:  # noqa: BLE001 -- the page must open even if the view is not installed
+            return []
+        if stats is None:
+            return []
+        now = timezone.now()
+        if stats.trial_ends_at is None:
+            trial = {"label": "Trial", "text": "None", "pct": None, "state": "", "note": "No trial date is set."}
+        elif stats.trial_ends_at < now:
+            trial = {"label": "Trial", "text": f"Ended {stats.trial_ends_at:%d %b}", "pct": 100, "state": "full", "note": "Nothing switches off by itself."}
+        else:
+            trial = {"label": "Trial", "text": f"Ends {stats.trial_ends_at:%d %b}", "pct": None, "state": "", "note": "Nothing switches off by itself."}
+        taken = stats.active_members + stats.pending_invites
+        return [
+            {
+                "label": "People",
+                "text": f"{taken} of {stats.max_members}" if stats.max_members else str(taken),
+                "pct": _pct(taken, stats.max_members),
+                "state": _state(taken, stats.max_members),
+                "note": "Waiting invitations count toward the limit.",
+            },
+            {
+                "label": "Clients",
+                "text": f"{stats.clients} of {stats.max_clients}" if stats.max_clients else str(stats.clients),
+                "pct": _pct(stats.clients, stats.max_clients),
+                "state": _state(stats.clients, stats.max_clients),
+                "note": "The firm cannot add a client past its limit.",
+            },
+            trial,
+        ]
+
     def change_view(self, request, object_id, form_url="", extra_context=None):
         extra = dict(extra_context or {})
         shown = request.session.get("owner_link")
@@ -305,6 +342,7 @@ class PlatformFirmAdmin(admin.ModelAdmin):
             logging.getLogger("autoca.superadmin").warning("the onboarding panel could not be built", exc_info=True)
             extra["onboarding"] = None
             extra["onboarding_error"] = True
+        extra["limits"] = self._limits_for(object_id)
         return super().change_view(request, object_id, form_url, extra)
 
 

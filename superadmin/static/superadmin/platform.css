@@ -43,15 +43,15 @@
   --font-display: "Fraunces", Georgia, "Times New Roman", serif;
 }
 
-/* Jazzmin's shell in the product's colours. */
-body, .content-wrapper { background: var(--bg) !important; color: var(--fg); font-family: var(--font-sans); }
-.main-header.navbar, .main-sidebar { background-color: #161619 !important; }
-.nav-sidebar .nav-link { color: #c9c9cd; }
-.nav-sidebar > .nav-item > .nav-link.active,
-.nav-sidebar .nav-treeview > .nav-item > .nav-link.active { background-color: #22332f !important; color: #fff !important; }
-.content-wrapper h1, .content-header h1 { font-family: var(--font-display); font-weight: 600; color: var(--heading); letter-spacing: -0.01em; }
+/* Jazzmin 3 (AdminLTE 4) shell in the product's colours. */
+body, body.bg-body-tertiary, .app-main { background: var(--bg) !important; color: var(--fg); font-family: var(--font-sans); }
+.app-header, .app-header.navbar { background-color: var(--card) !important; border-bottom: 1px solid var(--border) !important; }
+.app-sidebar, .app-sidebar.bg-body-secondary { background-color: #161619 !important; }
+.sidebar-menu .nav-link { color: #c9c9cd; }
+.sidebar-menu .nav-link.active { background-color: #22332f !important; color: #fff !important; }
+.app-main h1 { font-family: var(--font-display); font-weight: 600; color: var(--heading); letter-spacing: -0.01em; }
 a { color: var(--link); }
-.btn-primary, .btn-warning { background-color: var(--primary) !important; border-color: var(--primary) !important; color: var(--primary-fg) !important; }
+.btn-primary, .btn-warning, .btn-success, .btn-info { background-color: var(--primary) !important; border-color: var(--primary) !important; color: var(--primary-fg) !important; }
 
 /* Components used by the home, firm and add pages. */
 .pf-page { display: flex; flex-direction: column; gap: 24px; }
@@ -63,7 +63,8 @@ a { color: var(--link); }
 .pf-card--pad { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
 .pf-card--warn { background: var(--accent); border-color: var(--accent-edge); }
 .pf-card__head { display: flex; align-items: center; gap: 10px; padding: 16px 20px; flex-wrap: wrap; }
-.pf-card__head h2, .pf-card--pad h2 { margin: 0; font-size: 16px; font-weight: 600; color: var(--heading); flex: 1 1 120px; }
+.pf-card__head h2, .pf-card--pad h2 { margin: 0; font-size: 16px; font-weight: 600; color: var(--heading); }
+.pf-card__head h2 { flex: 1 1 120px; }
 .pf-kpi { flex: 1 1 200px; min-width: 180px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
 .pf-kpi--warn { background: var(--accent); border-color: var(--accent-edge); }
 .pf-kpi__label { font-size: 13px; color: var(--muted-fg); font-weight: 500; }

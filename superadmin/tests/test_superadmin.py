@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import re
 
 import pytest
 from django.db import DatabaseError, connection, transaction
@@ -553,5 +554,6 @@ def test_the_add_page_has_three_sections_and_still_creates_the_firm(views, opera
         assert heading in page
     for field in ("name", "owner_name", "owner_email", "max_members", "max_clients", "trial_ends_on"):
         assert f'name="{field}"' in page
+    assert re.search(r'name="is_active"[^>]*checked', page), "a new firm starts in service"
     created = http.post("/admin/superadmin/platformfirm/add/", {"name": "Added Co", "owner_email": "o@added.test", "is_active": "on", "_save": "Save"})
     assert created.status_code == 302

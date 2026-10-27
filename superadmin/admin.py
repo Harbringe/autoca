@@ -164,6 +164,7 @@ class FirmForm(forms.ModelForm):
             self.initial.setdefault("suspended_message", limits.get("suspended_message", ""))
         else:
             self.fields["owner_email"].required = True
+            self.initial.setdefault("is_active", True)
             del self.fields["suspended_message"]
 
     def clean_name(self):

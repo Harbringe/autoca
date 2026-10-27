@@ -143,6 +143,8 @@ JAZZMIN_SETTINGS = {
     "site_logo": None,
     "login_logo": None,
     "show_ui_builder": DEBUG,
+    # Jazzmin links a stylesheet from fonts.googleapis.com by default; the fonts are shipped with the panel instead.
+    "use_google_fonts_cdn": False,
     # One scrolling page, not tabs. A profile is meant to answer "everything
     # about this person" at a glance, and tabs hide most of the answer.
     "changeform_format": "single",

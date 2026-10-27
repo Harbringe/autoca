@@ -156,7 +156,7 @@ def test_a_tab_narrows_the_page(views, operator, firm_a, firm_b):
         AuditLog.objects.create(firm=firm_b, method="GET", path="/x", status_code=200)
     http = sign_in(operator)
     page = http.get("/admin/", {"tab": "healthy"}).content.decode()
-    table = page.split("All firms", 1)[1]
+    table = page.split("All firms", 1)[1].split("Model spend by firm", 1)[0]
     assert "Beta Associates" in table and "Alpha &amp; Co" not in table
 
 

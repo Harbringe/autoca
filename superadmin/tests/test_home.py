@@ -132,3 +132,46 @@ def test_a_tab_narrows_the_table_and_counts_every_tab(views, operator, firm_a, f
 
 def test_an_unknown_tab_is_treated_as_all(views, operator, firm_a):
     assert _home(operator, tab="nonsense").tab == "all"
+
+
+# ---------------------------------------------------------------------------
+# The page
+# ---------------------------------------------------------------------------
+
+
+def test_home_shows_the_numbers_the_attention_list_and_every_firm(views, operator, firm_a, firm_b):
+    member(firm_a, Role.FIRM_ADMIN, "admin@a.test")
+    service.platform_set_limits(firm_a.pk, trial_ends_at=timezone.now() - datetime.timedelta(days=3))
+    page = sign_in(operator).get("/admin/").content.decode()
+    assert "Needs you today" in page and "Extend trial" in page
+    assert "Alpha &amp; Co" in page and "Beta Associates" in page
+    assert "Add a firm" in page and "Trial ended" in page
+
+
+def test_a_tab_narrows_the_page(views, operator, firm_a, firm_b):
+    member(firm_a, Role.FIRM_ADMIN, "admin@a.test")
+    service.platform_set_limits(firm_a.pk, trial_ends_at=timezone.now() - datetime.timedelta(days=3))
+    member(firm_b, Role.FIRM_ADMIN, "admin@b.test")
+    with firm_context(firm_b.pk):
+        AuditLog.objects.create(firm=firm_b, method="GET", path="/x", status_code=200)
+    http = sign_in(operator)
+    page = http.get("/admin/", {"tab": "healthy"}).content.decode()
+    table = page.split("All firms", 1)[1]
+    assert "Beta Associates" in table and "Alpha &amp; Co" not in table
+
+
+def test_a_firm_name_is_escaped_on_home(views, operator):
+    create_firm("<b>x</b> & Co")
+    page = sign_in(operator).get("/admin/").content.decode()
+    assert "&lt;b&gt;x&lt;/b&gt; &amp; Co" in page and "<b>x</b>" not in page
+
+
+def test_an_empty_platform_invites_the_first_firm(views, operator):
+    page = sign_in(operator).get("/admin/").content.decode()
+    assert "Add your first firm" in page and "Nothing needs you today." in page
+
+
+def test_a_firm_administrator_cannot_open_the_admin(views, firm_a):
+    person = member(firm_a, Role.FIRM_ADMIN, "admin@a.test")
+    response = sign_in(person.user).get("/admin/")
+    assert response.status_code in (302, 403) and "Needs you today" not in response.content.decode()

@@ -111,6 +111,11 @@ a { color: var(--link); }
 .pf-section__num { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: var(--primary); color: var(--primary-fg); font-size: 13px; font-weight: 600; }
 .pf-empty { padding: 28px 20px; text-align: center; color: var(--muted-fg); }
 
+.pf-head { flex: 1 1 320px; display: flex; flex-direction: column; gap: 2px; }
+.pf-split { display: flex; justify-content: space-between; gap: 8px; }
+.pf-event { display: flex; gap: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
+.pf-event__time { flex: 0 0 52px; }
+
 /* Bar widths in steps of 5, so a template sets a class and never an inline style. */
 .pf-w-0 { width: 0%; }
 .pf-w-5 { width: 5%; }

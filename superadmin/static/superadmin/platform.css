@@ -116,6 +116,14 @@ a { color: var(--link); }
 .pf-event { display: flex; gap: 12px; border-top: 1px solid var(--border); padding-top: 8px; }
 .pf-event__time { flex: 0 0 52px; }
 
+.pf-field { display: flex; flex-direction: column; gap: 6px; }
+.pf-field label { font-size: 14px; font-weight: 500; margin: 0; }
+.pf-field input[type=text], .pf-field input[type=email], .pf-field input[type=number], .pf-field input[type=date] { height: 40px; border: 1px solid var(--input); border-radius: 8px; padding: 0 12px; background: var(--card); color: var(--fg); font: inherit; }
+.pf-error { font-size: 13px; color: var(--destructive); font-weight: 500; }
+.pf-next { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 12px; }
+.pf-next li { display: list-item; }
+.pf-next li > span { display: block; }
+
 /* Bar widths in steps of 5, so a template sets a class and never an inline style. */
 .pf-w-0 { width: 0%; }
 .pf-w-5 { width: 5%; }

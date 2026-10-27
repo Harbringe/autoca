@@ -199,6 +199,7 @@ class PlatformFirmAdmin(admin.ModelAdmin):
     readonly_fields = ("member_count", "client_count", "created_at")
     inlines = (FirmMembersInline, FirmClientsInline)
     change_form_template = "admin/superadmin/platformfirm/change_form.html"
+    add_form_template = "admin/superadmin/platformfirm/add_form.html"
 
     def get_fields(self, request, obj=None):
         if obj is None:

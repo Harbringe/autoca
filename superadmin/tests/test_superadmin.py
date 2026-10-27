@@ -544,3 +544,14 @@ def test_the_firm_page_shows_five_steps_and_the_limits(views, operator):
         assert step in page
     assert page.count('class="pf-mark">Done<') == 1  # only the invitation is done
     assert "Plan and limits" in page and "1 of 5" in page and "0 of 20" in page
+
+
+def test_the_add_page_has_three_sections_and_still_creates_the_firm(views, operator):
+    http = sign_in(operator)
+    page = http.get("/admin/superadmin/platformfirm/add/").content.decode()
+    for heading in ("The firm", "Who owns it", "Agreed plan", "What happens next"):
+        assert heading in page
+    for field in ("name", "owner_name", "owner_email", "max_members", "max_clients", "trial_ends_on"):
+        assert f'name="{field}"' in page
+    created = http.post("/admin/superadmin/platformfirm/add/", {"name": "Added Co", "owner_email": "o@added.test", "is_active": "on", "_save": "Save"})
+    assert created.status_code == 302

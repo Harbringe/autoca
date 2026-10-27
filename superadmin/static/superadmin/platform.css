@@ -1,0 +1,135 @@
+/* The platform owner's panel, painted in the web app's own palette and fonts (web/src/styles.css).
+   Fonts are shipped here because the admin's security policy refuses third-party font hosts. */
+
+@font-face {
+  font-family: "Inter";
+  src: url("fonts/inter-latin-wght-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Fraunces";
+  src: url("fonts/fraunces-latin-opsz-normal.woff2") format("woff2");
+  font-weight: 100 900;
+  font-display: swap;
+}
+
+:root {
+  --bg: #f7f5ef;
+  --fg: #1f1f23;
+  --heading: #161619;
+  --card: #ffffff;
+  --surface-2: #fbfaf7;
+  --primary: #265a50;
+  --primary-fg: #ffffff;
+  --muted: #efece3;
+  --muted-fg: #5a5a62;
+  --faint: #6b6b73;
+  --accent: #f5ecd9;
+  --accent-fg: #7a5a1c;
+  --accent-edge: #dcc488;
+  --border: #e4e0d2;
+  --border-strong: #d6d1bf;
+  --input: #8a8574;
+  --link: #1f4840;
+  --destructive: #a32020;
+  --destructive-bg: #fbeaea;
+  --success: #1f6b4a;
+  --success-bg: #e6f3ed;
+  --info: #2b5a8a;
+  --info-bg: #e8f0f8;
+  --warning-bg: #f5ecd9;
+  --font-sans: "Inter", system-ui, -apple-system, "Segoe UI", Arial, sans-serif;
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+}
+
+/* Jazzmin's shell in the product's colours. */
+body, .content-wrapper { background: var(--bg) !important; color: var(--fg); font-family: var(--font-sans); }
+.main-header.navbar, .main-sidebar { background-color: #161619 !important; }
+.nav-sidebar .nav-link { color: #c9c9cd; }
+.nav-sidebar > .nav-item > .nav-link.active,
+.nav-sidebar .nav-treeview > .nav-item > .nav-link.active { background-color: #22332f !important; color: #fff !important; }
+.content-wrapper h1, .content-header h1 { font-family: var(--font-display); font-weight: 600; color: var(--heading); letter-spacing: -0.01em; }
+a { color: var(--link); }
+.btn-primary, .btn-warning { background-color: var(--primary) !important; border-color: var(--primary) !important; color: var(--primary-fg) !important; }
+
+/* Components used by the home, firm and add pages. */
+.pf-page { display: flex; flex-direction: column; gap: 24px; }
+.pf-row { display: flex; flex-wrap: wrap; gap: 16px; }
+.pf-row--top { align-items: flex-start; gap: 24px; }
+.pf-grow { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 24px; }
+.pf-rail { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 24px; }
+.pf-card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.pf-card--pad { padding: 18px 20px; display: flex; flex-direction: column; gap: 14px; }
+.pf-card--warn { background: var(--accent); border-color: var(--accent-edge); }
+.pf-card__head { display: flex; align-items: center; gap: 10px; padding: 16px 20px; flex-wrap: wrap; }
+.pf-card__head h2, .pf-card--pad h2 { margin: 0; font-size: 16px; font-weight: 600; color: var(--heading); flex: 1 1 120px; }
+.pf-kpi { flex: 1 1 200px; min-width: 180px; background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; display: flex; flex-direction: column; gap: 8px; }
+.pf-kpi--warn { background: var(--accent); border-color: var(--accent-edge); }
+.pf-kpi__label { font-size: 13px; color: var(--muted-fg); font-weight: 500; }
+.pf-kpi__value { font-family: var(--font-display); font-size: 30px; font-weight: 600; color: var(--heading); line-height: 1; }
+.pf-kpi__note { font-size: 13px; color: var(--muted-fg); }
+.pf-list { list-style: none; margin: 0; padding: 0; }
+.pf-list > li { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 14px 20px; border-top: 1px solid var(--border); }
+.pf-list__main { flex: 1 1 280px; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.pf-strong { font-weight: 600; color: var(--heading); }
+.pf-sub { font-size: 14px; color: var(--muted-fg); }
+.pf-faint { font-size: 13px; color: var(--faint); }
+.pf-dot { width: 10px; height: 10px; border-radius: 50%; flex: 0 0 10px; background: var(--faint); }
+.pf-dot--bad { background: var(--destructive); }
+.pf-dot--warn { background: var(--accent-fg); }
+.pf-chip { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 600; background: var(--muted); color: var(--muted-fg); }
+.pf-chip--good { background: var(--success-bg); color: var(--success); }
+.pf-chip--warn { background: var(--warning-bg); color: var(--accent-fg); }
+.pf-chip--bad { background: var(--destructive-bg); color: var(--destructive); }
+.pf-chip--info { background: var(--info-bg); color: var(--info); }
+.pf-btn { display: inline-flex; align-items: center; justify-content: center; height: 36px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--border-strong); background: var(--card); color: var(--fg) !important; font-size: 14px; font-weight: 500; text-decoration: none !important; }
+.pf-btn--primary { height: 40px; background: var(--primary); border-color: var(--primary); color: var(--primary-fg) !important; font-weight: 600; }
+.pf-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.pf-tab { display: inline-flex; align-items: center; height: 32px; padding: 0 12px; border-radius: 999px; border: 1px solid var(--border-strong); background: var(--card); color: var(--fg) !important; font-size: 13px; font-weight: 600; text-decoration: none !important; }
+.pf-tab--on { background: var(--primary); border-color: var(--primary); color: var(--primary-fg) !important; }
+.pf-scroll { overflow-x: auto; }
+.pf-table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 14px; }
+.pf-table th { text-align: left; padding: 10px 12px; font-size: 13px; font-weight: 500; color: var(--muted-fg); background: var(--surface-2); }
+.pf-table td { padding: 12px; border-top: 1px solid var(--border); vertical-align: middle; }
+.pf-table th:first-child, .pf-table td:first-child { padding-left: 20px; }
+.pf-table th:last-child, .pf-table td:last-child { padding-right: 20px; }
+.pf-num { text-align: right; font-variant-numeric: tabular-nums; }
+.pf-bar { display: block; height: 4px; border-radius: 2px; background: var(--muted); margin-top: 5px; }
+.pf-bar > span { display: block; height: 100%; border-radius: 2px; background: var(--primary); }
+.pf-bar--wide { height: 8px; border-radius: 4px; }
+.pf-bar--full > span { background: var(--destructive); }
+.pf-bar--near > span { background: var(--accent-fg); }
+.pf-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 12px; }
+.pf-steps > li { flex: 1 1 170px; min-width: 160px; display: flex; flex-direction: column; gap: 8px; }
+.pf-step__bar { display: block; height: 4px; border-radius: 2px; background: var(--border-strong); }
+.pf-steps > li.pf-done .pf-step__bar { background: var(--primary); }
+.pf-step__title { display: flex; align-items: center; gap: 8px; font-size: 14px; font-weight: 600; color: var(--heading); }
+.pf-mark { font-size: 12px; font-weight: 600; padding: 1px 7px; border-radius: 999px; background: var(--accent); color: var(--accent-fg); }
+.pf-done .pf-mark { background: var(--success-bg); color: var(--success); }
+.pf-section { display: flex; flex-direction: column; gap: 16px; }
+.pf-section__num { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border-radius: 50%; background: var(--primary); color: var(--primary-fg); font-size: 13px; font-weight: 600; }
+.pf-empty { padding: 28px 20px; text-align: center; color: var(--muted-fg); }
+
+/* Bar widths in steps of 5, so a template sets a class and never an inline style. */
+.pf-w-0 { width: 0%; }
+.pf-w-5 { width: 5%; }
+.pf-w-10 { width: 10%; }
+.pf-w-15 { width: 15%; }
+.pf-w-20 { width: 20%; }
+.pf-w-25 { width: 25%; }
+.pf-w-30 { width: 30%; }
+.pf-w-35 { width: 35%; }
+.pf-w-40 { width: 40%; }
+.pf-w-45 { width: 45%; }
+.pf-w-50 { width: 50%; }
+.pf-w-55 { width: 55%; }
+.pf-w-60 { width: 60%; }
+.pf-w-65 { width: 65%; }
+.pf-w-70 { width: 70%; }
+.pf-w-75 { width: 75%; }
+.pf-w-80 { width: 80%; }
+.pf-w-85 { width: 85%; }
+.pf-w-90 { width: 90%; }
+.pf-w-95 { width: 95%; }
+.pf-w-100 { width: 100%; }

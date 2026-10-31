@@ -19,7 +19,7 @@ from core import jobqueue
 from core.access import can_see_client
 from core.db.session import firm_context
 from core.jobs import JobResult, enqueue_job, mark_staged
-from core.models import Client, FirmMembership, Job
+from core.models import Client, FirmMembership, Job, JobStatus
 from core.rbac import has_permission
 from documents.models import Document
 from integrations.registry import get_storage
@@ -42,8 +42,9 @@ def enqueue_read(client, membership, user, *, data: bytes, filename: str, vouche
     types = normalise_type_map(voucher_types)
     key = f"tally-read:{client.pk}:{document.sha256}:{hashlib.sha256(json.dumps(sorted(types.items())).encode()).hexdigest()[:16]}"
     # A file whose imports were all discarded may be read again: its finished job would otherwise be handed back as "done".
+    # Only a finished job is replaced: one still waiting or running is the same upload, handed back as it is.
     if not LedgerImportRun.objects.filter(client=client, document=document).exclude(status=ImportStatus.DISCARDED).exists():
-        Job.objects.filter(firm_id=client.firm_id, idempotency_key=key).delete()
+        Job.objects.filter(firm_id=client.firm_id, idempotency_key=key, status__in=JobStatus.terminal()).delete()
     outcome = enqueue_job(
         firm_id=client.firm_id,
         kind=KIND,

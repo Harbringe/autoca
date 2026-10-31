@@ -5,7 +5,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { Download } from 'lucide-react'
 import { V1 } from '@/api/queries/clients'
-import { voucherRuns, type VoucherRunSummary } from '@/api/queries/tallyImport'
+import { useState } from 'react'
+import { toast } from '@/lib/toast'
+import { usePostAll, voucherRuns, type VoucherRunSummary } from '@/api/queries/tallyImport'
+import { Checkbox } from '@/components/ui/controls'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Spinner } from '@/components/ui/spinner'
@@ -28,8 +31,23 @@ export function ImportQueue({ clientId, onOpen, openId }: { clientId: string; on
     // While any import is being posted the list keeps itself up to date; otherwise it is read when the screen opens.
     refetchInterval: (query) => (query.state.data?.some((r) => r.posting) ? 2500 : false),
   })
+  const postAll = usePostAll(clientId)
+  const [agree, setAgree] = useState(false)
   if (runs.isPending) return <Spinner />
   if (runs.error || !runs.data?.length) return null
+
+  // Months still waiting with something to post, and whether any of them has entries already in its dates.
+  const waiting = runs.data.filter((r) => r.status === 'PREVIEW' && !r.posting && r.counts.will_post > 0)
+  const needsSayso = waiting.some((r) => (r.counts.existing_entries ?? 0) > 0 || (r.counts.existing_statement_rows ?? 0) > 0)
+
+  async function post() {
+    try {
+      const done = await postAll.mutateAsync({ allowOverlap: agree })
+      toast.success(`${done.queued} months queued, oldest first`)
+    } catch (e) {
+      toast.error(e instanceof Error && e.message ? e.message : 'Something went wrong. Try again.')
+    }
+  }
 
   return (
     <Card className="grid gap-3 p-4">
@@ -37,6 +55,20 @@ export function ImportQueue({ clientId, onOpen, openId }: { clientId: string; on
       <p className="text-sm text-muted-foreground">
         Every file read for this client stays here, with the file itself in the client's documents. A waiting import is posted when you choose.
       </p>
+      {waiting.length > 1 && (
+        <div className="flex flex-wrap items-center gap-3 rounded-lg border border-border-strong p-3 text-sm">
+          <Button loading={postAll.isPending} disabled={needsSayso && !agree} onClick={() => void post()}>
+            Post all {waiting.length} months
+          </Button>
+          <span className="text-muted-foreground">Oldest first. Each month can still be taken back on its own.</span>
+          {needsSayso && (
+            <label className="flex items-center gap-2">
+              <Checkbox checked={agree} onChange={(e) => setAgree(e.target.checked)} aria-label="Import all anyway" />
+              <span>Some months already have entries in their dates. I have looked at them; import all anyway.</span>
+            </label>
+          )}
+        </div>
+      )}
       <ul aria-label="Imports" className="divide-y divide-border-strong rounded-lg border border-border-strong">
         {runs.data.map((run) => {
           const state = stateOf(run)

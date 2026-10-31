@@ -4726,6 +4726,41 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/clients/{client_id}/rules/{id}/evidence/:
+    get:
+      operationId: clients_rules_evidence_retrieve
+      description: |-
+        Rules that place transactions automatically.
+
+        Mostly written by the system: every decision a reviewer makes mints one,
+        keyed on the payee rather than the narration so it covers that payee
+        permanently. Rules can also be created here by hand, which outranks anything
+        learned.
+      summary: The placed rows a payee rule rests on
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuleEvidence'
+          description: ''
   /api/v1/clients/{client_id}/statements/:
     get:
       operationId: clients_statements_list
@@ -5337,6 +5372,126 @@ paths:
               schema:
                 $ref: '#/components/schemas/TallyError'
           description: ''
+  /api/v1/clients/{client_id}/tally-imports/{id}/discard/:
+    post:
+      operationId: clients_tally_imports_discard_create
+      description: The stored file stays with the client's documents.
+      summary: Take a queued import out of the queue
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyVoucherRun'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+  /api/v1/clients/{client_id}/tally-imports/{id}/refresh-vouchers/:
+    post:
+      operationId: clients_tally_imports_refresh_vouchers_create
+      description: Replaces the queued import with a fresh reading of the same file;
+        nothing is uploaded again. Optionally says what the firm's own voucher types
+        count as.
+      summary: Read a queued import's stored file again against the client's ledgers
+        as they are now
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TallyRefreshRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TallyRefreshRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TallyRefreshRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyVoucherRun'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
   /api/v1/clients/{client_id}/tally-imports/{id}/undo/:
     post:
       operationId: clients_tally_imports_undo_create
@@ -5387,6 +5542,53 @@ paths:
                 $ref: '#/components/schemas/TallyError'
           description: ''
         '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+  /api/v1/clients/{client_id}/tally-imports/{id}/voucher-run/:
+    get:
+      operationId: clients_tally_imports_voucher_run_retrieve
+      description: Bring a client's ledgers and opening balances in from Tally.
+      summary: One queued import with its voucher rows
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyVoucherRun'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '404':
           content:
             application/json:
               schema:
@@ -5604,6 +5806,60 @@ paths:
                 $ref: '#/components/schemas/TallyError'
           description: ''
         '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+  /api/v1/clients/{client_id}/tally-imports/voucher-runs/:
+    get:
+      operationId: clients_tally_imports_voucher_runs_list
+      description: The client's queue of Tally vouchers imports, without their voucher
+        rows (read one to see those).
+      summary: The imports waiting to be posted, being posted, or done, newest first
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTallyVoucherRunSummaryList'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '404':
           content:
             application/json:
               schema:
@@ -14242,6 +14498,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TallyImportSummary'
+    PaginatedTallyVoucherRunSummaryList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/TallyVoucherRunSummary'
     PartnerInput:
       type: object
       properties:
@@ -16633,6 +16912,64 @@ components:
           description: The row this decision is for.
       required:
       - classification
+    RuleElsewhere:
+      type: object
+      properties:
+        ledger:
+          type: string
+        count:
+          type: integer
+      required:
+      - count
+      - ledger
+    RuleEvidence:
+      type: object
+      description: The placed rows a payee rule rests on, so an accountant can check
+        it.
+      properties:
+        supported:
+          type: boolean
+          description: 'False for a rule that is not keyed on the payee: no rows can
+            be matched to it.'
+        payee:
+          type: string
+          description: The payee as the bank spelled it, most common spelling first.
+        total:
+          type: integer
+          description: Placed rows from this payee, in the rule's direction.
+        to_this_ledger:
+          type: integer
+          description: How many of them went to the rule's ledger.
+        elsewhere:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleElsewhere'
+        examples:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleEvidenceExample'
+      required:
+      - supported
+    RuleEvidenceExample:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        narration:
+          type: string
+        paise:
+          type: integer
+        is_debit:
+          type: boolean
+        ledger:
+          type: string
+      required:
+      - date
+      - is_debit
+      - ledger
+      - narration
+      - paise
     RunCreateRequest:
       type: object
       properties:
@@ -18328,7 +18665,7 @@ components:
           type: string
           format: binary
           description: 'The ledger masters exported from Tally: .xml (preferred),
-            .xlsx or .csv.'
+            .xlsx, .csv or .json.'
         financial_year:
           type: integer
           maximum: 2100
@@ -18406,6 +18743,22 @@ components:
       - reason
       - unsure
       - uses
+    TallyProgress:
+      type: object
+      properties:
+        done:
+          type: integer
+        total:
+          type: integer
+      required:
+      - done
+      - total
+    TallyRefreshRequest:
+      type: object
+      properties:
+        voucher_types:
+          description: What the firm's own voucher types count as; left out, the choice
+            made earlier stands.
     TallyReportFile:
       type: object
       properties:
@@ -18752,6 +19105,25 @@ components:
           type: object
           additionalProperties:
             type: integer
+        unknown_types:
+          type: object
+          additionalProperties:
+            type: integer
+          description: 'The firm''s own voucher types the importer does not know,
+            with how many vouchers each has: the person says what each counts as.'
+        type_map:
+          type: object
+          additionalProperties:
+            type: string
+          description: What the person said the firm's own voucher types count as.
+        existing_entries:
+          type: integer
+          description: Entries the client already has in the dates this import covers;
+            posting on top needs the person's say-so.
+        existing_statement_rows:
+          type: integer
+          description: Bank statement rows already in those dates for the accounts
+            this import writes to.
         date_from:
           type: string
         date_to:
@@ -18900,14 +19272,123 @@ components:
           type: string
           format: date-time
           nullable: true
+        file_name:
+          type: string
+          readOnly: true
+          description: The file as it was uploaded; it stays with the client's documents.
+        document:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+          description: The stored file, downloadable from the documents.
+        uploaded_by_name:
+          type: string
+          readOnly: true
+        posting:
+          type: boolean
+          readOnly: true
+          description: A worker is writing this import's vouchers now.
+        progress:
+          allOf:
+          - $ref: '#/components/schemas/TallyProgress'
+          nullable: true
+          readOnly: true
+          description: How far posting has got, while it is being posted.
+        error:
+          type: string
+          readOnly: true
+          description: Why the last attempt to post stopped, in words for the person.
       required:
       - counts
       - created_at
+      - document
+      - error
       - expires_at
+      - file_name
       - financial_year
       - id
+      - posting
+      - progress
       - result
       - rows
+      - uploaded_by_name
+    TallyVoucherRunSummary:
+      type: object
+      description: 'One line of the queue: the same, without the voucher rows (a year''s
+        import has thousands).'
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        kind:
+          $ref: '#/components/schemas/Kind372Enum'
+        status:
+          $ref: '#/components/schemas/Status105Enum'
+        financial_year:
+          type: integer
+          maximum: 32767
+          minimum: 0
+          description: Starting year, e.g. 2025.
+        counts:
+          $ref: '#/components/schemas/TallyVoucherCounts'
+        result:
+          allOf:
+          - $ref: '#/components/schemas/TallyVoucherResult'
+          nullable: true
+          readOnly: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+        expires_at:
+          type: string
+          format: date-time
+        confirmed_at:
+          type: string
+          format: date-time
+          nullable: true
+        file_name:
+          type: string
+          readOnly: true
+          description: The file as it was uploaded; it stays with the client's documents.
+        document:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+          description: The stored file, downloadable from the documents.
+        uploaded_by_name:
+          type: string
+          readOnly: true
+        posting:
+          type: boolean
+          readOnly: true
+          description: A worker is writing this import's vouchers now.
+        progress:
+          allOf:
+          - $ref: '#/components/schemas/TallyProgress'
+          nullable: true
+          readOnly: true
+          description: How far posting has got, while it is being posted.
+        error:
+          type: string
+          readOnly: true
+          description: Why the last attempt to post stopped, in words for the person.
+      required:
+      - counts
+      - created_at
+      - document
+      - error
+      - expires_at
+      - file_name
+      - financial_year
+      - id
+      - posting
+      - progress
+      - result
+      - uploaded_by_name
     TallyVouchersUploadRequest:
       type: object
       properties:
@@ -18923,6 +19404,11 @@ components:
           type: string
           format: date
           description: Import vouchers dated on or before this day.
+        voucher_types:
+          description: 'What the firm''s own voucher types count as: {Tally''s name:
+            a standard type}, for example {"GST SALE": "sales"}. The standard types
+            are sales, purchase, credit note, debit note, journal, payment, receipt
+            and contra.'
       required:
       - file
     TdsMonth:

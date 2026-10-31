@@ -30,17 +30,22 @@ from api.serializers.tally import (
     TallyImportDetailSerializer,
     TallyImportSummarySerializer,
     TallyImportUploadSerializer,
+    TallyPostSerializer,
+    TallyRefreshSerializer,
     TallySetupResultSerializer,
     TallySetupSerializer,
     TallyVoucherRunSerializer,
+    TallyVoucherRunSummarySerializer,
     TallyVouchersUploadSerializer,
 )
 from core.access import get_visible_client
-from ledger.models import ImportKind, LedgerImportRun
+from ledger.models import ImportKind, ImportStatus, LedgerImportRun
 from ledger.tally_import import confirm_run, stage_upload
+from ledger.tally_jobs import enqueue_post
 from ledger.tally_setup import apply_setup, discover_files
 from ledger.tally_voucher_import import (
-    confirm_vouchers,
+    discard_run,
+    refresh_run,
     stage_bank_reports,
     stage_vouchers,
     undo_run,
@@ -188,6 +193,7 @@ class TallyImportViewSet(viewsets.GenericViewSet):
             filename=os.path.basename(upload.name),
             date_from=payload.validated_data.get("date_from"),
             date_to=payload.validated_data.get("date_to"),
+            voucher_types=payload.validated_data.get("voucher_types"),
         )
         return Response(
             TallyVoucherRunSerializer(run).data,
@@ -208,7 +214,61 @@ class TallyImportViewSet(viewsets.GenericViewSet):
     @action(detail=True, methods=["post"], url_path="confirm-vouchers")
     def confirm_vouchers(self, request, client_id=None, pk=None):
         _client, runs = self._runs(request, client_id, ImportKind.VOUCHERS)
-        run = confirm_vouchers(get_object_or_404(runs, pk=pk), request.membership, request.user)
+        run = get_object_or_404(runs.select_related("client", "document", "uploaded_by"), pk=pk)
+        if run.status == ImportStatus.CONFIRMED:
+            return Response(TallyVoucherRunSerializer(run).data)
+        payload = TallyPostSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        enqueue_post(run, request.membership, request.user, allow_overlap=payload.validated_data["allow_overlap"])
+        run.refresh_from_db()
+        return Response(TallyVoucherRunSerializer(run).data, status=status.HTTP_202_ACCEPTED)
+
+    @extend_schema(
+        summary="The imports waiting to be posted, being posted, or done, newest first",
+        description="The client's queue of Tally vouchers imports, without their voucher rows (read one to see those).",
+        responses={200: TallyVoucherRunSummarySerializer(many=True), **_ERRORS},
+    )
+    @action(detail=False, methods=["get"], url_path="voucher-runs")
+    def voucher_runs(self, request, client_id=None):
+        _client, runs = self._runs(request, client_id, ImportKind.VOUCHERS)
+        runs = runs.select_related("document", "uploaded_by").order_by("-created_at")[:200]
+        return Response(TallyVoucherRunSummarySerializer(runs, many=True).data)
+
+    @extend_schema(
+        summary="One queued import with its voucher rows",
+        responses={200: TallyVoucherRunSerializer, **_ERRORS},
+    )
+    @action(detail=True, methods=["get"], url_path="voucher-run")
+    def voucher_run(self, request, client_id=None, pk=None):
+        _client, runs = self._runs(request, client_id, ImportKind.VOUCHERS)
+        run = get_object_or_404(runs.select_related("document", "uploaded_by"), pk=pk)
+        return Response(TallyVoucherRunSerializer(run).data)
+
+    @extend_schema(
+        summary="Read a queued import's stored file again against the client's ledgers as they are now",
+        description="Replaces the queued import with a fresh reading of the same file; nothing is uploaded again. Optionally says what the firm's own voucher types count as.",
+        request=TallyRefreshSerializer,
+        responses={200: TallyVoucherRunSerializer, **_ERRORS, 409: TallyErrorSerializer},
+    )
+    @action(detail=True, methods=["post"], url_path="refresh-vouchers")
+    def refresh_vouchers(self, request, client_id=None, pk=None):
+        _client, runs = self._runs(request, client_id, ImportKind.VOUCHERS)
+        run = get_object_or_404(runs.select_related("client", "document"), pk=pk)
+        payload = TallyRefreshSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        fresh = refresh_run(run, request.membership, request.user, voucher_types=payload.validated_data.get("voucher_types"))
+        return Response(TallyVoucherRunSerializer(fresh).data)
+
+    @extend_schema(
+        summary="Take a queued import out of the queue",
+        description="The stored file stays with the client's documents.",
+        request=None,
+        responses={200: TallyVoucherRunSerializer, **_ERRORS, 409: TallyErrorSerializer},
+    )
+    @action(detail=True, methods=["post"], url_path="discard")
+    def discard(self, request, client_id=None, pk=None):
+        _client, runs = self._runs(request, client_id, ImportKind.VOUCHERS)
+        run = discard_run(get_object_or_404(runs.select_related("client", "document"), pk=pk), request.membership)
         return Response(TallyVoucherRunSerializer(run).data)
 
     @extend_schema(

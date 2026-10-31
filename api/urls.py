@@ -279,6 +279,26 @@ urlpatterns = [
         TallyImportViewSet.as_view({"post": "undo"}),
         name="tally-import-undo",
     ),
+    path(
+        "clients/<uuid:client_id>/tally-imports/voucher-runs/",
+        TallyImportViewSet.as_view({"get": "voucher_runs"}),
+        name="tally-import-voucher-runs",
+    ),
+    path(
+        "clients/<uuid:client_id>/tally-imports/<uuid:pk>/voucher-run/",
+        TallyImportViewSet.as_view({"get": "voucher_run"}),
+        name="tally-import-voucher-run",
+    ),
+    path(
+        "clients/<uuid:client_id>/tally-imports/<uuid:pk>/refresh-vouchers/",
+        TallyImportViewSet.as_view({"post": "refresh_vouchers"}),
+        name="tally-import-refresh-vouchers",
+    ),
+    path(
+        "clients/<uuid:client_id>/tally-imports/<uuid:pk>/discard/",
+        TallyImportViewSet.as_view({"post": "discard"}),
+        name="tally-import-discard",
+    ),
     # GST reconciliation -- a removable add-on: delete this block, api/views/gst.py and gst/.
     path(
         "clients/<uuid:client_id>/gst/gstin-check/",

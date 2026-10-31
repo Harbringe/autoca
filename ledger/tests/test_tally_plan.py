@@ -154,3 +154,17 @@ def test_tax_deducted_at_source_is_kept_on_the_bill_and_not_owed_to_the_supplier
     )
     b = plan_voucher(v, FACTS).bill
     assert (b.taxable_paise, b.tds_paise, b.total_paise) == (100000, 1000, 99000)
+
+
+def test_a_firms_own_voucher_type_is_left_out_until_it_is_said_what_it_counts_as():
+    v = voucher("GST SALE", [("Acme Traders", 118000, True), ("Sales", -100000, False), ("Output CGST", -9000, False), ("Output SGST", -9000, False)], party="Acme Traders")
+    assert isinstance(plan_voucher(v, FACTS), Skip)
+
+    plan = plan_voucher(v, FACTS, {normal_name("GST SALE"): "sales"})
+    assert isinstance(plan, Planned)
+    assert plan.voucher_type == VoucherType.SALES and plan.bill.kind == BillKind.SALES
+
+
+def test_a_standard_type_is_never_remapped():
+    v = voucher("Sales", [("Cash", 1000, True), ("Sales", -1000, False)], party="Cash")
+    assert plan_voucher(v, FACTS, {normal_name("Sales"): "purchase"}).voucher_type == VoucherType.SALES

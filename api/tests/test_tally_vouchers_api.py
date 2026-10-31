@@ -34,6 +34,16 @@ def chart(firm, client_record):
             make_ledger(client_record, name, group)
 
 
+def post_run(api, client, run_id, **body):
+    """Queue the posting, let the worker do it, and read the run back: the way a person's click ends."""
+    from core import jobqueue
+
+    queued = api.post(url(client, run_id, "confirm-vouchers"), body, format="json")
+    if queued.status_code == 202:
+        assert jobqueue.run_once("test-poster") == "succeeded"
+    return queued, api.get(url(client, run_id, "voucher-run")).json()
+
+
 def sale(guid="g1", number="1", date="20250401"):
     return voucher(
         guid=guid, vtype="Sales", number=number, date=date, party="Acme Traders", gstin="27ABCDE1234F1Z5",
@@ -69,10 +79,11 @@ def test_the_same_upload_is_the_same_preview(api, client_record, chart):
 
 def test_confirm_posts_and_is_idempotent_and_undo_takes_it_back(api, firm, client_record, chart):
     run = upload(api, client_record).json()
-    done = api.post(url(client_record, run["id"], "confirm-vouchers"))
-    assert done.status_code == 200
-    assert done.json()["status"] == "CONFIRMED" and done.json()["result"]["posted"] == 1
-    assert api.post(url(client_record, run["id"], "confirm-vouchers")).json()["result"]["posted"] == 1
+    queued, done = post_run(api, client_record, run["id"])
+    assert queued.status_code == 202 and queued.json()["posting"] is True
+    assert done["status"] == "CONFIRMED" and done["result"]["posted"] == 1
+    again = api.post(url(client_record, run["id"], "confirm-vouchers"))
+    assert again.status_code == 200 and again.json()["result"]["posted"] == 1
     with firm_context(firm.pk):
         assert JournalEntry.objects.filter(client=client_record).count() == 1
         assert Bill.objects.filter(client=client_record).count() == 1
@@ -82,11 +93,28 @@ def test_confirm_posts_and_is_idempotent_and_undo_takes_it_back(api, firm, clien
         assert JournalEntry.objects.filter(client=client_record).count() == 0
 
 
-def test_a_period_that_already_has_entries_is_409_tally_rule(api, firm, client_record, chart):
+def test_a_period_that_already_has_entries_is_a_warning_the_accountant_decides(api, firm, client_record, chart):
     run = upload(api, client_record).json()
-    api.post(url(client_record, run["id"], "confirm-vouchers"))
+    post_run(api, client_record, run["id"])
     again = upload(api, client_record, [sale("g2", "2")])
-    assert again.status_code == 409 and again.json()["code"] == "tally_rule"
+    assert again.status_code == 201 and again.json()["counts"]["existing_entries"] == 1
+    refused = api.post(url(client_record, again.json()["id"], "confirm-vouchers"), {}, format="json")
+    assert refused.status_code == 409 and refused.json()["code"] == "tally_overlap"
+    _queued, done = post_run(api, client_record, again.json()["id"], allow_overlap=True)
+    assert done["status"] == "CONFIRMED" and done["result"]["posted"] == 1
+
+
+def test_a_queued_import_keeps_its_file_and_can_be_read_again_or_discarded(api, firm, client_record, chart):
+    run = upload(api, client_record).json()
+    assert run["file_name"] == "vouchers.xml" and run["document"]
+    listed = api.get(url(client_record, "voucher-runs")).json()
+    assert [r["id"] for r in listed] == [run["id"]] and "rows" not in listed[0]
+    assert api.get(f"{V1}/documents/{run['document']}/download/").status_code == 200
+    fresh = api.post(url(client_record, run["id"], "refresh-vouchers"), {}, format="json")
+    assert fresh.status_code == 200 and fresh.json()["counts"]["vouchers"] == 1
+    discarded = api.post(url(client_record, fresh.json()["id"], "discard"))
+    assert discarded.status_code == 200 and discarded.json()["status"] == "DISCARDED"
+    assert api.post(url(client_record, fresh.json()["id"], "confirm-vouchers"), {}, format="json").status_code == 409
 
 
 def test_a_file_with_a_doctype_is_422(api, client_record, chart):
@@ -172,7 +200,7 @@ def test_setup_creates_what_was_confirmed_then_the_vouchers_import(api, firm, cl
         assert LedgerAccount.objects.get(client=client_record, name="Output CGST").group == "DUTIES_AND_TAXES"
     run = upload(api, client_record).json()
     assert run["counts"]["will_post"] == 1
-    assert api.post(url(client_record, run["id"], "confirm-vouchers")).json()["result"]["bills"] == 1
+    assert post_run(api, client_record, run["id"])[1]["result"]["bills"] == 1
 
 
 def test_setup_refuses_a_group_that_is_not_ours(api, client_record):
@@ -204,7 +232,7 @@ def test_bank_reports_preview_and_confirm(api, firm, client_record):
     assert response.status_code == 201
     run = response.json()
     assert run["counts"]["bank_rows"] == 1
-    done = api.post(url(client_record, run["id"], "confirm-vouchers")).json()
+    done = post_run(api, client_record, run["id"])[1]
     assert done["result"]["posted"] == 1 and done["result"]["bank_rows"] == 1
 
 

@@ -318,6 +318,30 @@ class ClassificationRuleSerializer(serializers.ModelSerializer):
             raise serializers.ValidationError(errors)
 
 
+class RuleEvidenceExampleSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    narration = serializers.CharField()
+    paise = serializers.IntegerField()
+    is_debit = serializers.BooleanField()
+    ledger = serializers.CharField()
+
+
+class RuleElsewhereSerializer(serializers.Serializer):
+    ledger = serializers.CharField()
+    count = serializers.IntegerField()
+
+
+class RuleEvidenceSerializer(serializers.Serializer):
+    """The placed rows a payee rule rests on, so an accountant can check it."""
+
+    supported = serializers.BooleanField(help_text="False for a rule that is not keyed on the payee: no rows can be matched to it.")
+    payee = serializers.CharField(required=False, help_text="The payee as the bank spelled it, most common spelling first.")
+    total = serializers.IntegerField(required=False, help_text="Placed rows from this payee, in the rule's direction.")
+    to_this_ledger = serializers.IntegerField(required=False, help_text="How many of them went to the rule's ledger.")
+    elsewhere = RuleElsewhereSerializer(many=True, required=False)
+    examples = RuleEvidenceExampleSerializer(many=True, required=False)
+
+
 class AcceptProposalSerializer(serializers.Serializer):
     name = serializers.CharField(
         required=False, max_length=255, help_text="Rename the ledger as it is accepted, e.g. to the spelling the client already uses."

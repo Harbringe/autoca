@@ -34,6 +34,7 @@ from api.serializers.classify import (
     PlacementResultSerializer,
     RecategorizeSerializer,
     ReviewSummarySerializer,
+    RuleEvidenceSerializer,
     TreatmentSerializer,
 )
 from api.serializers.core import JobSerializer
@@ -77,6 +78,7 @@ from classify.proposals import accept as accept_proposal
 from classify.proposals import merge as merge_proposal
 from classify.proposals import reject as reject_proposal
 from classify.queue import assistant_state, mark_waiting, waiting_count
+from classify.rule_evidence import evidence_for
 from classify.treatment import ReviewBand, Treatment
 from core.access import can_sign_off, get_visible_client, visible_client_ids
 from core.fy import financial_year, fy_bounds
@@ -391,6 +393,18 @@ class RuleViewSet(ClientScopedMixin, FirmScopedViewSet):
         "PATCH": "suggestion.edit",
         "DELETE": "suggestion.edit",
     }
+
+    @extend_schema(
+        summary="The placed rows a payee rule rests on",
+        responses={200: RuleEvidenceSerializer},
+    )
+    @action(detail=True, methods=["get"])
+    def evidence(self, request, client_id=None, pk=None):
+        rule = self.get_object()
+        # The rows quoted are bank transactions with their narrations, which the rule list itself does not show.
+        if not has_permission(request.membership, "transaction.view"):
+            raise PermissionDenied("Reading the rows behind a rule needs permission to view transactions.")
+        return Response(RuleEvidenceSerializer(evidence_for(rule)).data)
 
     def perform_create(self, serializer):
         super().perform_create(serializer)

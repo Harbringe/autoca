@@ -37,6 +37,7 @@ class Command(BaseCommand):
 
     def handle(self, *args, once=False, check=False, idle=2.0, concurrency=1, **options):
         import banking.upload_jobs  # noqa: F401 -- registers the statement reader
+        import ledger.tally_jobs  # noqa: F401 -- registers the Tally import poster
 
         if check:
             status = jobqueue.worker_status()

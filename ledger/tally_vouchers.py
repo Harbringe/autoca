@@ -13,7 +13,9 @@ from __future__ import annotations
 
 import datetime
 import io
+import json
 import re
+import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from decimal import Decimal, InvalidOperation
 
@@ -34,6 +36,8 @@ MAX_VOUCHERS = 200_000
 MAX_LINES_PER_VOUCHER = 500
 MAX_NARRATION = 2_000
 MAX_INVENTORY_ALLOCATIONS = 5_000
+#: How deep a voucher may nest in a JSON export. A real one is about six levels; this only stops a hostile file.
+MAX_JSON_DEPTH = 24
 #: Where an item invoice keeps the sales or purchase head: inside each stock item, not among the voucher's own ledger lines.
 _INVENTORY_TAGS = ("ALLINVENTORYENTRIES.LIST", "INVENTORYENTRIES.LIST", "INVENTORYENTRIESIN.LIST", "INVENTORYENTRIESOUT.LIST")
 
@@ -87,14 +91,38 @@ class ParsedVouchers:
 def parse_vouchers(data: bytes, filename: str, *, max_bytes: int) -> ParsedVouchers:
     if len(data) > max_bytes:
         raise TallyTooLargeError(f"This file is larger than {max_bytes // (1024 * 1024)} MB, which is more than an import takes.")
-    if not filename.lower().endswith(".xml"):
-        raise TallyParseError("A vouchers export must be a Tally XML file (.xml).")
-    from defusedxml import DefusedXmlException
-    from defusedxml.ElementTree import ParseError, iterparse
-
+    name = filename.lower()
+    if not name.endswith((".xml", ".json")):
+        raise TallyParseError("A vouchers export must be a Tally XML file (.xml) or a Tally JSON file (.json).")
     text = _strip_illegal_xml(_decode(data))
     parsed = ParsedVouchers()
     ordinal = 0
+
+    def take(element) -> None:
+        nonlocal ordinal
+        ordinal += 1
+        if ordinal > MAX_VOUCHERS:
+            raise TallyParseError(f"This file has more than {MAX_VOUCHERS:,} vouchers. Export a shorter period.")
+        _read_voucher(element, ordinal, parsed)
+        element.clear()
+
+    if name.endswith(".json"):
+        for element in _json_vouchers(text):
+            take(element)
+    else:
+        _read_xml(text, parsed, take)
+    if ordinal == 0:
+        raise TallyParseError("No vouchers were found in this file. Export the vouchers (not the masters or a report) from Tally.")
+    dates = [v.date for v in parsed.vouchers]
+    if dates:
+        parsed.date_from, parsed.date_to = min(dates), max(dates)
+    return parsed
+
+
+def _read_xml(text: str, parsed: ParsedVouchers, take) -> None:
+    from defusedxml import DefusedXmlException
+    from defusedxml.ElementTree import ParseError, iterparse
+
     try:
         for _event, element in iterparse(
             io.BytesIO(_without_declaration(text).encode("utf-8")),
@@ -110,23 +138,77 @@ def parse_vouchers(data: bytes, filename: str, *, max_bytes: int) -> ParsedVouch
                     parsed.companies.add(name)
                     parsed.company = parsed.company or name
             elif tag == "VOUCHER":
-                ordinal += 1
-                if ordinal > MAX_VOUCHERS:
-                    raise TallyParseError(f"This file has more than {MAX_VOUCHERS:,} vouchers. Export a shorter period.")
-                _read_voucher(element, ordinal, parsed)
-                element.clear()
+                take(element)
     except DefusedXmlException as exc:
         raise TallyParseError(
             "This file contains definitions (a DTD or entities) that an export from Tally never has, so it was not read."
         ) from exc
     except ParseError as exc:
         raise TallyParseError("This file is not well-formed XML, so it cannot be read. Export the vouchers from Tally again.") from exc
-    if ordinal == 0:
-        raise TallyParseError("No vouchers were found in this file. Export the vouchers (not the masters or a report) from Tally.")
-    dates = [v.date for v in parsed.vouchers]
-    if dates:
-        parsed.date_from, parsed.date_to = min(dates), max(dates)
-    return parsed
+
+
+def _json_vouchers(text: str):
+    """The vouchers of a Tally JSON export, each as the same element tree the XML export would give.
+
+    Tally's JSON is its XML written as objects: every tag in lower case, a repeated block (``LEDGERENTRIES.LIST``) a list of
+    objects, a flag a real boolean, and a ``metadata`` object holding the voucher's attributes (``VCHTYPE``, ``ACTION``). Building
+    the same elements means one reader for both, so a JSON file cannot be read differently from its XML twin. Nothing is parsed
+    by a library that resolves anything: ``json`` only makes dicts, and NaN and runaway nesting are refused.
+    """
+
+    def refuse_constant(_name):
+        raise ValueError("not a number Tally writes")
+
+    try:
+        doc = json.loads(text, parse_constant=refuse_constant)
+        messages = doc.get("tallymessage") if isinstance(doc, dict) else None
+        if not isinstance(messages, list):
+            raise TallyParseError("This JSON file is not a Tally vouchers export (it has no list of Tally messages). Export the vouchers from Tally again.")
+        for message in messages:
+            kind = message.get("metadata") if isinstance(message, dict) else None
+            if isinstance(kind, dict) and str(kind.get("type", "")).strip().lower() == "voucher":
+                yield _json_node("VOUCHER", message, 0)
+    except (ValueError, RecursionError) as exc:
+        raise TallyParseError("This file is not well-formed JSON, or it nests far deeper than a Tally export does, so it cannot be read. Export the vouchers from Tally again.") from exc
+
+
+def _json_node(tag: str, obj: dict, depth: int):
+    if depth > MAX_JSON_DEPTH:
+        raise ValueError("nested too deeply")
+    node = ET.Element(tag)
+    for key, value in obj.items():
+        name = str(key).upper()
+        if key == "metadata":
+            if isinstance(value, dict):
+                node.attrib.update({str(a).upper(): _json_text(b) for a, b in value.items()})
+            continue
+        if isinstance(value, dict):
+            node.append(_json_node(name, value, depth + 1))
+        elif isinstance(value, list):
+            _json_list(node, name, value, depth)
+        elif value is not None:
+            ET.SubElement(node, name).text = _json_text(value)
+    return node
+
+
+def _json_list(node, name: str, items: list, depth: int) -> None:
+    """A list is a repeated block (objects) or a typed value: ``[{"metadata": true, "type": "Number"}, "-1"]``."""
+    typed = [i for i in items if not (isinstance(i, dict) and i.get("metadata") is True)]
+    if typed and all(isinstance(i, dict) for i in typed):
+        for item in typed:
+            node.append(_json_node(name + ".LIST", item, depth + 1))
+    elif typed and len(typed) < len(items):  # a typed value: ``[{"metadata": true, ...}, "-1"]``
+        ET.SubElement(node, name).text = "\n".join(_json_text(i) for i in typed if not isinstance(i, dict | list))
+    elif typed:  # plain strings: the same tag repeated, as the XML has it (an alias list, an address)
+        for item in typed:
+            if not isinstance(item, dict | list):
+                ET.SubElement(node, name).text = _json_text(item)
+
+
+def _json_text(value) -> str:
+    if isinstance(value, bool):
+        return "Yes" if value else "No"
+    return str(value)
 
 
 def _without_declaration(text: str) -> str:

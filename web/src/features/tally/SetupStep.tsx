@@ -89,7 +89,7 @@ export function SetupStep({ clientId }: { clientId: string }) {
           ref={input}
           type="file"
           multiple
-          accept=".xml,text/xml,.xlsx,.csv"
+          accept=".xml,.json,text/xml,application/json,.xlsx,.csv"
           aria-label="Tally files"
           className="sr-only"
           onChange={(e) => {

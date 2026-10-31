@@ -37,6 +37,8 @@ _ACCOUNT_GROUP = {AccountKind.BANK: LedgerGroup.BANK, AccountKind.LOAN: LedgerGr
 
 _MASTER_LEDGER = re.compile(r"<LEDGER[ >]")
 _VOUCHER = re.compile(r"<VOUCHER[ >]")
+_JSON_LEDGER = re.compile(r'"type"\s*:\s*"ledger"', re.I)
+_JSON_VOUCHER = re.compile(r'"type"\s*:\s*"voucher"', re.I)
 
 
 def looks_like_masters(filename: str, data: bytes) -> bool:
@@ -47,6 +49,9 @@ def looks_like_masters(filename: str, data: bytes) -> bool:
     """
     if (filename or "").lower().endswith((".xlsx", ".csv")):
         return True
+    if (filename or "").lower().endswith(".json"):
+        head = data[:200_000].decode("utf-8", "ignore")
+        return bool(_JSON_LEDGER.search(head)) and not _JSON_VOUCHER.search(head)
     try:
         text = _decode(data)
     except TallyParseError:

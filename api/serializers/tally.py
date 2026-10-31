@@ -17,6 +17,7 @@ from classify.models import LedgerGroup
 from ledger.models import ImportKind, ImportStatus, LedgerImportRun
 from ledger.tally_import import ALL_CHOICES, BANK_CHOICES
 from ledger.tally_parse import ALLOWED_EXTENSIONS
+from ledger.tally_plan import STANDARD_TYPES
 
 ROW_ACTIONS = ["create", "match", "conflict", "needs_group", "skipped"]
 CONFLICT_KINDS = ["group_differs", "name_variant", "duplicate_in_file", "needs_group"]
@@ -24,7 +25,7 @@ CONFLICT_KINDS = ["group_differs", "name_variant", "duplicate_in_file", "needs_g
 
 class TallyImportUploadSerializer(serializers.Serializer):
     file = serializers.FileField(
-        help_text="The ledger masters exported from Tally: .xml (preferred), .xlsx or .csv."
+        help_text="The ledger masters exported from Tally: .xml (preferred), .xlsx, .csv or .json."
     )
     financial_year = serializers.IntegerField(
         min_value=2000,
@@ -47,7 +48,7 @@ class TallyImportUploadSerializer(serializers.Serializer):
         if upload.size > settings.MAX_TALLY_IMPORT_BYTES * 2:
             raise serializers.ValidationError("The file is far too large to be a list of ledgers.")
         if not upload.name.lower().endswith(ALLOWED_EXTENSIONS):
-            raise serializers.ValidationError("Upload an .xml, .xlsx or .csv file exported from Tally.")
+            raise serializers.ValidationError("Upload an .xml, .xlsx, .csv or .json file exported from Tally.")
         return upload
 
 
@@ -232,14 +233,29 @@ class TallyVouchersUploadSerializer(serializers.Serializer):
     file = serializers.FileField(help_text="The vouchers exported from Tally in XML.")
     date_from = serializers.DateField(required=False, help_text="Import vouchers dated on or after this day.")
     date_to = serializers.DateField(required=False, help_text="Import vouchers dated on or before this day.")
+    voucher_types = serializers.JSONField(
+        required=False,
+        help_text=(
+            "What the firm's own voucher types count as: {Tally's name: a standard type}, for example "
+            '{"GST SALE": "sales"}. The standard types are sales, purchase, credit note, debit note, journal, payment, receipt and contra.'
+        ),
+    )
+
+    def validate_voucher_types(self, value):
+        if not isinstance(value, dict) or len(value) > 50:
+            raise serializers.ValidationError("Send an object of voucher type names, at most 50.")
+        for name, standard in value.items():
+            if not isinstance(name, str) or not isinstance(standard, str) or standard not in STANDARD_TYPES:
+                raise serializers.ValidationError(f"{name!r} must count as one of: {', '.join(STANDARD_TYPES)}.")
+        return value
 
     def validate_file(self, upload):
         if upload.size == 0:
             raise serializers.ValidationError("The file is empty.")
         if upload.size > settings.MAX_TALLY_IMPORT_BYTES * 2:
             raise serializers.ValidationError("The file is far too large to be a vouchers export.")
-        if not upload.name.lower().endswith(".xml"):
-            raise serializers.ValidationError("Upload the .xml file exported from Tally.")
+        if not upload.name.lower().endswith((".xml", ".json")):
+            raise serializers.ValidationError("Upload the .xml or .json file exported from Tally.")
         return upload
 
 
@@ -286,28 +302,101 @@ class TallyVoucherCountsSerializer(serializers.Serializer):
     bank_rows = serializers.IntegerField(help_text="Statement rows the bank vouchers will write.")
     stock_lines = serializers.IntegerField(help_text="Stock item lines that will go into the stock register.")
     by_type = serializers.DictField(child=serializers.IntegerField())
+    unknown_types = serializers.DictField(
+        child=serializers.IntegerField(),
+        required=False,
+        help_text="The firm's own voucher types the importer does not know, with how many vouchers each has: the person says what each counts as.",
+    )
+    type_map = serializers.DictField(
+        child=serializers.CharField(), required=False, help_text="What the person said the firm's own voucher types count as."
+    )
+    existing_entries = serializers.IntegerField(
+        required=False, help_text="Entries the client already has in the dates this import covers; posting on top needs the person's say-so."
+    )
+    existing_statement_rows = serializers.IntegerField(
+        required=False, help_text="Bank statement rows already in those dates for the accounts this import writes to."
+    )
     date_from = serializers.CharField()
     date_to = serializers.CharField()
+
+
+class TallyPostSerializer(serializers.Serializer):
+    allow_overlap = serializers.BooleanField(
+        required=False, default=False, help_text="The person has seen that entries or bank rows already stand in these dates and wants the import posted anyway."
+    )
+
+
+class TallyRefreshSerializer(serializers.Serializer):
+    voucher_types = serializers.JSONField(
+        required=False,
+        help_text="What the firm's own voucher types count as; left out, the choice made earlier stands.",
+    )
+
+    def validate_voucher_types(self, value):
+        return TallyVouchersUploadSerializer().validate_voucher_types(value)
+
+
+class TallyProgressSerializer(serializers.Serializer):
+    done = serializers.IntegerField()
+    total = serializers.IntegerField()
 
 
 class TallyVoucherRunSerializer(serializers.ModelSerializer):
     counts = TallyVoucherCountsSerializer()
     result = serializers.SerializerMethodField()
     rows = serializers.SerializerMethodField()
+    file_name = serializers.SerializerMethodField(help_text="The file as it was uploaded; it stays with the client's documents.")
+    document = serializers.UUIDField(source="document_id", allow_null=True, read_only=True, help_text="The stored file, downloadable from the documents.")
+    uploaded_by_name = serializers.SerializerMethodField()
+    posting = serializers.SerializerMethodField(help_text="A worker is writing this import's vouchers now.")
+    progress = serializers.SerializerMethodField(help_text="How far posting has got, while it is being posted.")
+    error = serializers.SerializerMethodField(help_text="Why the last attempt to post stopped, in words for the person.")
 
     class Meta:
         model = LedgerImportRun
-        fields = ["id", "kind", "status", "financial_year", "counts", "rows", "result", "created_at", "expires_at", "confirmed_at"]
+        fields = [
+            "id", "kind", "status", "financial_year", "counts", "rows", "result", "created_at", "expires_at", "confirmed_at",
+            "file_name", "document", "uploaded_by_name", "posting", "progress", "error",
+        ]
 
     @extend_schema_field(TallyVoucherResultSerializer(allow_null=True))
     def get_result(self, run):
+        if run.status == ImportStatus.PREVIEW:  # while it waits or is being posted, ``result`` holds only the progress notes
+            return None
         return run.result or None
+
+    def get_file_name(self, run) -> str:
+        return run.document.original_filename if run.document_id else ""
+
+    def get_uploaded_by_name(self, run) -> str:
+        user = run.uploaded_by
+        return (getattr(user, "get_full_name", lambda: "")() or getattr(user, "email", "")) if user else ""
+
+    def get_posting(self, run) -> bool:
+        return bool(run.status == ImportStatus.PREVIEW and (run.result or {}).get("posting"))
+
+    @extend_schema_field(TallyProgressSerializer(allow_null=True))
+    def get_progress(self, run):
+        progress = (run.result or {}).get("progress") if run.status == ImportStatus.PREVIEW else None
+        return progress or None
+
+    def get_error(self, run) -> str:
+        return str((run.result or {}).get("error", "")) if run.status == ImportStatus.PREVIEW else ""
 
     @extend_schema_field(TallyVoucherRowSerializer(many=True))
     def get_rows(self, run):
         # Only what the screen shows: never the voucher's lines, figures or the party's GSTIN.
         keys = ("ordinal", "type", "number", "date", "party", "total_paise", "action", "bill", "reason", "note")
         return TallyVoucherRowSerializer([{k: row.get(k) for k in keys} for row in run.rows], many=True).data
+
+
+class TallyVoucherRunSummarySerializer(TallyVoucherRunSerializer):
+    """One line of the queue: the same, without the voucher rows (a year's import has thousands)."""
+
+    rows = None  # a declared field of the parent, dropped here
+
+    class Meta(TallyVoucherRunSerializer.Meta):
+        fields = [f for f in TallyVoucherRunSerializer.Meta.fields if f != "rows"]
 
 
 class TallyDiscoverSerializer(serializers.Serializer):
@@ -327,8 +416,8 @@ class TallyDiscoverSerializer(serializers.Serializer):
                 raise serializers.ValidationError(f"{upload.name} is empty.")
             if upload.size > settings.MAX_TALLY_IMPORT_BYTES * 2:
                 raise serializers.ValidationError(f"{upload.name} is far too large to be a Tally export.")
-            if not upload.name.lower().endswith(".xml"):
-                raise serializers.ValidationError(f"{upload.name} is not an .xml file exported from Tally.")
+            if not upload.name.lower().endswith((".xml", ".json")):
+                raise serializers.ValidationError(f"{upload.name} is not an .xml or .json file exported from Tally.")
         return files
 
 

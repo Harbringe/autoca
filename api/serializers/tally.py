@@ -351,6 +351,31 @@ class TallyPostSerializer(serializers.Serializer):
     )
 
 
+class TallyTrialBalanceUploadSerializer(serializers.Serializer):
+    file = serializers.FileField(help_text="Tally's trial balance for the same company and period, as .xml or .json.")
+    fy = serializers.IntegerField(min_value=2000, max_value=2100, help_text="The financial year to compare, by its starting year (2025 is FY 2025-26).")
+
+    def validate_file(self, upload):
+        if upload.size == 0:
+            raise serializers.ValidationError("The file is empty.")
+        if upload.size > 20 * 1024 * 1024:
+            raise serializers.ValidationError("The file is far too large to be a trial balance.")
+        if not upload.name.lower().endswith((".xml", ".json")):
+            raise serializers.ValidationError("Upload the .xml or .json file exported from Tally.")
+        return upload
+
+
+class TallyTrialBalanceDifferenceSerializer(serializers.Serializer):
+    name = serializers.CharField()
+    tally_paise = PaiseField(help_text="Tally's closing balance, debit positive.")
+    ours_paise = PaiseField(help_text="Our closing balance, debit positive.")
+
+
+class TallyTrialBalanceCheckSerializer(serializers.Serializer):
+    matched = serializers.IntegerField(help_text="Ledgers whose closing balance is the same in both.")
+    differences = TallyTrialBalanceDifferenceSerializer(many=True, help_text="Biggest difference first. Shown, never fixed.")
+
+
 class TallyPostAllResultSerializer(serializers.Serializer):
     queued = serializers.IntegerField(help_text="How many waiting months were queued for posting.")
 

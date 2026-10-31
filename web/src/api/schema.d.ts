@@ -2508,6 +2508,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/tally-imports/check-trial-balance/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Compare the posted books with Tally's trial balance
+         * @description Writes nothing. Lists each ledger whose closing balance differs between Tally's export and the client's books for the year.
+         */
+        post: operations["clients_tally_imports_check_trial_balance_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/tally-imports/discover/": {
         parameters: {
             query?: never;
@@ -9228,6 +9248,34 @@ export interface components {
             /** @description Accounts not opened because no account number was given. */
             waiting_for_a_number: string[];
         };
+        TallyTrialBalanceCheck: {
+            /** @description Ledgers whose closing balance is the same in both. */
+            matched: number;
+            /** @description Biggest difference first. Shown, never fixed. */
+            differences: components["schemas"]["TallyTrialBalanceDifference"][];
+        };
+        TallyTrialBalanceDifference: {
+            name: string;
+            /**
+             * Format: int64
+             * @description Tally's closing balance, debit positive.
+             */
+            tally_paise: number;
+            /**
+             * Format: int64
+             * @description Our closing balance, debit positive.
+             */
+            ours_paise: number;
+        };
+        TallyTrialBalanceUploadRequest: {
+            /**
+             * Format: binary
+             * @description Tally's trial balance for the same company and period, as .xml or .json.
+             */
+            file: string;
+            /** @description The financial year to compare, by its starting year (2025 is FY 2025-26). */
+            fy: number;
+        };
         TallyVoucherCounts: {
             vouchers: number;
             will_post: number;
@@ -14232,6 +14280,73 @@ export interface operations {
                 };
             };
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+        };
+    };
+    clients_tally_imports_check_trial_balance_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["TallyTrialBalanceUploadRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TallyTrialBalanceUploadRequest"];
+                "application/json": components["schemas"]["TallyTrialBalanceUploadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyTrialBalanceCheck"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

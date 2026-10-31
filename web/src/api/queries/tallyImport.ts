@@ -175,6 +175,24 @@ export function usePostAll(clientId: string) {
   })
 }
 
+export interface TrialBalanceDifference {
+  name: string
+  tally_paise: number
+  ours_paise: number
+}
+
+/** Tally's trial balance compared with the posted books for a year. Reads and compares; writes nothing. */
+export function useTrialBalanceCheck(clientId: string) {
+  return useMutation({
+    mutationFn: ({ file, fy }: { file: File; fy: number }) => {
+      const form = new FormData()
+      form.append('file', file)
+      form.append('fy', String(fy))
+      return raw.post<{ matched: number; differences: TrialBalanceDifference[] }>(`${base(clientId)}/check-trial-balance/`, form)
+    },
+  })
+}
+
 export function useRefreshVoucherRun(clientId: string) {
   const queryClient = useQueryClient()
   return useMutation({

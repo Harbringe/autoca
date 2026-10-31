@@ -36,6 +36,8 @@ from api.serializers.tally import (
     TallyRefreshSerializer,
     TallySetupResultSerializer,
     TallySetupSerializer,
+    TallyTrialBalanceCheckSerializer,
+    TallyTrialBalanceUploadSerializer,
     TallyVoucherRunSerializer,
     TallyVoucherRunSummarySerializer,
     TallyVouchersUploadSerializer,
@@ -48,6 +50,7 @@ from ledger.tally_import import confirm_run, stage_upload
 from ledger.tally_jobs import enqueue_post, enqueue_post_all
 from ledger.tally_read import enqueue_read
 from ledger.tally_setup import apply_setup, discover_files
+from ledger.tally_trialbalance import compare, read_trial_balance
 from ledger.tally_voucher_import import (
     discard_run,
     refresh_run,
@@ -258,6 +261,26 @@ class TallyImportViewSet(viewsets.GenericViewSet):
             upload.read(settings.MAX_TALLY_IMPORT_BYTES + 1), os.path.basename(upload.name), max_bytes=settings.MAX_TALLY_IMPORT_BYTES
         )
         return Response({"found": len(found), "voucher_types": suggest_mapping(found)})
+
+    @extend_schema(
+        summary="Compare the posted books with Tally's trial balance",
+        description="Writes nothing. Lists each ledger whose closing balance differs between Tally's export and the client's books for the year.",
+        request=TallyTrialBalanceUploadSerializer,
+        responses={200: TallyTrialBalanceCheckSerializer, **_ERRORS, 413: TallyErrorSerializer, 422: TallyErrorSerializer},
+    )
+    @action(detail=False, methods=["post"], url_path="check-trial-balance")
+    def check_trial_balance(self, request, client_id=None):
+        client = get_visible_client(request, client_id)
+        payload = TallyTrialBalanceUploadSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        upload = payload.validated_data["file"]
+        tally = read_trial_balance(
+            upload.read(settings.MAX_TALLY_IMPORT_BYTES + 1), os.path.basename(upload.name), max_bytes=settings.MAX_TALLY_IMPORT_BYTES
+        )
+        differences, matched = compare(client, payload.validated_data["fy"], tally)
+        return Response(
+            {"matched": matched, "differences": [{"name": d.name, "tally_paise": d.tally_paise, "ours_paise": d.ours_paise} for d in differences]}
+        )
 
     @extend_schema(
         summary="Post every waiting month of the client's Tally imports, oldest first",

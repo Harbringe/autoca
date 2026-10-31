@@ -351,6 +351,10 @@ class TallyPostSerializer(serializers.Serializer):
     )
 
 
+class TallyPostAllResultSerializer(serializers.Serializer):
+    queued = serializers.IntegerField(help_text="How many waiting months were queued for posting.")
+
+
 class TallyRefreshSerializer(serializers.Serializer):
     voucher_types = serializers.JSONField(
         required=False,

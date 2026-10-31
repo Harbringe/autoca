@@ -51,6 +51,27 @@ def enqueue_post(run: LedgerImportRun, membership, user, *, allow_overlap: bool)
     return outcome
 
 
+def enqueue_post_all(client, membership, user, *, allow_overlap: bool) -> list[LedgerImportRun]:
+    """Queue every waiting month of the client's imports for posting, oldest first (the books are written in date order).
+
+    Months with nothing to post are left alone. Every month is checked before any is queued, so one that needs the accountant's
+    say-so (entries already in its dates) stops the lot and nothing is half-queued.
+    """
+    waiting = [
+        run
+        for run in LedgerImportRun.objects.filter(
+            firm_id=client.firm_id, client=client, kind=ImportKind.VOUCHERS, status=ImportStatus.PREVIEW
+        ).select_related("client", "document")
+        if int(run.counts.get("will_post", 0)) > 0 and not (run.result or {}).get("posting")
+    ]
+    waiting.sort(key=lambda run: run.counts["date_from"])
+    for run in waiting:
+        check_postable(run, membership, allow_overlap=allow_overlap)
+    for run in waiting:
+        enqueue_post(run, membership, user, allow_overlap=allow_overlap)
+    return waiting
+
+
 def _note(run_id, **result) -> None:
     LedgerImportRun.objects.filter(pk=run_id, status=ImportStatus.PREVIEW).update(result=result)
 

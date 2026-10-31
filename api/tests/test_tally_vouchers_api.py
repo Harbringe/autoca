@@ -323,3 +323,24 @@ def test_a_large_upload_answers_202_with_a_job_and_the_worker_stages_the_months(
     assert sorted(r["counts"]["date_from"] for r in listed) == ["2025-04-01", "2025-05-05"]
     job = api.get(f"{V1}/jobs/{response.json()['id']}/").json()
     assert job["status"] == "SUCCEEDED" and job["result"]["months"] == 2
+
+
+def test_post_all_queues_the_waiting_months_and_the_worker_posts_them_oldest_first(api, firm, client_record, chart, settings):
+    from api.tests.test_background_upload import QuietBeat
+    from core import jobqueue
+
+    settings.TALLY_SYNC_READ_BYTES = 100
+    api.post(
+        url(client_record, "vouchers"),
+        {"file": SimpleUploadedFile("year.xml", vouchers_xml([sale("g1", "1", "20250401"), sale("g2", "2", "20250505")]), content_type="text/xml")},
+        format="multipart",
+    )
+    jobqueue.run_once("test-reader", heartbeat_factory=QuietBeat)
+    queued = api.post(url(client_record, "post-all"), {}, format="json")
+    assert queued.status_code == 202 and queued.json() == {"queued": 2}
+    assert jobqueue.run_once("test-poster", heartbeat_factory=QuietBeat) == "succeeded"
+    assert jobqueue.run_once("test-poster", heartbeat_factory=QuietBeat) == "succeeded"
+    statuses = sorted(r["status"] for r in api.get(url(client_record, "voucher-runs")).json())
+    assert statuses == ["CONFIRMED", "CONFIRMED"]
+    with firm_context(firm.pk):
+        assert JournalEntry.objects.filter(client=client_record).count() == 2

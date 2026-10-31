@@ -90,3 +90,11 @@ def test_a_file_spanning_march_and_april_gets_the_right_financial_years(firm, cl
     read(client, senior, [sale("g1", "1", "20250328"), sale("g2", "2", "20250401")])
     march, april = runs(client)
     assert (march.financial_year, april.financial_year) == (2024, 2025)
+
+
+def test_a_file_uploaded_again_while_it_is_still_being_read_is_the_same_job(firm, client, senior, chart):
+    data = vouchers_xml([sale("g1", "1", "20250401")])
+    first = enqueue_read(client, senior, senior.user, data=data, filename="year.xml", voucher_types=None)
+    second = enqueue_read(client, senior, senior.user, data=data, filename="year.xml", voucher_types=None)
+    assert second.reused is True and second.job.pk == first.job.pk
+    assert Job.objects.filter(pk=first.job.pk).exists()

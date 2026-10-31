@@ -344,3 +344,27 @@ def test_post_all_queues_the_waiting_months_and_the_worker_posts_them_oldest_fir
     assert statuses == ["CONFIRMED", "CONFIRMED"]
     with firm_context(firm.pk):
         assert JournalEntry.objects.filter(client=client_record).count() == 2
+
+
+def test_the_trial_balance_check_lists_where_tallys_closing_balances_differ(api, firm, client_record, chart):
+    with firm_context(firm.pk):
+        from ledger.tests.support import post
+
+        post(client_record, datetime.date(2025, 4, 5), make_ledger(client_record, "Cash", G.CASH), make_ledger(client_record, "Rent", G.INDIRECT_EXPENSE), 100000)
+    tb = json.dumps(
+        {"envelope": {"dspaccname": [{"dspdispname": "Cash"}, {"dspdispname": "Rent"}], "dspaccinfo": [
+            {"dspcldramt": {"dspcldramta": "1000.00"}, "dspclcramt": {"dspclcramta": ""}},
+            {"dspcldramt": {"dspcldramta": "900.00"}, "dspclcramt": {"dspclcramta": ""}},
+        ]}}
+    ).encode()
+    response = api.post(
+        url(client_record, "check-trial-balance"),
+        {"file": SimpleUploadedFile("tb.json", tb, content_type="application/json"), "fy": "2025"},
+        format="multipart",
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["matched"] == 1
+    assert body["differences"] == [{"name": "Rent", "tally_paise": 90000, "ours_paise": -100000}]
+    refused = api.post(url(client_record, "check-trial-balance"), {"file": SimpleUploadedFile("tb.txt", b"x"), "fy": "2025"}, format="multipart")
+    assert refused.status_code == 400

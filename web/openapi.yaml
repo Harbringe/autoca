@@ -5674,6 +5674,72 @@ paths:
               schema:
                 $ref: '#/components/schemas/TallyError'
           description: ''
+  /api/v1/clients/{client_id}/tally-imports/check-trial-balance/:
+    post:
+      operationId: clients_tally_imports_check_trial_balance_create
+      description: Writes nothing. Lists each ledger whose closing balance differs
+        between Tally's export and the client's books for the year.
+      summary: Compare the posted books with Tally's trial balance
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TallyTrialBalanceUploadRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TallyTrialBalanceUploadRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TallyTrialBalanceUploadRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyTrialBalanceCheck'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '413':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
   /api/v1/clients/{client_id}/tally-imports/discover/:
     post:
       operationId: clients_tally_imports_discover_create
@@ -19230,6 +19296,58 @@ components:
       - accounts
       - ledgers
       - waiting_for_a_number
+    TallyTrialBalanceCheck:
+      type: object
+      properties:
+        matched:
+          type: integer
+          description: Ledgers whose closing balance is the same in both.
+        differences:
+          type: array
+          items:
+            $ref: '#/components/schemas/TallyTrialBalanceDifference'
+          description: Biggest difference first. Shown, never fixed.
+      required:
+      - differences
+      - matched
+    TallyTrialBalanceDifference:
+      type: object
+      properties:
+        name:
+          type: string
+        tally_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Tally's closing balance, debit positive.
+        ours_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Our closing balance, debit positive.
+      required:
+      - name
+      - ours_paise
+      - tally_paise
+    TallyTrialBalanceUploadRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+          description: Tally's trial balance for the same company and period, as .xml
+            or .json.
+        fy:
+          type: integer
+          maximum: 2100
+          minimum: 2000
+          description: The financial year to compare, by its starting year (2025 is
+            FY 2025-26).
+      required:
+      - file
+      - fy
     TallyVoucherCounts:
       type: object
       properties:

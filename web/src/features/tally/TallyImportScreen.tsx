@@ -33,6 +33,7 @@ import { BankReportStep } from './BankReportStep'
 import { ChartStep } from './ChartStep'
 import { ImportQueue } from './ImportQueue'
 import { MoveProgress } from './MoveProgress'
+import { TrialBalanceCheck } from './TrialBalanceCheck'
 import { SetupStep } from './SetupStep'
 
 const STANDARD_TYPE_CHOICES: [string, string][] = [
@@ -215,6 +216,8 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
       {readNote && <Card tone="success" className="p-4 text-sm">{readNote}</Card>}
       <MoveProgress runs={queue.data ?? []} />
       <ImportQueue clientId={clientId} onOpen={(id) => void open(id)} openId={run?.id} />
+
+      <TrialBalanceCheck clientId={clientId} />
 
       <BankReportStep
         clientId={clientId}

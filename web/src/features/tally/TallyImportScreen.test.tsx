@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { VoucherRun } from '@/api/queries/tallyImport'
 import { TallyImportScreen } from './TallyImportScreen'
 
+vi.mock('@/features/shell/useFy', () => ({ useFy: () => ({ fy: 2025 }) }))
 const post = vi.fn()
 const get = vi.fn()
 vi.mock('@/api/client', async (importOriginal) => ({

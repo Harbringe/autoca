@@ -5750,6 +5750,67 @@ paths:
               schema:
                 $ref: '#/components/schemas/TallyError'
           description: ''
+  /api/v1/clients/{client_id}/tally-imports/post-all/:
+    post:
+      operationId: clients_tally_imports_post_all_create
+      description: 'Queues each import still waiting (with something to post) for
+        the worker, in date order. Every month is checked first: if one has entries
+        already in its dates and `allow_overlap` is not true, `409 tally_overlap`
+        and **nothing** is queued.'
+      summary: Post every waiting month of the client's Tally imports, oldest first
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TallyPostRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TallyPostRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TallyPostRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyPostAllResult'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
   /api/v1/clients/{client_id}/tally-imports/setup/:
     post:
       operationId: clients_tally_imports_setup_create
@@ -5938,7 +5999,7 @@ paths:
       description: |-
         Reads the vouchers and returns a **preview**; nothing is posted. Each voucher is `post` or `skip` with a reason (a ledger not in the client's chart, unbalanced, cancelled, a bank voucher that waits for a later release...). The vouchers are written exactly as Tally had them, so the client's ledgers must be imported first.
 
-        Refused with `409 tally_rule` when the period already has entries for the client, `409 entry_locked` when it reaches a signed-off date, and `409 tally_rule` for a file with more than one company. The same file with the chart unchanged returns the existing preview with **200**. Same roles as the masters import.
+        Refused with `409 tally_rule` when the period already has entries for the client, `409 entry_locked` when it reaches a signed-off date, and `409 tally_rule` for a file with more than one company. The same file with the chart unchanged returns the existing preview with **200**. A file larger than the request can read (over 10 MB) is stored and read by a worker: the answer is **202** with a `tally.read` job, whose result lists one queued import per month. Same roles as the masters import.
       summary: Upload a Tally vouchers export and preview importing it
       parameters:
       - in: path
@@ -5975,6 +6036,12 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/TallyVoucherRun'
+          description: ''
+        '202':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Job'
           description: ''
         '400':
           content:
@@ -18810,6 +18877,22 @@ components:
       - reason
       - unsure
       - uses
+    TallyPostAllResult:
+      type: object
+      properties:
+        queued:
+          type: integer
+          description: How many waiting months were queued for posting.
+      required:
+      - queued
+    TallyPostRequest:
+      type: object
+      properties:
+        allow_overlap:
+          type: boolean
+          default: false
+          description: The person has seen that entries or bank rows already stand
+            in these dates and wants the import posted anyway.
     TallyProgress:
       type: object
       properties:

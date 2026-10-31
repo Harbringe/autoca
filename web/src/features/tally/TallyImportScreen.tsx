@@ -5,7 +5,8 @@
 // are not imported yet, so a run is partial books until they are; the notice says so in plain words.
 
 import { useEffect, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { waitForJob, waitingNote } from '@/api/jobs'
 import { AlertTriangle, CheckCircle2, FileUp } from 'lucide-react'
 import {
   useConfirmVouchers,
@@ -13,8 +14,10 @@ import {
   useRefreshVoucherRun,
   useStageVouchers,
   useUndoVouchers,
+  isReadJob,
   useVoucherTypesFile,
   voucherRun,
+  voucherRuns,
   type VoucherRun,
 } from '@/api/queries/tallyImport'
 import { useInvalidateClient } from '@/api/queries/clients'
@@ -29,6 +32,7 @@ import { toast } from '@/lib/toast'
 import { BankReportStep } from './BankReportStep'
 import { ChartStep } from './ChartStep'
 import { ImportQueue } from './ImportQueue'
+import { MoveProgress } from './MoveProgress'
 import { SetupStep } from './SetupStep'
 
 const STANDARD_TYPE_CHOICES: [string, string][] = [
@@ -59,6 +63,10 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
   const [error, setError] = useState<string | null>(null)
   const [undoing, setUndoing] = useState(false)
   const [agree, setAgree] = useState(false)
+  // A large file is read by a worker: what it is doing now, and what it made once it has finished.
+  const [reading, setReading] = useState<string | null>(null)
+  const [readNote, setReadNote] = useState<string | null>(null)
+  const queue = useQuery(voucherRuns(clientId))
   // What the person says each of the firm's own voucher types counts as (Tally's name -> standard type).
   const [counts, setCounts] = useState<Record<string, string>>({})
 
@@ -68,9 +76,23 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
     setRun(null)
     setCounts({})
     setAgree(false)
+    setReadNote(null)
     try {
-      setRun(await stage.mutateAsync({ file: chosen }))
+      const answer = await stage.mutateAsync({ file: chosen })
+      if (!isReadJob(answer)) return setRun(answer)
+      setReading(waitingNote(answer) ?? 'Reading the file…')
+      const done = await waitForJob(answer, (job) => setReading(waitingNote(job) ?? job.message ?? 'Reading the file…'))
+      setReading(null)
+      void queryClient.invalidateQueries({ queryKey: ['tally-voucher-runs', clientId] })
+      if (done.status !== 'SUCCEEDED') return setError(done.error || 'The file could not be read.')
+      const result = (done.result ?? {}) as { months?: number; failed?: { month: string; reason: string }[] }
+      const failed = result.failed ?? []
+      setReadNote(
+        `Read ${plural(result.months ?? 0, 'month')}, listed below oldest first. Post them one at a time, or all together.` +
+          (failed.length ? ` ${failed.map((f) => `${f.month}: ${f.reason}`).join(' ')}` : ''),
+      )
     } catch (e) {
+      setReading(null)
       setError(messageOf(e))
     }
   }
@@ -185,6 +207,13 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
         </div>
       </Card>
 
+      {reading && (
+        <Card role="status" aria-label="Reading the file" className="p-4 text-sm">
+          {reading}
+        </Card>
+      )}
+      {readNote && <Card tone="success" className="p-4 text-sm">{readNote}</Card>}
+      <MoveProgress runs={queue.data ?? []} />
       <ImportQueue clientId={clientId} onOpen={(id) => void open(id)} openId={run?.id} />
 
       <BankReportStep

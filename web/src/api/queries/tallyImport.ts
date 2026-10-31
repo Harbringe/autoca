@@ -5,6 +5,7 @@
 
 import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query'
 import { raw } from '@/api/client'
+import type { Job } from '@/api/types'
 import { useInvalidateClient, V1 } from './clients'
 
 export interface VoucherRunRow {
@@ -113,6 +114,10 @@ export function useConfirmMasters(clientId: string) {
 
 // ---- Vouchers ----
 
+/** What uploading a vouchers file answers: the import itself, or (for a large file) the job that is reading it. */
+export type VoucherUpload = VoucherRun | Job
+export const isReadJob = (answer: VoucherUpload): answer is Job => (answer as Job).kind === 'tally.read'
+
 export function useStageVouchers(clientId: string) {
   const queryClient = useQueryClient()
   return useMutation({
@@ -121,7 +126,7 @@ export function useStageVouchers(clientId: string) {
       const form = new FormData()
       form.append('file', file)
       if (voucherTypes && Object.keys(voucherTypes).length) form.append('voucher_types', JSON.stringify(voucherTypes))
-      return raw.post<VoucherRun>(`${base(clientId)}/vouchers/`, form)
+      return raw.post<VoucherUpload>(`${base(clientId)}/vouchers/`, form)
     },
   })
 }
@@ -157,6 +162,16 @@ export function useVoucherTypesFile(clientId: string) {
       form.append('file', file)
       return raw.post<{ found: number; voucher_types: Record<string, string> }>(`${base(clientId)}/voucher-types/`, form)
     },
+  })
+}
+
+/** Queue every waiting month for the worker, oldest first. Refused (nothing queued) while a month has entries not yet agreed to. */
+export function usePostAll(clientId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ allowOverlap }: { allowOverlap?: boolean }) =>
+      raw.post<{ queued: number }>(`${base(clientId)}/post-all/`, { allow_overlap: !!allowOverlap }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tally-voucher-runs', clientId] }),
   })
 }
 

@@ -2528,6 +2528,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/tally-imports/post-all/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Post every waiting month of the client's Tally imports, oldest first
+         * @description Queues each import still waiting (with something to post) for the worker, in date order. Every month is checked first: if one has entries already in its dates and `allow_overlap` is not true, `409 tally_overlap` and **nothing** is queued.
+         */
+        post: operations["clients_tally_imports_post_all_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/tally-imports/setup/": {
         parameters: {
             query?: never;
@@ -2601,7 +2621,7 @@ export interface paths {
          * Upload a Tally vouchers export and preview importing it
          * @description Reads the vouchers and returns a **preview**; nothing is posted. Each voucher is `post` or `skip` with a reason (a ledger not in the client's chart, unbalanced, cancelled, a bank voucher that waits for a later release...). The vouchers are written exactly as Tally had them, so the client's ledgers must be imported first.
          *
-         *     Refused with `409 tally_rule` when the period already has entries for the client, `409 entry_locked` when it reaches a signed-off date, and `409 tally_rule` for a file with more than one company. The same file with the chart unchanged returns the existing preview with **200**. Same roles as the masters import.
+         *     Refused with `409 tally_rule` when the period already has entries for the client, `409 entry_locked` when it reaches a signed-off date, and `409 tally_rule` for a file with more than one company. The same file with the chart unchanged returns the existing preview with **200**. A file larger than the request can read (over 10 MB) is stored and read by a worker: the answer is **202** with a `tally.read` job, whose result lists one queued import per month. Same roles as the masters import.
          */
         post: operations["clients_tally_imports_vouchers_create"];
         delete?: never;
@@ -9000,6 +9020,17 @@ export interface components {
             /** @description The evidence was thin or mixed; look at this one. */
             unsure: boolean;
         };
+        TallyPostAllResult: {
+            /** @description How many waiting months were queued for posting. */
+            queued: number;
+        };
+        TallyPostRequest: {
+            /**
+             * @description The person has seen that entries or bank rows already stand in these dates and wants the import posted anyway.
+             * @default false
+             */
+            allow_overlap: boolean;
+        };
         TallyProgress: {
             done: number;
             total: number;
@@ -14301,6 +14332,65 @@ export interface operations {
             };
         };
     };
+    clients_tally_imports_post_all_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": components["schemas"]["TallyPostRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TallyPostRequest"];
+                "application/json": components["schemas"]["TallyPostRequest"];
+            };
+        };
+        responses: {
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyPostAllResult"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+        };
+    };
     clients_tally_imports_setup_create: {
         parameters: {
             query?: never;
@@ -14508,6 +14598,14 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TallyVoucherRun"];
+                };
+            };
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Job"];
                 };
             };
             400: {

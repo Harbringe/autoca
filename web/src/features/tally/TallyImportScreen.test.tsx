@@ -123,4 +123,47 @@ describe('TallyImportScreen', () => {
     await waitFor(() => expect(screen.getByLabelText('What GST SALE counts as')).toHaveTextContent('Sales'))
     expect(post).toHaveBeenLastCalledWith('/api/v1/clients/c1/tally-imports/voucher-types/', expect.any(FormData))
   })
+
+  const month = (id: string, date: string, over: Partial<VoucherRun['counts']> = {}) => ({
+    ...preview({ date_from: date, date_to: date, ...over }),
+    id,
+    rows: undefined,
+  })
+
+  it('says a large file is being read, then lists its months', async () => {
+    post.mockResolvedValueOnce({ id: 'j1', kind: 'tally.read', status: 'PENDING', created_at: new Date().toISOString(), message: 'Waiting to be read', queue_ahead: 0, reader_running: true, result: {} })
+    get.mockImplementation((url: string) =>
+      Promise.resolve(
+        url.endsWith('/jobs/j1/')
+          ? { id: 'j1', kind: 'tally.read', status: 'SUCCEEDED', created_at: new Date().toISOString(), message: '', result: { months: 2, runs: ['a', 'b'], failed: [] } }
+          : url.endsWith('/voucher-runs/')
+            ? [month('a', '2025-04-01'), month('b', '2025-05-01')]
+            : [],
+      ),
+    )
+    renderScreen()
+    choose()
+    expect(await screen.findByRole('status', { name: 'Reading the file' })).toBeInTheDocument()
+    expect(await screen.findByText(/Read 2 months/, {}, { timeout: 5000 })).toBeInTheDocument()
+    expect(screen.getAllByRole('button', { name: 'Open' })).toHaveLength(2)
+  })
+
+  it('posts every waiting month with one click', async () => {
+    get.mockImplementation((url: string) => Promise.resolve(url.endsWith('/voucher-runs/') ? [month('a', '2025-04-01'), month('b', '2025-05-01')] : []))
+    post.mockResolvedValueOnce({ queued: 2 })
+    renderScreen()
+    fireEvent.click(await screen.findByRole('button', { name: /Post all 2 months/ }))
+    await waitFor(() => expect(post).toHaveBeenLastCalledWith('/api/v1/clients/c1/tally-imports/post-all/', { allow_overlap: false }))
+  })
+
+  it('will not post all while a month has entries the accountant has not agreed to', async () => {
+    get.mockImplementation((url: string) =>
+      Promise.resolve(url.endsWith('/voucher-runs/') ? [month('a', '2025-04-01'), month('b', '2025-05-01', { existing_entries: 3 })] : []),
+    )
+    renderScreen()
+    const button = await screen.findByRole('button', { name: /Post all 2 months/ })
+    expect(button).toBeDisabled()
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Import all anyway' }))
+    expect(button).toBeEnabled()
+  })
 })

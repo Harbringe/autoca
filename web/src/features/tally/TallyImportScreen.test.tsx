@@ -112,4 +112,15 @@ describe('TallyImportScreen', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('already has entries')
     await waitFor(() => expect(screen.queryByTestId('counts')).not.toBeInTheDocument())
   })
+
+  it("fills in what the firm's own voucher types count as from Tally's voucher types file", async () => {
+    post.mockResolvedValueOnce(preview({ unknown_types: { 'GST SALE': 42 } }))
+    post.mockResolvedValueOnce({ found: 1, voucher_types: { 'GST SALE': 'sales' } })
+    renderScreen()
+    choose()
+    await screen.findByTestId('unknown-types')
+    fireEvent.change(screen.getByLabelText('Voucher types file'), { target: { files: [new File(['{}'], 'types.json', { type: 'application/json' })] } })
+    await waitFor(() => expect(screen.getByLabelText('What GST SALE counts as')).toHaveTextContent('Sales'))
+    expect(post).toHaveBeenLastCalledWith('/api/v1/clients/c1/tally-imports/voucher-types/', expect.any(FormData))
+  })
 })

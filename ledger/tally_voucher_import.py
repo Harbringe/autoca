@@ -76,7 +76,7 @@ from ledger.tally_import import (
 )
 from ledger.tally_learning import learn_rules
 from ledger.tally_parse import normal_name
-from ledger.tally_plan import STANDARD_TYPES, Facts, Planned, plan_voucher
+from ledger.tally_plan import MAPPABLE_TYPES, Facts, Planned, is_known_type, plan_voucher
 from ledger.tally_vouchers import ParsedVoucher, VoucherLine, parse_vouchers
 
 logger = logging.getLogger("autoca.tally")
@@ -120,7 +120,7 @@ def stage_vouchers(client, membership, user, *, data: bytes, filename: str, date
     ``voucher_types`` says which standard type each of the firm's own voucher types counts as (``{"GST SALE": "sales"}``).
     """
     _require_rights(membership, client)
-    type_map = {normal_name(k): v for k, v in (voucher_types or {}).items() if v in STANDARD_TYPES}
+    type_map = {normal_name(k): v for k, v in (voucher_types or {}).items() if v in MAPPABLE_TYPES}
     digest = hashlib.sha256(data + repr(sorted(type_map.items())).encode()).hexdigest() if type_map else hashlib.sha256(data).hexdigest()
     parsed = parse_vouchers(data, filename, max_bytes=settings.MAX_TALLY_IMPORT_BYTES)
     if len(parsed.companies) > 1:
@@ -257,8 +257,7 @@ def _stage(client, user, all_vouchers, skipped, digest, date_from, date_to, type
     counts = {"vouchers": 0, "will_post": 0, "will_make_bill": 0, "skipped": 0, "bank_waiting": 0, "bank_rows": 0, "stock_lines": 0, "by_type": {}, "unknown_types": {}, "type_map": dict(type_map or {})}
     for v in vouchers:
         plan = plan_voucher(v, facts, type_map)
-        known = normal_name(v.tally_type) in STANDARD_TYPES or normal_name(v.tally_type) in (type_map or {})
-        if not known:  # a type the firm made up: the person is asked what it counts as
+        if not is_known_type(normal_name(v.tally_type), type_map):  # a type the firm made up: the person is asked what it counts as
             counts["unknown_types"][v.tally_type] = counts["unknown_types"].get(v.tally_type, 0) + 1
         counts["vouchers"] += 1
         counts["by_type"][v.tally_type] = counts["by_type"].get(v.tally_type, 0) + 1

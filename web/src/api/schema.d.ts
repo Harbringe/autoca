@@ -2568,6 +2568,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/tally-imports/voucher-types/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read Tally's voucher-type master and say what the firm's own voucher types count as
+         * @description Writes nothing. The answer fills in the choices the person is asked for when a vouchers file has types of the firm's own.
+         */
+        post: operations["clients_tally_imports_voucher_types_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/tally-imports/vouchers/": {
         parameters: {
             query?: never;
@@ -9316,6 +9336,21 @@ export interface components {
             /** @description Why the last attempt to post stopped, in words for the person. */
             readonly error: string;
         };
+        TallyVoucherTypesSuggestion: {
+            /** @description Voucher types in the file. */
+            found: number;
+            /** @description What each of the firm's own voucher types counts as, as {name: standard type or none}; a suggestion for the person to check. */
+            voucher_types: {
+                [key: string]: string;
+            };
+        };
+        TallyVoucherTypesUploadRequest: {
+            /**
+             * Format: binary
+             * @description Tally's voucher-type master (Masters > Voucher Types), as .xml or .json.
+             */
+            file: string;
+        };
         TallyVouchersUploadRequest: {
             /**
              * Format: binary
@@ -9332,7 +9367,7 @@ export interface components {
              * @description Import vouchers dated on or before this day.
              */
             date_to?: string;
-            /** @description What the firm's own voucher types count as: {Tally's name: a standard type}, for example {"GST SALE": "sales"}. The standard types are sales, purchase, credit note, debit note, journal, payment, receipt and contra. */
+            /** @description What the firm's own voucher types count as: {Tally's name: a standard type}, for example {"GST SALE": "sales"}. The standard types are sales, purchase, credit note, debit note, journal, payment, receipt, contra and payroll; "none" says the type leaves nothing in the books. */
             voucher_types?: unknown;
         };
         TdsMonth: {
@@ -14366,6 +14401,73 @@ export interface operations {
                 };
             };
             404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+        };
+    };
+    clients_tally_imports_voucher_types_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["TallyVoucherTypesUploadRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TallyVoucherTypesUploadRequest"];
+                "application/json": components["schemas"]["TallyVoucherTypesUploadRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyVoucherTypesSuggestion"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            422: {
                 headers: {
                     [name: string]: unknown;
                 };

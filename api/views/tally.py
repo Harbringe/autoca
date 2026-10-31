@@ -37,6 +37,8 @@ from api.serializers.tally import (
     TallyVoucherRunSerializer,
     TallyVoucherRunSummarySerializer,
     TallyVouchersUploadSerializer,
+    TallyVoucherTypesSuggestionSerializer,
+    TallyVoucherTypesUploadSerializer,
 )
 from core.access import get_visible_client
 from ledger.models import ImportKind, ImportStatus, LedgerImportRun
@@ -50,6 +52,7 @@ from ledger.tally_voucher_import import (
     stage_vouchers,
     undo_run,
 )
+from ledger.tally_vtypes import read_voucher_types, suggest_mapping
 
 _ERRORS = {
     400: TallyErrorSerializer,
@@ -222,6 +225,23 @@ class TallyImportViewSet(viewsets.GenericViewSet):
         enqueue_post(run, request.membership, request.user, allow_overlap=payload.validated_data["allow_overlap"])
         run.refresh_from_db()
         return Response(TallyVoucherRunSerializer(run).data, status=status.HTTP_202_ACCEPTED)
+
+    @extend_schema(
+        summary="Read Tally's voucher-type master and say what the firm's own voucher types count as",
+        description="Writes nothing. The answer fills in the choices the person is asked for when a vouchers file has types of the firm's own.",
+        request=TallyVoucherTypesUploadSerializer,
+        responses={200: TallyVoucherTypesSuggestionSerializer, **_ERRORS, 413: TallyErrorSerializer, 422: TallyErrorSerializer},
+    )
+    @action(detail=False, methods=["post"], url_path="voucher-types")
+    def voucher_types(self, request, client_id=None):
+        get_visible_client(request, client_id)
+        payload = TallyVoucherTypesUploadSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        upload = payload.validated_data["file"]
+        found = read_voucher_types(
+            upload.read(settings.MAX_TALLY_IMPORT_BYTES + 1), os.path.basename(upload.name), max_bytes=settings.MAX_TALLY_IMPORT_BYTES
+        )
+        return Response({"found": len(found), "voucher_types": suggest_mapping(found)})
 
     @extend_schema(
         summary="The imports waiting to be posted, being posted, or done, newest first",

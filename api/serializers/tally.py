@@ -17,7 +17,7 @@ from classify.models import LedgerGroup
 from ledger.models import ImportKind, ImportStatus, LedgerImportRun
 from ledger.tally_import import ALL_CHOICES, BANK_CHOICES
 from ledger.tally_parse import ALLOWED_EXTENSIONS
-from ledger.tally_plan import STANDARD_TYPES
+from ledger.tally_plan import MAPPABLE_TYPES
 
 ROW_ACTIONS = ["create", "match", "conflict", "needs_group", "skipped"]
 CONFLICT_KINDS = ["group_differs", "name_variant", "duplicate_in_file", "needs_group"]
@@ -237,7 +237,7 @@ class TallyVouchersUploadSerializer(serializers.Serializer):
         required=False,
         help_text=(
             "What the firm's own voucher types count as: {Tally's name: a standard type}, for example "
-            '{"GST SALE": "sales"}. The standard types are sales, purchase, credit note, debit note, journal, payment, receipt and contra.'
+            '{"GST SALE": "sales"}. The standard types are sales, purchase, credit note, debit note, journal, payment, receipt, contra and payroll; "none" says the type leaves nothing in the books.'
         ),
     )
 
@@ -245,8 +245,8 @@ class TallyVouchersUploadSerializer(serializers.Serializer):
         if not isinstance(value, dict) or len(value) > 50:
             raise serializers.ValidationError("Send an object of voucher type names, at most 50.")
         for name, standard in value.items():
-            if not isinstance(name, str) or not isinstance(standard, str) or standard not in STANDARD_TYPES:
-                raise serializers.ValidationError(f"{name!r} must count as one of: {', '.join(STANDARD_TYPES)}.")
+            if not isinstance(name, str) or not isinstance(standard, str) or standard not in MAPPABLE_TYPES:
+                raise serializers.ValidationError(f"{name!r} must count as one of: {', '.join(MAPPABLE_TYPES)}.")
         return value
 
     def validate_file(self, upload):
@@ -318,6 +318,27 @@ class TallyVoucherCountsSerializer(serializers.Serializer):
     )
     date_from = serializers.CharField()
     date_to = serializers.CharField()
+
+
+class TallyVoucherTypesUploadSerializer(serializers.Serializer):
+    file = serializers.FileField(help_text="Tally's voucher-type master (Masters > Voucher Types), as .xml or .json.")
+
+    def validate_file(self, upload):
+        if upload.size == 0:
+            raise serializers.ValidationError("The file is empty.")
+        if upload.size > 5 * 1024 * 1024:
+            raise serializers.ValidationError("The file is far too large to be a list of voucher types.")
+        if not upload.name.lower().endswith((".xml", ".json")):
+            raise serializers.ValidationError("Upload the .xml or .json file exported from Tally.")
+        return upload
+
+
+class TallyVoucherTypesSuggestionSerializer(serializers.Serializer):
+    found = serializers.IntegerField(help_text="Voucher types in the file.")
+    voucher_types = serializers.DictField(
+        child=serializers.CharField(),
+        help_text="What each of the firm's own voucher types counts as, as {name: standard type or none}; a suggestion for the person to check.",
+    )
 
 
 class TallyPostSerializer(serializers.Serializer):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -257,3 +258,31 @@ def test_discover_skips_a_file_it_cannot_use_and_says_why_instead_of_failing_the
 def test_discover_still_refuses_when_no_file_is_usable(api, firm, client_record):
     response = api.post(url(client_record, "discover"), {"files": _files(("report.xml", b"<ENVELOPE><X/></ENVELOPE>"))}, format="multipart")
     assert response.status_code in (400, 422)
+
+
+def test_the_voucher_type_master_says_what_the_firms_own_types_count_as(api, client_record):
+    data = json.dumps(
+        {"tallymessage": [{"metadata": {"type": "Voucher Type", "name": "GST SALE"}, "parent": "Sales"}, {"metadata": {"type": "Voucher Type", "name": "Quote"}, "parent": "Sales Order"}]}
+    ).encode()
+    response = api.post(
+        url(client_record, "voucher-types"), {"file": SimpleUploadedFile("types.json", data, content_type="application/json")}, format="multipart"
+    )
+    assert response.status_code == 200
+    assert response.json() == {"found": 2, "voucher_types": {"GST SALE": "sales", "Quote": "none"}}
+    refused = api.post(url(client_record, "voucher-types"), {"file": SimpleUploadedFile("types.txt", b"x")}, format="multipart")
+    assert refused.status_code == 400
+
+
+def test_a_firms_own_type_said_to_be_sales_posts_as_sales(api, firm, client_record, chart):
+    from ledger.tests.tally_voucher_xml import vouchers_xml
+
+    gst = voucher(
+        guid="g7", vtype="GST SALE", number="7", date="20250401", party="Acme Traders", gstin="27ABCDE1234F1Z5",
+        lines=[line("Acme Traders", 1180.0, party=True), line("Sales", -1000.0), line("Output CGST", -90.0), line("Output SGST", -90.0)],
+    )
+    asked = api.post(
+        url(client_record, "vouchers"),
+        {"file": SimpleUploadedFile("v.xml", vouchers_xml([gst]), content_type="text/xml"), "voucher_types": json.dumps({"GST SALE": "sales"})},
+        format="multipart",
+    )
+    assert asked.status_code == 201 and asked.json()["counts"]["will_post"] == 1 and asked.json()["counts"]["unknown_types"] == {}

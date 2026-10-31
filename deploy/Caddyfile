@@ -11,7 +11,13 @@
 	encode zstd gzip
 
 	# A statement is a few megabytes and the app refuses above 25 MB anyway; stop anything larger here.
-	request_body {
+	# The one exception is a Tally vouchers export, which can be a year of books; the app refuses above 150 MB.
+	@tallyupload path_regexp ^/api/v1/clients/[0-9a-f-]+/tally-imports/vouchers/$
+	@othersbody not path_regexp ^/api/v1/clients/[0-9a-f-]+/tally-imports/vouchers/$
+	request_body @tallyupload {
+		max_size 160MB
+	}
+	request_body @othersbody {
 		max_size 26MB
 	}
 

@@ -88,6 +88,15 @@ class ParsedVouchers:
     date_to: datetime.date | None = None
 
 
+def voucher_file_limit(filename: str) -> int:
+    """The most bytes a vouchers export may be, by its extension (JSON is read whole, so its limit is the lower)."""
+    from django.conf import settings
+
+    if (filename or "").lower().endswith(".json"):
+        return settings.MAX_TALLY_VOUCHERS_JSON_BYTES
+    return settings.MAX_TALLY_VOUCHERS_XML_BYTES
+
+
 def parse_vouchers(data: bytes, filename: str, *, max_bytes: int) -> ParsedVouchers:
     if len(data) > max_bytes:
         raise TallyTooLargeError(f"This file is larger than {max_bytes // (1024 * 1024)} MB, which is more than an import takes.")

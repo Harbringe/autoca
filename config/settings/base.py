@@ -446,6 +446,11 @@ MAX_STATEMENT_UPLOAD_BYTES = 25 * 1024 * 1024
 GSTIN_CHECKS_PER_MONTH = int(env("GSTIN_CHECKS_PER_MONTH", "500"))
 # A Tally masters file is names and numbers: ten megabytes is far past a real company's chart.
 MAX_TALLY_IMPORT_BYTES = 10 * 1024 * 1024
+# A firm's years of vouchers come as one large export. XML is read as a stream, JSON whole, so JSON has the lower limit.
+MAX_TALLY_VOUCHERS_XML_BYTES = 150 * 1024 * 1024
+MAX_TALLY_VOUCHERS_JSON_BYTES = 100 * 1024 * 1024
+# A vouchers file up to this size is read inside the request; a larger one is stored and read by the worker.
+TALLY_SYNC_READ_BYTES = MAX_TALLY_IMPORT_BYTES
 # Extraction cost grows with pages, not bytes: a 300 KB file with two thousand
 # blank pages held a request for over two minutes. Checked before any extraction.
 MAX_STATEMENT_PAGES = int(env("MAX_STATEMENT_PAGES", "300"))

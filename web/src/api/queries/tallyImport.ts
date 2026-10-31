@@ -3,7 +3,7 @@
 // Posting or undoing writes entries, bills and parties, so a success marks everything about the client stale (the same prefix
 // every other change to the books uses), not one list.
 
-import { useMutation } from '@tanstack/react-query'
+import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query'
 import { raw } from '@/api/client'
 import { useInvalidateClient, V1 } from './clients'
 
@@ -33,13 +33,28 @@ export interface VoucherRun {
     bank_rows: number
     stock_lines: number
     by_type: Record<string, number>
+    unknown_types?: Record<string, number>
+    type_map?: Record<string, string>
+    existing_entries?: number
+    existing_statement_rows?: number
     date_from: string
     date_to: string
   }
   rows: VoucherRunRow[]
   result: { posted?: number; bills?: number; skipped?: number; failed?: { guid: string; reason: string }[]; bank_rows?: number; unmatched_bills?: number; rules_learned?: number; stock_entries?: number; undone?: number } | null
   expires_at: string
+  created_at: string
+  /** The file as uploaded; it stays with the client's documents. */
+  file_name: string
+  document: string | null
+  uploaded_by_name: string
+  /** A worker is writing the vouchers now. */
+  posting: boolean
+  progress: { done: number; total: number } | null
+  error: string
 }
+
+export type VoucherRunSummary = Omit<VoucherRun, 'rows'>
 
 const base = (clientId: string) => `${V1}/clients/${clientId}/tally-imports`
 
@@ -99,28 +114,67 @@ export function useConfirmMasters(clientId: string) {
 // ---- Vouchers ----
 
 export function useStageVouchers(clientId: string) {
+  const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ file }: { file: File }) => {
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tally-voucher-runs', clientId] }),
+    mutationFn: ({ file, voucherTypes }: { file: File; voucherTypes?: Record<string, string> }) => {
       const form = new FormData()
       form.append('file', file)
+      if (voucherTypes && Object.keys(voucherTypes).length) form.append('voucher_types', JSON.stringify(voucherTypes))
       return raw.post<VoucherRun>(`${base(clientId)}/vouchers/`, form)
     },
   })
 }
 
+/** The queue: every vouchers import of the client, newest first, without the voucher rows. */
+export const voucherRuns = (clientId: string) =>
+  queryOptions({
+    queryKey: ['tally-voucher-runs', clientId],
+    queryFn: () => raw.get<VoucherRunSummary[]>(`${base(clientId)}/voucher-runs/`),
+  })
+
+export const voucherRun = (clientId: string, runId: string) =>
+  queryOptions({
+    queryKey: ['tally-voucher-run', clientId, runId],
+    queryFn: () => raw.get<VoucherRun>(`${base(clientId)}/${runId}/voucher-run/`),
+  })
+
+/** Queue the posting: the vouchers are written by a worker, so this answers at once and the run's progress is read afterwards. */
 export function useConfirmVouchers(clientId: string) {
-  const invalidate = useInvalidateClient(clientId)
+  const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (runId: string) => raw.post<VoucherRun>(`${base(clientId)}/${runId}/confirm-vouchers/`),
-    onSuccess: invalidate,
+    mutationFn: ({ runId, allowOverlap }: { runId: string; allowOverlap?: boolean }) =>
+      raw.post<VoucherRun>(`${base(clientId)}/${runId}/confirm-vouchers/`, { allow_overlap: !!allowOverlap }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tally-voucher-runs', clientId] }),
+  })
+}
+
+export function useRefreshVoucherRun(clientId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ runId, voucherTypes }: { runId: string; voucherTypes?: Record<string, string> }) =>
+      raw.post<VoucherRun>(`${base(clientId)}/${runId}/refresh-vouchers/`, voucherTypes ? { voucher_types: voucherTypes } : {}),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tally-voucher-runs', clientId] }),
+  })
+}
+
+export function useDiscardVoucherRun(clientId: string) {
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: (runId: string) => raw.post<VoucherRun>(`${base(clientId)}/${runId}/discard/`),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['tally-voucher-runs', clientId] }),
   })
 }
 
 export function useUndoVouchers(clientId: string) {
   const invalidate = useInvalidateClient(clientId)
+  const queryClient = useQueryClient()
   return useMutation({
     mutationFn: (runId: string) => raw.post<VoucherRun>(`${base(clientId)}/${runId}/undo/`),
-    onSuccess: invalidate,
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['tally-voucher-runs', clientId] })
+      return invalidate()
+    },
   })
 }
 

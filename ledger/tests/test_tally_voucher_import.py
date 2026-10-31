@@ -18,7 +18,7 @@ from ledger import tally_voucher_import as tvi
 from ledger.billing import allocate, open_amount
 from ledger.editing import EntryLockedError
 from ledger.models import Bill, BillAllocation, ImportKind, JournalEntry, TallyVoucher
-from ledger.tally_import import TallyImportError, TallyRunStaleError
+from ledger.tally_import import TallyImportError, TallyOverlapError, TallyRunStaleError
 from ledger.tally_parse import TallyParseError
 from ledger.tally_voucher_import import confirm_vouchers, stage_vouchers, undo_run
 from ledger.tests.support import make_ledger, post
@@ -103,10 +103,13 @@ def test_the_same_file_is_the_same_preview(firm, client, senior, chart):
     assert reused is True and second.pk == first.pk
 
 
-def test_a_range_with_postings_is_refused(firm, client, senior, chart):
+def test_a_range_with_postings_is_a_warning_the_accountant_decides(firm, client, senior, chart):
     post(client, datetime.date(2025, 4, 5), make_ledger(client, "Rent", G.INDIRECT_EXPENSE), make_ledger(client, "Cash", G.CASH), 100)
-    with pytest.raises(TallyImportError):
-        stage(client, senior, [sale(date="20250401"), sale("g9", "9", "20250410")])
+    run, _ = stage(client, senior, [sale(date="20250401"), sale("g9", "9", "20250410")])
+    assert run.counts["existing_entries"] == 1
+    with pytest.raises(TallyOverlapError):
+        confirm_vouchers(run, senior, senior.user)
+    assert confirm_vouchers(run, senior, senior.user, allow_overlap=True).result["posted"] == 2
 
 
 def test_two_companies_are_refused(firm, client, senior, chart):
@@ -376,7 +379,7 @@ def test_undo_takes_the_statements_and_settlements_back_with_the_entries(firm, c
     assert Bill.objects.filter(client=client).count() == 0 and BillAllocation.objects.filter(client=client).count() == 0
     assert StatementTransaction.objects.filter(bank_account__client=client).count() == 0
     assert Statement.objects.filter(bank_account__client=client).count() == 0
-    assert Document.objects.filter(client=client, kind="TALLY_EXPORT").count() == 0
+    assert Document.objects.filter(client=client, kind="TALLY_EXPORT", storage_key="").count() == 0  # the file as uploaded is kept
     assert TransactionClassification.objects.filter(transaction__bank_account__client=client).count() == 0
 
 
@@ -393,10 +396,10 @@ def test_a_bank_ledger_with_no_account_is_left_out_and_counted(firm, client, sen
 # ---------------------------------------------------------------------------
 
 
-def test_entries_posted_after_the_preview_make_it_stale(firm, client, senior, chart):
+def test_entries_posted_after_the_preview_need_the_accountants_say_so(firm, client, senior, chart):
     run, _ = stage(client, senior, [sale(date="20250401")])
     post(client, datetime.date(2025, 4, 1), make_ledger(client, "Rent", G.INDIRECT_EXPENSE), make_ledger(client, "Cash", G.CASH), 100)
-    with pytest.raises(TallyRunStaleError):
+    with pytest.raises(TallyOverlapError):
         confirm_vouchers(run, senior, senior.user)
 
 

@@ -55,7 +55,7 @@ MAX_SHEET_ROWS = 100_000
 MAX_XLSX_UNPACKED_BYTES = 100 * 1024 * 1024
 MAX_XLSX_MEMBERS = 2_000
 
-ALLOWED_EXTENSIONS = (".xml", ".xlsx", ".csv")
+ALLOWED_EXTENSIONS = (".xml", ".xlsx", ".csv", ".json")
 
 
 class TallyParseError(ValueError):
@@ -272,7 +272,7 @@ def parse_masters(data: bytes, filename: str, *, max_bytes: int) -> ParsedMaster
 
     extension = _extension(filename)
     if extension not in ALLOWED_EXTENSIONS:
-        raise TallyParseError("Upload the masters as an .xml, .xlsx or .csv file exported from Tally.")
+        raise TallyParseError("Upload the masters as an .xml, .xlsx, .csv or .json file exported from Tally.")
 
     kind = _sniff(data)
     if kind != extension[1:]:
@@ -284,6 +284,8 @@ def parse_masters(data: bytes, filename: str, *, max_bytes: int) -> ParsedMaster
     try:
         if kind == "xml":
             parsed = _parse_xml(data)
+        elif kind == "json":
+            parsed = _parse_json(data)
         elif kind == "xlsx":
             parsed = _parse_xlsx(data)
         else:
@@ -314,8 +316,10 @@ def _extension(filename: str) -> str:
 def _sniff(data: bytes) -> str:
     if data.startswith(b"PK\x03\x04"):
         return "xlsx"
-    text = _decode(data)
-    return "xml" if text.lstrip().startswith("<") else "csv"
+    text = _decode(data).lstrip()
+    if text.startswith("<"):
+        return "xml"
+    return "json" if text.startswith("{") else "csv"
 
 
 # ---------------------------------------------------------------------------
@@ -428,6 +432,50 @@ def _parse_xml(data: bytes) -> ParsedMasters:
             "This file is not well-formed XML, so it cannot be read. Export the masters from Tally again."
         ) from exc
     return parsed
+
+
+def _parse_json(data: bytes) -> ParsedMasters:
+    """Tally's JSON export of the masters: its XML written as objects, read through the same ledger and group readers.
+
+    UNVERIFIED against a real file, like the XML reader: the shape is the one Tally's JSON voucher export has (lower-case tags, a
+    ``metadata`` object for the attributes, lists for repeated blocks).
+    """
+    import json
+
+    from ledger.tally_vouchers import (
+        _json_node,  # a function-level import: that module imports this one
+    )
+
+    def refuse_constant(_name):
+        raise ValueError("not a number Tally writes")
+
+    try:
+        doc = json.loads(_decode(data), parse_constant=refuse_constant)
+        messages = doc.get("tallymessage") if isinstance(doc, dict) else None
+        if not isinstance(messages, list):
+            raise TallyParseError("This JSON file is not a Tally masters export (it has no list of Tally messages). Export the ledger masters from Tally again.")
+        parsed = ParsedMasters(source_format="json")
+        ordinal = 0
+        for message in messages:
+            meta = message.get("metadata") if isinstance(message, dict) else None
+            kind = str(meta.get("type", "")).strip().lower() if isinstance(meta, dict) else ""
+            if kind == "ledger":
+                ordinal += 1
+                if ordinal > MAX_LEDGERS:
+                    raise TallyParseError(
+                        f"This file has more than {MAX_LEDGERS:,} ledgers, which is more than an import takes. Export the masters in parts."
+                    )
+                _read_ledger(_json_node("LEDGER", message, 0), ordinal, parsed)
+            elif kind == "group":
+                if len(parsed.groups) >= MAX_GROUPS:
+                    raise TallyParseError(f"This file has more than {MAX_GROUPS:,} groups.")
+                _read_group(_json_node("GROUP", message, 0), parsed)
+            elif kind == "company" and parsed.books_from is None:
+                parsed.books_from = _tally_date(str(message.get("booksfrom") or ""))
+        return parsed
+    except (ValueError, RecursionError) as exc:
+        
+        raise TallyParseError("This file is not well-formed JSON, or it nests far deeper than a Tally export does, so it cannot be read. Export the masters from Tally again.") from exc
 
 
 def _tally_date(raw) -> datetime.date | None:

@@ -95,6 +95,10 @@ class TallyRunStaleError(RuntimeError):
     """The preview no longer describes the client's books."""
 
 
+class TallyOverlapError(RuntimeError):
+    """Entries or bank rows already stand in the dates the import covers; a person must say the import may sit beside them."""
+
+
 class TallyConflictsUnresolvedError(RuntimeError):
     """Something in the preview still needs the person's decision."""
 

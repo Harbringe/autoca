@@ -19,6 +19,7 @@ import dataclasses
 import datetime
 import hashlib
 import logging
+import os
 from decimal import Decimal
 
 from django.conf import settings
@@ -42,6 +43,8 @@ from core.crypto import blind_index
 from core.fy import financial_year
 from core.identity import invoice_key, normalise_gstin, supplier_identity
 from documents.models import Document, DocumentKind, DocumentStatus, PipelineTier
+from integrations.registry import get_storage
+from integrations.storage.base import StorageAdapter
 from ledger import editing
 from ledger.approval import allocate_voucher_number
 from ledger.billing import BillingError, allocate, line_unallocated, open_amount
@@ -65,15 +68,15 @@ from ledger.models import (
 )
 from ledger.tally_bankreport import parse_bank_report
 from ledger.tally_import import (
-    PREVIEW_LIFETIME,
     TallyImportError,
+    TallyOverlapError,
     TallyRunStaleError,
     _require_rights,
     chart_stamp,
 )
 from ledger.tally_learning import learn_rules
 from ledger.tally_parse import normal_name
-from ledger.tally_plan import Facts, Planned, plan_voucher
+from ledger.tally_plan import STANDARD_TYPES, Facts, Planned, plan_voucher
 from ledger.tally_vouchers import ParsedVoucher, VoucherLine, parse_vouchers
 
 logger = logging.getLogger("autoca.tally")
@@ -111,14 +114,53 @@ def _doc_name(run) -> str:
 # ---------------------------------------------------------------------------
 
 
-def stage_vouchers(client, membership, user, *, data: bytes, filename: str, date_from=None, date_to=None):
-    """Read ``data`` and stage a preview. Returns ``(run, reused)``."""
+def stage_vouchers(client, membership, user, *, data: bytes, filename: str, date_from=None, date_to=None, voucher_types=None):
+    """Read ``data`` and stage a preview. Returns ``(run, reused)``.
+
+    ``voucher_types`` says which standard type each of the firm's own voucher types counts as (``{"GST SALE": "sales"}``).
+    """
     _require_rights(membership, client)
-    digest = hashlib.sha256(data).hexdigest()
+    type_map = {normal_name(k): v for k, v in (voucher_types or {}).items() if v in STANDARD_TYPES}
+    digest = hashlib.sha256(data + repr(sorted(type_map.items())).encode()).hexdigest() if type_map else hashlib.sha256(data).hexdigest()
     parsed = parse_vouchers(data, filename, max_bytes=settings.MAX_TALLY_IMPORT_BYTES)
     if len(parsed.companies) > 1:
         raise TallyImportError("This file has vouchers from more than one company. Export one company at a time.")
-    return _stage(client, user, parsed.vouchers, parsed.skipped, digest, date_from, date_to)
+    document = _keep_file(client, user, data, filename)
+    return _stage(client, user, parsed.vouchers, parsed.skipped, digest, date_from, date_to, type_map, document)
+
+
+#: A staged import waits in the queue until a person posts or discards it; it does not lapse.
+QUEUE_LIFETIME = datetime.timedelta(days=3650)
+
+
+def _keep_file(client, user, data: bytes, filename: str) -> Document:
+    """Keep the file as uploaded, as the client's evidence (and so the queue can re-read it). One object per file, whoever uploads it."""
+    digest = Document.digest(data)
+    document = Document.objects.filter(firm_id=client.firm_id, client=client, sha256=digest).first()
+    if document is not None:
+        return document
+    storage = get_storage()
+    key = storage.tenant_key(client.firm_id, "clients", str(client.pk), "tally", f"{digest}{os.path.splitext(filename)[1].lower()}")
+    storage.put(key, data, content_type="application/json" if filename.lower().endswith(".json") else "application/xml")
+    return Document.objects.create(
+        firm_id=client.firm_id,
+        client=client,
+        kind=DocumentKind.TALLY_EXPORT,
+        original_filename=filename[:255],
+        sha256=digest,
+        storage_key=key,
+        byte_size=len(data),
+        pipeline_tier=PipelineTier.MANUAL,
+        status=DocumentStatus.PARSED,
+        uploaded_by=user,
+    )
+
+
+def _overlap(client, first, last) -> dict:
+    return {
+        "entries": JournalEntry.objects.filter(firm_id=client.firm_id, client=client, entry_date__gte=first, entry_date__lte=last).count(),
+        "statement_rows": 0,
+    }
 
 
 def stage_bank_reports(client, membership, user, *, reports: list[tuple[str, bytes, object]], date_from=None, date_to=None):
@@ -179,7 +221,7 @@ def _vouchers_from_report(report, bank_ledger: str) -> list[ParsedVoucher]:
     return out
 
 
-def _stage(client, user, all_vouchers, skipped, digest, date_from, date_to):
+def _stage(client, user, all_vouchers, skipped, digest, date_from, date_to, type_map=None, document=None):
     vouchers = [v for v in all_vouchers if (date_from is None or v.date >= date_from) and (date_to is None or v.date <= date_to)]
     if not vouchers:
         raise TallyImportError("There are no vouchers to import in this file for that period.")
@@ -192,11 +234,9 @@ def _stage(client, user, all_vouchers, skipped, digest, date_from, date_to):
             f"The books are signed off through {through:%d-%m-%Y}, so vouchers dated from {first:%d-%m-%Y} cannot be imported. "
             f"Only the client's senior CA or a firm administrator can reopen the books."
         )
-    if JournalEntry.objects.filter(firm_id=client.firm_id, client=client, entry_date__gte=first, entry_date__lte=last).exists():
-        raise TallyImportError(
-            f"This client already has entries between {first:%d-%m-%Y} and {last:%d-%m-%Y}. History can only be imported "
-            f"into a period with nothing posted."
-        )
+    # Entries or bank rows already in these dates are a warning for the accountant to decide on, not a refusal: the same voucher
+    # (by Tally's id) is never written twice, but a manual entry or an uploaded statement for the same money would be counted twice.
+    overlap = _overlap(client, first, last)
 
     stamp = chart_stamp(client, year)
     existing = LedgerImportRun.objects.filter(
@@ -214,9 +254,12 @@ def _stage(client, user, all_vouchers, skipped, digest, date_from, date_to):
     facts = _facts(client)
     rows: list[dict] = []
     accounts_used: set[str] = set()
-    counts = {"vouchers": 0, "will_post": 0, "will_make_bill": 0, "skipped": 0, "bank_waiting": 0, "bank_rows": 0, "stock_lines": 0, "by_type": {}}
+    counts = {"vouchers": 0, "will_post": 0, "will_make_bill": 0, "skipped": 0, "bank_waiting": 0, "bank_rows": 0, "stock_lines": 0, "by_type": {}, "unknown_types": {}, "type_map": dict(type_map or {})}
     for v in vouchers:
-        plan = plan_voucher(v, facts)
+        plan = plan_voucher(v, facts, type_map)
+        known = normal_name(v.tally_type) in STANDARD_TYPES or normal_name(v.tally_type) in (type_map or {})
+        if not known:  # a type the firm made up: the person is asked what it counts as
+            counts["unknown_types"][v.tally_type] = counts["unknown_types"].get(v.tally_type, 0) + 1
         counts["vouchers"] += 1
         counts["by_type"][v.tally_type] = counts["by_type"].get(v.tally_type, 0) + 1
         row = {
@@ -264,13 +307,14 @@ def _stage(client, user, all_vouchers, skipped, digest, date_from, date_to):
         })
     counts["date_from"], counts["date_to"] = first.isoformat(), last.isoformat()
 
-    if accounts_used and StatementTransaction.objects.filter(
-        firm_id=client.firm_id, bank_account_id__in=accounts_used, value_date__gte=first, value_date__lte=last
-    ).exists():
-        raise TallyImportError(
-            f"A bank account in this file already has statement rows between {first:%d-%m-%Y} and {last:%d-%m-%Y}. "
-            f"Importing the bank vouchers on top would count them twice. Remove that statement first."
-        )
+    overlap["statement_rows"] = (
+        StatementTransaction.objects.filter(
+            firm_id=client.firm_id, bank_account_id__in=accounts_used, value_date__gte=first, value_date__lte=last
+        ).count()
+        if accounts_used
+        else 0
+    )
+    counts["existing_entries"], counts["existing_statement_rows"] = overlap["entries"], overlap["statement_rows"]
 
     run = LedgerImportRun.objects.create(
         firm_id=client.firm_id,
@@ -285,7 +329,8 @@ def _stage(client, user, all_vouchers, skipped, digest, date_from, date_to):
         counts=counts,
         rows=rows,
         chart_stamp=stamp,
-        expires_at=timezone.now() + PREVIEW_LIFETIME,
+        expires_at=timezone.now() + QUEUE_LIFETIME,
+        document=document,
     )
     return run, False
 
@@ -299,26 +344,72 @@ class _Refused(Exception):
     """A rule stopped this one voucher. The message is shown against it."""
 
 
-def confirm_vouchers(run: LedgerImportRun, membership, user) -> LedgerImportRun:
-    """Write every voucher the preview marked ``post``, each in its own transaction. Idempotent."""
+def check_postable(run: LedgerImportRun, membership, *, allow_overlap: bool = False) -> None:
+    """Raise the reason this queued import cannot be posted now (rights, state, ledgers changed, entries already in its dates)."""
     client = run.client
     _require_rights(membership, client)
     if run.kind != ImportKind.VOUCHERS:
         raise TallyImportError("This is not a vouchers import.")
+    if run.status != ImportStatus.PREVIEW or run.expires_at <= timezone.now():
+        raise TallyImportError("This import has been discarded or has expired. Upload the file again.")
+    if chart_stamp(client, run.financial_year) != run.chart_stamp:
+        raise TallyRunStaleError("The client's ledgers changed since this import was read. Read it again, and then post it.")
+    _recheck_period(client, run, allow_overlap)
+
+
+def discard_run(run: LedgerImportRun, membership) -> LedgerImportRun:
+    """Take a queued import out of the queue. The stored file stays with the client's documents."""
+    _require_rights(membership, run.client)
+    if run.kind != ImportKind.VOUCHERS or run.status != ImportStatus.PREVIEW:
+        raise TallyImportError("Only an import still waiting to be posted can be discarded.")
+    run.status = ImportStatus.DISCARDED
+    run.save(update_fields=["status"])
+    return run
+
+
+def refresh_run(run: LedgerImportRun, membership, user, *, voucher_types=None) -> LedgerImportRun:
+    """Read the stored file again against the client's ledgers as they stand now, and queue that in place of this one.
+
+    The queue is long-lived, so the ledgers can change between reading a file and posting it. Nothing needs uploading again.
+    """
+    client = run.client
+    _require_rights(membership, client)
+    if run.kind != ImportKind.VOUCHERS or run.status != ImportStatus.PREVIEW:
+        raise TallyImportError("Only an import still waiting to be posted can be read again.")
+    document = run.document
+    if document is None or not document.storage_key:
+        raise TallyImportError("The file for this import is no longer stored, so it cannot be read again. Upload it again.")
+    try:
+        StorageAdapter.verify_tenant_key(document.storage_key, client.firm_id)
+        data = get_storage().get(document.storage_key)
+    except (PermissionError, FileNotFoundError, KeyError):
+        raise TallyImportError("The file for this import is no longer stored, so it cannot be read again. Upload it again.") from None
+    types = voucher_types if voucher_types is not None else run.counts.get("type_map")
+    fresh, _reused = stage_vouchers(client, membership, user, data=data, filename=document.original_filename, voucher_types=types)
+    if fresh.pk != run.pk:
+        run.status = ImportStatus.DISCARDED
+        run.save(update_fields=["status"])
+    return fresh
+
+
+def confirm_vouchers(run: LedgerImportRun, membership, user, *, allow_overlap: bool = False, on_progress=None) -> LedgerImportRun:
+    """Write every voucher the preview marked ``post``, each in its own transaction. Idempotent.
+
+    ``allow_overlap`` is the accountant's say-so that entries or bank rows already in these dates may stay beside the import;
+    ``on_progress(done, total)`` is told as the vouchers are written.
+    """
+    client = run.client
     if run.status == ImportStatus.CONFIRMED:
         return run
-    if run.status != ImportStatus.PREVIEW or run.expires_at <= timezone.now():
-        raise TallyImportError("This preview has expired. Upload the file again.")
-    if chart_stamp(client, run.financial_year) != run.chart_stamp:
-        raise TallyRunStaleError("The client's ledgers changed since this preview was made. Upload the file again.")
-
-    _recheck_period(client, run)
+    check_postable(run, membership, allow_overlap=allow_overlap)
     ledgers = {normal_name(a.name): a for a in LedgerAccount.objects.filter(firm_id=client.firm_id, client=client)}
     done = set(TallyVoucher.objects.filter(firm_id=client.firm_id, client=client).values_list("guid", flat=True))
     result = {"posted": 0, "bills": 0, "skipped": 0, "failed": [], "bank_rows": 0, "unmatched_bills": 0, "stock_entries": 0}
     todo = sorted((r for r in run.rows if r["action"] == "post"), key=lambda r: (r["date"], r["ordinal"]))
     try:
-        for row in todo:
+        for count, row in enumerate(todo, start=1):
+            if on_progress is not None and (count % 10 == 0 or count == len(todo)):
+                on_progress(count - 1, len(todo))
             if row["guid"] in done:
                 result["skipped"] += 1
                 continue
@@ -358,17 +449,28 @@ def confirm_vouchers(run: LedgerImportRun, membership, user) -> LedgerImportRun:
     return run
 
 
-def _recheck_period(client, run) -> None:
-    """The preview said the period was empty; it may not be any more. Looked at again before anything is written."""
+def _recheck_period(client, run, allow_overlap: bool = False) -> None:
+    """Look at the period again before anything is written: the preview's warning may have grown, and a person must have said yes to it."""
     first = datetime.date.fromisoformat(run.counts["date_from"])
     last = datetime.date.fromisoformat(run.counts["date_to"])
-    if JournalEntry.objects.filter(firm_id=client.firm_id, client=client, entry_date__gte=first, entry_date__lte=last).exists():
-        raise TallyRunStaleError("Entries were posted for these dates since the preview was made. Upload the file again.")
+    entries = _overlap(client, first, last)["entries"]
     accounts = {leg[1] for r in run.rows if r.get("bank") for leg in r["bank"]["legs"]}
-    if accounts and StatementTransaction.objects.filter(
-        firm_id=client.firm_id, bank_account_id__in=accounts, value_date__gte=first, value_date__lte=last
-    ).exists():
-        raise TallyRunStaleError("A bank statement was uploaded for these dates since the preview was made. Upload the file again.")
+    statement_rows = (
+        StatementTransaction.objects.filter(firm_id=client.firm_id, bank_account_id__in=accounts, value_date__gte=first, value_date__lte=last).count()
+        if accounts
+        else 0
+    )
+    if allow_overlap or not (entries or statement_rows):
+        return
+    parts = []
+    if entries:
+        parts.append(f"{entries} entries")
+    if statement_rows:
+        parts.append(f"{statement_rows} bank statement rows")
+    raise TallyOverlapError(
+        f"This client already has {' and '.join(parts)} between {first:%d-%m-%Y} and {last:%d-%m-%Y}. Importing on top can count the same money "
+        f"twice. Confirm that you want to import anyway, or take the other entries out first."
+    )
 
 
 def _write(client, user, run, row, ledgers) -> dict:

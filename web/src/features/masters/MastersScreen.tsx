@@ -14,7 +14,7 @@ import { raw } from '@/api/client'
 import { isApiError, messageOf } from '@/api/errors'
 import { journal, ledgerRows, ledgers as ledgersQuery, parties as partiesQuery, rules as rulesQuery } from '@/api/queries/books'
 import { clientDetail, useInvalidateClient, V1 } from '@/api/queries/clients'
-import { GROUP_LABEL, LEDGER_GROUPS, TDS_SECTIONS, type JournalEntry, type LedgerAccount, type Party, type Rule } from '@/api/types'
+import { GROUP_LABEL, LEDGER_GROUPS, TDS_SECTIONS, type JournalEntry, type LedgerAccount, type Party, type Rule, type RuleEvidence } from '@/api/types'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -871,6 +871,7 @@ function Rules({ clientId }: { clientId: string }) {
   const invalidate = useInvalidateClient(clientId)
   const queryClient = useQueryClient()
   const [creating, setCreating] = useState(false)
+  const [checking, setChecking] = useState<Rule | null>(null)
   const listRef = useRef<HTMLUListElement>(null)
   const [chosen, setChosen] = useState<Record<string, boolean>>({})
   const queue = useRef<Record<string, Promise<void>>>({})
@@ -954,11 +955,16 @@ function Rules({ clientId }: { clientId: string }) {
                     <RuleSentence rule={r} />
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {SOURCE_LABEL[r.source] ?? r.source} · used <span className="num">{r.hit_count}</span>
+                    {SOURCE_LABEL[r.source] ?? r.source} · sure <span className="num">{Math.round((r.confidence ?? 0) * 100)}%</span> · used <span className="num">{r.hit_count}</span>
                     {r.last_hit_at ? ` · last ${formatDate(r.last_hit_at.slice(0, 10))}` : ''}
                   </p>
                 </div>
                 <div className="flex items-center gap-3">
+                  {r.source !== 'SEED' && (
+                    <Button size="sm" variant="ghost" onClick={() => setChecking(r)} aria-label={`Check rule: ${words}`}>
+                      Check
+                    </Button>
+                  )}
                   {manage && r.source !== 'SEED' && (
                     <Button size="sm" variant="ghost" onClick={() => void remove(r)} loading={removing.has(r.id)} aria-label={`Delete rule: ${words}`}>
                       <Trash2 /> Delete
@@ -973,8 +979,116 @@ function Rules({ clientId }: { clientId: string }) {
           )}
         </PagedList>
       )}
+      {checking && (
+        <RuleCheck
+          clientId={clientId}
+          rule={checking}
+          manage={manage}
+          ledgers={(ledgers.data ?? []).filter((l) => l.status === 'ACTIVE' && l.is_active)}
+          onClose={() => setChecking(null)}
+        />
+      )}
       {creating && <RuleForm clientId={clientId} ledgers={(ledgers.data ?? []).filter((l) => l.status === 'ACTIVE' && l.is_active)} onClose={() => setCreating(false)} />}
     </div>
+  )
+}
+
+/** What a payee rule rests on: the rows it came from and where each went, with a way to send the payee somewhere else. */
+function RuleCheck({ clientId, rule, ledgers, manage, onClose }: { clientId: string; rule: Rule; ledgers: LedgerAccount[]; manage: boolean; onClose: () => void }) {
+  const invalidate = useInvalidateClient(clientId)
+  const queryClient = useQueryClient()
+  const evidence = useQuery({
+    queryKey: ['rule-evidence', clientId, rule.id],
+    queryFn: () => raw.get<RuleEvidence>(`${V1}/clients/${clientId}/rules/${rule.id}/evidence/`),
+  })
+  const [ledger, setLedger] = useState(rule.ledger)
+  const [saving, setSaving] = useState(false)
+  const found = evidence.data
+
+  async function save() {
+    setSaving(true)
+    try {
+      const saved = await raw.patch<Rule>(`${V1}/clients/${clientId}/rules/${rule.id}/`, { ledger })
+      if (saved?.id) upsertInCache(queryClient, rulesQuery(clientId).queryKey, saved)
+      void invalidate()
+      toast.success('Rule changed; it applies to rows uploaded from now on')
+      onClose()
+    } catch (e) {
+      toast.error(messageOf(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && !saving && onClose()}>
+      <DialogContent aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>Check this rule</DialogTitle>
+          <DialogDescription>
+            <RuleSentence rule={rule} />
+          </DialogDescription>
+        </DialogHeader>
+        {evidence.isPending ? (
+          <Spinner />
+        ) : evidence.error ? (
+          <ErrorState error={evidence.error} retry={() => void evidence.refetch()} />
+        ) : !found?.supported ? (
+          <p className="text-sm text-muted-foreground">This rule matches on the narration, not on a payee, so there are no past rows to count for it.</p>
+        ) : (
+          <div className="grid gap-3 text-sm">
+            <p>
+              {found.total ? (
+                <>
+                  <strong className="font-semibold text-heading">{found.payee}</strong>: <span className="num">{found.to_this_ledger}</span> of{' '}
+                  <span className="num">{found.total}</span> placed rows went to <strong className="font-semibold text-heading">{rule.ledger_name}</strong>.
+                </>
+              ) : (
+                'No placed rows from this payee were found; the rule may have come from a Tally import or from rows since removed.'
+              )}
+            </p>
+            {!!found.elsewhere?.length && (
+              <p className="text-muted-foreground">
+                The others went to: {found.elsewhere.map((e) => `${e.ledger} (${e.count})`).join(', ')}.
+              </p>
+            )}
+            {!!found.examples?.length && (
+              <ul className="divide-y divide-border-strong rounded-lg border border-border-strong">
+                {found.examples.map((x, i) => (
+                  <li key={i} className="flex flex-wrap items-baseline justify-between gap-x-4 px-3 py-2">
+                    <span className="min-w-0 flex-1 basis-60 break-words">
+                      {formatDate(x.date)} · {x.narration}
+                    </span>
+                    <span className="num whitespace-nowrap">
+                      <Money paise={x.paise} /> {x.is_debit ? 'out' : 'in'} → {x.ledger}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        )}
+        {manage && (
+          <Field label="Place this payee in">
+            {(p) => (
+              <Select {...p} value={ledger} onChange={(e) => setLedger(e.target.value)}>
+                {ledgers.map((l) => (
+                  <option key={l.id} value={l.id}>{l.name}</option>
+                ))}
+              </Select>
+            )}
+          </Field>
+        )}
+        <DialogFooter>
+          <Button variant="ghost" onClick={onClose} disabled={saving}>Close</Button>
+          {manage && (
+            <Button onClick={() => void save()} loading={saving} disabled={ledger === rule.ledger}>
+              Save change
+            </Button>
+          )}
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

@@ -98,7 +98,7 @@ export function ChartStep({ clientId }: { clientId: string }) {
     <Card className="grid gap-3 p-4">
       <h2 className="font-medium">1. The client's ledgers</h2>
       <p className="text-sm text-muted-foreground">
-        Choose the ledgers (masters) exported from Tally: an .xml, .xlsx or .csv. Their groups and opening balances come in with them. Nothing is
+        Choose the ledgers (masters) exported from Tally: an .xml, .json, .xlsx or .csv. Their groups and opening balances come in with them. Nothing is
         changed until you apply the preview.
       </p>
       <div className="flex flex-wrap items-end gap-3">
@@ -118,7 +118,7 @@ export function ChartStep({ clientId }: { clientId: string }) {
         <input
           ref={input}
           type="file"
-          accept=".xml,.xlsx,.csv"
+          accept=".xml,.json,.xlsx,.csv"
           aria-label="Ledgers file"
           className="sr-only"
           onChange={(e) => {

@@ -92,6 +92,7 @@ DOMAIN_ERRORS = {
     "TallyTooLargeError": (status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, "tally_file_too_large"),
     "TallyYearMismatchError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "tally_year_mismatch"),
     "TallyRunStaleError": (status.HTTP_409_CONFLICT, "tally_run_stale"),
+    "TallyOverlapError": (status.HTTP_409_CONFLICT, "tally_overlap"),
     "TallyConflictsUnresolvedError": (status.HTTP_409_CONFLICT, "tally_conflicts_unresolved"),
     "TallyImportError": (status.HTTP_409_CONFLICT, "tally_rule"),
     # Nothing to act on.

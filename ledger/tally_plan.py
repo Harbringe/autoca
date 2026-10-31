@@ -99,8 +99,13 @@ class Skip:
     reason: str
 
 
-def plan_voucher(v: ParsedVoucher, facts: Facts) -> Planned | Skip:
-    vtype = _TYPES.get(normal_name(v.tally_type))
+STANDARD_TYPES = tuple(_TYPES)
+
+
+def plan_voucher(v: ParsedVoucher, facts: Facts, type_map: dict[str, str] | None = None) -> Planned | Skip:
+    """``type_map`` says which standard type a firm's own voucher type counts as: ``{"gst sale": "sales"}`` (names normalised)."""
+    name = normal_name(v.tally_type)
+    vtype = _TYPES.get(name) or _TYPES.get((type_map or {}).get(name, ""))
     if vtype is None:
         return Skip(v, "This voucher type is not imported.")
     for line in v.lines:

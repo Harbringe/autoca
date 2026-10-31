@@ -2148,6 +2148,31 @@ export interface paths {
         patch: operations["clients_rules_partial_update"];
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/rules/{id}/evidence/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The placed rows a payee rule rests on
+         * @description Rules that place transactions automatically.
+         *
+         *     Mostly written by the system: every decision a reviewer makes mints one,
+         *     keyed on the payee rather than the narration so it covers that payee
+         *     permanently. Rules can also be created here by hand, which outranks anything
+         *     learned.
+         */
+        get: operations["clients_rules_evidence_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/statements/": {
         parameters: {
             query?: never;
@@ -2383,6 +2408,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/tally-imports/{id}/discard/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Take a queued import out of the queue
+         * @description The stored file stays with the client's documents.
+         */
+        post: operations["clients_tally_imports_discard_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/tally-imports/{id}/refresh-vouchers/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Read a queued import's stored file again against the client's ledgers as they are now
+         * @description Replaces the queued import with a fresh reading of the same file; nothing is uploaded again. Optionally says what the firm's own voucher types count as.
+         */
+        post: operations["clients_tally_imports_refresh_vouchers_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/tally-imports/{id}/undo/": {
         parameters: {
             query?: never;
@@ -2397,6 +2462,26 @@ export interface paths {
          * @description Takes every entry and bill the run wrote back out. Refused with `409 tally_rule` once a payment or adjustment is applied to one of its bills, and `409 entry_locked` when any of its entries is now inside signed-off books.
          */
         post: operations["clients_tally_imports_undo_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/tally-imports/{id}/voucher-run/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * One queued import with its voucher rows
+         * @description Bring a client's ledgers and opening balances in from Tally.
+         */
+        get: operations["clients_tally_imports_voucher_run_retrieve"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -2457,6 +2542,26 @@ export interface paths {
          * @description Creates exactly the ledgers listed, each in the group given, and the bank accounts listed that have an account number, each tied to the ledger of the same name. Existing ledgers are left alone. All or nothing.
          */
         post: operations["clients_tally_imports_setup_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/tally-imports/voucher-runs/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The imports waiting to be posted, being posted, or done, newest first
+         * @description The client's queue of Tally vouchers imports, without their voucher rows (read one to see those).
+         */
+        get: operations["clients_tally_imports_voucher_runs_list"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -6626,6 +6731,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["TallyImportSummary"][];
         };
+        PaginatedTallyVoucherRunSummaryList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["TallyVoucherRunSummary"][];
+        };
         PartnerInput: {
             name: string;
             /** @description Share of profit in basis points. */
@@ -7843,6 +7963,31 @@ export interface components {
              */
             classification: string;
         };
+        RuleElsewhere: {
+            ledger: string;
+            count: number;
+        };
+        /** @description The placed rows a payee rule rests on, so an accountant can check it. */
+        RuleEvidence: {
+            /** @description False for a rule that is not keyed on the payee: no rows can be matched to it. */
+            supported: boolean;
+            /** @description The payee as the bank spelled it, most common spelling first. */
+            payee?: string;
+            /** @description Placed rows from this payee, in the rule's direction. */
+            total?: number;
+            /** @description How many of them went to the rule's ledger. */
+            to_this_ledger?: number;
+            elsewhere?: components["schemas"]["RuleElsewhere"][];
+            examples?: components["schemas"]["RuleEvidenceExample"][];
+        };
+        RuleEvidenceExample: {
+            /** Format: date */
+            date: string;
+            narration: string;
+            paise: number;
+            is_debit: boolean;
+            ledger: string;
+        };
         RunCreateRequest: {
             /** Format: uuid */
             registration: string;
@@ -8696,7 +8841,7 @@ export interface components {
         TallyImportUploadRequest: {
             /**
              * Format: binary
-             * @description The ledger masters exported from Tally: .xml (preferred), .xlsx or .csv.
+             * @description The ledger masters exported from Tally: .xml (preferred), .xlsx, .csv or .json.
              */
             file: string;
             /** @description The year the opening balances are as at the start of: 2025 means 1 April 2025. */
@@ -8749,6 +8894,14 @@ export interface components {
             uses: number;
             /** @description The evidence was thin or mixed; look at this one. */
             unsure: boolean;
+        };
+        TallyProgress: {
+            done: number;
+            total: number;
+        };
+        TallyRefreshRequest: {
+            /** @description What the firm's own voucher types count as; left out, the choice made earlier stands. */
+            voucher_types?: unknown;
         };
         TallyReportFile: {
             file: string;
@@ -8944,7 +9097,7 @@ export interface components {
             will_post: number;
             will_make_bill: number;
             skipped: number;
-            /** @description Bank vouchers left out (no bank account in AuditFlow, a loan or card account, or more than two lines); the bank ledger is incomplete. */
+            /** @description Bank vouchers left out (no bank account in AutoCA, a loan or card account, or more than two lines); the bank ledger is incomplete. */
             bank_waiting: number;
             /** @description Statement rows the bank vouchers will write. */
             bank_rows: number;
@@ -8953,6 +9106,18 @@ export interface components {
             by_type: {
                 [key: string]: number;
             };
+            /** @description The firm's own voucher types the importer does not know, with how many vouchers each has: the person says what each counts as. */
+            unknown_types?: {
+                [key: string]: number;
+            };
+            /** @description What the person said the firm's own voucher types count as. */
+            type_map?: {
+                [key: string]: string;
+            };
+            /** @description Entries the client already has in the dates this import covers; posting on top needs the person's say-so. */
+            existing_entries?: number;
+            /** @description Bank statement rows already in those dates for the accounts this import writes to. */
+            existing_statement_rows?: number;
             date_from: string;
             date_to: string;
         };
@@ -9020,6 +9185,51 @@ export interface components {
             expires_at: string;
             /** Format: date-time */
             confirmed_at?: string | null;
+            /** @description The file as it was uploaded; it stays with the client's documents. */
+            readonly file_name: string;
+            /**
+             * Format: uuid
+             * @description The stored file, downloadable from the documents.
+             */
+            readonly document: string | null;
+            readonly uploaded_by_name: string;
+            /** @description A worker is writing this import's vouchers now. */
+            readonly posting: boolean;
+            /** @description How far posting has got, while it is being posted. */
+            readonly progress: components["schemas"]["TallyProgress"] | null;
+            /** @description Why the last attempt to post stopped, in words for the person. */
+            readonly error: string;
+        };
+        /** @description One line of the queue: the same, without the voucher rows (a year's import has thousands). */
+        TallyVoucherRunSummary: {
+            /** Format: uuid */
+            readonly id: string;
+            kind?: components["schemas"]["Kind372Enum"];
+            status?: components["schemas"]["Status105Enum"];
+            /** @description Starting year, e.g. 2025. */
+            financial_year: number;
+            counts: components["schemas"]["TallyVoucherCounts"];
+            readonly result: components["schemas"]["TallyVoucherResult"] | null;
+            /** Format: date-time */
+            readonly created_at: string;
+            /** Format: date-time */
+            expires_at: string;
+            /** Format: date-time */
+            confirmed_at?: string | null;
+            /** @description The file as it was uploaded; it stays with the client's documents. */
+            readonly file_name: string;
+            /**
+             * Format: uuid
+             * @description The stored file, downloadable from the documents.
+             */
+            readonly document: string | null;
+            readonly uploaded_by_name: string;
+            /** @description A worker is writing this import's vouchers now. */
+            readonly posting: boolean;
+            /** @description How far posting has got, while it is being posted. */
+            readonly progress: components["schemas"]["TallyProgress"] | null;
+            /** @description Why the last attempt to post stopped, in words for the person. */
+            readonly error: string;
         };
         TallyVouchersUploadRequest: {
             /**
@@ -9037,6 +9247,8 @@ export interface components {
              * @description Import vouchers dated on or before this day.
              */
             date_to?: string;
+            /** @description What the firm's own voucher types count as: {Tally's name: a standard type}, for example {"GST SALE": "sales"}. The standard types are sales, purchase, credit note, debit note, journal, payment, receipt and contra. */
+            voucher_types?: unknown;
         };
         TdsMonth: {
             /** @description The TDS section, or `?` where a deduction carried none. */
@@ -9178,7 +9390,7 @@ export interface components {
          *     | firm.owner_changed | actor, member, from, to |
          *     | firm.renamed | actor, from, to |
          *
-         *     `actor` is "AuditFlow platform" for a change made by the platform owner.
+         *     `actor` is "AutoCA platform" for a change made by the platform owner.
          */
         TeamEventDetail: {
             actor?: string;
@@ -13051,6 +13263,28 @@ export interface operations {
             };
         };
     };
+    clients_rules_evidence_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RuleEvidence"];
+                };
+            };
+        };
+    };
     clients_statements_list: {
         parameters: {
             query?: {
@@ -13569,6 +13803,120 @@ export interface operations {
             };
         };
     };
+    clients_tally_imports_discard_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyVoucherRun"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+        };
+    };
+    clients_tally_imports_refresh_vouchers_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "multipart/form-data": components["schemas"]["TallyRefreshRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["TallyRefreshRequest"];
+                "application/json": components["schemas"]["TallyRefreshRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyVoucherRun"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+        };
+    };
     clients_tally_imports_undo_create: {
         parameters: {
             query?: never;
@@ -13614,6 +13962,52 @@ export interface operations {
                 };
             };
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+        };
+    };
+    clients_tally_imports_voucher_run_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyVoucherRun"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -13831,6 +14225,56 @@ export interface operations {
                 };
             };
             409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+        };
+    };
+    clients_tally_imports_voucher_runs_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedTallyVoucherRunSummaryList"];
+                };
+            };
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TallyError"];
+                };
+            };
+            404: {
                 headers: {
                     [name: string]: unknown;
                 };

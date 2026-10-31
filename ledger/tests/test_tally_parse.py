@@ -235,7 +235,7 @@ def test_the_type_is_decided_from_the_bytes_not_the_name():
         parse(masters_xml(sample_ledgers()), "masters.xlsx")
     with pytest.raises(TallyParseError, match="not XML"):
         parse(csv_bytes([["Ledger", "Group"], ["Rent", "Indirect Expenses"]]), "masters.xml")
-    with pytest.raises(TallyParseError, match=r"\.xml, \.xlsx or \.csv"):
+    with pytest.raises(TallyParseError, match=r".xml, .xlsx, .csv or .json"):
         parse(masters_xml(sample_ledgers()), "masters.exe")
 
 
@@ -344,3 +344,54 @@ def test_a_csv_in_utf16_is_read():
 def test_a_table_without_a_ledger_column_is_refused():
     with pytest.raises(TallyParseError, match="Ledger"):
         parse(csv_bytes([["Foo", "Bar"], ["1", "2"]]), "a.csv")
+
+
+def _tally_json(element):
+    """An XML element as Tally's JSON writes it: lower-case tags, attributes under ``metadata``, repeated blocks as lists."""
+    out = {}
+    if element.attrib:
+        out["metadata"] = {k.lower(): v for k, v in element.attrib.items()}
+    kids = {}
+    for child in element:
+        kids.setdefault(child.tag.lower(), []).append(child)
+    for tag, nodes in kids.items():
+        key = tag.removesuffix(".list")  # Tally's JSON drops the ".LIST": a repeated block is a list under the plain name
+        if tag.endswith(".list"):
+            out[key] = [_tally_json(n) for n in nodes]
+        elif len(nodes) == 1:
+            node = nodes[0]
+            out[key] = _tally_json(node) if (len(node) or node.attrib) else (node.text or "")
+        else:
+            out[key] = [n.text or "" for n in nodes]
+    return out
+
+
+def _masters_json(ledgers, groups=()):
+    from ledger.tests.tally_xml import masters_tree
+
+    holder = masters_tree(ledgers, groups).find(".//TALLYMESSAGE")
+    messages = []
+    for node in holder:
+        item = _tally_json(node)
+        item.setdefault("metadata", {})["type"] = node.tag.title()
+        messages.append(item)
+    import json
+
+    return json.dumps({"tallymessage": messages}).encode()
+
+
+def test_a_json_masters_export_reads_like_its_xml_twin():
+    ledgers = [ledger("Acme Traders", "Sundry Debtors", "1000.00 Dr"), ledger("Rent", "Indirect Expenses", None, alias="Premises")]
+    groups = [group("Sundry Debtors", "Current Assets")]
+    from_xml = parse_masters(masters_xml(ledgers, groups), "m.xml", max_bytes=LIMIT)
+    from_json = parse_masters(_masters_json(ledgers, groups), "m.json", max_bytes=LIMIT)
+    assert from_json.source_format == "json"
+    assert [(x.name, x.parent, x.opening_paise, x.alias) for x in from_json.ledgers] == [
+        (x.name, x.parent, x.opening_paise, x.alias) for x in from_xml.ledgers
+    ]
+    assert from_json.groups.keys() == from_xml.groups.keys()
+
+
+def test_a_json_file_that_is_not_masters_is_refused():
+    with pytest.raises(TallyParseError):
+        parse_masters(b'{"hello": 1}', "m.json", max_bytes=LIMIT)

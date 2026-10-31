@@ -386,6 +386,11 @@ class LedgerImportRun(UUIDModel, FirmScopedModel):
     #: against a different chart is refused: the preview no longer describes it.
     chart_stamp = models.CharField(max_length=64)
     expires_at = models.DateTimeField()
+    #: The file as it was uploaded, kept as the client's evidence (a vouchers import: it is what the queue re-reads when the
+    #: client's ledgers change before the accountant posts, and what can be downloaded years later).
+    document = models.ForeignKey(
+        "documents.Document", null=True, blank=True, on_delete=models.SET_NULL, related_name="import_runs"
+    )
     result = models.JSONField(default=dict, blank=True)
     confirmed_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     confirmed_at = models.DateTimeField(null=True, blank=True)

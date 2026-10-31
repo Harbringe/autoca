@@ -114,13 +114,25 @@ def _doc_name(run) -> str:
 # ---------------------------------------------------------------------------
 
 
+def normalise_type_map(voucher_types: dict | None) -> dict[str, str]:
+    """What the person said the firm's own voucher types count as, with the names normalised and only known answers kept."""
+    return {normal_name(k): v for k, v in (voucher_types or {}).items() if v in MAPPABLE_TYPES}
+
+
+def stage_month(client, user, vouchers, skipped, month: str, seed: str, type_map, document):
+    """Stage one calendar month of a large file as an import of its own. Returns ``(run, reused)``; the same file, month and
+    choices give the same run again."""
+    digest = hashlib.sha256(f"{seed}|{month}".encode()).hexdigest()
+    return _stage(client, user, vouchers, skipped, digest, None, None, type_map, document)
+
+
 def stage_vouchers(client, membership, user, *, data: bytes, filename: str, date_from=None, date_to=None, voucher_types=None):
     """Read ``data`` and stage a preview. Returns ``(run, reused)``.
 
     ``voucher_types`` says which standard type each of the firm's own voucher types counts as (``{"GST SALE": "sales"}``).
     """
     _require_rights(membership, client)
-    type_map = {normal_name(k): v for k, v in (voucher_types or {}).items() if v in MAPPABLE_TYPES}
+    type_map = normalise_type_map(voucher_types)
     digest = hashlib.sha256(data + repr(sorted(type_map.items())).encode()).hexdigest() if type_map else hashlib.sha256(data).hexdigest()
     parsed = parse_vouchers(data, filename, max_bytes=settings.MAX_TALLY_IMPORT_BYTES)
     if len(parsed.companies) > 1:

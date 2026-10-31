@@ -21,6 +21,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from api.permissions import HasFirmPermission
+from api.serializers.core import JobSerializer
 from api.serializers.tally import (
     TallyBankReportUploadSerializer,
     TallyConfirmSerializer,
@@ -44,6 +45,7 @@ from core.access import get_visible_client
 from ledger.models import ImportKind, ImportStatus, LedgerImportRun
 from ledger.tally_import import confirm_run, stage_upload
 from ledger.tally_jobs import enqueue_post
+from ledger.tally_read import enqueue_read
 from ledger.tally_setup import apply_setup, discover_files
 from ledger.tally_voucher_import import (
     discard_run,
@@ -169,12 +171,14 @@ class TallyImportViewSet(viewsets.GenericViewSet):
             "first.\n\n"
             "Refused with `409 tally_rule` when the period already has entries for the client, `409 entry_locked` when "
             "it reaches a signed-off date, and `409 tally_rule` for a file with more than one company. The same file "
-            "with the chart unchanged returns the existing preview with **200**. Same roles as the masters import."
+            "with the chart unchanged returns the existing preview with **200**. A file larger than the request can read (over 10 MB) is stored "
+            "and read by a worker: the answer is **202** with a `tally.read` job, whose result lists one queued import per month. Same roles as the masters import."
         ),
         request=TallyVouchersUploadSerializer,
         responses={
             200: TallyVoucherRunSerializer,
             201: TallyVoucherRunSerializer,
+            202: JobSerializer,
             **_ERRORS,
             409: TallyErrorSerializer,
             413: TallyErrorSerializer,
@@ -187,6 +191,17 @@ class TallyImportViewSet(viewsets.GenericViewSet):
         payload = TallyVouchersUploadSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         upload = payload.validated_data["file"]
+        if upload.size > settings.TALLY_SYNC_READ_BYTES:
+            # Too much to read inside a request: store it and let the worker cut it into months. The screen follows the job.
+            outcome = enqueue_read(
+                client,
+                request.membership,
+                request.user,
+                data=upload.read(),
+                filename=os.path.basename(upload.name),
+                voucher_types=payload.validated_data.get("voucher_types"),
+            )
+            return Response(JobSerializer(outcome.job).data, status=status.HTTP_202_ACCEPTED)
         data = upload.read(settings.MAX_TALLY_IMPORT_BYTES + 1)
         run, reused = stage_vouchers(
             client,

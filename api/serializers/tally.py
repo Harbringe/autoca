@@ -18,6 +18,7 @@ from ledger.models import ImportKind, ImportStatus, LedgerImportRun
 from ledger.tally_import import ALL_CHOICES, BANK_CHOICES
 from ledger.tally_parse import ALLOWED_EXTENSIONS
 from ledger.tally_plan import MAPPABLE_TYPES
+from ledger.tally_vouchers import voucher_file_limit
 
 ROW_ACTIONS = ["create", "match", "conflict", "needs_group", "skipped"]
 CONFLICT_KINDS = ["group_differs", "name_variant", "duplicate_in_file", "needs_group"]
@@ -252,8 +253,11 @@ class TallyVouchersUploadSerializer(serializers.Serializer):
     def validate_file(self, upload):
         if upload.size == 0:
             raise serializers.ValidationError("The file is empty.")
-        if upload.size > settings.MAX_TALLY_IMPORT_BYTES * 2:
-            raise serializers.ValidationError("The file is far too large to be a vouchers export.")
+        limit = voucher_file_limit(upload.name)
+        if upload.size > limit:
+            raise serializers.ValidationError(
+                f"This file is larger than {limit // (1024 * 1024)} MB, which is more than an import takes. Export it from Tally in parts (a year at a time)."
+            )
         if not upload.name.lower().endswith((".xml", ".json")):
             raise serializers.ValidationError("Upload the .xml or .json file exported from Tally.")
         return upload

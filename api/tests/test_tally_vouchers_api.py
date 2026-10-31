@@ -286,3 +286,21 @@ def test_a_firms_own_type_said_to_be_sales_posts_as_sales(api, firm, client_reco
         format="multipart",
     )
     assert asked.status_code == 201 and asked.json()["counts"]["will_post"] == 1 and asked.json()["counts"]["unknown_types"] == {}
+
+
+def test_a_vouchers_file_over_its_limit_is_refused_naming_the_limit(api, client_record, chart, settings):
+    settings.MAX_TALLY_VOUCHERS_XML_BYTES = 1000
+    big = b"<ENVELOPE>" + b"x" * 2000 + b"</ENVELOPE>"
+    response = api.post(
+        url(client_record, "vouchers"), {"file": SimpleUploadedFile("big.xml", big, content_type="text/xml")}, format="multipart"
+    )
+    assert response.status_code == 400
+    assert "larger than" in json.dumps(response.json())
+
+
+def test_the_limit_for_a_vouchers_file_is_by_extension(settings):
+    from ledger.tally_vouchers import voucher_file_limit
+
+    settings.MAX_TALLY_VOUCHERS_XML_BYTES, settings.MAX_TALLY_VOUCHERS_JSON_BYTES = 150, 100
+    assert voucher_file_limit("a.xml") == 150
+    assert voucher_file_limit("A.JSON") == 100

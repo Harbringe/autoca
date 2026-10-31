@@ -397,7 +397,7 @@ export function Shell() {
               {clientId ? (
                 <PhoneClientButton key={clientId} clientId={clientId} />
               ) : (
-                <div className="min-w-0 flex-1 truncate px-1 text-base font-semibold text-heading">{(module && FIRM_TITLE[module]) || 'AuditFlow'}</div>
+                <div className="min-w-0 flex-1 truncate px-1 text-base font-semibold text-heading">{(module && FIRM_TITLE[module]) || 'AutoCA'}</div>
               )}
               <div className="ml-auto"><SavingMark /></div>
               {clientId && <AlertBell key={`bell-${clientId}`} clientId={clientId} />}

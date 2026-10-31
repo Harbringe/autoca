@@ -1,7 +1,7 @@
-# AuditFlow web
+# AutoCA web
 
 The web application for chartered-accountant firms: a React single-page app
-that talks to the AuditFlow backend only through its REST API. It is a separate
+that talks to the AutoCA backend only through its REST API. It is a separate
 project from the backend -- its own dependencies, build and deployment -- and
 is written so it can move into a Tauri desktop shell without a rewrite.
 

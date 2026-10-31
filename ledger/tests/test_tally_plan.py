@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import datetime
 
+import pytest
+
 from classify.models import LedgerGroup as G
 from ledger.models import BillKind, EntryKind, VoucherType
 from ledger.tally_parse import normal_name
@@ -168,3 +170,31 @@ def test_a_firms_own_voucher_type_is_left_out_until_it_is_said_what_it_counts_as
 def test_a_standard_type_is_never_remapped():
     v = voucher("Sales", [("Cash", 1000, True), ("Sales", -1000, False)], party="Cash")
     assert plan_voucher(v, FACTS, {normal_name("Sales"): "purchase"}).voucher_type == VoucherType.SALES
+
+
+@pytest.mark.parametrize("tally_type", ["Purchase Order", "Delivery Note", "Stock Journal", "Memorandum", "Attendance", "Physical Stock"])
+def test_a_type_that_leaves_nothing_in_the_books_says_so_and_is_not_asked_about(tally_type):
+    from ledger.tally_plan import is_known_type
+
+    v = voucher(tally_type, [("Cash", 1000, True), ("Sales", -1000, False)])
+    plan = plan_voucher(v, FACTS)
+    assert isinstance(plan, Skip) and "nothing to post" in plan.reason
+    assert is_known_type(normal_name(tally_type))
+
+
+def test_a_reversing_journal_is_held_back_with_a_reason_a_person_can_act_on():
+    v = voucher("Reversing Journal", [("Cash", 1000, True), ("Sales", -1000, False)])
+    plan = plan_voucher(v, FACTS)
+    assert isinstance(plan, Skip) and "reverses itself" in plan.reason
+
+
+def test_a_payroll_voucher_is_read_like_a_journal():
+    v = voucher("Payroll", [("Rent", 1000, False), ("Cash", -1000, False)])
+    plan = plan_voucher(v, FACTS)
+    assert isinstance(plan, Planned) and plan.voucher_type == VoucherType.JOURNAL
+
+
+def test_a_firms_own_type_can_be_said_to_leave_nothing_in_the_books():
+    v = voucher("Quote", [("Cash", 1000, True), ("Sales", -1000, False)])
+    plan = plan_voucher(v, FACTS, {normal_name("Quote"): "none"})
+    assert isinstance(plan, Skip) and "nothing to post" in plan.reason

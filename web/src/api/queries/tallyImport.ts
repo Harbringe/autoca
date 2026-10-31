@@ -149,6 +149,17 @@ export function useConfirmVouchers(clientId: string) {
   })
 }
 
+/** Tally's voucher-type master read for what the firm's own voucher types count as. Writes nothing; a suggestion for the person to check. */
+export function useVoucherTypesFile(clientId: string) {
+  return useMutation({
+    mutationFn: ({ file }: { file: File }) => {
+      const form = new FormData()
+      form.append('file', file)
+      return raw.post<{ found: number; voucher_types: Record<string, string> }>(`${base(clientId)}/voucher-types/`, form)
+    },
+  })
+}
+
 export function useRefreshVoucherRun(clientId: string) {
   const queryClient = useQueryClient()
   return useMutation({

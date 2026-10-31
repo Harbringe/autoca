@@ -5865,6 +5865,73 @@ paths:
               schema:
                 $ref: '#/components/schemas/TallyError'
           description: ''
+  /api/v1/clients/{client_id}/tally-imports/voucher-types/:
+    post:
+      operationId: clients_tally_imports_voucher_types_create
+      description: Writes nothing. The answer fills in the choices the person is asked
+        for when a vouchers file has types of the firm's own.
+      summary: Read Tally's voucher-type master and say what the firm's own voucher
+        types count as
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/TallyVoucherTypesUploadRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/TallyVoucherTypesUploadRequest'
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TallyVoucherTypesUploadRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyVoucherTypesSuggestion'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '413':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TallyError'
+          description: ''
   /api/v1/clients/{client_id}/tally-imports/vouchers/:
     post:
       operationId: clients_tally_imports_vouchers_create
@@ -19389,6 +19456,31 @@ components:
       - progress
       - result
       - uploaded_by_name
+    TallyVoucherTypesSuggestion:
+      type: object
+      properties:
+        found:
+          type: integer
+          description: Voucher types in the file.
+        voucher_types:
+          type: object
+          additionalProperties:
+            type: string
+          description: 'What each of the firm''s own voucher types counts as, as {name:
+            standard type or none}; a suggestion for the person to check.'
+      required:
+      - found
+      - voucher_types
+    TallyVoucherTypesUploadRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+          description: Tally's voucher-type master (Masters > Voucher Types), as .xml
+            or .json.
+      required:
+      - file
     TallyVouchersUploadRequest:
       type: object
       properties:
@@ -19407,8 +19499,8 @@ components:
         voucher_types:
           description: 'What the firm''s own voucher types count as: {Tally''s name:
             a standard type}, for example {"GST SALE": "sales"}. The standard types
-            are sales, purchase, credit note, debit note, journal, payment, receipt
-            and contra.'
+            are sales, purchase, credit note, debit note, journal, payment, receipt,
+            contra and payroll; "none" says the type leaves nothing in the books.'
       required:
       - file
     TdsMonth:

@@ -280,6 +280,11 @@ urlpatterns = [
         name="tally-import-undo",
     ),
     path(
+        "clients/<uuid:client_id>/tally-imports/voucher-types/",
+        TallyImportViewSet.as_view({"post": "voucher_types"}),
+        name="tally-import-voucher-types",
+    ),
+    path(
         "clients/<uuid:client_id>/tally-imports/voucher-runs/",
         TallyImportViewSet.as_view({"get": "voucher_runs"}),
         name="tally-import-voucher-runs",

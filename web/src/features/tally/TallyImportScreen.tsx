@@ -13,6 +13,7 @@ import {
   useRefreshVoucherRun,
   useStageVouchers,
   useUndoVouchers,
+  useVoucherTypesFile,
   voucherRun,
   type VoucherRun,
 } from '@/api/queries/tallyImport'
@@ -49,6 +50,8 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
   const undo = useUndoVouchers(clientId)
   const refresh = useRefreshVoucherRun(clientId)
   const discard = useDiscardVoucherRun(clientId)
+  const typesFile = useVoucherTypesFile(clientId)
+  const typesInput = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
   const invalidateClient = useInvalidateClient(clientId)
   const input = useRef<HTMLInputElement>(null)
@@ -88,6 +91,21 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
     setError(null)
     try {
       setRun(await refresh.mutateAsync({ runId: run.id, voucherTypes }))
+    } catch (e) {
+      setError(messageOf(e))
+    }
+  }
+
+  // Tally's voucher-type master says what each of the firm's own types was made from; it fills in the choices below for the person to check.
+  async function readTypesFile(chosen: File | undefined) {
+    if (!chosen || !run) return
+    setError(null)
+    try {
+      const { voucher_types: suggested } = await typesFile.mutateAsync({ file: chosen })
+      const asked = Object.keys(run.counts.unknown_types ?? {})
+      const fill = Object.fromEntries(Object.entries(suggested).filter(([name]) => asked.includes(name)))
+      if (Object.keys(fill).length === 0) toast.info('That file says nothing about the voucher types asked about here.')
+      setCounts((c) => ({ ...c, ...fill }))
     } catch (e) {
       setError(messageOf(e))
     }
@@ -210,6 +228,7 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
                     onChange={(e) => setCounts((c) => ({ ...c, [type]: e.target.value }))}
                   >
                     <option value="">Leave these out</option>
+                    <option value="none">Leaves nothing in the books</option>
                     {STANDARD_TYPE_CHOICES.map(([value, label]) => (
                       <option key={value} value={value}>
                         {label}
@@ -218,7 +237,21 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
                   </Select>
                 </label>
               ))}
-              <div>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  ref={typesInput}
+                  type="file"
+                  accept=".xml,.json,text/xml,application/json"
+                  aria-label="Voucher types file"
+                  className="sr-only"
+                  onChange={(e) => {
+                    void readTypesFile(e.target.files?.[0])
+                    e.target.value = ''
+                  }}
+                />
+                <Button variant="ghost" loading={typesFile.isPending} onClick={() => typesInput.current?.click()}>
+                  Fill in from Tally's voucher types file
+                </Button>
                 <Button
                   variant="outline"
                   loading={refresh.isPending}

@@ -875,7 +875,7 @@ export interface paths {
         put?: never;
         /**
          * Check a GSTIN against the GST portal
-         * @description Returns what the portal says (names, status, address) beside the party's name in the books. An answer under 30 days old is reused unless `refresh`; a firm has a monthly allowance of live checks. Nothing in the books changes. When the portal cannot be reached the last answer is returned with `from_cache` and a `message`. Requires `gst.view`.
+         * @description Returns what the portal says (names, status, address) beside the party's name in the books. An answer under 30 days old is reused unless `refresh`; a firm has a monthly allowance of live checks. Nothing in the books changes. When the portal cannot be reached the last answer is returned with `from_cache` and a `message`. Requires `gst.prepare`: a check is a live, paid call.
          *
          *     Errors are `{code, detail}`: `403 forbidden` (the role lacks the permission), `404 not_found` (no such client, run or row for the caller), `400 invalid` (the body has a `fields` object naming what is wrong); `409 gst_rule` (a reconciliation rule refused the step: the run is already signed off, or the message says what is missing or mismatched) (not a valid GSTIN, or the month's allowance is used up).
          */
@@ -3419,6 +3419,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/team/invites/{id}/extend/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Give an invitation another week
+         * @description Adds seven days, never going past thirty days after the invitation was made.
+         */
+        post: operations["team_invites_extend_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/team/invites/{id}/regenerate/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Replace an invitation's link
+         * @description The secret in a link is never stored, so a lost link cannot be shown again: this makes a new one and the old one stops working.
+         */
+        post: operations["team_invites_regenerate_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/team/members/": {
         parameters: {
             query?: never;
@@ -3469,6 +3509,26 @@ export interface paths {
         get: operations["team_members_work_retrieve"];
         put?: never;
         post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/team/members/bulk/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Invite several people at once
+         * @description Up to 50 rows. Each is checked and limited like a single invitation; one that cannot be made says why and the others still go. Every link is shown only in this response.
+         */
+        post: operations["team_members_bulk_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4331,6 +4391,24 @@ export interface components {
          * @enum {string}
          */
         BucketEnum: "0-30" | "31-60" | "61-90" | "Over 90";
+        BulkInviteRequest: {
+            /** @description Up to 50 people. */
+            rows: components["schemas"]["InviteRequest"][];
+        };
+        BulkInviteResult: {
+            results: components["schemas"]["BulkInviteRow"][];
+        };
+        BulkInviteRow: {
+            email: string;
+            ok: boolean;
+            /** @description Why this row was not invited. */
+            error?: string;
+            link?: string;
+            emailed?: boolean;
+            role_display?: string;
+            /** Format: date-time */
+            expires_at?: string;
+        };
         /** @description Counts of work in the period, one per metric in `metrics`. Keys are the metric keys. */
         ByClient: {
             statements_uploaded: number;
@@ -5172,12 +5250,16 @@ export interface components {
             manager: components["schemas"]["Person"] | null;
             /** Format: date-time */
             expires_at: string;
+            /** @description pending, expiring_soon (under 48 hours left) or expired (kept listed for a month so it can be replaced). */
+            status: string;
             /** Format: date-time */
             created_at: string;
             /** Format: email */
             created_by: string | null;
             /** @description The one-time link to send the person. Shown only now. */
             link: string;
+            /** @description True only when the platform is set up to email invitations and the email was accepted. */
+            emailed: boolean;
         };
         InviteRecord: {
             /** Format: uuid */
@@ -5190,6 +5272,8 @@ export interface components {
             manager: components["schemas"]["Person"] | null;
             /** Format: date-time */
             expires_at: string;
+            /** @description pending, expiring_soon (under 48 hours left) or expired (kept listed for a month so it can be replaced). */
+            status: string;
             /** Format: date-time */
             created_at: string;
             /** Format: email */
@@ -5730,6 +5814,7 @@ export interface components {
             readonly role_display: string | null;
             readonly is_owner: boolean;
             readonly permissions: string[];
+            readonly trial: components["schemas"]["Trial"] | null;
         };
         /**
          * @description A member of the firm, as named beside a client or in a list.
@@ -9508,6 +9593,12 @@ export interface components {
             readonly expense_display: string | null;
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly profit_display: string | null;
+        };
+        Trial: {
+            /** Format: date-time */
+            ends_at: string;
+            /** @description Negative once the trial has ended. */
+            days_left: number;
         };
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         TrialBalance: {
@@ -15532,6 +15623,48 @@ export interface operations {
             };
         };
     };
+    team_invites_extend_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteRecord"];
+                };
+            };
+        };
+    };
+    team_invites_regenerate_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InviteCreated"];
+                };
+            };
+        };
+    };
     team_members_retrieve: {
         parameters: {
             query?: {
@@ -15651,6 +15784,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MemberWorkResponse"];
+                };
+            };
+        };
+    };
+    team_members_bulk_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BulkInviteRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["BulkInviteRequest"];
+                "multipart/form-data": components["schemas"]["BulkInviteRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BulkInviteResult"];
                 };
             };
         };

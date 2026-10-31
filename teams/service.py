@@ -31,6 +31,8 @@ from core.models import APPROVER_ROLES, Client, ClientAssignment, FirmMembership
 from teams.models import Invite, TeamEvent, TeamEventKind, hash_token
 
 INVITE_LIFETIME = datetime.timedelta(days=7)
+#: A new firm's owner may be slow to answer; their invitation lasts longer.
+OWNER_INVITE_LIFETIME = datetime.timedelta(days=14)
 TEAM_ROLES = frozenset({Role.STAFF, Role.READ_ONLY})
 LEAD_ROLES = APPROVER_ROLES  # Senior CA, firm admin
 
@@ -219,6 +221,7 @@ def invite(
     elif role in TEAM_ROLES and manager is None and not _senior_exists(actor.firm_id):
         manager = _fallback_manager(actor.firm_id)
     _valid_parent(actor, role, manager)
+    check_seats(actor.firm_id)
     return issue_invite(
         actor.firm_id,
         email=email,
@@ -240,6 +243,7 @@ def issue_invite(
     created_by: User | None,
     actor_label: str,
     make_owner: bool = False,
+    lifetime: datetime.timedelta = INVITE_LIFETIME,
 ) -> tuple[Invite, str]:
     """Create the invite under ``firm_id``'s tenant context, which the caller holds.
 
@@ -270,7 +274,7 @@ def issue_invite(
         manager=manager if not make_owner else None,
         make_owner=make_owner,
         token_hash=hash_token(secret),
-        expires_at=timezone.now() + INVITE_LIFETIME,
+        expires_at=timezone.now() + lifetime,
         created_by=created_by,
     )
     TeamEvent.objects.create(
@@ -285,6 +289,114 @@ def issue_invite(
         },
     )
     return record, f"{firm_id}.{secret}"
+
+
+def _seat_message(limit: int) -> str:
+    return f"Your firm's plan allows {limit} people, counting invitations still waiting. Ask the platform owner to raise it."
+
+
+def check_seats(firm_id, *, replacing: Invite | None = None, accepting: Invite | None = None) -> None:
+    """Refuse when the firm is at its limit on people. Active people and invitations still waiting both count.
+
+    ``replacing`` is an invitation being swapped for a new link, which takes no extra seat. ``accepting`` is the invitation being
+    redeemed: it is already counted as waiting, and becomes a person, so it does not count twice. Run inside the firm's context.
+    """
+    from core.models import Firm
+
+    limit = Firm.objects.filter(pk=firm_id).values_list("max_members", flat=True).first()
+    if limit is None:
+        return
+    people = FirmMembership.objects.filter(firm_id=firm_id, is_active=True).count()
+    waiting = Invite.objects.filter(
+        firm_id=firm_id, used_at__isnull=True, revoked_at__isnull=True, expires_at__gt=timezone.now()
+    )
+    for skip in (replacing, accepting):
+        if skip is not None:
+            waiting = waiting.exclude(pk=skip.pk)
+    needed = people + waiting.count() + 1  # plus the person being invited, the replacement link, or the person joining
+    if needed > limit:
+        raise TeamError(_seat_message(limit))
+
+
+def check_client_limit(firm_id) -> None:
+    """Refuse a new client when the firm is at the limit the platform owner agreed. Run inside the firm's context."""
+    from core.models import Firm
+
+    limit = Firm.objects.filter(pk=firm_id).values_list("max_clients", flat=True).first()
+    if limit is not None and Client.objects.filter(firm_id=firm_id).count() >= limit:
+        raise TeamError(f"Your firm's plan allows {limit} client{'s' if limit != 1 else ''}. Ask the platform owner to raise it.")
+
+
+def reissue(record: Invite, *, created_by: User | None, actor_label: str) -> tuple[Invite, str]:
+    """Replace a pending invite with a new link for the same person. Run inside the firm's context and a transaction.
+
+    The link's secret is never stored, so "the link again" can only mean a new one: the old link stops working, and the new invite
+    carries the same email, role, team and ownership, with a fresh expiry.
+    """
+    if record.used_at is not None:
+        raise TeamError("This invite has already been used.")
+    lifetime = OWNER_INVITE_LIFETIME if record.make_owner else INVITE_LIFETIME
+    if record.revoked_at is None:
+        record.revoked_at = timezone.now()
+        record.save(update_fields=["revoked_at"])
+    secret = secrets.token_urlsafe(32)
+    fresh = Invite.objects.create(
+        firm_id=record.firm_id,
+        email=record.email,
+        full_name=record.full_name,
+        role=record.role,
+        manager=record.manager,
+        make_owner=record.make_owner,
+        token_hash=hash_token(secret),
+        expires_at=timezone.now() + lifetime,
+        created_by=created_by,
+    )
+    TeamEvent.objects.create(
+        firm_id=record.firm_id,
+        kind=TeamEventKind.INVITE_REISSUED,
+        actor_id=getattr(created_by, "pk", None),
+        detail={"actor": actor_label, "email": record.email, "role": "Firm owner" if record.make_owner else Role(record.role).label},
+    )
+    return fresh, f"{record.firm_id}.{secret}"
+
+
+@transaction.atomic
+def regenerate_invite(actor: FirmMembership, record: Invite) -> tuple[Invite, str]:
+    """A new link for a pending (or expired) invitation of this firm; the old link stops working. Same people may do it as may revoke."""
+    _same_firm(actor, record)
+    _require(
+        is_admin(actor) or record.created_by_id == actor.user_id,
+        "Only the person who sent this invite or a firm administrator can replace its link.",
+    )
+    check_seats(actor.firm_id, replacing=record)
+    return reissue(record, created_by=actor.user, actor_label=label(actor))
+
+
+#: An invite can be extended in steps of this much, but never to more than MAX_INVITE_AGE after it was made.
+INVITE_EXTENSION = datetime.timedelta(days=7)
+MAX_INVITE_AGE = datetime.timedelta(days=30)
+
+
+@transaction.atomic
+def extend_invite(actor: FirmMembership, record: Invite) -> Invite:
+    """Give a pending invitation another week, up to 30 days after it was made (an expired one is counted from now)."""
+    _same_firm(actor, record)
+    _require(
+        is_admin(actor) or record.created_by_id == actor.user_id,
+        "Only the person who sent this invite or a firm administrator can extend it.",
+    )
+    if record.used_at is not None or record.revoked_at is not None:
+        raise TeamError("This invitation is no longer open.")
+    now = timezone.now()
+    ceiling = record.created_at + MAX_INVITE_AGE
+    extended = min(max(record.expires_at, now) + INVITE_EXTENSION, ceiling)
+    if extended <= max(record.expires_at, now):
+        raise TeamError("This invitation is too old to extend. Make a new link instead.")
+    before = record.expires_at
+    record.expires_at = extended
+    record.save(update_fields=["expires_at"])
+    _event(actor, TeamEventKind.INVITE_EXTENDED, email=record.email, **{"from": before.isoformat(), "to": extended.isoformat()})
+    return record
 
 
 def visible_invites(actor: FirmMembership):
@@ -325,6 +437,32 @@ def find_invite(secret: str) -> Invite | None:
     )
 
 
+def revoke_pending_invites_from(user_id, firm_id) -> int:
+    """Cancel every unused invite this person issued. Their authority to grant a seat ends when their own seat changes or ends."""
+    return Invite.objects.filter(
+        firm_id=firm_id, created_by_id=user_id, used_at__isnull=True, revoked_at__isnull=True
+    ).update(revoked_at=timezone.now())
+
+
+def _issuer_may_still_grant(record: Invite) -> bool:
+    """Is the person who issued this invite still in the firm, and still allowed to hand out the seat it carries?
+
+    An invite made by the platform (no issuer, or a platform account with no seat in the firm) is not judged here.
+    """
+    if record.created_by_id is None:
+        return True
+    issuer = FirmMembership.objects.filter(firm_id=record.firm_id, user_id=record.created_by_id, is_active=True).first()
+    if issuer is None:
+        return bool(getattr(record.created_by, "is_superuser", False) or getattr(record.created_by, "is_staff", False))
+    if record.make_owner:
+        return can_manage_admins(issuer)
+    if is_lead(issuer):
+        return record.role in TEAM_ROLES
+    if is_admin(issuer):
+        return record.role != Role.FIRM_ADMIN or can_manage_admins(issuer)
+    return False
+
+
 def invite_problem(record: Invite | None) -> str | None:
     if record is None or record.revoked_at is not None:
         return "This invite link isn't valid. Ask for a new one."
@@ -332,6 +470,8 @@ def invite_problem(record: Invite | None) -> str | None:
         return "This invite has already been used. Sign in instead."
     if record.expires_at <= timezone.now():
         return "This invite has expired. Ask for a new one."
+    if not _issuer_may_still_grant(record):
+        return "This invite link isn't valid. Ask for a new one."
     return None
 
 
@@ -341,6 +481,7 @@ def accept(record: Invite, *, full_name: str, password: str, existing_user: User
     ``existing_user`` is set only after the caller has checked that account's
     own password: an invite never sets the password of an account that exists.
     """
+    check_seats(record.firm_id, accepting=record)
     if existing_user is None:
         if User.objects.filter(email=record.email).exists():
             raise TeamError("This email already has an AutoCA account. Enter its password.")
@@ -481,6 +622,7 @@ def update_member(
         if role in {Role.FIRM_ADMIN, Role.SENIOR_CA, Role.STAFF, Role.READ_ONLY}:
             _valid_parent(actor, role, target.manager, target.pk)
         target.save(update_fields=["role", "manager"])
+        revoke_pending_invites_from(target.user_id, target.firm_id)
         _event(actor, TeamEventKind.ROLE_CHANGED, member=target, **{"from": before, "to": target.get_role_display()})
 
     if manager is not ...:
@@ -527,6 +669,8 @@ def update_member(
                 raise TeamError(problem)
         target.is_active = is_active
         target.save(update_fields=["is_active"])
+        if not is_active:
+            revoke_pending_invites_from(target.user_id, target.firm_id)
         _event(actor, TeamEventKind.REACTIVATED if is_active else TeamEventKind.DEACTIVATED, member=target)
 
     return target
@@ -887,4 +1031,164 @@ def platform_remove(membership_id, firm_id) -> None:
         if problem := _handover_needed(target):
             raise TeamError(problem)
         _platform_event(firm_id, TeamEventKind.REMOVED, member=target, role=role_label(target))
+        revoke_pending_invites_from(target.user_id, firm_id)
         target.delete()
+
+
+# ---------------------------------------------------------------------------
+# Bringing a firm on board: the owner's invitation, limits, and where the firm has got to
+# ---------------------------------------------------------------------------
+
+
+def _clean_email(email: str) -> str:
+    from django.core.validators import validate_email
+
+    email = (email or "").strip().lower()
+    try:
+        validate_email(email)
+    except ValidationError as exc:
+        raise TeamError("That is not an email address.") from exc
+    return email
+
+
+def platform_invite_owner(firm_id, *, email: str, full_name: str = "") -> tuple[Invite, str]:
+    """Invite the person who will own a firm. They set their own password and authenticator on accepting: the platform owner never
+    chooses or sees either. Returns the invite and the link, which is shown once and never stored."""
+    from core.db.session import firm_context
+    from core.models import Firm
+
+    email = _clean_email(email)
+    with firm_context(firm_id), transaction.atomic():
+        if not Firm.objects.filter(pk=firm_id).exists():
+            raise TeamError("That firm no longer exists.")
+        return issue_invite(
+            firm_id,
+            email=email,
+            full_name=(full_name or "").strip(),
+            role=Role.FIRM_ADMIN,
+            created_by=None,
+            actor_label=PLATFORM_ACTOR,
+            make_owner=True,
+            lifetime=OWNER_INVITE_LIFETIME,
+        )
+
+
+def platform_reissue_invite(invite_id, firm_id) -> tuple[Invite, str]:
+    """A new link for a pending invite of any firm, for the platform owner to pass on; the old link stops working."""
+    from core.db.session import firm_context
+
+    with firm_context(firm_id), transaction.atomic():
+        record = Invite.objects.select_for_update().filter(pk=invite_id, firm_id=firm_id).first()
+        if record is None:
+            raise TeamError("That invite no longer exists.")
+        return reissue(record, created_by=None, actor_label=PLATFORM_ACTOR)
+
+
+def platform_revoke_invite(invite_id, firm_id) -> None:
+    from core.db.session import firm_context
+
+    with firm_context(firm_id), transaction.atomic():
+        record = Invite.objects.select_for_update().filter(pk=invite_id, firm_id=firm_id).first()
+        if record is None or record.used_at is not None or record.revoked_at is not None:
+            return
+        record.revoked_at = timezone.now()
+        record.save(update_fields=["revoked_at"])
+        TeamEvent.objects.create(
+            firm_id=firm_id,
+            kind=TeamEventKind.INVITE_REVOKED,
+            actor_id=None,
+            detail={"actor": PLATFORM_ACTOR, "email": record.email},
+        )
+
+
+def platform_firm_limits(firm_id) -> dict:
+    """The limits, trial date and suspension message of one firm."""
+    from core.db.session import firm_context
+    from core.models import Firm
+
+    with firm_context(firm_id), transaction.atomic():  # in a transaction: outside one, the firm's context would not outlive its first query
+        firm = Firm.objects.filter(pk=firm_id).first()
+        if firm is None:
+            raise TeamError("That firm no longer exists.")
+        return {
+            "max_members": firm.max_members,
+            "max_clients": firm.max_clients,
+            "trial_ends_at": firm.trial_ends_at,
+            "suspended_message": firm.suspended_message,
+        }
+
+
+def platform_set_limits(firm_id, *, max_members=None, max_clients=None, trial_ends_at=None, suspended_message: str = "") -> dict:
+    """Set a firm's limits. A limit of None is no limit. Recorded as a team event with what it was and what it became."""
+    from core.db.session import firm_context
+    from core.models import Firm
+
+    for name, value in (("people", max_members), ("clients", max_clients)):
+        if value is not None and value < 1:
+            raise TeamError(f"The limit on {name} must be at least 1, or left empty for no limit.")
+    suspended_message = (suspended_message or "").strip()[:500]
+    with firm_context(firm_id), transaction.atomic():
+        firm = Firm.objects.select_for_update().filter(pk=firm_id).first()
+        if firm is None:
+            raise TeamError("That firm no longer exists.")
+        before = {
+            "max_members": firm.max_members,
+            "max_clients": firm.max_clients,
+            "trial_ends_at": firm.trial_ends_at.isoformat() if firm.trial_ends_at else None,
+            "suspended_message": firm.suspended_message,
+        }
+        firm.max_members, firm.max_clients, firm.trial_ends_at, firm.suspended_message = max_members, max_clients, trial_ends_at, suspended_message
+        after = {
+            "max_members": firm.max_members,
+            "max_clients": firm.max_clients,
+            "trial_ends_at": firm.trial_ends_at.isoformat() if firm.trial_ends_at else None,
+            "suspended_message": firm.suspended_message,
+        }
+        if before != after:
+            firm.save(update_fields=["max_members", "max_clients", "trial_ends_at", "suspended_message"])
+            TeamEvent.objects.create(
+                firm_id=firm.pk,
+                kind=TeamEventKind.FIRM_LIMITS_CHANGED,
+                actor_id=None,
+                detail={"actor": PLATFORM_ACTOR, "from": before, "to": after},
+            )
+        return after
+
+
+def platform_firm_onboarding(firm_id) -> dict:
+    """Where a firm has got to since it was created, for the platform owner's checklist.
+
+    Counts and states only: nothing of the firm's books is read. ``owner_invite`` is one of none, pending, expired, revoked or accepted.
+    """
+    from django_otp.plugins.otp_totp.models import TOTPDevice
+
+    from banking.models import Statement
+    from core.db.session import firm_context
+
+    with firm_context(firm_id), transaction.atomic():
+        owner = FirmMembership.objects.filter(firm_id=firm_id, is_owner=True).select_related("user").first()
+        latest = Invite.objects.filter(firm_id=firm_id, make_owner=True).order_by("-created_at").first()
+        now = timezone.now()
+        if owner is not None:
+            invite_state = "accepted"
+        elif latest is None:
+            invite_state = "none"
+        elif latest.revoked_at is not None:
+            invite_state = "revoked"
+        elif latest.used_at is not None:
+            invite_state = "accepted"
+        elif latest.expires_at <= now:
+            invite_state = "expired"
+        else:
+            invite_state = "pending"
+        return {
+            "owner_invite": invite_state,
+            "owner_invite_id": str(latest.pk) if latest is not None and invite_state == "pending" else None,
+            "owner_invite_email": latest.email if latest is not None else "",
+            "owner_invite_expires": latest.expires_at if latest is not None and invite_state == "pending" else None,
+            "owner_joined": owner is not None,
+            "owner_email": owner.user.email if owner is not None else "",
+            "owner_has_authenticator": bool(owner is not None and TOTPDevice.objects.filter(user=owner.user, confirmed=True).exists()),
+            "clients": Client.objects.filter(firm_id=firm_id).count(),
+            "statements": Statement.objects.filter(firm_id=firm_id).count(),
+        }

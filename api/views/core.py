@@ -63,6 +63,9 @@ class ClientViewSet(FirmScopedViewSet):
     }
 
     def perform_create(self, serializer):
+        from teams.service import check_client_limit
+
+        check_client_limit(self.request.firm.pk)
         super().perform_create(serializer)
         # Every client starts with the ledgers every business needs (Cash-in-Hand, Suspense, the bank's own, Sales, Purchases, the GST
         # and common expense ledgers) in Tally's groups, so the first statement or Tally import finds a chart to place entries in.

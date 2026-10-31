@@ -111,7 +111,17 @@ def get_or_create_run(
     return run
 
 
-def _require_open(run: ReconRun) -> None:
+def _require_open(run: ReconRun, *, lock: bool = True) -> None:
+    """Refuse a change to a run that has been signed off.
+
+    The run in hand may have been read a while ago (a large upload is parsed for seconds before anything is written), so the answer
+    comes from the row itself, locked until the surrounding transaction ends: a sign-off cannot slip in between this check and the
+    writes, and one already in flight is waited for and then seen. ``lock`` is False only for an early look made outside a
+    transaction, which the transaction that does the writing repeats.
+    """
+    if lock:
+        status = ReconRun.objects.select_for_update().values_list("status", flat=True).get(pk=run.pk)
+        run.status = status
     if run.status == RunStatus.SIGNED_OFF:
         raise GstError("This reconciliation has been signed off and can no longer be changed.")
 
@@ -562,7 +572,7 @@ def _live_token(reg: GstRegistration) -> str:
 
 def fetch_portal(run: ReconRun, user: User | None) -> int:
     """Download this return's GSTR-2B from the portal and load it exactly as an uploaded file is loaded."""
-    _require_open(run)
+    _require_open(run, lock=False)  # an early refusal; ``load_portal`` below checks again under the lock
     reg = run.registration
     token = _live_token(reg)
     try:

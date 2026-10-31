@@ -220,12 +220,15 @@ def _without_declaration(text: str) -> str:
     return text
 
 
-_QUANTITY = re.compile(r"^\s*([\d,]*\.?\d+)\s*(.*)$")
+# A number, then whatever follows it. One way to split, and DOTALL, so a text that no longer fits cannot make the matcher try them all.
+_QUANTITY = re.compile(r"^(\d[\d,]*(?:\.\d+)?|\.\d+)\s*(.*)$", re.DOTALL)
+#: A quantity is a few characters ("1,200.500 Kgs = 1 Nos"); anything longer is cut before matching, whatever the file says.
+MAX_QUANTITY_TEXT = 64
 
 
 def _quantity(text: str) -> tuple[str, str] | None:
     """``600 BOX`` -> ("600", "BOX"); ``1,200.500 Kgs = 1 Nos`` -> ("1200.500", "Kgs"). None when there is no usable number."""
-    match = _QUANTITY.match(text or "")
+    match = _QUANTITY.match(" ".join((text or "").split())[:MAX_QUANTITY_TEXT])
     if not match:
         return None
     number = match.group(1).replace(",", "")

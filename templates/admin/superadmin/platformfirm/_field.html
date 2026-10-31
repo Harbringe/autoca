@@ -1,0 +1,7 @@
+{% comment %}One form field with its label, help and errors. Used by the add-a-firm page.{% endcomment %}
+<div class="pf-field">
+  {{ field.label_tag }}
+  {{ field }}
+  {% if field.help_text %}<span class="pf-faint">{{ field.help_text }}</span>{% endif %}
+  {% for error in field.errors %}<span class="pf-error">{{ error }}</span>{% endfor %}
+</div>

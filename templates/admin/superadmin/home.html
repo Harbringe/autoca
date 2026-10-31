@@ -1,0 +1,120 @@
+{% extends "admin/index.html" %}
+{% comment %}
+The platform owner's home page: what needs doing today, then every firm. All figures come from superadmin/home.py; this file only
+lays them out. No inline styles (widths are the pf-w-N classes), and the only controls are links.
+{% endcomment %}
+{% block content_title %}{% endblock %}
+{% block breadcrumbs %}{% endblock %}
+{% block content %}
+<div class="pf-page">
+
+  <div class="pf-row">
+    <div class="pf-head">
+      <h1>{{ greeting }}</h1>
+      <span class="pf-sub">{{ summary }}</span>
+    </div>
+    <a class="pf-btn pf-btn--primary" href="{% url 'admin:superadmin_platformfirm_add' %}">Add a firm</a>
+  </div>
+
+  <section class="pf-row" aria-label="Totals">
+    {% for k in home.kpis %}
+    <div class="pf-kpi{% if k.warn %} pf-kpi--warn{% endif %}">
+      <span class="pf-kpi__label">{{ k.label }}</span>
+      <span class="pf-kpi__value">{{ k.value }}</span>
+      <span class="pf-kpi__note">{{ k.note }}</span>
+    </div>
+    {% endfor %}
+  </section>
+
+  <div class="pf-row pf-row--top">
+    <div class="pf-grow">
+
+      <section class="pf-card" aria-labelledby="att">
+        <div class="pf-card__head{% if home.attention %} pf-card--warn{% endif %}">
+          <h2 id="att">Needs you today</h2>
+          <span class="pf-faint">{{ home.attention|length }} item{{ home.attention|length|pluralize }}{% if home.attention %}, oldest first{% endif %}</span>
+        </div>
+        {% if home.attention %}
+        <ul class="pf-list">
+          {% for a in home.attention %}
+          <li>
+            <span class="pf-dot pf-dot--{{ a.tone }}"></span>
+            <div class="pf-list__main"><span class="pf-strong">{{ a.firm_name }}</span><span class="pf-sub">{{ a.what }}</span></div>
+            {% if a.age_days %}<span class="pf-faint">{{ a.age_days }} day{{ a.age_days|pluralize }}</span>{% endif %}
+            <a class="pf-btn" href="{{ a.action_url }}">{{ a.action_label }}</a>
+          </li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <div class="pf-empty">Nothing needs you today.</div>
+        {% endif %}
+      </section>
+
+      <section class="pf-card" aria-labelledby="firms">
+        <div class="pf-card__head">
+          <h2 id="firms">All firms</h2>
+          <nav class="pf-tabs" aria-label="Filter firms">
+            <a class="pf-tab{% if home.tab == 'all' %} pf-tab--on{% endif %}" href="?tab=all">All {{ home.tab_counts.all }}</a>
+            <a class="pf-tab{% if home.tab == 'attention' %} pf-tab--on{% endif %}" href="?tab=attention">Needs attention {{ home.tab_counts.attention }}</a>
+            <a class="pf-tab{% if home.tab == 'trial' %} pf-tab--on{% endif %}" href="?tab=trial">On trial {{ home.tab_counts.trial }}</a>
+            <a class="pf-tab{% if home.tab == 'healthy' %} pf-tab--on{% endif %}" href="?tab=healthy">Healthy {{ home.tab_counts.healthy }}</a>
+          </nav>
+        </div>
+        {% if home.total_firms == 0 %}
+        <div class="pf-empty">No firms yet. <a href="{% url 'admin:superadmin_platformfirm_add' %}">Add your first firm</a> and send its owner a link.</div>
+        {% else %}
+        <div class="pf-scroll">
+          <table class="pf-table">
+            <thead><tr><th>Firm</th><th>People</th><th>Clients</th><th>Statements</th><th>Last active</th><th class="pf-num">Spend, 30 days</th><th>Status</th></tr></thead>
+            <tbody>
+              {% for f in home.rows %}
+              <tr>
+                <td><a class="pf-strong" href="{{ f.url }}">{{ f.name }}</a></td>
+                <td>{{ f.people_text }}{% if f.people_pct is not None %}<span class="pf-bar{% if f.people_state %} pf-bar--{{ f.people_state }}{% endif %}"><span class="pf-w-{{ f.people_pct }}"></span></span>{% endif %}</td>
+                <td>{{ f.clients_text }}{% if f.clients_pct is not None %}<span class="pf-bar{% if f.clients_state %} pf-bar--{{ f.clients_state }}{% endif %}"><span class="pf-w-{{ f.clients_pct }}"></span></span>{% endif %}</td>
+                <td>{{ f.statements }}</td>
+                <td class="pf-sub">{{ f.last_seen }}</td>
+                <td class="pf-num">{{ f.spend_text }}</td>
+                <td><span class="pf-chip pf-chip--{{ f.tone }}">{{ f.status }}</span></td>
+              </tr>
+              {% empty %}
+              <tr><td colspan="7" class="pf-empty">No firm matches this filter.</td></tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% if home.shown_firms > home.rows|length %}
+        <div class="pf-card__head"><span class="pf-faint">Showing {{ home.rows|length }} of {{ home.shown_firms }}.</span> <a href="{% url 'admin:superadmin_platformfirmstats_changelist' %}">See all firms</a></div>
+        {% endif %}
+        {% endif %}
+      </section>
+    </div>
+
+    <aside class="pf-rail">
+      <section class="pf-card pf-card--pad" aria-labelledby="spend">
+        <h2 id="spend">Model spend by firm</h2>
+        {% for s in home.spend %}
+        <div>
+          <div class="pf-split"><span>{{ s.name }}</span><span class="pf-sub">{{ s.text }}</span></div>
+          <span class="pf-bar pf-bar--wide"><span class="pf-w-{{ s.pct }}"></span></span>
+        </div>
+        {% empty %}
+        <span class="pf-sub">No model calls in the last 30 days.</span>
+        {% endfor %}
+        <span class="pf-faint">An estimate at the set exchange rate. Card fees are not included.</span>
+      </section>
+
+      <section class="pf-card pf-card--pad" aria-labelledby="act">
+        <h2 id="act">Recent activity</h2>
+        {% for e in home.activity %}
+        <div class="pf-event">
+          <span class="pf-faint pf-event__time">{{ e.time_text }}</span><span>{{ e.text }}</span>
+        </div>
+        {% empty %}
+        <span class="pf-sub">Nothing in the last two weeks.</span>
+        {% endfor %}
+      </section>
+    </aside>
+  </div>
+</div>
+{% endblock %}

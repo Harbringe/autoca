@@ -20,13 +20,13 @@ export function InviteScreen({ token }: { token: string }) {
 
   const invite = useQuery({
     queryKey: ['invite', token],
-    queryFn: () => raw.get<InviteDescription>('/auth/invite/', { token }),
+    // A POST, so that the token (a credential) is in the body and not in the URL, which is logged and kept in history.
+    queryFn: () => raw.post<InviteDescription>('/auth/invite/describe/', { token }),
     retry: false,
   })
 
   const accept = useMutation({
-    mutationFn: () =>
-      raw.post('/auth/invite/', { token, password, ...(invite.data?.has_account ? {} : { full_name: fullName.trim() }) }),
+    mutationFn: () => raw.post('/auth/invite/', { token, password, full_name: fullName.trim() }),
     onSuccess: async () => {
       resetCsrf()
       await refresh()
@@ -47,7 +47,8 @@ export function InviteScreen({ token }: { token: string }) {
   }
 
   const info = invite.data
-  const canSubmit = password.length > 0 && (info.has_account || fullName.trim().length > 0)
+  // The page does not say whether this address already has an account; the password decides it on the server.
+  const canSubmit = password.length > 0
   function submit(event: FormEvent) {
     event.preventDefault()
     if (canSubmit) accept.mutate()
@@ -61,28 +62,17 @@ export function InviteScreen({ token }: { token: string }) {
     >
       <form onSubmit={submit} className="grid gap-4" noValidate>
         <Field label="Email">{(props) => <Input {...props} value={info.email} readOnly disabled />}</Field>
-        {!info.has_account && (
-          <Field label="Your name">
-            {(props) => (
-              <Input {...props} autoComplete="name" autoFocus value={fullName} onChange={(e) => setFullName(e.target.value)} />
-            )}
-          </Field>
-        )}
+        <Field label="Your name" hint="If you are new here. Leave it if you already have an account.">
+          {(props) => (
+            <Input {...props} autoComplete="name" autoFocus value={fullName} onChange={(e) => setFullName(e.target.value)} />
+          )}
+        </Field>
         <Field
-          label={info.has_account ? 'Your existing password' : 'Choose a password'}
-          hint={info.has_account ? 'You already have an account, so use its password.' : 'At least 12 characters. A phrase is easiest to remember.'}
+          label="Password"
+          hint="If you already have an account, use its password. If you are new, choose one: at least 12 characters, a phrase is easiest to remember."
           error={passwordError}
         >
-          {(props) => (
-            <Input
-              {...props}
-              type="password"
-              autoComplete={info.has_account ? 'current-password' : 'new-password'}
-              autoFocus={info.has_account}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-            />
-          )}
+          {(props) => <Input {...props} type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />}
         </Field>
         {accept.error && !passwordError && (
           <p role="alert" className="text-sm text-destructive">

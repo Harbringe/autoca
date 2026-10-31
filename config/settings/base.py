@@ -143,6 +143,8 @@ JAZZMIN_SETTINGS = {
     "site_logo": None,
     "login_logo": None,
     "show_ui_builder": DEBUG,
+    # Jazzmin links a stylesheet from fonts.googleapis.com by default; the fonts are shipped with the panel instead.
+    "use_google_fonts_cdn": False,
     # One scrolling page, not tabs. A profile is meant to answer "everything
     # about this person" at a glance, and tabs hide most of the answer.
     "changeform_format": "single",
@@ -159,6 +161,8 @@ JAZZMIN_SETTINGS = {
         "superadmin.PlatformClient": "fas fa-briefcase",
         "superadmin.PlatformAuditLog": "fas fa-clipboard-list",
         "superadmin.PlatformJob": "fas fa-gears",
+        "superadmin.PlatformInvite": "fas fa-envelope-open-text",
+        "superadmin.PlatformFirmStats": "fas fa-chart-line",
         "otp_totp.TOTPDevice": "fas fa-mobile-screen",
         "otp_static.StaticDevice": "fas fa-key",
     },
@@ -417,7 +421,17 @@ THROTTLE_LIMITS = {
     # Keyed on the invite token, not the address: a wrong password against an
     # existing account's invite should not lock out an office behind one IP.
     "invite": {"attempts": 8, "window_seconds": 15 * 60, "lockout_seconds": 15 * 60},
+    # Making invites: the sender holds the link, so each one is a chance to probe an address. Per sender per hour, and per address per day.
+    "invite_create": {"attempts": 60, "window_seconds": 60 * 60, "lockout_seconds": 60 * 60},
+    "invite_target": {"attempts": 3, "window_seconds": 24 * 60 * 60, "lockout_seconds": 24 * 60 * 60},
 }
+
+# Sending an invitation by email. Off: nothing is sent unless INVITE_EMAIL_ENABLED is true AND EMAIL_BACKEND names a real mail
+# backend (for example Amazon SES through django-anymail). The default backend discards mail. It is deliberately NOT the console
+# backend: that would print every invitation link into the container log, and a link is a credential.
+INVITE_EMAIL_ENABLED = env("INVITE_EMAIL_ENABLED", "") in ("1", "true", "True")
+EMAIL_BACKEND = env("EMAIL_BACKEND", "django.core.mail.backends.dummy.EmailBackend")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "AutoCA <no-reply@localhost>")
 
 # How many reverse proxies stand between the internet and this process. Zero
 # means X-Forwarded-For is a header anyone could have sent and is ignored.

@@ -176,7 +176,6 @@ export interface InviteDescription {
   firm: string
   role_display: string
   team: string
-  has_account: boolean
 }
 
 // --- team (generated) -------------------------------------------------------

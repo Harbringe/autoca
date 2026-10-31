@@ -18,7 +18,7 @@ from drf_spectacular.views import (
 )
 
 from core import views
-from teams.views import accept_invite
+from teams.views import accept_invite, describe_invite
 
 urlpatterns = [
     # The web application is a separate deployment; see FRONTEND_URL.
@@ -29,6 +29,7 @@ urlpatterns = [
     path("auth/logout/", views.logout_view, name="logout"),
     path("auth/mfa/setup/", views.mfa_setup, name="mfa-setup"),
     path("auth/mfa/verify/", views.mfa_verify, name="mfa-verify"),
+    path("auth/invite/describe/", describe_invite, name="invite-describe"),
     path("auth/invite/", accept_invite, name="invite-accept"),
     path("api/me/", views.me, name="me"),
     # --- REST API ---

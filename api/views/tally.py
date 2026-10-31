@@ -31,6 +31,7 @@ from api.serializers.tally import (
     TallyImportDetailSerializer,
     TallyImportSummarySerializer,
     TallyImportUploadSerializer,
+    TallyPostAllResultSerializer,
     TallyPostSerializer,
     TallyRefreshSerializer,
     TallySetupResultSerializer,
@@ -44,7 +45,7 @@ from api.serializers.tally import (
 from core.access import get_visible_client
 from ledger.models import ImportKind, ImportStatus, LedgerImportRun
 from ledger.tally_import import confirm_run, stage_upload
-from ledger.tally_jobs import enqueue_post
+from ledger.tally_jobs import enqueue_post, enqueue_post_all
 from ledger.tally_read import enqueue_read
 from ledger.tally_setup import apply_setup, discover_files
 from ledger.tally_voucher_import import (
@@ -257,6 +258,23 @@ class TallyImportViewSet(viewsets.GenericViewSet):
             upload.read(settings.MAX_TALLY_IMPORT_BYTES + 1), os.path.basename(upload.name), max_bytes=settings.MAX_TALLY_IMPORT_BYTES
         )
         return Response({"found": len(found), "voucher_types": suggest_mapping(found)})
+
+    @extend_schema(
+        summary="Post every waiting month of the client's Tally imports, oldest first",
+        description=(
+            "Queues each import still waiting (with something to post) for the worker, in date order. Every month is checked first: "
+            "if one has entries already in its dates and `allow_overlap` is not true, `409 tally_overlap` and **nothing** is queued."
+        ),
+        request=TallyPostSerializer,
+        responses={202: TallyPostAllResultSerializer, **_ERRORS, 409: TallyErrorSerializer},
+    )
+    @action(detail=False, methods=["post"], url_path="post-all")
+    def post_all(self, request, client_id=None):
+        client = get_visible_client(request, client_id)
+        payload = TallyPostSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        queued = enqueue_post_all(client, request.membership, request.user, allow_overlap=payload.validated_data["allow_overlap"])
+        return Response({"queued": len(queued)}, status=status.HTTP_202_ACCEPTED)
 
     @extend_schema(
         summary="The imports waiting to be posted, being posted, or done, newest first",

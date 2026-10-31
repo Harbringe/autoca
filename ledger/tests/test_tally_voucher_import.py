@@ -707,3 +707,27 @@ def test_two_reports_for_one_account_are_refused(firm, client, senior, in_contex
     data = bank_report_xml([report_row("4-Apr-25", "Cash", "Rcpt", debit=1.0)])
     with pytest.raises(TallyImportError):
         stage_bank_reports(client, senior, senior.user, reports=[("a.xml", data, account.pk), ("b.xml", data, account.pk)])
+
+
+def test_an_import_being_posted_cannot_be_discarded_or_read_again(firm, client, senior, chart):
+    from ledger.models import LedgerImportRun
+    from ledger.tally_voucher_import import discard_run, refresh_run
+
+    run, _ = stage(client, senior, [sale(date="20250401")])
+    LedgerImportRun.objects.filter(pk=run.pk).update(result={"posting": True, "progress": {"done": 0, "total": 1}})
+    run.refresh_from_db()
+    with pytest.raises(TallyImportError, match="being posted"):
+        discard_run(run, senior)
+    with pytest.raises(TallyImportError, match="being posted"):
+        refresh_run(run, senior, senior.user)
+
+
+def test_a_discarded_import_is_not_turned_back_into_a_posted_one(firm, client, senior, chart):
+    from ledger.models import ImportStatus, LedgerImportRun
+
+    run, _ = stage(client, senior, [sale(date="20250401")])
+    LedgerImportRun.objects.filter(pk=run.pk).update(status=ImportStatus.DISCARDED)
+    stale = LedgerImportRun.objects.get(pk=run.pk)
+    stale.status = ImportStatus.PREVIEW  # the worker's copy was read before the discard
+    done = confirm_vouchers(stale, senior, senior.user)
+    assert done.status == ImportStatus.DISCARDED

@@ -360,11 +360,16 @@ def check_postable(run: LedgerImportRun, membership, *, allow_overlap: bool = Fa
 def discard_run(run: LedgerImportRun, membership) -> LedgerImportRun:
     """Take a queued import out of the queue. The stored file stays with the client's documents."""
     _require_rights(membership, run.client)
-    if run.kind != ImportKind.VOUCHERS or run.status != ImportStatus.PREVIEW:
-        raise TallyImportError("Only an import still waiting to be posted can be discarded.")
-    run.status = ImportStatus.DISCARDED
-    run.save(update_fields=["status"])
-    return run
+    with transaction.atomic():
+        # Read again under a lock: a worker may have started posting since this request read the run.
+        fresh = LedgerImportRun.objects.select_for_update().get(pk=run.pk)
+        if fresh.kind != ImportKind.VOUCHERS or fresh.status != ImportStatus.PREVIEW:
+            raise TallyImportError("Only an import still waiting to be posted can be discarded.")
+        if (fresh.result or {}).get("posting"):
+            raise TallyImportError("This import is being posted now. It can be discarded once that has finished.")
+        fresh.status = ImportStatus.DISCARDED
+        fresh.save(update_fields=["status"])
+    return fresh
 
 
 def refresh_run(run: LedgerImportRun, membership, user, *, voucher_types=None) -> LedgerImportRun:
@@ -376,6 +381,8 @@ def refresh_run(run: LedgerImportRun, membership, user, *, voucher_types=None) -
     _require_rights(membership, client)
     if run.kind != ImportKind.VOUCHERS or run.status != ImportStatus.PREVIEW:
         raise TallyImportError("Only an import still waiting to be posted can be read again.")
+    if (LedgerImportRun.objects.filter(pk=run.pk).values_list("result", flat=True).first() or {}).get("posting"):
+        raise TallyImportError("This import is being posted now. It can be read again once that has finished.")
     document = run.document
     if document is None or not document.storage_key:
         raise TallyImportError("The file for this import is no longer stored, so it cannot be read again. Upload it again.")
@@ -386,9 +393,8 @@ def refresh_run(run: LedgerImportRun, membership, user, *, voucher_types=None) -
         raise TallyImportError("The file for this import is no longer stored, so it cannot be read again. Upload it again.") from None
     types = voucher_types if voucher_types is not None else run.counts.get("type_map")
     fresh, _reused = stage_vouchers(client, membership, user, data=data, filename=document.original_filename, voucher_types=types)
-    if fresh.pk != run.pk:
-        run.status = ImportStatus.DISCARDED
-        run.save(update_fields=["status"])
+    if fresh.pk != run.pk:  # only if nobody started posting the old one meanwhile
+        LedgerImportRun.objects.filter(pk=run.pk, status=ImportStatus.PREVIEW).exclude(result__posting=True).update(status=ImportStatus.DISCARDED)
     return fresh
 
 
@@ -442,10 +448,14 @@ def confirm_vouchers(run: LedgerImportRun, membership, user, *, allow_overlap: b
         rule_ids = []
     result["rules_learned"] = len(rule_ids)
     result["rule_ids"] = rule_ids
-    run.status = ImportStatus.CONFIRMED
-    run.result = result
-    run.confirmed_by, run.confirmed_at = user, timezone.now()
-    run.save(update_fields=["status", "result", "confirmed_by", "confirmed_at"])
+    # Conditional: a run that is no longer waiting (discarded by someone meanwhile) is never turned back into a posted one.
+    stamp = timezone.now()
+    changed = LedgerImportRun.objects.filter(pk=run.pk, status=ImportStatus.PREVIEW).update(
+        status=ImportStatus.CONFIRMED, result=result, confirmed_by=user, confirmed_at=stamp
+    )
+    if not changed:
+        logger.warning("A Tally import changed state while it was being posted; its vouchers were written and are kept")
+    run.refresh_from_db()
     return run
 
 

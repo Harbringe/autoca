@@ -19,6 +19,7 @@ from core.jobs import JobResult, enqueue_job, mark_staged
 from core.models import FirmMembership, Job
 from core.rbac import has_permission
 from ledger.models import ImportKind, ImportStatus, LedgerImportRun
+from ledger.tally_import import TallyImportError
 from ledger.tally_voucher_import import check_postable, confirm_vouchers
 
 logger = logging.getLogger(__name__)
@@ -31,8 +32,12 @@ def enqueue_post(run: LedgerImportRun, membership, user, *, allow_overlap: bool)
     """Check the import can be posted now, mark it as being posted, and queue the work. Returns at once."""
     check_postable(run, membership, allow_overlap=allow_overlap)
     total = int(run.counts.get("will_post", 0))
-    run.result = {"posting": True, "progress": {"done": 0, "total": total}}
-    run.save(update_fields=["result"])
+    # Only a run still waiting may be marked as being posted; a discard that got there first wins.
+    marked = LedgerImportRun.objects.filter(pk=run.pk, status=ImportStatus.PREVIEW).update(
+        result={"posting": True, "progress": {"done": 0, "total": total}}
+    )
+    if not marked:
+        raise TallyImportError("This import is no longer waiting to be posted.")
     outcome = enqueue_job(
         firm_id=run.firm_id,
         kind=KIND,

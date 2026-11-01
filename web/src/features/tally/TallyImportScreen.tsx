@@ -21,6 +21,7 @@ import {
   type VoucherRun,
 } from '@/api/queries/tallyImport'
 import { useInvalidateClient } from '@/api/queries/clients'
+import { ApiError } from '@/api/errors'
 import { Checkbox } from '@/components/ui/controls'
 import { Confirm } from '@/components/ca/Confirm'
 import { PagedList } from '@/components/ca/Pager'
@@ -73,6 +74,8 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
   const [error, setError] = useState<string | null>(null)
   const [undoing, setUndoing] = useState(false)
   const [agree, setAgree] = useState(false)
+  // Set when the server finds entries the preview did not know of: the say-so is then asked for as if the preview had said so.
+  const [overlapFound, setOverlapFound] = useState<string | null>(null)
   // A large file is read by a worker: what it is doing now, and what it made once it has finished.
   const [reading, setReading] = useState<string | null>(null)
   const [readNote, setReadNote] = useState<string | null>(null)
@@ -158,6 +161,7 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
     try {
       setRun(await confirm.mutateAsync({ runId: run.id, allowOverlap: agree }))
     } catch (e) {
+      if (e instanceof ApiError && e.code === 'tally_overlap') setOverlapFound(e.message)
       setError(messageOf(e))
     }
   }
@@ -355,14 +359,17 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
               </PagedList>
             </div>
           )}
-          {((run.counts.existing_entries ?? 0) > 0 || (run.counts.existing_statement_rows ?? 0) > 0) && (
+          {(overlapFound !== null || (run.counts.existing_entries ?? 0) > 0 || (run.counts.existing_statement_rows ?? 0) > 0) && (
             <Card tone="attention" className="grid gap-2 p-3 text-sm" data-testid="overlap">
               <span className="flex gap-2">
                 <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
                 <span>
-                  This client already has {plural(run.counts.existing_entries ?? 0, 'entry', 'entries')}
-                  {(run.counts.existing_statement_rows ?? 0) > 0 ? ` and ${plural(run.counts.existing_statement_rows ?? 0, 'bank statement row')}` : ''} between{' '}
-                  {run.counts.date_from} and {run.counts.date_to}. A voucher already imported from Tally is never written twice, but entries made here for the same
+                  {(run.counts.existing_entries ?? 0) === 0 && (run.counts.existing_statement_rows ?? 0) === 0 && overlapFound
+                    ? overlapFound
+                    : `This client already has ${plural(run.counts.existing_entries ?? 0, 'entry', 'entries')}${
+                        (run.counts.existing_statement_rows ?? 0) > 0 ? ` and ${plural(run.counts.existing_statement_rows ?? 0, 'bank statement row')}` : ''
+                      } between ${run.counts.date_from} and ${run.counts.date_to}.`}{' '}
+                  A voucher already imported from Tally is never written twice, but entries made here for the same
                   money would be counted twice.
                 </span>
               </span>
@@ -403,7 +410,7 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
                 loading={confirm.isPending}
                 disabled={
                   run.counts.will_post === 0 ||
-                  (((run.counts.existing_entries ?? 0) > 0 || (run.counts.existing_statement_rows ?? 0) > 0) && !agree)
+                  ((overlapFound !== null || (run.counts.existing_entries ?? 0) > 0 || (run.counts.existing_statement_rows ?? 0) > 0) && !agree)
                 }
                 onClick={() => void post()}
               >

@@ -1,5 +1,6 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { ApiError } from '@/api/errors'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { VoucherRun } from '@/api/queries/tallyImport'
 import { TallyImportScreen } from './TallyImportScreen'
@@ -87,6 +88,16 @@ describe('TallyImportScreen', () => {
     expect(post).toHaveBeenLastCalledWith('/api/v1/clients/c1/tally-imports/r1/confirm-vouchers/', { allow_overlap: false })
   })
 
+  it('asks for the say-so when the server finds entries the preview did not know of', async () => {
+    post.mockResolvedValueOnce(preview())
+    renderScreen()
+    choose()
+    post.mockRejectedValueOnce(new ApiError(409, { detail: 'This client already has 2 entries between 01-04-2025 and 30-04-2025.', code: 'tally_overlap' }))
+    fireEvent.click(await screen.findByRole('button', { name: /Post 1 voucher/ }))
+    expect(await screen.findByRole('checkbox', { name: 'Import anyway' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Post 1 voucher/ })).toBeDisabled()
+  })
+
   it('asks for the accountant says-so before posting on top of entries already there', async () => {
     post.mockResolvedValueOnce(preview({ existing_entries: 4 }))
     renderScreen()
@@ -155,6 +166,19 @@ describe('TallyImportScreen', () => {
     renderScreen()
     fireEvent.click(await screen.findByRole('button', { name: /Post all 2 months/ }))
     await waitFor(() => expect(post).toHaveBeenLastCalledWith('/api/v1/clients/c1/tally-imports/post-all/', { allow_overlap: false }))
+  })
+
+  it('asks for the accountant say-so when the server finds entries the preview did not know of', async () => {
+    get.mockImplementation((url: string) => Promise.resolve(url.endsWith('/voucher-runs/') ? [month('a', '2025-04-01'), month('b', '2025-05-01')] : []))
+    post.mockRejectedValueOnce(new ApiError(409, { detail: 'This client already has 2 entries between 01-10-2025 and 04-10-2025.', code: 'tally_overlap' }))
+    post.mockResolvedValueOnce({ queued: 2 })
+    renderScreen()
+    fireEvent.click(await screen.findByRole('button', { name: /Post all 2 months/ }))
+    const agree = await screen.findByRole('checkbox', { name: 'Import all anyway' })
+    expect(screen.getByRole('button', { name: /Post all 2 months/ })).toBeDisabled()
+    fireEvent.click(agree)
+    fireEvent.click(screen.getByRole('button', { name: /Post all 2 months/ }))
+    await waitFor(() => expect(post).toHaveBeenLastCalledWith('/api/v1/clients/c1/tally-imports/post-all/', { allow_overlap: true }))
   })
 
   it('will not post all while a month has entries the accountant has not agreed to', async () => {

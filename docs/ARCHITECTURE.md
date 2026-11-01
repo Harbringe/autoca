@@ -541,6 +541,19 @@ types with no accounting effect are named as such, and a reversing journal is he
 reads Tally's trial balance and `compare` lists each ledger whose closing balance differs from the books; it shows, it never fixes. The
 readers for the ledger list (JSON too), voucher types and trial balance were written without a real file and are marked UNVERIFIED.
 
+### Voucher series, number formats, classes and the audit trail (added 2026-11-01)
+
+`JournalEntry.voucher_type` stays the accounting parent; `type_name` (empty for the standard series) names a firm's own Tally voucher type
+("GST SALE") so it numbers in a series of its own: `VoucherSequence` and the book's unique number key include it, `allocate_voucher_number`
+and sign-off renumbering work per `(voucher_type, type_name)`, and `CustomVoucherType` records the type and its parent. A type may keep its
+own series only when it posts as sales, purchase, a note or a journal; a bank voucher keeps the standard Payment, Receipt and Contra numbers
+because its entry is tied to a statement row. The import offers "keep as its own voucher type" (`own:sales` etc.). `NumberingFormat` (a prefix
+with `{fy}` and zero padding, per series) changes only how a number is shown (`ledger/numbering.py`, `voucher_number` on entries); the stored
+number is an integer. Tally's own number (`TallyVoucher.tally_number`) is shown beside ours and found by the Day Book search. `VoucherClass`
+is a preset head ledger and GST rate for sales and purchase vouchers that the voucher form uses to prefill; nothing posts differently.
+`MasterChange` (append-only) is written by `MasterAuditMixin` on the ledger, party and rule viewsets (a party's GSTIN is never copied, only
+`has_gstin`), and `GET clients/{id}/audit-trail/` merges it with `EntryChange` newest first, with filters.
+
 ## On OCR — read before wiring a vendor
 
 **Do not use Azure Document Intelligence F0.** It allows 500 pages/month but

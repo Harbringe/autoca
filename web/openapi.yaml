@@ -802,6 +802,7 @@ paths:
           - LEDGER
           - PARTY
           - RULE
+          - SETTING
       - in: query
         name: limit
         schema:
@@ -9062,12 +9063,14 @@ components:
       - LEDGER
       - PARTY
       - RULE
+      - SETTING
       type: string
       description: |-
         * `ENTRY` - ENTRY
         * `LEDGER` - LEDGER
         * `PARTY` - PARTY
         * `RULE` - RULE
+        * `SETTING` - SETTING
     BalanceCheck:
       type: object
       description: |-

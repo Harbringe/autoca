@@ -966,6 +966,7 @@ class MasterKind(models.TextChoices):
     GROUP = "GROUP", "Group"
     PARTY = "PARTY", "Party"
     RULE = "RULE", "Rule"
+    SETTING = "SETTING", "Setting"
 
 
 class MasterAction(models.TextChoices):

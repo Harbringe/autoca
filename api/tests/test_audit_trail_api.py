@@ -105,3 +105,48 @@ def test_a_party_change_shows_that_a_gstin_was_added_but_never_the_number(api, c
     row = trail(api, client_record, "?kind=PARTY")[0]
     assert (row["before"]["has_gstin"], row["after"]["has_gstin"]) == (False, True)
     assert "27AAPFU0939F1ZV" not in str(row)
+
+
+def test_posting_a_voucher_is_in_the_trail_as_created(api, firm, client_record):
+    with firm_context(firm.pk):
+        entry = post(client_record, datetime.date(2025, 4, 5), support_ledger(client_record, "Rent", G.INDIRECT_EXPENSE), support_ledger(client_record, "Cash", G.CASH), 12_300)
+    rows = trail(api, client_record, "?kind=ENTRY")
+    assert [r["action"] for r in rows] == ["CREATED"]
+    assert rows[0]["label"] == f"Journal no. {entry.entry_no}, 05-04-2025"
+    assert rows[0]["after"]["total_paise"] == 12_300
+
+
+def test_a_voucher_taken_back_shows_as_created_then_removed(api, firm, client_record):
+    with firm_context(firm.pk):
+        entry = post(client_record, datetime.date(2025, 4, 5), support_ledger(client_record, "Rent", G.INDIRECT_EXPENSE), support_ledger(client_record, "Cash", G.CASH), 100)
+        record_change(entry, ChangeAction.REMOVED, before={"narration": "x"}, note="wrong month")
+    assert [r["action"] for r in trail(api, client_record, "?kind=ENTRY")] == ["REMOVED", "CREATED"]
+
+
+def numbering(api, client, items):
+    return api.put(f"{base(client)}/numbering/?fy=2025", items, format="json")
+
+
+def test_changing_a_number_format_is_in_the_trail_and_changing_nothing_is_not(api, client_record):
+    item = {"voucher_type": "Sales", "type_name": "", "prefix": "S/", "padding": 4}
+    assert numbering(api, client_record, [item]).status_code == 200, "set"
+    assert numbering(api, client_record, [item]).status_code == 200, "the same again"
+    rows = trail(api, client_record, "?kind=SETTING")
+    assert len(rows) == 1
+    assert rows[0]["label"] == "Number format: Sales"
+    assert (rows[0]["before"]["prefix"], rows[0]["after"]["prefix"], rows[0]["after"]["padding"]) == ("", "S/", 4)
+
+
+def test_voucher_classes_and_types_are_in_the_trail(api, client_record):
+    sales = make_ledger(api, client_record, "Sales", "SALES")
+    made = api.post(f"{base(client_record)}/voucher-classes/", {"name": "Retail 18%", "voucher_type": "Sales", "head_ledger": sales["id"], "gst_rate": "18"}, format="json")
+    assert made.status_code == 201, made.json()
+    assert api.delete(f"{base(client_record)}/voucher-classes/{made.json()['id']}/").status_code == 204
+    typed = api.post(f"{base(client_record)}/voucher-types/", {"name": "GST SALE", "parent": "Sales"}, format="json")
+    assert typed.status_code == 201, typed.json()
+    rows = trail(api, client_record, "?kind=SETTING")
+    assert [(r["action"], r["label"]) for r in rows] == [
+        ("CREATED", "Voucher type: GST SALE"),
+        ("REMOVED", "Voucher class: Retail 18%"),
+        ("CREATED", "Voucher class: Retail 18%"),
+    ]

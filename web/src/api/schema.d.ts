@@ -4106,9 +4106,10 @@ export interface components {
          *     * `LEDGER` - LEDGER
          *     * `PARTY` - PARTY
          *     * `RULE` - RULE
+         *     * `SETTING` - SETTING
          * @enum {string}
          */
-        AuditTrailRowKindEnum: "ENTRY" | "LEDGER" | "PARTY" | "RULE";
+        AuditTrailRowKindEnum: "ENTRY" | "LEDGER" | "PARTY" | "RULE" | "SETTING";
         /**
          * @description Month end: does the ledger agree with the bank?
          *
@@ -10754,7 +10755,7 @@ export interface operations {
                 /** @description Only this person's changes. */
                 actor?: string;
                 from?: string;
-                kind?: "ENTRY" | "LEDGER" | "PARTY" | "RULE";
+                kind?: "ENTRY" | "LEDGER" | "PARTY" | "RULE" | "SETTING";
                 limit?: number;
                 offset?: number;
                 /** @description Text in the label or the note. */

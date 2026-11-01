@@ -15,10 +15,10 @@ from rest_framework.views import APIView
 
 from api.permissions import HasFirmPermission
 from core.access import get_visible_client
-from ledger.models import EntryChange, MasterChange
+from ledger.models import EntryChange, JournalEntry, MasterChange
 
 DEFAULT_LIMIT, MAX_LIMIT = 50, 200
-KINDS = ("ENTRY", "LEDGER", "PARTY", "RULE")
+KINDS = ("ENTRY", "LEDGER", "PARTY", "RULE", "SETTING")
 
 
 class AuditTrailRowSerializer(serializers.Serializer):
@@ -48,6 +48,14 @@ def _entry_row(c: EntryChange) -> dict:
         "id": str(c.pk), "at": c.created_at, "kind": "ENTRY", "action": c.action, "action_display": c.get_action_display(),
         "label": f"{c.voucher_type} no. {c.entry_no}, {c.entry_date:%d-%m-%Y}", "actor_name": _name(c.actor), "note": c.note,
         "before": c.before, "after": c.after,
+    }
+
+
+def _created_row(e: JournalEntry) -> dict:
+    return {
+        "id": f"created-{e.pk}", "at": e.created_at, "kind": "ENTRY", "action": "CREATED", "action_display": "Created",
+        "label": f"{e.get_voucher_type_display()} no. {e.entry_no}, {e.entry_date:%d-%m-%Y}", "actor_name": _name(e.approved_by), "note": e.narration,
+        "before": {}, "after": {"narration": e.narration, "total_paise": e.total_paise},
     }
 
 
@@ -103,21 +111,28 @@ class AuditTrailView(APIView):
 
         entries = EntryChange.objects.filter(firm_id=client.firm_id, client=client).select_related("actor")
         masters = MasterChange.objects.filter(firm_id=client.firm_id, client=client).select_related("actor")
+        # A voucher's creation is not a change row: it is the voucher itself, so the trail lists it from there.
+        created = JournalEntry.objects.filter(firm_id=client.firm_id, client=client).select_related("approved_by")
         if kind == "ENTRY":
             masters = masters.none()
         elif kind:
-            entries, masters = entries.none(), masters.filter(kind=kind)
+            entries, masters, created = entries.none(), masters.filter(kind=kind), created.none()
         if actor:
-            entries, masters = entries.filter(actor_id=actor), masters.filter(actor_id=actor)
+            entries, masters, created = entries.filter(actor_id=actor), masters.filter(actor_id=actor), created.filter(approved_by_id=actor)
         if start:
-            entries, masters = entries.filter(created_at__date__gte=start), masters.filter(created_at__date__gte=start)
+            entries, masters, created = entries.filter(created_at__date__gte=start), masters.filter(created_at__date__gte=start), created.filter(created_at__date__gte=start)
         if end:
-            entries, masters = entries.filter(created_at__date__lte=end), masters.filter(created_at__date__lte=end)
+            entries, masters, created = entries.filter(created_at__date__lte=end), masters.filter(created_at__date__lte=end), created.filter(created_at__date__lte=end)
         if text:
             entries = entries.filter(Q(note__icontains=text) | Q(voucher_type__icontains=text))
             masters = masters.filter(Q(label__icontains=text))
+            created = created.filter(Q(narration__icontains=text) | Q(voucher_type__icontains=text))
 
         window = offset + limit
-        rows = [_entry_row(c) for c in entries.order_by("-created_at")[:window]] + [_master_row(c) for c in masters.order_by("-created_at")[:window]]
+        rows = (
+            [_entry_row(c) for c in entries.order_by("-created_at")[:window]]
+            + [_master_row(c) for c in masters.order_by("-created_at")[:window]]
+            + [_created_row(c) for c in created.order_by("-created_at").prefetch_related("lines")[:window]]
+        )
         rows.sort(key=lambda r: (r["at"], r["id"]), reverse=True)
-        return Response({"count": entries.count() + masters.count(), "results": AuditTrailRowSerializer(rows[offset:window], many=True).data})
+        return Response({"count": entries.count() + masters.count() + created.count(), "results": AuditTrailRowSerializer(rows[offset:window], many=True).data})

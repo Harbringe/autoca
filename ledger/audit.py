@@ -15,6 +15,8 @@ from ledger.models import MasterChange
 LEDGER_FIELDS = ("name", "group", "is_active", "status", "nce_line", "nce_section", "alias")
 #: A party's GSTIN is held encrypted and is not copied into a log; ``has_gstin`` still shows it being added or removed.
 PARTY_FIELDS = ("canonical_name", "role", "rcm_default", "msme", "udyam_no", "tds_section", "ledger", "notes", "is_active", "has_gstin")
+TYPE_FIELDS = ("name", "parent")
+CLASS_FIELDS = ("name", "voucher_type", "type_name", "head_ledger", "gst_rate")
 RULE_FIELDS = ("match_type", "pattern", "direction", "ledger", "party", "rcm", "tds_section", "confidence", "priority", "is_active")
 
 

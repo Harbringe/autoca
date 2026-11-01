@@ -37,7 +37,7 @@ class Migration(migrations.Migration):
             fields=[
                 ('id', models.UUIDField(default=uuid.uuid4, editable=False, primary_key=True, serialize=False)),
                 ('created_at', models.DateTimeField(default=django.utils.timezone.now, editable=False)),
-                ('kind', models.CharField(choices=[('LEDGER', 'Ledger'), ('GROUP', 'Group'), ('PARTY', 'Party'), ('RULE', 'Rule')], max_length=8)),
+                ('kind', models.CharField(choices=[('LEDGER', 'Ledger'), ('GROUP', 'Group'), ('PARTY', 'Party'), ('RULE', 'Rule'), ('SETTING', 'Setting')], max_length=8)),
                 ('object_id', models.UUIDField(db_index=True)),
                 ('action', models.CharField(choices=[('CREATED', 'Created'), ('EDITED', 'Changed'), ('REMOVED', 'Removed')], max_length=8)),
                 ('label', models.CharField(max_length=255)),

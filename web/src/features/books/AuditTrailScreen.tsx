@@ -13,7 +13,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { formatDateTime } from '@/lib/format'
 
 const PAGE = 50
-const KIND_LABEL: Record<string, string> = { ENTRY: 'Voucher', LEDGER: 'Ledger', PARTY: 'Party', RULE: 'Rule' }
+const KIND_LABEL: Record<string, string> = { ENTRY: 'Voucher', LEDGER: 'Ledger', PARTY: 'Party', RULE: 'Rule', SETTING: 'Setting' }
 
 const show = (value: unknown) => (value === undefined || value === null || value === '' ? '(none)' : typeof value === 'object' ? JSON.stringify(value) : String(value))
 
@@ -47,6 +47,7 @@ export function AuditTrailScreen({ clientId }: { clientId: string }) {
           <option value="LEDGER">Ledgers</option>
           <option value="PARTY">Parties</option>
           <option value="RULE">Rules</option>
+          <option value="SETTING">Settings</option>
         </Select>
         <Input aria-label="Search the changes" placeholder="Search…" className="w-56" value={q} onChange={(e) => change(setQ, e.target.value)} />
         <Input aria-label="From" type="date" className="w-40" value={from} onChange={(e) => change(setFrom, e.target.value)} />
@@ -58,7 +59,7 @@ export function AuditTrailScreen({ clientId }: { clientId: string }) {
       ) : list.error ? (
         <ErrorState error={list.error} retry={() => void list.refetch()} />
       ) : list.data.results.length === 0 ? (
-        <EmptyState title="Nothing has been changed">Changes to vouchers, ledgers, parties and rules are listed here as they happen.</EmptyState>
+        <EmptyState title="Nothing has been changed">Vouchers made or changed, and changes to ledgers, parties, rules and settings are listed here as they happen.</EmptyState>
       ) : (
         <>
           <ul aria-label="Changes" className="divide-y divide-border-strong overflow-hidden rounded-xl border border-border-strong bg-card text-sm">

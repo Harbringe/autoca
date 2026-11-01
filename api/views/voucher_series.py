@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import uuid
 
 from django.db import transaction
 from drf_spectacular.types import OpenApiTypes
@@ -18,8 +19,10 @@ from api.serializers.voucher_series import (
     VoucherClassSerializer,
 )
 from api.views.base import ClientScopedMixin, FirmScopedViewSet
+from api.views.master_audit import MasterAuditMixin
 from core.access import get_visible_client
 from core.fy import financial_year
+from ledger.audit import CLASS_FIELDS, TYPE_FIELDS, record_master_change
 from ledger.models import (
     CustomVoucherType,
     NumberingFormat,
@@ -31,10 +34,16 @@ from ledger.numbering import VoucherTypeInUseError, format_voucher_number, is_in
 
 
 @extend_schema(tags=["ledger"])
-class CustomVoucherTypeViewSet(ClientScopedMixin, FirmScopedViewSet):
+class CustomVoucherTypeViewSet(MasterAuditMixin, ClientScopedMixin, FirmScopedViewSet):
     """The voucher types a firm made up in Tally (or here): each posts as its parent and counts in a series of its own."""
 
     queryset = CustomVoucherType.objects.all().order_by("name")
+    audit_kind = "SETTING"
+    audit_fields = TYPE_FIELDS
+
+    def audit_label(self, obj) -> str:
+        return f"Voucher type: {obj.name}"
+
     serializer_class = CustomVoucherTypeSerializer
     required_permission = {
         "GET": "client.view",
@@ -120,18 +129,29 @@ class NumberingView(APIView):
         with transaction.atomic():
             for item in payload.validated_data:
                 key = {"firm_id": client.firm_id, "client": client, "voucher_type": item["voucher_type"], "type_name": item["type_name"]}
+                current = NumberingFormat.objects.filter(**key).first()
+                before = {"prefix": current.prefix, "padding": current.padding} if current else {"prefix": "", "padding": 0}
+                after = {"prefix": item["prefix"], "padding": item["padding"]}
                 if not item["prefix"] and item["padding"] == 0:
                     NumberingFormat.objects.filter(**key).delete()
                 else:
-                    NumberingFormat.objects.update_or_create(**key, defaults={"prefix": item["prefix"], "padding": item["padding"]})
+                    NumberingFormat.objects.update_or_create(**key, defaults=after)
+                label = f"Number format: {item['type_name'] or item['voucher_type']}"
+                record_master_change(client, "SETTING", (current.pk if current else uuid.uuid4()), "EDITED", label=label, before=before, after=after, actor=request.user)
         return Response(self._payload(client, self._year(request)))
 
 
 @extend_schema(tags=["ledger"])
-class VoucherClassViewSet(ClientScopedMixin, FirmScopedViewSet):
+class VoucherClassViewSet(MasterAuditMixin, ClientScopedMixin, FirmScopedViewSet):
     """Presets for sales and purchase vouchers: choosing one fills in the head ledger and the GST rate. Nothing posts differently."""
 
     queryset = VoucherClass.objects.select_related("head_ledger").order_by("name")
+    audit_kind = "SETTING"
+    audit_fields = CLASS_FIELDS
+
+    def audit_label(self, obj) -> str:
+        return f"Voucher class: {obj.name}"
+
     serializer_class = VoucherClassSerializer
     required_permission = {
         "GET": "client.view",

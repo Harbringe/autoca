@@ -76,3 +76,23 @@ def test_a_read_only_person_may_read_but_not_change(firm, client_record, api):
     assert reader.post(url(client_record), {"name": "X"}, format="json").status_code == 403
     assert reader.patch(url(client_record, f"{item['id']}/"), {"unit": "Kg"}, format="json").status_code == 403
     assert reader.delete(url(client_record, f"{item['id']}/")).status_code == 403
+
+
+def test_the_stock_report_flags_an_item_at_its_reorder_level_and_lists_its_movements(api, client_record):
+    stock_url = f"{base(client_record)}/stock-entries/"
+    api.post(stock_url, {"kind": "OPENING", "entry_date": "2025-04-01", "name": "Widget", "unit": "pcs", "quantity": "100", "value_paise": 50_000_00}, format="json")
+    api.post(stock_url, {"kind": "ADJUSTMENT", "entry_date": "2025-06-30", "direction": "OUT", "name": "Widget", "unit": "pcs", "quantity": "70", "value_paise": 0, "note": "Damaged"}, format="json")
+    assert make(api, client_record, name="widget", unit="pcs", reorder_level="30").status_code == 201
+
+    report = api.get(f"{base(client_record)}/reports/inventory/", {"fy": 2025}).json()
+    (item,) = report["items"]
+    assert item["closing_qty"] == "30" and item["reorder_level"] == "30" and item["below_reorder"] is True
+    assert report["below_reorder"] == 1
+    assert [(m["date"], m["direction"], m["quantity"]) for m in item["movements"]] == [("2025-04-01", "IN", "100"), ("2025-06-30", "OUT", "70")]
+    assert item["movements"][1]["source"] == "Stock adjustment · Damaged"
+
+
+def test_an_item_with_no_level_is_not_flagged_in_the_report(api, client_record):
+    api.post(f"{base(client_record)}/stock-entries/", {"kind": "OPENING", "entry_date": "2025-04-01", "name": "Widget", "unit": "pcs", "quantity": "1", "value_paise": 100}, format="json")
+    report = api.get(f"{base(client_record)}/reports/inventory/", {"fy": 2025}).json()
+    assert report["below_reorder"] == 0 and report["items"][0]["reorder_level"] is None and report["items"][0]["below_reorder"] is False

@@ -22,10 +22,16 @@ const REPORT = {
   bills_left_out: 2,
   left_out_examples: ['SN4048 (Shri Padmavati Trading Co)'],
   lines_without_value: 0,
+  below_reorder: 1,
   items: [
     {
       name: 'CEMENT SUPER NEW', unit: 'BAG', opening_qty: '0', opening_value_paise: 0, closing_qty: '-30', closing_value_paise: 0,
       in_qty: '100', in_value_paise: 3000000, out_qty: '130', out_value_paise: 4550000,
+      reorder_level: '25', below_reorder: true,
+      movements: [
+        { date: '2025-04-05', direction: 'IN', quantity: '100', value_paise: 3000000, source: 'Purchase P-4 · Ravi Traders' },
+        { date: '2025-04-20', direction: 'OUT', quantity: '40', value_paise: 1400000, source: 'Sales INV-9 · Sunrise Traders' },
+      ],
       months: [
         month('2025-04', { in_qty: '100', in_value_paise: 3000000, out_qty: '40', out_value_paise: 1400000, closing_qty: '60', closing_value_paise: 1800000 }),
         month('2025-05', { out_qty: '90', out_value_paise: 3150000, closing_qty: '-30', closing_value_paise: 0 }),
@@ -63,6 +69,29 @@ describe('the inventory report', () => {
     renderIt()
     expect(await screen.findByText(/no invoice\s+lines with a quantity/)).toBeInTheDocument()
     expect(screen.getByText(/SN4048 \(Shri Padmavati Trading Co\)/)).toBeInTheDocument()
+  })
+
+  it('says how many items are at or below their reorder level, and marks each one', async () => {
+    renderIt()
+    expect(await screen.findByRole('status')).toHaveTextContent(/1 item is at or below its reorder level/)
+    expect(screen.getByText('Reorder at 25 BAG')).toBeInTheDocument()
+  })
+
+  it('does not mention reordering when nothing is low', async () => {
+    renderIt({ ...REPORT, below_reorder: 0, items: [{ ...REPORT.items[0]!, below_reorder: false }] })
+    await screen.findByRole('table', { name: 'Monthly summary of CEMENT SUPER NEW' })
+    expect(screen.queryByText(/reorder level/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Reorder at/)).not.toBeInTheDocument()
+  })
+
+  it('lists the movements of an item with where each came from', async () => {
+    renderIt()
+    const table = await screen.findByRole('table', { name: 'Movements of CEMENT SUPER NEW' })
+    const purchase = within(table).getByText('Purchase P-4 · Ravi Traders').closest('tr')!
+    expect(within(purchase).getByText('05-04-2025')).toBeInTheDocument()
+    expect(within(purchase).getByText('100 BAG')).toBeInTheDocument()
+    const sale = within(table).getByText('Sales INV-9 · Sunrise Traders').closest('tr')!
+    expect(within(sale).getByText('40 BAG')).toBeInTheDocument()
   })
 
   it('says so when there is nothing to show', async () => {

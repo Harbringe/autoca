@@ -21,7 +21,7 @@ import { topStockItems } from '@/lib/reportSeries'
 import { formatCompact } from '@/lib/format'
 import { monthLong } from '@/lib/chartFormat'
 import { Picture, ReportSkeleton } from './ReportPicture'
-import { formatPaise, plural } from '@/lib/format'
+import { formatDate, formatPaise, plural } from '@/lib/format'
 import { normaliseName } from '@/lib/names'
 import { Button } from '@/components/ui/button'
 import { ReportFrame } from './ReportFrame'
@@ -73,6 +73,16 @@ export function InventoryReport({ clientId, fy }: { clientId: string; fy: number
               <span>{plural(report.lines_without_value, 'line')} {report.lines_without_value === 1 ? 'has' : 'have'} a quantity but no amount, so {report.lines_without_value === 1 ? 'it moves' : 'they move'} stock without value.</span>
             )}
           </div>
+        </div>
+      )}
+
+      {report.below_reorder > 0 && (
+        <div role="status" className="mb-4 flex gap-2 rounded-md border border-accent-edge bg-accent p-3 text-sm">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0" aria-hidden />
+          <span>
+            <strong>{plural(report.below_reorder, 'item')}</strong> {report.below_reorder === 1 ? 'is' : 'are'} at or below {report.below_reorder === 1 ? 'its' : 'their'} reorder level
+            at the end of this year: {report.items.filter((i) => i.below_reorder).map((i) => normaliseName(i.name)).join(', ')}.
+          </span>
         </div>
       )}
 
@@ -137,7 +147,12 @@ function ItemBlock({ item }: { item: InventoryItem }) {
   const unit = item.unit
   return (
     <section aria-label={item.name} className="relative overflow-x-auto print:break-inside-avoid">
-      <h3 className="mb-1 font-semibold text-heading">{normaliseName(item.name)}</h3>
+      <h3 className="mb-1 flex flex-wrap items-center gap-2 font-semibold text-heading">
+        {normaliseName(item.name)}
+        {item.below_reorder && item.reorder_level && (
+          <span className="rounded-full border border-accent-edge bg-accent px-2 py-0.5 text-xs font-medium">{`Reorder at ${qty(item.reorder_level, unit)}`}</span>
+        )}
+      </h3>
       <div className="no-print mb-3 rounded-lg border bg-surface-2 p-3">
         <ColumnChart
           points={item.months.map((m) => ({ key: m.month, label: monthLabel(m.month).slice(0, 3), full: monthLong(m.month), values: [m.in_value_paise, m.out_value_paise, m.closing_value_paise] }))}
@@ -193,6 +208,33 @@ function ItemBlock({ item }: { item: InventoryItem }) {
           </tr>
         </tbody>
       </table>
+      {item.movements.length > 0 && (
+        <details className="mt-3 text-sm">
+          <summary className="no-print cursor-pointer font-medium">Movements ({item.movements.length})</summary>
+          <table className="mt-2 w-full min-w-[40rem]" aria-label={`Movements of ${item.name}`}>
+            <thead className="border-b text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <tr>
+                <th scope="col" className="py-1 pr-2 font-semibold">Date</th>
+                <th scope="col" className="px-2 font-semibold">From</th>
+                <th scope="col" className="num px-2 text-right font-semibold">In</th>
+                <th scope="col" className="num px-2 text-right font-semibold">Out</th>
+                <th scope="col" className="num px-2 text-right font-semibold">Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              {item.movements.map((mv, i) => (
+                <tr key={`${mv.date}-${i}`} className="border-b border-dashed">
+                  <td className="whitespace-nowrap py-1.5 pr-2">{formatDate(mv.date)}</td>
+                  <td className="px-2">{mv.source}</td>
+                  <td className="num px-2 text-right">{mv.direction === 'IN' ? qty(mv.quantity, unit) : ''}</td>
+                  <td className="num px-2 text-right">{mv.direction === 'OUT' ? qty(mv.quantity, unit) : ''}</td>
+                  <td className="num px-2 text-right">{money(mv.value_paise)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </details>
+      )}
     </section>
   )
 }

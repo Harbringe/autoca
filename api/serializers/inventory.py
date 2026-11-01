@@ -26,6 +26,14 @@ class InventoryMonthSerializer(serializers.Serializer):
     closing_value_paise = PaiseField()
 
 
+class InventoryMovementSerializer(serializers.Serializer):
+    date = serializers.DateField()
+    direction = serializers.ChoiceField(choices=["IN", "OUT"])
+    quantity = serializers.CharField()
+    value_paise = PaiseField()
+    source = serializers.CharField(allow_blank=True, help_text="Where it came from: the invoice, or the opening or adjustment entry.")
+
+
 class InventoryItemSerializer(serializers.Serializer):
     name = serializers.CharField()
     unit = serializers.CharField(allow_blank=True)
@@ -38,11 +46,15 @@ class InventoryItemSerializer(serializers.Serializer):
     out_qty = serializers.CharField()
     out_value_paise = PaiseField()
     months = InventoryMonthSerializer(many=True)
+    movements = InventoryMovementSerializer(many=True, help_text="The year's movements, oldest first.")
+    reorder_level = serializers.CharField(allow_null=True, help_text="From the stock item master; null when none is set.")
+    below_reorder = serializers.BooleanField(help_text="Closing quantity at or below the reorder level.")
 
 
 class InventorySerializer(serializers.Serializer):
     footer = ReportFooterSerializer()
     items = InventoryItemSerializer(many=True)
+    below_reorder = serializers.IntegerField(help_text="How many items are at or below their reorder level.")
     bills_counted = serializers.IntegerField(help_text="Purchases and sales whose invoice lines are in this report.")
     bills_left_out = serializers.IntegerField(help_text="Purchases and sales this year with no invoice lines, so no stock movement.")
     left_out_examples = serializers.ListField(child=serializers.CharField())
@@ -66,6 +78,12 @@ def inventory_payload(report, footer) -> dict:
                 "in_value_paise": sum(m.in_value_paise for m in item.months),
                 "out_qty": _qty(out_qty),
                 "out_value_paise": sum(m.out_value_paise for m in item.months),
+                "reorder_level": None if item.reorder_level is None else _qty(item.reorder_level),
+                "below_reorder": item.below_reorder,
+                "movements": [
+                    {"date": mv.date, "direction": mv.direction, "quantity": _qty(mv.quantity), "value_paise": mv.value_paise, "source": mv.source}
+                    for mv in item.movements
+                ],
                 "months": [
                     {
                         "month": m.month,
@@ -83,6 +101,7 @@ def inventory_payload(report, footer) -> dict:
     return {
         "footer": footer,
         "items": items,
+        "below_reorder": sum(1 for i in items if i["below_reorder"]),
         "bills_counted": report.bills_counted,
         "bills_left_out": report.bills_left_out,
         "left_out_examples": report.left_out_examples,

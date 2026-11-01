@@ -75,3 +75,37 @@ def test_two_spellings_of_one_product_are_one_item():
 def test_movements_after_the_year_are_left_out():
     rows = inv.summarise([m(D(2026, 4, 1), "IN", "Rice", 10, 1_000)], 2025)
     assert rows == []
+
+
+def test_each_item_lists_the_year_s_movements_with_where_each_came_from():
+    rows = inv.summarise(
+        [
+            inv.Movement(D(2024, 12, 1), "IN", "Rice", "BAG", Decimal(100), 5_000_00, source="Opening stock"),
+            inv.Movement(D(2025, 6, 1), "OUT", "Rice", "BAG", Decimal(30), 2_400_00, source="Sales INV-9 · Sunrise Traders"),
+            inv.Movement(D(2025, 5, 1), "IN", "Rice", "BAG", Decimal(10), 600_00, source="Purchase P-4 · Ravi Traders"),
+        ],
+        2025,
+    )
+    (item,) = rows
+    assert [(mv.date, mv.direction, mv.source) for mv in item.movements] == [
+        (D(2025, 5, 1), "IN", "Purchase P-4 · Ravi Traders"),
+        (D(2025, 6, 1), "OUT", "Sales INV-9 · Sunrise Traders"),
+    ], "only this year's, oldest first; the earlier one is in the opening balance"
+    assert item.opening_qty == 100
+
+
+def test_an_item_at_or_below_its_reorder_level_is_flagged():
+    rows = inv.summarise([m(D(2025, 4, 5), "IN", "Ultratech PPC Cement", 60, 18_000), m(D(2025, 4, 9), "OUT", "Rice", 3, 300)], 2025)
+    masters = [inv.MasterLevel(name="ULTRATECH PPC CEMENT", reorder_level=Decimal(60)), inv.MasterLevel(name="Rice", reorder_level=Decimal(5))]
+    inv.apply_reorder_levels(rows, masters)
+    by_name = {r.name: r for r in rows}
+    assert by_name["Ultratech PPC Cement"].reorder_level == 60 and by_name["Ultratech PPC Cement"].below_reorder is True, "at the level counts"
+    assert by_name["Rice"].below_reorder is True, "-3 on hand is below 5"
+
+
+def test_an_item_above_its_level_or_with_none_set_is_not_flagged():
+    rows = inv.summarise([m(D(2025, 4, 5), "IN", "Rice", 60, 6_000), m(D(2025, 4, 6), "IN", "Oil", 2, 200)], 2025)
+    inv.apply_reorder_levels(rows, [inv.MasterLevel(name="Rice", reorder_level=Decimal(20)), inv.MasterLevel(name="Oil", reorder_level=None)])
+    by_name = {r.name: r for r in rows}
+    assert by_name["Rice"].below_reorder is False and by_name["Rice"].reorder_level == 20
+    assert by_name["Oil"].below_reorder is False and by_name["Oil"].reorder_level is None

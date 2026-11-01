@@ -5173,6 +5173,12 @@ export interface components {
          * @enum {string}
          */
         Direction745Enum: "DR" | "CR";
+        /**
+         * @description * `IN` - IN
+         *     * `OUT` - OUT
+         * @enum {string}
+         */
+        DirectionAb4Enum: "IN" | "OUT";
         DisposeRequest: {
             /** Format: date */
             disposed_on: string;
@@ -5439,6 +5445,8 @@ export interface components {
         Inventory: {
             footer: components["schemas"]["ReportFooter"];
             items: components["schemas"]["InventoryItem"][];
+            /** @description How many items are at or below their reorder level. */
+            below_reorder: number;
             /** @description Purchases and sales whose invoice lines are in this report. */
             bills_counted: number;
             /** @description Purchases and sales this year with no invoice lines, so no stock movement. */
@@ -5476,6 +5484,12 @@ export interface components {
              */
             out_value_paise: number;
             months: components["schemas"]["InventoryMonth"][];
+            /** @description The year's movements, oldest first. */
+            movements: components["schemas"]["InventoryMovement"][];
+            /** @description From the stock item master; null when none is set. */
+            reorder_level: string | null;
+            /** @description Closing quantity at or below the reorder level. */
+            below_reorder: boolean;
         };
         InventoryMonth: {
             /** @description YYYY-MM. */
@@ -5499,6 +5513,19 @@ export interface components {
              * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
              */
             closing_value_paise: number;
+        };
+        InventoryMovement: {
+            /** Format: date */
+            date: string;
+            direction: components["schemas"]["DirectionAb4Enum"];
+            quantity: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            value_paise: number;
+            /** @description Where it came from: the invoice, or the opening or adjustment entry. */
+            source: string;
         };
         InviteCreated: {
             /** Format: uuid */
@@ -9066,12 +9093,6 @@ export interface components {
             readonly value_paise: number;
             readonly note: string;
         };
-        /**
-         * @description * `IN` - IN
-         *     * `OUT` - OUT
-         * @enum {string}
-         */
-        StockEntryCreateDirectionEnum: "IN" | "OUT";
         StockEntryCreateRequest: {
             kind: components["schemas"]["KindAc0Enum"];
             /** Format: date */
@@ -9083,7 +9104,7 @@ export interface components {
              *     * `OUT` - OUT
              * @default IN
              */
-            direction: components["schemas"]["StockEntryCreateDirectionEnum"];
+            direction: components["schemas"]["DirectionAb4Enum"];
             name: string;
             /** @default  */
             unit: string;

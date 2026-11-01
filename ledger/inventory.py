@@ -37,6 +37,16 @@ class Movement:
     unit: str
     quantity: Decimal
     value_paise: int
+    #: Where it came from, in words a person knows: "Sales INV-9 · Sunrise Traders", "Opening stock".
+    source: str = ""
+
+
+@dataclass
+class MasterLevel:
+    """A stock item's reorder level from the item master, to be matched to the report's items by name."""
+
+    name: str
+    reorder_level: Decimal | None
 
 
 @dataclass
@@ -57,6 +67,10 @@ class ItemSummary:
     opening_qty: Decimal
     opening_value_paise: int
     months: list[MonthRow] = field(default_factory=list)
+    #: The year's movements, oldest first; the ones before it are in the opening balance.
+    movements: list[Movement] = field(default_factory=list)
+    reorder_level: Decimal | None = None
+    below_reorder: bool = False
 
     @property
     def closing_qty(self) -> Decimal:
@@ -111,6 +125,7 @@ def summarise(movements: list[Movement], fy: int) -> list[ItemSummary]:
         for movement in before:
             qty, value = _apply(qty, value, movement)
         summary = ItemSummary(name=name, unit=next((m.unit for m in group if m.unit), ""), opening_qty=qty, opening_value_paise=value)
+        summary.movements = [m for m in group if m.date >= start]
         rows = {month: MonthRow(month) for month in months}
         for movement in (m for m in group if m.date >= start):
             row = rows[f"{movement.date:%Y-%m}"]
@@ -133,6 +148,16 @@ def summarise(movements: list[Movement], fy: int) -> list[ItemSummary]:
         if any(m.in_qty or m.out_qty for m in summary.months) or summary.opening_qty:
             out.append(summary)
     return sorted(out, key=lambda s: s.name.lower())
+
+
+def apply_reorder_levels(items: list[ItemSummary], masters: list[MasterLevel]) -> None:
+    """Give each item the reorder level of the master record it is the same product as; flag the ones at or below it."""
+    for item in items:
+        master = next((m for m in masters if _same_item(m.name, item.name)), None)
+        if master is None or master.reorder_level is None:
+            continue
+        item.reorder_level = master.reorder_level
+        item.below_reorder = item.closing_qty <= master.reorder_level
 
 
 def _apply(qty: Decimal, value: int, movement: Movement) -> tuple[Decimal, int]:
@@ -205,6 +230,7 @@ def build(client, fy: int) -> InventoryReport:
                     unit=str(line.get("unit") or "").strip(),
                     quantity=quantity,
                     value_paise=int(amount or 0),
+                    source=f"{'Purchase' if bill.kind == BillKind.PURCHASE else 'Sales'} {bill.reference} · {bill.party.canonical_name}",
                 )
             )
             found += 1
@@ -221,11 +247,19 @@ def build(client, fy: int) -> InventoryReport:
             Movement(
                 date=row.entry_date, direction=row.direction, name=row.name, unit=row.unit,
                 quantity=row.quantity, value_paise=row.value_paise,
+                source=row.get_kind_display() + (f" · {row.note}" if row.note else ""),
             )
         )
+    from ledger.models import StockItem
+
+    items = summarise(movements, fy)
+    apply_reorder_levels(
+        items,
+        [MasterLevel(name=i.name, reorder_level=i.reorder_level) for i in StockItem.objects.filter(firm_id=client.firm_id, client=client)],
+    )
     return InventoryReport(
         fy=fy,
-        items=summarise(movements, fy),
+        items=items,
         bills_counted=counted,
         bills_left_out=left_out,
         left_out_examples=examples,

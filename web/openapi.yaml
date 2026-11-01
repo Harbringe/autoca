@@ -11618,6 +11618,14 @@ components:
       description: |-
         * `DR` - Debit
         * `CR` - Credit
+    DirectionAb4Enum:
+      enum:
+      - IN
+      - OUT
+      type: string
+      description: |-
+        * `IN` - IN
+        * `OUT` - OUT
     DisposeRequest:
       type: object
       properties:
@@ -12215,6 +12223,9 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/InventoryItem'
+        below_reorder:
+          type: integer
+          description: How many items are at or below their reorder level.
         bills_counted:
           type: integer
           description: Purchases and sales whose invoice lines are in this report.
@@ -12231,6 +12242,7 @@ components:
           description: 'Lines with a quantity but no amount: they move stock and carry
             no value.'
       required:
+      - below_reorder
       - bills_counted
       - bills_left_out
       - footer
@@ -12285,17 +12297,32 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/InventoryMonth'
+        movements:
+          type: array
+          items:
+            $ref: '#/components/schemas/InventoryMovement'
+          description: The year's movements, oldest first.
+        reorder_level:
+          type: string
+          nullable: true
+          description: From the stock item master; null when none is set.
+        below_reorder:
+          type: boolean
+          description: Closing quantity at or below the reorder level.
       required:
+      - below_reorder
       - closing_qty
       - closing_value_paise
       - in_qty
       - in_value_paise
       - months
+      - movements
       - name
       - opening_qty
       - opening_value_paise
       - out_qty
       - out_value_paise
+      - reorder_level
       - unit
     InventoryMonth:
       type: object
@@ -12339,6 +12366,33 @@ components:
       - month
       - out_qty
       - out_value_paise
+    InventoryMovement:
+      type: object
+      properties:
+        date:
+          type: string
+          format: date
+        direction:
+          $ref: '#/components/schemas/DirectionAb4Enum'
+        quantity:
+          type: string
+        value_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        source:
+          type: string
+          description: 'Where it came from: the invoice, or the opening or adjustment
+            entry.'
+      required:
+      - date
+      - direction
+      - quantity
+      - source
+      - value_paise
     InviteCreated:
       type: object
       properties:
@@ -19411,14 +19465,6 @@ components:
       - quantity
       - unit
       - value_paise
-    StockEntryCreateDirectionEnum:
-      enum:
-      - IN
-      - OUT
-      type: string
-      description: |-
-        * `IN` - IN
-        * `OUT` - OUT
     StockEntryCreateRequest:
       type: object
       properties:
@@ -19429,7 +19475,7 @@ components:
           format: date
         direction:
           allOf:
-          - $ref: '#/components/schemas/StockEntryCreateDirectionEnum'
+          - $ref: '#/components/schemas/DirectionAb4Enum'
           default: IN
           description: |-
             Ignored for opening stock, which is always in.

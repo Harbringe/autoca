@@ -24,7 +24,17 @@ CHECKED_AFTER = {
 
 # (app, migration name, model, field) allowed to add a NOT NULL column without db_default.
 # Only for a table that is empty by construction, with a reason.
-ALLOWED_ADD_FIELDS: set[tuple[str, str, str, str]] = set()
+# ledger 0039 creates four tables; Django adds their foreign keys as separate operations, but the tables are empty by construction.
+ALLOWED_ADD_FIELDS: set[tuple[str, str, str, str]] = {
+    ("ledger", "0039_voucher_series_classes_audit", model, field)
+    for model, fields in {
+        "customvouchertype": ("client", "firm"),
+        "masterchange": ("client", "firm"),
+        "numberingformat": ("client", "firm"),
+        "voucherclass": ("client", "firm", "head_ledger"),
+    }.items()
+    for field in fields
+}
 
 # (app, migration name) allowed to drop or rename: the code that used the column has
 # already been released everywhere. Give the reason beside each entry.

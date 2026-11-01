@@ -30,6 +30,7 @@ lock at approval time rather than counted from existing entries.
 
 from __future__ import annotations
 
+from django.core.validators import MaxValueValidator
 from django.db import models
 from django.utils import timezone
 
@@ -89,13 +90,15 @@ class VoucherSequence(UUIDModel, FirmScopedModel):
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="voucher_sequences")
     financial_year = models.PositiveSmallIntegerField(help_text="Starting year, e.g. 2025.")
     voucher_type = models.CharField(max_length=16, choices=VoucherType.choices)
+    #: A firm's own voucher type that numbers in a series of its own ("GST SALE"); empty for the standard series of ``voucher_type``.
+    type_name = models.CharField(max_length=64, blank=True, default="", db_default="")
     next_number = models.PositiveIntegerField(default=1)
 
     class Meta:
         db_table = "ledger_voucher_sequence"
         constraints = [
             models.UniqueConstraint(
-                fields=["firm", "client", "financial_year", "voucher_type"],
+                fields=["firm", "client", "financial_year", "voucher_type", "type_name"],
                 name="uniq_voucher_sequence",
             ),
         ]
@@ -133,6 +136,8 @@ class JournalEntry(UUIDModel, FirmScopedModel):
     financial_year = models.PositiveSmallIntegerField()
     entry_date = models.DateField()
     voucher_type = models.CharField(max_length=16, choices=VoucherType.choices)
+    #: The firm's own voucher type this entry is numbered under; empty for the standard series. ``voucher_type`` stays the accounting parent.
+    type_name = models.CharField(max_length=64, blank=True, default="", db_default="")
     narration = models.TextField(blank=True)
     #: See ``EntryKind``. Every entry that existed before bills is a bank entry, hence the database default.
     entry_kind = models.CharField(
@@ -173,7 +178,7 @@ class JournalEntry(UUIDModel, FirmScopedModel):
         ordering = ["entry_date", "entry_no"]
         constraints = [
             models.UniqueConstraint(
-                fields=["firm", "client", "financial_year", "voucher_type", "entry_no"],
+                fields=["firm", "client", "financial_year", "voucher_type", "type_name", "entry_no"],
                 name="uniq_voucher_number_per_book",
             ),
         ]
@@ -908,3 +913,83 @@ class PayrollLine(UUIDModel, FirmScopedModel):
     class Meta:
         db_table = "ledger_payroll_line"
         constraints = [models.UniqueConstraint(fields=["run", "employee"], name="uniq_payroll_line_per_employee")]
+
+
+class CustomVoucherType(UUIDModel, FirmScopedModel):
+    """A voucher type a firm made up in Tally ("GST SALE"): its own name and numbering, posting as its parent standard type."""
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="custom_voucher_types")
+    name = models.CharField(max_length=64)
+    parent = models.CharField(max_length=16, choices=VoucherType.choices)
+
+    class Meta:
+        db_table = "ledger_custom_voucher_type"
+        constraints = [models.UniqueConstraint(fields=["firm", "client", "name"], name="uniq_custom_voucher_type_name")]
+
+    def __str__(self) -> str:
+        return f"{self.name} (as {self.parent})"
+
+
+class NumberingFormat(UUIDModel, FirmScopedModel):
+    """How one series' numbers read: a prefix (``S/{fy}/``) and zero padding. The stored number stays an integer."""
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="numbering_formats")
+    voucher_type = models.CharField(max_length=16, choices=VoucherType.choices)
+    type_name = models.CharField(max_length=64, blank=True, default="")
+    prefix = models.CharField(max_length=16, blank=True, default="")
+    padding = models.PositiveSmallIntegerField(default=0, validators=[MaxValueValidator(8)])
+
+    class Meta:
+        db_table = "ledger_numbering_format"
+        constraints = [
+            models.UniqueConstraint(fields=["firm", "client", "voucher_type", "type_name"], name="uniq_numbering_format_per_series"),
+        ]
+
+
+class VoucherClass(UUIDModel, FirmScopedModel):
+    """A preset for a sales or purchase voucher: the head and tax ledgers and the rate it fills in. Nothing posts differently."""
+
+    client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="voucher_classes")
+    name = models.CharField(max_length=64)
+    voucher_type = models.CharField(max_length=16, choices=[(VoucherType.SALES, "Sales"), (VoucherType.PURCHASE, "Purchase")])
+    type_name = models.CharField(max_length=64, blank=True, default="")
+    head_ledger = models.ForeignKey("classify.LedgerAccount", on_delete=models.PROTECT, related_name="+")
+    cgst_ledger = models.ForeignKey("classify.LedgerAccount", on_delete=models.PROTECT, null=True, blank=True, related_name="+")
+    sgst_ledger = models.ForeignKey("classify.LedgerAccount", on_delete=models.PROTECT, null=True, blank=True, related_name="+")
+    igst_ledger = models.ForeignKey("classify.LedgerAccount", on_delete=models.PROTECT, null=True, blank=True, related_name="+")
+    gst_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+
+    class Meta:
+        db_table = "ledger_voucher_class"
+        constraints = [models.UniqueConstraint(fields=["firm", "client", "name"], name="uniq_voucher_class_name")]
+
+
+class MasterKind(models.TextChoices):
+    LEDGER = "LEDGER", "Ledger"
+    GROUP = "GROUP", "Group"
+    PARTY = "PARTY", "Party"
+    RULE = "RULE", "Rule"
+
+
+class MasterAction(models.TextChoices):
+    CREATED = "CREATED", "Created"
+    EDITED = "EDITED", "Changed"
+    REMOVED = "REMOVED", "Removed"
+
+
+class MasterChange(UUIDModel, FirmScopedModel):
+    """What a ledger, group, party or rule looked like before and after somebody changed it. Append-only, like ``EntryChange``."""
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="master_changes")
+    kind = models.CharField(max_length=8, choices=MasterKind.choices)
+    object_id = models.UUIDField(db_index=True)
+    action = models.CharField(max_length=8, choices=MasterAction.choices)
+    label = models.CharField(max_length=255)
+    before = models.JSONField(default=dict, blank=True)
+    after = models.JSONField(default=dict, blank=True)
+    actor = models.ForeignKey(User, on_delete=models.PROTECT, null=True, blank=True, related_name="+")
+
+    class Meta:
+        db_table = "ledger_master_change"
+        ordering = ["created_at"]
+        indexes = [models.Index(fields=["firm", "client", "created_at"], name="idx_master_change")]

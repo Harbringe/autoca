@@ -48,6 +48,7 @@ from ledger.models import (
     BooksEvent,
     ChangeAction,
     CloseAcknowledgement,
+    CustomVoucherType,
     DepreciationPosting,
     Direction,
     Employee,
@@ -58,12 +59,15 @@ from ledger.models import (
     JournalLine,
     LedgerImportRun,
     LedgerOpening,
+    MasterChange,
+    NumberingFormat,
     PayrollLine,
     PayrollRun,
     StockEntry,
     StockItem,
     TallyVoucher,
     TdsChallan,
+    VoucherClass,
     VoucherSequence,
     VoucherType,
 )
@@ -385,6 +389,30 @@ def _ledger_opening(firm, **kw):
     )
 
 
+def _custom_voucher_type(firm, **kw):
+    return CustomVoucherType.objects.create(
+        firm=firm, client=kw.get("client") or _client(firm), name=f"GST SALE {uuid.uuid4().hex[:6]}", parent="Sales"
+    )
+
+
+def _numbering_format(firm, **kw):
+    return NumberingFormat.objects.create(firm=firm, client=kw.get("client") or _client(firm), voucher_type="Sales", prefix="S/", padding=4)
+
+
+def _voucher_class(firm, **kw):
+    client = kw.get("client") or _client(firm)
+    return VoucherClass.objects.create(
+        firm=firm, client=client, name=f"Retail {uuid.uuid4().hex[:6]}", voucher_type="Sales",
+        head_ledger=kw.get("head_ledger") or _ledger_account(firm, client=client),
+    )
+
+
+def _master_change(firm, **kw):
+    return MasterChange.objects.create(
+        firm=firm, client=kw.get("client") or _client(firm), kind="LEDGER", object_id=uuid.uuid4(), action="EDITED", label="Rent"
+    )
+
+
 def _tally_voucher(firm, **kw):
     entry = kw.get("entry") or _journal_entry(firm)
     return TallyVoucher.objects.create(
@@ -575,6 +603,10 @@ FACTORIES = {
     LedgerImportRun: _ledger_import_run,
     LedgerOpening: _ledger_opening,
     TallyVoucher: _tally_voucher,
+    CustomVoucherType: _custom_voucher_type,
+    NumberingFormat: _numbering_format,
+    VoucherClass: _voucher_class,
+    MasterChange: _master_change,
     Bill: _bill,
     BillAllocation: _bill_allocation,
     InvoiceReading: _invoice_reading,

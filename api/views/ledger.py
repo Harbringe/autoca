@@ -445,7 +445,7 @@ class ReportView(viewsets.GenericViewSet):
             "from the lines of the invoices behind the booked purchases (stock in) and sales (stock out), valued at weighted "
             "average cost. Purchases and sales with no invoice lines are counted and named as left out."
         ),
-        parameters=[FY_PARAM],
+        parameters=[FY_PARAM, OpenApiParameter("godown", OpenApiTypes.STR, description="A godown's id, or `none` for the main location; leave out for the whole business.")],
         responses=InventorySerializer,
     )
     @action(detail=False, methods=["get"], url_path="inventory")
@@ -454,7 +454,8 @@ class ReportView(viewsets.GenericViewSet):
         from ledger.reports import _footer
 
         client, year = self._client_and_year(request, client_id)
-        report = stock.build(client, year)
+        godown = request.query_params.get("godown") or None
+        report = stock.build(client, year, godown=godown)
         footer = _footer(client, year, datetime.date(year, 4, 1), datetime.date(year + 1, 3, 31))
         return Response(InventorySerializer(inventory_payload(report, footer)).data)
 

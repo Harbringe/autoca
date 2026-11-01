@@ -1,7 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, within } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { raw } from '@/api/client'
+import { godowns } from '@/api/queries/godowns'
 import { InventoryReport } from './InventoryReport'
 
 vi.mock('@/api/client', () => ({ raw: { get: vi.fn() } }))
@@ -23,6 +25,7 @@ const REPORT = {
   left_out_examples: ['SN4048 (Shri Padmavati Trading Co)'],
   lines_without_value: 0,
   below_reorder: 1,
+  quantities_only: false,
   items: [
     {
       name: 'CEMENT SUPER NEW', unit: 'BAG', opening_qty: '0', opening_value_paise: 0, closing_qty: '-30', closing_value_paise: 0,
@@ -48,6 +51,35 @@ function renderIt(data = REPORT) {
     </QueryClientProvider>,
   )
 }
+
+describe('the inventory report by godown', () => {
+  it('offers a godown picker only when the client has godowns, and asks for that godown', async () => {
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
+    queryClient.setQueryData(godowns('c1').queryKey, [{ id: 'g1', name: 'Shop' }])
+    vi.mocked(raw.get).mockResolvedValue(REPORT)
+    render(
+      <QueryClientProvider client={queryClient}>
+        <InventoryReport clientId="c1" fy={2025} />
+      </QueryClientProvider>,
+    )
+    const picker = await screen.findByLabelText('Location')
+    await userEvent.selectOptions(picker, 'Shop')
+    await waitFor(() => expect(raw.get).toHaveBeenLastCalledWith('/api/v1/clients/c1/reports/inventory/', { fy: 2025, godown: 'g1' }))
+  })
+
+  it('has no picker when there are no godowns', async () => {
+    renderIt()
+    await screen.findByRole('table', { name: 'Monthly summary of CEMENT SUPER NEW' })
+    expect(screen.queryByLabelText('Location')).not.toBeInTheDocument()
+  })
+
+  it('shows quantities only, and says why, for a single godown', async () => {
+    renderIt({ ...REPORT, quantities_only: true } as typeof REPORT)
+    const table = await screen.findByRole('table', { name: 'Monthly summary of CEMENT SUPER NEW' })
+    expect(screen.getByText(/shows quantities only/)).toBeInTheDocument()
+    expect(within(table).queryByText('Value')).not.toBeInTheDocument()
+  })
+})
 
 describe('the inventory report', () => {
   it('shows inwards, outwards and closing for each month of the item', async () => {

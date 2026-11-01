@@ -777,6 +777,23 @@ class StockEntryKind(models.TextChoices):
     ADJUSTMENT = "ADJUSTMENT", "Stock adjustment"
     #: A movement that came in with an imported Tally voucher; it goes back with that import.
     TALLY = "TALLY", "Imported from Tally"
+    #: Stock moved between two of the client's godowns: two rows (out of one, into the other) sharing a ``transfer`` id.
+    TRANSFER = "TRANSFER", "Stock transfer"
+
+
+class Godown(UUIDModel, FirmScopedModel):
+    """A place the client keeps stock: a shop, a yard, a rented warehouse. Stock with no godown is in the main location."""
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="godowns")
+    name = models.CharField(max_length=100)
+
+    class Meta:
+        db_table = "ledger_godown"
+        ordering = ["name"]
+        constraints = [models.UniqueConstraint(fields=["firm", "client", "name"], name="uniq_godown_name")]
+
+    def __str__(self) -> str:
+        return self.name
 
 
 class StockEntry(UUIDModel, FirmScopedModel):
@@ -800,6 +817,10 @@ class StockEntry(UUIDModel, FirmScopedModel):
     created_by = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     #: The Tally import that wrote this movement, when one did; undoing the import removes it.
     run = models.ForeignKey(LedgerImportRun, null=True, blank=True, on_delete=models.SET_NULL, related_name="stock_entries")
+    #: Where the stock is; empty is the main location. A bill's own movements are always in the main location.
+    godown = models.ForeignKey(Godown, null=True, blank=True, on_delete=models.PROTECT, related_name="stock_entries")
+    #: Both rows of one stock transfer carry the same id; removing one removes the other.
+    transfer = models.UUIDField(null=True, blank=True, db_index=True)
 
     class Meta:
         db_table = "ledger_stock_entry"
@@ -972,6 +993,7 @@ class MasterKind(models.TextChoices):
     RULE = "RULE", "Rule"
     SETTING = "SETTING", "Setting"
     ITEM = "ITEM", "Stock item"
+    GODOWN = "GODOWN", "Godown"
 
 
 class MasterAction(models.TextChoices):

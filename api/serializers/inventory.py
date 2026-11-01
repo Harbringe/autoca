@@ -55,6 +55,7 @@ class InventorySerializer(serializers.Serializer):
     footer = ReportFooterSerializer()
     items = InventoryItemSerializer(many=True)
     below_reorder = serializers.IntegerField(help_text="How many items are at or below their reorder level.")
+    quantities_only = serializers.BooleanField(help_text="True for one godown: transfers carry no cost, so the figures are quantities only.")
     bills_counted = serializers.IntegerField(help_text="Purchases and sales whose invoice lines are in this report.")
     bills_left_out = serializers.IntegerField(help_text="Purchases and sales this year with no invoice lines, so no stock movement.")
     left_out_examples = serializers.ListField(child=serializers.CharField())
@@ -102,6 +103,7 @@ def inventory_payload(report, footer) -> dict:
         "footer": footer,
         "items": items,
         "below_reorder": sum(1 for i in items if i["below_reorder"]),
+        "quantities_only": report.quantities_only,
         "bills_counted": report.bills_counted,
         "bills_left_out": report.bills_left_out,
         "left_out_examples": report.left_out_examples,

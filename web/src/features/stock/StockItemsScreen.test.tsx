@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ApiError } from '@/api/errors'
 import { toast } from '@/lib/toast'
+import { godowns } from '@/api/queries/godowns'
 import { stockItems, type StockItem } from '@/api/queries/stockItems'
 import { StockItemsScreen } from './StockItemsScreen'
 
@@ -23,6 +24,7 @@ const ITEMS: StockItem[] = [
 function setup(mayEdit = true, items: StockItem[] = ITEMS) {
   const queryClient = new QueryClient({ defaultOptions: { queries: { staleTime: Infinity, retry: false }, mutations: { retry: false } } })
   queryClient.setQueryData(stockItems('c1').queryKey, items)
+  queryClient.setQueryData(godowns('c1').queryKey, [])
   render(
     <QueryClientProvider client={queryClient}>
       <StockItemsScreen clientId="c1" mayEdit={mayEdit} />

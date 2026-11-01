@@ -799,6 +799,7 @@ paths:
           type: string
           enum:
           - ENTRY
+          - GODOWN
           - ITEM
           - LEDGER
           - PARTY
@@ -1776,6 +1777,207 @@ paths:
               schema:
                 $ref: '#/components/schemas/Employee'
           description: ''
+  /api/v1/clients/{client_id}/godowns/:
+    get:
+      operationId: clients_godowns_list
+      description: The places the client keeps stock. A godown with stock in it cannot
+        be removed.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - inventory
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedGodownList'
+          description: ''
+    post:
+      operationId: clients_godowns_create
+      description: The places the client keeps stock. A godown with stock in it cannot
+        be removed.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GodownRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GodownRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GodownRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Godown'
+          description: ''
+  /api/v1/clients/{client_id}/godowns/{id}/:
+    get:
+      operationId: clients_godowns_retrieve
+      description: The places the client keeps stock. A godown with stock in it cannot
+        be removed.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - inventory
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Godown'
+          description: ''
+    put:
+      operationId: clients_godowns_update
+      description: The places the client keeps stock. A godown with stock in it cannot
+        be removed.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GodownRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/GodownRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/GodownRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Godown'
+          description: ''
+    patch:
+      operationId: clients_godowns_partial_update
+      description: The places the client keeps stock. A godown with stock in it cannot
+        be removed.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedGodownRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedGodownRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedGodownRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Godown'
+          description: ''
+    delete:
+      operationId: clients_godowns_destroy
+      description: The places the client keeps stock. A godown with stock in it cannot
+        be removed.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - inventory
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/clients/{client_id}/gst/gstin-check/:
     post:
       operationId: clients_gst_gstin_check_create
@@ -4376,6 +4578,12 @@ paths:
         schema:
           type: integer
         description: 'Financial year by its starting year: 2025 means FY2025-26.'
+      - in: query
+        name: godown
+        schema:
+          type: string
+        description: A godown's id, or `none` for the main location; leave out for
+          the whole business.
       tags:
       - reports
       security:
@@ -5206,6 +5414,97 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/clients/{client_id}/stock-entries/count/:
+    post:
+      operationId: clients_stock_entries_count_create
+      description: Compares the count with what the books say was on hand at the end
+        of that day. A shortage is booked as stock out, a surplus as stock in at the
+        average cost; a count that agrees books nothing.
+      summary: Book a physical stock count
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockCountRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StockCountRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StockCountRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockCountResult'
+          description: ''
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockCountResult'
+          description: ''
+  /api/v1/clients/{client_id}/stock-entries/transfer/:
+    post:
+      operationId: clients_stock_entries_transfer_create
+      description: Opening stock and count adjustments. Purchases and sales move stock
+        through their own invoice lines.
+      summary: Move stock between two godowns
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockTransferRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StockTransferRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StockTransferRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedStockEntryList'
+          description: ''
   /api/v1/clients/{client_id}/stock-items/:
     get:
       operationId: clients_stock_items_list
@@ -9267,6 +9566,7 @@ components:
       - RULE
       - SETTING
       - ITEM
+      - GODOWN
       type: string
       description: |-
         * `ENTRY` - ENTRY
@@ -9275,6 +9575,7 @@ components:
         * `RULE` - RULE
         * `SETTING` - SETTING
         * `ITEM` - ITEM
+        * `GODOWN` - GODOWN
     BalanceCheck:
       type: object
       description: |-
@@ -12104,6 +12405,28 @@ components:
       - received_display
       - received_paise
       - suggested_role
+    Godown:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 100
+      required:
+      - id
+      - name
+    GodownRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+      required:
+      - name
     GstError:
       type: object
       properties:
@@ -12226,6 +12549,10 @@ components:
         below_reorder:
           type: integer
           description: How many items are at or below their reorder level.
+        quantities_only:
+          type: boolean
+          description: 'True for one godown: transfers carry no cost, so the figures
+            are quantities only.'
         bills_counted:
           type: integer
           description: Purchases and sales whose invoice lines are in this report.
@@ -12249,6 +12576,7 @@ components:
       - items
       - left_out_examples
       - lines_without_value
+      - quantities_only
     InventoryItem:
       type: object
       properties:
@@ -13092,16 +13420,6 @@ components:
       description: |-
         * `PURCHASE` - PURCHASE
         * `SALES` - SALES
-    KindAc0Enum:
-      enum:
-      - OPENING
-      - ADJUSTMENT
-      - TALLY
-      type: string
-      description: |-
-        * `OPENING` - Opening stock
-        * `ADJUSTMENT` - Stock adjustment
-        * `TALLY` - Imported from Tally
     LayoutPreview:
       type: object
       properties:
@@ -15417,6 +15735,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/FirmDocument'
+    PaginatedGodownList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Godown'
     PaginatedInvoiceReadingList:
       type: object
       required:
@@ -16350,6 +16691,13 @@ components:
           type: string
           minLength: 1
           maxLength: 255
+    PatchedGodownRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
     PatchedLedgerAccountRequest:
       type: object
       description: 'For a ModelSerializer: ``version`` on the way out, ``expected_version``
@@ -19415,6 +19763,58 @@ components:
         * `RECEIVED` - Received
         * `PARSED` - Parsed
         * `FAILED` - Could not be read
+    StockCountRequest:
+      type: object
+      properties:
+        entry_date:
+          type: string
+          format: date
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        unit:
+          type: string
+          default: ''
+          maxLength: 16
+        counted_quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
+        godown:
+          type: string
+          format: uuid
+          nullable: true
+        note:
+          type: string
+          default: ''
+          maxLength: 300
+      required:
+      - counted_quantity
+      - entry_date
+      - name
+    StockCountResult:
+      type: object
+      properties:
+        book_quantity:
+          type: string
+          description: What the books said was on hand.
+        counted_quantity:
+          type: string
+        difference:
+          type: string
+          description: 'Counted minus book: negative is a shortage.'
+        entry:
+          allOf:
+          - $ref: '#/components/schemas/StockEntry'
+          nullable: true
+          description: The adjustment booked; null when the count agreed with the
+            books.
+      required:
+      - book_quantity
+      - counted_quantity
+      - difference
+      - entry
     StockEntry:
       type: object
       properties:
@@ -19424,7 +19824,7 @@ components:
           readOnly: true
         kind:
           allOf:
-          - $ref: '#/components/schemas/KindAc0Enum'
+          - $ref: '#/components/schemas/StockEntryKindEnum'
           readOnly: true
         kind_display:
           type: string
@@ -19454,22 +19854,49 @@ components:
         note:
           type: string
           readOnly: true
+        godown:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
+        godown_name:
+          type: string
+          readOnly: true
+          default: ''
+        transfer:
+          type: string
+          format: uuid
+          readOnly: true
+          nullable: true
       required:
       - direction
       - entry_date
+      - godown
+      - godown_name
       - id
       - kind
       - kind_display
       - name
       - note
       - quantity
+      - transfer
       - unit
       - value_paise
+    StockEntryCreateKindEnum:
+      enum:
+      - OPENING
+      - ADJUSTMENT
+      - TALLY
+      type: string
+      description: |-
+        * `OPENING` - Opening stock
+        * `ADJUSTMENT` - Stock adjustment
+        * `TALLY` - Imported from Tally
     StockEntryCreateRequest:
       type: object
       properties:
         kind:
-          $ref: '#/components/schemas/KindAc0Enum'
+          $ref: '#/components/schemas/StockEntryCreateKindEnum'
         entry_date:
           type: string
           format: date
@@ -19503,6 +19930,11 @@ components:
           type: string
           default: ''
           maxLength: 300
+        godown:
+          type: string
+          format: uuid
+          nullable: true
+          description: Empty is the main location.
       required:
       - entry_date
       - kind
@@ -19516,6 +19948,18 @@ components:
       description: |-
         * `IN` - In
         * `OUT` - Out
+    StockEntryKindEnum:
+      enum:
+      - OPENING
+      - ADJUSTMENT
+      - TALLY
+      - TRANSFER
+      type: string
+      description: |-
+        * `OPENING` - Opening stock
+        * `ADJUSTMENT` - Stock adjustment
+        * `TALLY` - Imported from Tally
+        * `TRANSFER` - Stock transfer
     StockItem:
       type: object
       description: 'A product the client buys or sells: its name, unit, HSN, GST rate,
@@ -19600,6 +20044,44 @@ components:
           nullable: true
       required:
       - name
+    StockTransferRequest:
+      type: object
+      properties:
+        entry_date:
+          type: string
+          format: date
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        unit:
+          type: string
+          default: ''
+          maxLength: 16
+        quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
+        from_godown:
+          type: string
+          format: uuid
+          nullable: true
+          description: Empty is the main location.
+        to_godown:
+          type: string
+          format: uuid
+          nullable: true
+          description: Empty is the main location.
+        note:
+          type: string
+          default: ''
+          maxLength: 300
+      required:
+      - entry_date
+      - from_godown
+      - name
+      - quantity
+      - to_godown
     SuggestedRoleEnum:
       enum:
       - VENDOR

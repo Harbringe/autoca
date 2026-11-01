@@ -39,6 +39,11 @@ class Movement:
     value_paise: int
     #: Where it came from, in words a person knows: "Sales INV-9 · Sunrise Traders", "Opening stock".
     source: str = ""
+    #: Which godown it is in (an id); None is the main location.
+    godown: str | None = None
+    #: One leg of a transfer between godowns. It changes where stock is, not how much there is, so the whole-business
+    #: figures leave it out.
+    transfer: bool = False
 
 
 @dataclass
@@ -183,14 +188,25 @@ class InventoryReport:
     left_out_examples: list[str]
     #: Lines with a quantity but no amount: they move stock and carry no value.
     lines_without_value: int
+    #: A godown's figures are quantities: a transfer carries no cost, so a value would be wrong. Shown as such.
+    quantities_only: bool = False
 
 
-def build(client, fy: int) -> InventoryReport:
-    """The year's stock summary for ``client``, from the invoice lines behind its booked purchases and sales."""
+def _in_godown(movements: list[Movement], godown: str | None) -> list[Movement]:
+    """``None`` is the whole business (transfers cancel out and are left out); ``"none"`` the main location; else one godown by id."""
+    if godown is None:
+        return [m for m in movements if not m.transfer]
+    if godown == "none":
+        return [m for m in movements if m.godown is None]
+    return [m for m in movements if m.godown == godown]
+
+
+def _collect(client, end: datetime.date, since: datetime.date):
+    """Every movement up to ``end``: invoice lines, then the stock entries. ``since`` is where the report year starts, for counting
+    the purchases and sales that add nothing to it."""
     from ledger.invoice_intake import fields_of
     from ledger.models import Bill, BillKind, InvoiceReading
 
-    end = datetime.date(fy + 1, 3, 31)
     bills = list(
         Bill.objects.filter(firm_id=client.firm_id, client=client, kind__in=(BillKind.PURCHASE, BillKind.SALES), bill_date__lte=end)
         .select_related("party")
@@ -236,20 +252,50 @@ def build(client, fy: int) -> InventoryReport:
             found += 1
         if found:
             counted += 1
-        elif bill.bill_date >= datetime.date(fy, 4, 1):
+        elif bill.bill_date >= since:
             left_out += 1
             if len(examples) < 5:
                 examples.append(f"{bill.reference} ({bill.party.canonical_name})")
-    from ledger.models import StockEntry
+    from ledger.models import StockEntry, StockEntryKind
 
-    for row in StockEntry.objects.filter(firm_id=client.firm_id, client=client, entry_date__lte=end):
+    rows = list(StockEntry.objects.filter(firm_id=client.firm_id, client=client, entry_date__lte=end).select_related("godown"))
+    # The two halves of a transfer name each other's godown: "Stock transfer from Shop" / "Stock transfer to Yard".
+    where: dict = {}
+    for row in rows:
+        if row.transfer:
+            where.setdefault(row.transfer, {})[row.direction] = row.godown.name if row.godown_id else "Main location"
+    for row in rows:
+        if row.transfer:
+            other = where.get(row.transfer, {}).get("OUT" if row.direction == "IN" else "IN", "")
+            source = f"Stock transfer {'from' if row.direction == 'IN' else 'to'} {other}".strip()
+        else:
+            source = row.get_kind_display() + (f" · {row.note}" if row.note else "")
         movements.append(
             Movement(
                 date=row.entry_date, direction=row.direction, name=row.name, unit=row.unit,
-                quantity=row.quantity, value_paise=row.value_paise,
-                source=row.get_kind_display() + (f" · {row.note}" if row.note else ""),
+                quantity=row.quantity, value_paise=row.value_paise, source=source,
+                godown=str(row.godown_id) if row.godown_id else None, transfer=row.kind == StockEntryKind.TRANSFER,
             )
         )
+    return movements, counted, left_out, examples, no_value
+
+
+def book_quantity(client, name: str, as_at: datetime.date, godown: str | None = None) -> tuple[Decimal, int]:
+    """What the books say is on hand of ``name`` at the end of ``as_at``, and what it is carried at; for one godown when named
+    (``"none"`` is the main location), else the whole business."""
+    movements = _in_godown(_collect(client, as_at, as_at)[0], godown)
+    qty, value = Decimal(0), 0
+    for movement in sorted((m for m in movements if _same_item(m.name, name)), key=lambda m: (m.date, m.direction != IN)):
+        qty, value = _apply(qty, value, movement)
+    return qty, value
+
+
+def build(client, fy: int, godown: str | None = None) -> InventoryReport:
+    """The year's stock summary for ``client``, from the invoice lines behind its booked purchases and sales and the stock entries.
+    ``godown`` limits it to one godown (``"none"``: the main location)."""
+    end = datetime.date(fy + 1, 3, 31)
+    movements, counted, left_out, examples, no_value = _collect(client, end, datetime.date(fy, 4, 1))
+    movements = _in_godown(movements, godown)
     from ledger.models import StockItem
 
     items = summarise(movements, fy)
@@ -259,6 +305,7 @@ def build(client, fy: int) -> InventoryReport:
     )
     return InventoryReport(
         fy=fy,
+        quantities_only=godown is not None,
         items=items,
         bills_counted=counted,
         bills_left_out=left_out,

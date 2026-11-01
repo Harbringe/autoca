@@ -13,7 +13,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { formatDateTime } from '@/lib/format'
 
 const PAGE = 50
-const KIND_LABEL: Record<string, string> = { ENTRY: 'Voucher', LEDGER: 'Ledger', PARTY: 'Party', RULE: 'Rule', SETTING: 'Setting', ITEM: 'Stock item' }
+const KIND_LABEL: Record<string, string> = { ENTRY: 'Voucher', LEDGER: 'Ledger', PARTY: 'Party', RULE: 'Rule', SETTING: 'Setting', ITEM: 'Stock item', GODOWN: 'Godown' }
 
 const show = (value: unknown) => (value === undefined || value === null || value === '' ? '(none)' : typeof value === 'object' ? JSON.stringify(value) : String(value))
 
@@ -49,6 +49,7 @@ export function AuditTrailScreen({ clientId }: { clientId: string }) {
           <option value="RULE">Rules</option>
           <option value="SETTING">Settings</option>
           <option value="ITEM">Stock items</option>
+          <option value="GODOWN">Godowns</option>
         </Select>
         <Input aria-label="Search the changes" placeholder="Search…" className="w-56" value={q} onChange={(e) => change(setQ, e.target.value)} />
         <Input aria-label="From" type="date" className="w-40" value={from} onChange={(e) => change(setFrom, e.target.value)} />

@@ -54,6 +54,7 @@ from ledger.models import (
     Employee,
     EntryChange,
     FixedAsset,
+    Godown,
     InvoiceReading,
     JournalEntry,
     JournalLine,
@@ -498,6 +499,11 @@ def _stock_item(firm, **kw):
     return StockItem.objects.create(firm=firm, client=client, name="Widget", unit="pcs")
 
 
+def _godown(firm, **kw):
+    client = kw.get("client") or _client(firm)
+    return Godown.objects.create(firm=firm, client=client, name="Shop")
+
+
 def _tds_challan(firm, **kw):
     client = kw.get("client") or _client(firm)
     entry = JournalEntry.objects.create(
@@ -606,6 +612,7 @@ FACTORIES = {
     CustomVoucherType: _custom_voucher_type,
     NumberingFormat: _numbering_format,
     VoucherClass: _voucher_class,
+    Godown: _godown,
     MasterChange: _master_change,
     Bill: _bill,
     BillAllocation: _bill_allocation,

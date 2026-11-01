@@ -558,6 +558,8 @@ is a preset head ledger and GST rate for sales and purchase vouchers that the vo
 
 `StockItem` is the client's product master (name, unit, HSN, GST rate, reorder level, purchase and sales ledgers). It is kept through `clients/{id}/stock-items/` (read `client.view`, write `ledger.manage`), audited as `MasterChange` kind ITEM, and shown on the Stock items screen. The stock register itself is still derived from invoice lines and `StockEntry` rows (`ledger/inventory.py`): the master tidies names and carries the figures the report and the forms agree on; it does not post anything.
 
+`Godown` names a place the client keeps stock; a stock entry with no godown is in the main location (`ledger/stock.py`, `ledger/inventory.py`). A transfer between two places is two `StockEntry` rows of kind TRANSFER (out of one, into the other) sharing a `transfer` id and carrying no value, so the whole-business figures leave them out and a single-godown report shows quantities only (`quantities_only`); removing one half removes both. A physical count (`POST stock-entries/count/`) compares what was found with what the books say at the end of that day (`inventory.book_quantity`) and books only the difference, as an adjustment: a shortage out, a surplus in at the whole-business average cost. A godown has a composite `(client_id, godown_id)` key from the stock rows, so it can only be of the row's own client, and one with stock in it cannot be removed.
+
 ## On OCR — read before wiring a vendor
 
 **Do not use Azure Document Intelligence F0.** It allows 500 pages/month but

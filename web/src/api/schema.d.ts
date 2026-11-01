@@ -884,6 +884,44 @@ export interface paths {
         patch: operations["clients_employees_partial_update"];
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/godowns/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The places the client keeps stock. A godown with stock in it cannot be removed. */
+        get: operations["clients_godowns_list"];
+        put?: never;
+        /** @description The places the client keeps stock. A godown with stock in it cannot be removed. */
+        post: operations["clients_godowns_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/godowns/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The places the client keeps stock. A godown with stock in it cannot be removed. */
+        get: operations["clients_godowns_retrieve"];
+        /** @description The places the client keeps stock. A godown with stock in it cannot be removed. */
+        put: operations["clients_godowns_update"];
+        post?: never;
+        /** @description The places the client keeps stock. A godown with stock in it cannot be removed. */
+        delete: operations["clients_godowns_destroy"];
+        options?: never;
+        head?: never;
+        /** @description The places the client keeps stock. A godown with stock in it cannot be removed. */
+        patch: operations["clients_godowns_partial_update"];
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/gst/gstin-check/": {
         parameters: {
             query?: never;
@@ -2356,6 +2394,46 @@ export interface paths {
          * @description Opening stock and count adjustments. Purchases and sales move stock through their own invoice lines.
          */
         post: operations["clients_stock_entries_remove_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/stock-entries/count/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Book a physical stock count
+         * @description Compares the count with what the books say was on hand at the end of that day. A shortage is booked as stock out, a surplus as stock in at the average cost; a count that agrees books nothing.
+         */
+        post: operations["clients_stock_entries_count_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/stock-entries/transfer/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move stock between two godowns
+         * @description Opening stock and count adjustments. Purchases and sales move stock through their own invoice lines.
+         */
+        post: operations["clients_stock_entries_transfer_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -4146,9 +4224,10 @@ export interface components {
          *     * `RULE` - RULE
          *     * `SETTING` - SETTING
          *     * `ITEM` - ITEM
+         *     * `GODOWN` - GODOWN
          * @enum {string}
          */
-        AuditTrailRowKindEnum: "ENTRY" | "LEDGER" | "PARTY" | "RULE" | "SETTING" | "ITEM";
+        AuditTrailRowKindEnum: "ENTRY" | "LEDGER" | "PARTY" | "RULE" | "SETTING" | "ITEM" | "GODOWN";
         /**
          * @description Month end: does the ledger agree with the bank?
          *
@@ -5380,6 +5459,14 @@ export interface components {
              */
             suggested_role: components["schemas"]["SuggestedRoleEnum"];
         };
+        Godown: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+        };
+        GodownRequest: {
+            name: string;
+        };
         GstError: {
             /** @description Stable code: gst_rule (409), gst_file_unreadable (422), invalid (400), not_found (404), forbidden (403). */
             code: string;
@@ -5447,6 +5534,8 @@ export interface components {
             items: components["schemas"]["InventoryItem"][];
             /** @description How many items are at or below their reorder level. */
             below_reorder: number;
+            /** @description True for one godown: transfers carry no cost, so the figures are quantities only. */
+            quantities_only: boolean;
             /** @description Purchases and sales whose invoice lines are in this report. */
             bills_counted: number;
             /** @description Purchases and sales this year with no invoice lines, so no stock movement. */
@@ -5837,13 +5926,6 @@ export interface components {
          * @enum {string}
          */
         KindA27Enum: "PURCHASE" | "SALES";
-        /**
-         * @description * `OPENING` - Opening stock
-         *     * `ADJUSTMENT` - Stock adjustment
-         *     * `TALLY` - Imported from Tally
-         * @enum {string}
-         */
-        KindAc0Enum: "OPENING" | "ADJUSTMENT" | "TALLY";
         LayoutPreview: {
             /** @description The table's own header cells, if it has one. */
             header: string[];
@@ -6978,6 +7060,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["FirmDocument"][];
         };
+        PaginatedGodownList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["Godown"][];
+        };
         PaginatedInvoiceReadingList: {
             /** @example 123 */
             count: number;
@@ -7509,6 +7606,9 @@ export interface components {
             is_active?: boolean;
         };
         PatchedFirmSettingsRequest: {
+            name?: string;
+        };
+        PatchedGodownRequest: {
             name?: string;
         };
         /** @description For a ModelSerializer: ``version`` on the way out, ``expected_version`` checked on the way in. */
@@ -9078,10 +9178,32 @@ export interface components {
          * @enum {string}
          */
         Status58cEnum: "RECEIVED" | "PARSED" | "FAILED";
+        StockCountRequest: {
+            /** Format: date */
+            entry_date: string;
+            name: string;
+            /** @default  */
+            unit: string;
+            /** Format: decimal */
+            counted_quantity: string;
+            /** Format: uuid */
+            godown?: string | null;
+            /** @default  */
+            note: string;
+        };
+        StockCountResult: {
+            /** @description What the books said was on hand. */
+            book_quantity: string;
+            counted_quantity: string;
+            /** @description Counted minus book: negative is a shortage. */
+            difference: string;
+            /** @description The adjustment booked; null when the count agreed with the books. */
+            entry: components["schemas"]["StockEntry"] | null;
+        };
         StockEntry: {
             /** Format: uuid */
             readonly id: string;
-            readonly kind: components["schemas"]["KindAc0Enum"];
+            readonly kind: components["schemas"]["StockEntryKindEnum"];
             readonly kind_display: string;
             /** Format: date */
             readonly entry_date: string;
@@ -9092,9 +9214,22 @@ export interface components {
             readonly quantity: string;
             readonly value_paise: number;
             readonly note: string;
+            /** Format: uuid */
+            readonly godown: string | null;
+            /** @default  */
+            readonly godown_name: string;
+            /** Format: uuid */
+            readonly transfer: string | null;
         };
+        /**
+         * @description * `OPENING` - Opening stock
+         *     * `ADJUSTMENT` - Stock adjustment
+         *     * `TALLY` - Imported from Tally
+         * @enum {string}
+         */
+        StockEntryCreateKindEnum: "OPENING" | "ADJUSTMENT" | "TALLY";
         StockEntryCreateRequest: {
-            kind: components["schemas"]["KindAc0Enum"];
+            kind: components["schemas"]["StockEntryCreateKindEnum"];
             /** Format: date */
             entry_date: string;
             /**
@@ -9117,6 +9252,11 @@ export interface components {
             value_paise: number;
             /** @default  */
             note: string;
+            /**
+             * Format: uuid
+             * @description Empty is the main location.
+             */
+            godown?: string | null;
         };
         /**
          * @description * `IN` - In
@@ -9124,6 +9264,14 @@ export interface components {
          * @enum {string}
          */
         StockEntryDirectionEnum: "IN" | "OUT";
+        /**
+         * @description * `OPENING` - Opening stock
+         *     * `ADJUSTMENT` - Stock adjustment
+         *     * `TALLY` - Imported from Tally
+         *     * `TRANSFER` - Stock transfer
+         * @enum {string}
+         */
+        StockEntryKindEnum: "OPENING" | "ADJUSTMENT" | "TALLY" | "TRANSFER";
         /** @description A product the client buys or sells: its name, unit, HSN, GST rate, reorder level and the ledgers it is booked to. */
         StockItem: {
             /** Format: uuid */
@@ -9157,6 +9305,27 @@ export interface components {
             purchase_ledger?: string | null;
             /** Format: uuid */
             sales_ledger?: string | null;
+        };
+        StockTransferRequest: {
+            /** Format: date */
+            entry_date: string;
+            name: string;
+            /** @default  */
+            unit: string;
+            /** Format: decimal */
+            quantity: string;
+            /**
+             * Format: uuid
+             * @description Empty is the main location.
+             */
+            from_godown: string | null;
+            /**
+             * Format: uuid
+             * @description Empty is the main location.
+             */
+            to_godown: string | null;
+            /** @default  */
+            note: string;
         };
         /**
          * @description * `VENDOR` - Supplier
@@ -10879,7 +11048,7 @@ export interface operations {
                 /** @description Only this person's changes. */
                 actor?: string;
                 from?: string;
-                kind?: "ENTRY" | "ITEM" | "LEDGER" | "PARTY" | "RULE" | "SETTING";
+                kind?: "ENTRY" | "GODOWN" | "ITEM" | "LEDGER" | "PARTY" | "RULE" | "SETTING";
                 limit?: number;
                 offset?: number;
                 /** @description Text in the label or the note. */
@@ -11564,6 +11733,158 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Employee"];
+                };
+            };
+        };
+    };
+    clients_godowns_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedGodownList"];
+                };
+            };
+        };
+    };
+    clients_godowns_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GodownRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["GodownRequest"];
+                "multipart/form-data": components["schemas"]["GodownRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Godown"];
+                };
+            };
+        };
+    };
+    clients_godowns_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Godown"];
+                };
+            };
+        };
+    };
+    clients_godowns_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GodownRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["GodownRequest"];
+                "multipart/form-data": components["schemas"]["GodownRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Godown"];
+                };
+            };
+        };
+    };
+    clients_godowns_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    clients_godowns_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedGodownRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedGodownRequest"];
+                "multipart/form-data": components["schemas"]["PatchedGodownRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Godown"];
                 };
             };
         };
@@ -13618,6 +13939,8 @@ export interface operations {
             query?: {
                 /** @description Financial year by its starting year: 2025 means FY2025-26. */
                 fy?: number;
+                /** @description A godown's id, or `none` for the main location; leave out for the whole business. */
+                godown?: string;
             };
             header?: never;
             path: {
@@ -14205,6 +14528,73 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    clients_stock_entries_count_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StockCountRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["StockCountRequest"];
+                "multipart/form-data": components["schemas"]["StockCountRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockCountResult"];
+                };
+            };
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockCountResult"];
+                };
+            };
+        };
+    };
+    clients_stock_entries_transfer_create: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StockTransferRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["StockTransferRequest"];
+                "multipart/form-data": components["schemas"]["StockTransferRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedStockEntryList"];
+                };
             };
         };
     };

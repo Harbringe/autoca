@@ -4,7 +4,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Pencil, Trash2 } from 'lucide-react'
 import { useState } from 'react'
-import { ApiError } from '@/api/errors'
 import { stockItems, useChangeStockItem, useMakeStockItem, useRemoveStockItem, type StockItem, type StockItemInput } from '@/api/queries/stockItems'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Confirm } from '@/components/ca/Confirm'
@@ -13,12 +12,11 @@ import { Card } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { toast } from '@/lib/toast'
+import { GodownsCard } from './GodownsCard'
+import { say } from './say'
+import { StockCountCard } from './StockCountCard'
+import { StockMoveCard } from './StockMoveCard'
 
-/** The server's own sentence about the field that was wrong when it names one, else its general sentence. */
-const say = (e: unknown) => {
-  if (e instanceof ApiError) return Object.values(e.fields)[0]?.[0] ?? e.message
-  return e instanceof Error && e.message ? e.message : 'Something went wrong. Try again.'
-}
 /** "5.00" is shown as "5", "20.000" as "20": the stored figures carry zeros nobody writes. */
 const plain = (value: string | null) => (value === null || value === '' ? '' : String(Number(value)))
 
@@ -173,6 +171,10 @@ export function StockItemsScreen({ clientId, mayEdit }: { clientId: string; mayE
           </div>
         )}
       </Card>
+
+      <GodownsCard clientId={clientId} mayEdit={mayEdit} />
+      {mayEdit && <StockMoveCard clientId={clientId} />}
+      {mayEdit && <StockCountCard clientId={clientId} />}
 
       <Confirm
         open={removing !== null}

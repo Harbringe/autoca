@@ -102,10 +102,11 @@ export const statementRowsPage = (clientId: string, statementId: string, page: n
     queryFn: () => raw.get<Page<StatementTransaction>>(`${V1}/clients/${clientId}/statements/${statementId}/transactions/`, { page, page_size: pageSize }),
   })
 
-export const inventoryReport = (clientId: string, fy: number) =>
+/** `godown` is a godown's id, or `none` for the main location; leave it out for the whole business. */
+export const inventoryReport = (clientId: string, fy: number, godown?: string) =>
   queryOptions({
-    queryKey: clientKeys.part(clientId, 'reports', 'inventory', fy),
-    queryFn: () => raw.get<InventoryReportData>(`${V1}/clients/${clientId}/reports/inventory/`, { fy }),
+    queryKey: clientKeys.part(clientId, 'reports', 'inventory', fy, godown ?? 'all'),
+    queryFn: () => raw.get<InventoryReportData>(`${V1}/clients/${clientId}/reports/inventory/`, godown ? { fy, godown } : { fy }),
   })
 
 export const trialBalance = (clientId: string, fy: number) =>

@@ -12,6 +12,7 @@ import { messageOf } from '@/api/errors'
 import { useInvalidateClient, V1 } from '@/api/queries/clients'
 import { Confirm } from '@/components/ca/Confirm'
 import { inventoryReport } from '@/api/queries/books'
+import { godowns as godownsQuery } from '@/api/queries/godowns'
 import type { InventoryItem } from '@/api/types'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Select } from '@/components/ui/controls'
@@ -45,7 +46,9 @@ function qty(value: string, unit: string): string {
 const money = (paise: number) => (paise === 0 ? '' : formatPaise(paise, { symbol: false }))
 
 export function InventoryReport({ clientId, fy }: { clientId: string; fy: number }) {
-  const query = useQuery(inventoryReport(clientId, fy))
+  const [place, setPlace] = useState('')
+  const query = useQuery(inventoryReport(clientId, fy, place || undefined))
+  const places = useQuery(godownsQuery(clientId)).data ?? []
   const [picked, setPicked] = useState('')
   const [recording, setRecording] = useState(false)
   const [using, setUsing] = useState(false)
@@ -125,7 +128,21 @@ export function InventoryReport({ clientId, fy }: { clientId: string; fy: number
                 <option key={i.name} value={i.name}>{normaliseName(i.name)}</option>
               ))}
             </Select>
-            <span className="text-muted-foreground">Values are at weighted-average cost. {plural(report.bills_counted, 'bill')} counted.</span>
+            {places.length > 0 && (
+              <>
+                <label htmlFor="inventory-place" className="font-medium">Location</label>
+                <Select id="inventory-place" className="max-w-48" value={place} onChange={(e) => { setPlace(e.target.value); setPicked('') }}>
+                  <option value="">Whole business</option>
+                  <option value="none">Main location</option>
+                  {places.map((g) => (
+                    <option key={g.id} value={g.id}>{g.name}</option>
+                  ))}
+                </Select>
+              </>
+            )}
+            <span className="text-muted-foreground">
+              {report.quantities_only ? 'This place shows quantities only: moving stock between places carries no cost.' : 'Values are at weighted-average cost.'} {plural(report.bills_counted, 'bill')} counted.
+            </span>
           </div>
           {!picked && report.items.length > 1 && (
             <Picture title="Closing stock value, by item">
@@ -135,7 +152,7 @@ export function InventoryReport({ clientId, fy }: { clientId: string; fy: number
             </Picture>
           )}
           {shown.map((item) => (
-            <ItemBlock key={item.name} item={item} />
+            <ItemBlock key={item.name} item={item} quantitiesOnly={report.quantities_only} />
           ))}
         </div>
       )}
@@ -143,7 +160,7 @@ export function InventoryReport({ clientId, fy }: { clientId: string; fy: number
   )
 }
 
-function ItemBlock({ item }: { item: InventoryItem }) {
+function ItemBlock({ item, quantitiesOnly }: { item: InventoryItem; quantitiesOnly: boolean }) {
   const unit = item.unit
   return (
     <section aria-label={item.name} className="relative overflow-x-auto print:break-inside-avoid">
@@ -153,6 +170,7 @@ function ItemBlock({ item }: { item: InventoryItem }) {
           <span className="rounded-full border border-accent-edge bg-accent px-2 py-0.5 text-xs font-medium">{`Reorder at ${qty(item.reorder_level, unit)}`}</span>
         )}
       </h3>
+      {!quantitiesOnly && (
       <div className="no-print mb-3 rounded-lg border bg-surface-2 p-3">
         <ColumnChart
           points={item.months.map((m) => ({ key: m.month, label: monthLabel(m.month).slice(0, 3), full: monthLong(m.month), values: [m.in_value_paise, m.out_value_paise, m.closing_value_paise] }))}
@@ -165,16 +183,17 @@ function ItemBlock({ item }: { item: InventoryItem }) {
           caption={`${item.name}: stock value by month`}
         />
       </div>
+      )}
       <table className="w-full min-w-[44rem] text-sm" aria-label={`Monthly summary of ${item.name}`}>
         <thead className="border-b-2 text-left text-xs uppercase tracking-wide text-muted-foreground">
           <tr>
             <th rowSpan={2} scope="col" className="py-1 pr-2 font-semibold">Particulars</th>
-            <th colSpan={2} scope="colgroup" className="px-2 text-center font-semibold">Inwards</th>
-            <th colSpan={2} scope="colgroup" className="px-2 text-center font-semibold">Outwards</th>
-            <th colSpan={2} scope="colgroup" className="px-2 text-center font-semibold">Closing balance</th>
+            <th colSpan={quantitiesOnly ? 1 : 2} scope="colgroup" className="px-2 text-center font-semibold">Inwards</th>
+            <th colSpan={quantitiesOnly ? 1 : 2} scope="colgroup" className="px-2 text-center font-semibold">Outwards</th>
+            <th colSpan={quantitiesOnly ? 1 : 2} scope="colgroup" className="px-2 text-center font-semibold">Closing balance</th>
           </tr>
           <tr>
-            {['Quantity', 'Value', 'Quantity', 'Value', 'Quantity', 'Value'].map((h, i) => (
+            {(quantitiesOnly ? ['Quantity', 'Quantity', 'Quantity'] : ['Quantity', 'Value', 'Quantity', 'Value', 'Quantity', 'Value']).map((h, i) => (
               <th key={i} scope="col" className="num px-2 py-1 text-right font-semibold">{h}</th>
             ))}
           </tr>
@@ -182,29 +201,29 @@ function ItemBlock({ item }: { item: InventoryItem }) {
         <tbody>
           <tr className="border-b border-dashed text-muted-foreground">
             <td className="py-1.5 pr-2 italic">Opening balance</td>
-            <td colSpan={4} />
+            <td colSpan={quantitiesOnly ? 2 : 4} />
             <td className="num px-2 text-right">{qty(item.opening_qty, unit)}</td>
-            <td className="num px-2 text-right">{money(item.opening_value_paise)}</td>
+            {!quantitiesOnly && <td className="num px-2 text-right">{money(item.opening_value_paise)}</td>}
           </tr>
           {item.months.map((m) => (
             <tr key={m.month} className="border-b border-dashed">
               <td className="py-1.5 pr-2">{monthLabel(m.month)}</td>
               <td className="num px-2 text-right">{qty(m.in_qty, unit)}</td>
-              <td className="num px-2 text-right">{money(m.in_value_paise)}</td>
+              {!quantitiesOnly && <td className="num px-2 text-right">{money(m.in_value_paise)}</td>}
               <td className="num px-2 text-right">{qty(m.out_qty, unit)}</td>
-              <td className="num px-2 text-right">{money(m.out_value_paise)}</td>
+              {!quantitiesOnly && <td className="num px-2 text-right">{money(m.out_value_paise)}</td>}
               <td className="num px-2 text-right">{qty(m.closing_qty, unit)}</td>
-              <td className="num px-2 text-right">{money(m.closing_value_paise)}</td>
+              {!quantitiesOnly && <td className="num px-2 text-right">{money(m.closing_value_paise)}</td>}
             </tr>
           ))}
           <tr className="border-t-2 font-semibold">
             <td className="py-1.5 pr-2">Grand total</td>
             <td className="num px-2 text-right">{qty(item.in_qty, unit)}</td>
-            <td className="num px-2 text-right">{money(item.in_value_paise)}</td>
+            {!quantitiesOnly && <td className="num px-2 text-right">{money(item.in_value_paise)}</td>}
             <td className="num px-2 text-right">{qty(item.out_qty, unit)}</td>
-            <td className="num px-2 text-right">{money(item.out_value_paise)}</td>
+            {!quantitiesOnly && <td className="num px-2 text-right">{money(item.out_value_paise)}</td>}
             <td className="num px-2 text-right">{qty(item.closing_qty, unit)}</td>
-            <td className="num px-2 text-right">{money(item.closing_value_paise)}</td>
+            {!quantitiesOnly && <td className="num px-2 text-right">{money(item.closing_value_paise)}</td>}
           </tr>
         </tbody>
       </table>
@@ -218,7 +237,7 @@ function ItemBlock({ item }: { item: InventoryItem }) {
                 <th scope="col" className="px-2 font-semibold">From</th>
                 <th scope="col" className="num px-2 text-right font-semibold">In</th>
                 <th scope="col" className="num px-2 text-right font-semibold">Out</th>
-                <th scope="col" className="num px-2 text-right font-semibold">Value</th>
+                {!quantitiesOnly && <th scope="col" className="num px-2 text-right font-semibold">Value</th>}
               </tr>
             </thead>
             <tbody>
@@ -228,7 +247,7 @@ function ItemBlock({ item }: { item: InventoryItem }) {
                   <td className="px-2">{mv.source}</td>
                   <td className="num px-2 text-right">{mv.direction === 'IN' ? qty(mv.quantity, unit) : ''}</td>
                   <td className="num px-2 text-right">{mv.direction === 'OUT' ? qty(mv.quantity, unit) : ''}</td>
-                  <td className="num px-2 text-right">{money(mv.value_paise)}</td>
+                  {!quantitiesOnly && <td className="num px-2 text-right">{money(mv.value_paise)}</td>}
                 </tr>
               ))}
             </tbody>

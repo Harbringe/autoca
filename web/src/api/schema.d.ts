@@ -1504,6 +1504,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/numbering/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Number formats of every voucher series of the client
+         * @description How each of the client's voucher series reads its numbers: a prefix and zero padding. The stored numbers never change.
+         */
+        get: operations["clients_numbering_list"];
+        /**
+         * Set the number formats of some series
+         * @description A series sent with no prefix and no padding goes back to the plain number. Nothing is saved unless every item is allowed.
+         */
+        put: operations["clients_numbering_update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/open-items/": {
         parameters: {
             query?: never;
@@ -6291,6 +6315,38 @@ export interface components {
         };
         /** @enum {unknown} */
         NullEnum: null;
+        NumberingItem: {
+            voucher_type: components["schemas"]["VoucherTypeEnum"];
+            /** @default  */
+            type_name: string;
+            /**
+             * @description Letters, digits and / _ . - only; {fy} becomes the financial year, 25-26.
+             * @default
+             */
+            prefix: string;
+            /**
+             * @description Zero-pad the number to this many digits; 0 for none.
+             * @default 0
+             */
+            padding: number;
+            /** @description The next number in this series as it will read. */
+            readonly example: string;
+        };
+        NumberingItemRequest: {
+            voucher_type: components["schemas"]["VoucherTypeEnum"];
+            /** @default  */
+            type_name: string;
+            /**
+             * @description Letters, digits and / _ . - only; {fy} becomes the financial year, 25-26.
+             * @default
+             */
+            prefix: string;
+            /**
+             * @description Zero-pad the number to this many digits; 0 for none.
+             * @default 0
+             */
+            padding: number;
+        };
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         OpenBill: {
             /** Format: uuid */
@@ -12611,6 +12667,57 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["PaginatedLedgerRowList"];
+                };
+            };
+        };
+    };
+    clients_numbering_list: {
+        parameters: {
+            query?: {
+                /** @description Financial year (starting year) the example is for; default this year. */
+                fy?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NumberingItem"][];
+                };
+            };
+        };
+    };
+    clients_numbering_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["NumberingItemRequest"][];
+                "application/x-www-form-urlencoded": components["schemas"]["NumberingItemRequest"][];
+                "multipart/form-data": components["schemas"]["NumberingItemRequest"][];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["NumberingItem"][];
                 };
             };
         };

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import re
+
 from rest_framework import serializers
 
-from ledger.models import CustomVoucherType
+from ledger.models import CustomVoucherType, VoucherType
 from ledger.numbering import VoucherTypeInUseError, is_in_use
 from ledger.tally_parse import normal_name
 from ledger.tally_plan import NO_ACCOUNTING_TYPES, OWN_SERIES_PARENTS, STANDARD_TYPES
@@ -50,3 +52,21 @@ class CustomVoucherTypeSerializer(serializers.ModelSerializer):
                 raise VoucherTypeInUseError("Vouchers are numbered under this type, so its name and parent cannot change.")
         return attrs
 
+
+
+_PREFIX = re.compile(r"^(?:[A-Za-z0-9/_.\-]|\{fy\})*$")
+
+
+class NumberingItemSerializer(serializers.Serializer):
+    voucher_type = serializers.ChoiceField(choices=VoucherType.choices)
+    type_name = serializers.CharField(allow_blank=True, max_length=64, default="")
+    prefix = serializers.CharField(
+        allow_blank=True, max_length=16, default="", help_text="Letters, digits and / _ . - only; {fy} becomes the financial year, 25-26."
+    )
+    padding = serializers.IntegerField(min_value=0, max_value=8, default=0, help_text="Zero-pad the number to this many digits; 0 for none.")
+    example = serializers.CharField(read_only=True, help_text="The next number in this series as it will read.")
+
+    def validate_prefix(self, value):
+        if not _PREFIX.match(value):
+            raise serializers.ValidationError("Use letters, digits and / _ . - only, with {fy} for the financial year.")
+        return value

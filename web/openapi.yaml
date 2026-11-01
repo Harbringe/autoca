@@ -3375,6 +3375,81 @@ paths:
               schema:
                 $ref: '#/components/schemas/PaginatedLedgerRowList'
           description: ''
+  /api/v1/clients/{client_id}/numbering/:
+    get:
+      operationId: clients_numbering_list
+      description: 'How each of the client''s voucher series reads its numbers: a
+        prefix and zero padding. The stored numbers never change.'
+      summary: Number formats of every voucher series of the client
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: Financial year (starting year) the example is for; default this
+          year.
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NumberingItem'
+          description: ''
+    put:
+      operationId: clients_numbering_update
+      description: A series sent with no prefix and no padding goes back to the plain
+        number. Nothing is saved unless every item is allowed.
+      summary: Set the number formats of some series
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/NumberingItemRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/NumberingItemRequest'
+          multipart/form-data:
+            schema:
+              type: array
+              items:
+                $ref: '#/components/schemas/NumberingItemRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/NumberingItem'
+          description: ''
   /api/v1/clients/{client_id}/open-items/:
     get:
       operationId: clients_open_items_retrieve
@@ -13795,6 +13870,57 @@ components:
     NullEnum:
       enum:
       - null
+    NumberingItem:
+      type: object
+      properties:
+        voucher_type:
+          $ref: '#/components/schemas/VoucherTypeEnum'
+        type_name:
+          type: string
+          default: ''
+          maxLength: 64
+        prefix:
+          type: string
+          default: ''
+          description: Letters, digits and / _ . - only; {fy} becomes the financial
+            year, 25-26.
+          maxLength: 16
+        padding:
+          type: integer
+          maximum: 8
+          minimum: 0
+          default: 0
+          description: Zero-pad the number to this many digits; 0 for none.
+        example:
+          type: string
+          readOnly: true
+          description: The next number in this series as it will read.
+      required:
+      - example
+      - voucher_type
+    NumberingItemRequest:
+      type: object
+      properties:
+        voucher_type:
+          $ref: '#/components/schemas/VoucherTypeEnum'
+        type_name:
+          type: string
+          default: ''
+          maxLength: 64
+        prefix:
+          type: string
+          default: ''
+          description: Letters, digits and / _ . - only; {fy} becomes the financial
+            year, 25-26.
+          maxLength: 16
+        padding:
+          type: integer
+          maximum: 8
+          minimum: 0
+          default: 0
+          description: Zero-pad the number to this many digits; 0 for none.
+      required:
+      - voucher_type
     OpenBill:
       type: object
       description: Adds a ``*_display`` string beside every ``*_paise`` field named

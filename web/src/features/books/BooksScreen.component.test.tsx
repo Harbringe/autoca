@@ -6,6 +6,7 @@ import { journal } from '@/api/queries/books'
 import { booksStatus, clientDetail } from '@/api/queries/clients'
 import { BooksScreen } from './BooksScreen'
 
+vi.mock('@/features/shell/useFy', () => ({ useFy: () => ({ fy: 2025 }) }))
 vi.mock('@/session/session', () => ({ useSession: () => ({ me: { permissions: [] }, can: () => true }) }))
 vi.mock('@tanstack/react-router', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@tanstack/react-router')>()),

@@ -27,6 +27,7 @@ import { formatDate, formatDateTime, plural } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { ClosePanel } from './ClosePanel'
+import { NumberingSettings } from './NumberingSettings'
 import { SealSchedule } from './SealSchedule'
 import { SignOffChecklist } from './SignOffChecklist'
 import { SignOffDialog } from './SignOffDialog'
@@ -219,6 +220,7 @@ export function BooksScreen({ clientId }: { clientId: string }) {
       </Card>
 
       <SealSchedule clientId={clientId} books={b} mayChange={senior && can('client.update')} />
+      <NumberingSettings clientId={clientId} mayEdit={can('ledger.manage')} />
 
       <details className="group rounded-lg border bg-card">
         <summary className="flex min-h-11 cursor-pointer items-center px-5 text-sm font-medium text-heading">History ({b.history.length})</summary>

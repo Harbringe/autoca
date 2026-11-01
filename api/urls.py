@@ -64,7 +64,7 @@ from api.views.payroll import EmployeeViewSet, PayrollRunViewSet
 from api.views.stock import StockEntryViewSet
 from api.views.tally import TallyImportViewSet
 from api.views.tds import TdsChallanViewSet
-from api.views.voucher_series import CustomVoucherTypeViewSet
+from api.views.voucher_series import CustomVoucherTypeViewSet, NumberingView
 from api.views.workload import MyWorkView, PeopleWorkView, WorkFlowView
 from teams.views import FirmOwnerView, FirmSettingsView
 
@@ -281,6 +281,7 @@ urlpatterns = [
         TallyImportViewSet.as_view({"post": "undo"}),
         name="tally-import-undo",
     ),
+    path("clients/<uuid:client_id>/numbering/", NumberingView.as_view(), name="client-numbering"),
     path(
         "clients/<uuid:client_id>/tally-imports/check-trial-balance/",
         TallyImportViewSet.as_view({"post": "check_trial_balance"}),

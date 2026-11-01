@@ -6,6 +6,7 @@ import datetime
 import uuid
 
 from django.db.models import Q
+from django.db.models.fields.json import KeyTextTransform
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import serializers
@@ -56,6 +57,15 @@ def _created_row(e: JournalEntry) -> dict:
         "id": f"created-{e.pk}", "at": e.created_at, "kind": "ENTRY", "action": "CREATED", "action_display": "Created",
         "label": f"{e.get_voucher_type_display()} no. {e.entry_no}, {e.entry_date:%d-%m-%Y}", "actor_name": _name(e.approved_by), "note": e.narration,
         "before": {}, "after": {"narration": e.narration, "total_paise": e.total_paise},
+    }
+
+
+def _removed_created_row(pk, entry_no, voucher_type, entry_date, narration, made) -> dict:
+    """The creation of a voucher that has since been removed, from the snapshot its removal kept."""
+    return {
+        "id": f"made-{pk}", "at": made, "kind": "ENTRY", "action": "CREATED", "action_display": "Created",
+        "label": f"{voucher_type} no. {entry_no}, {entry_date:%d-%m-%Y}", "actor_name": "", "note": narration,
+        "before": {}, "after": {"narration": narration},
     }
 
 
@@ -128,11 +138,28 @@ class AuditTrailView(APIView):
             masters = masters.filter(Q(label__icontains=text))
             created = created.filter(Q(narration__icontains=text) | Q(voucher_type__icontains=text))
 
+        # A voucher that has been removed is no longer there to read "created" from; the snapshot kept at its removal has it.
+        made = []
+        if kind in ("", "ENTRY") and not actor:
+            gone = (
+                EntryChange.objects.filter(firm_id=client.firm_id, client=client, action="REMOVED", before__has_key="created_at")
+                .annotate(made=KeyTextTransform("created_at", "before"), said=KeyTextTransform("narration", "before"))
+                .values_list("pk", "entry_no", "voucher_type", "entry_date", "said", "made")
+            )
+            for pk, entry_no, voucher_type, entry_date, said, when in gone:
+                at = datetime.datetime.fromisoformat(when)
+                if (start and at.date() < start) or (end and at.date() > end):
+                    continue
+                if text and text.lower() not in f"{said or ''} {voucher_type}".lower():
+                    continue
+                made.append(_removed_created_row(pk, entry_no, voucher_type, entry_date, said or "", at))
+
         window = offset + limit
         rows = (
             [_entry_row(c) for c in entries.order_by("-created_at")[:window]]
             + [_master_row(c) for c in masters.order_by("-created_at")[:window]]
             + [_created_row(c) for c in created.order_by("-created_at").prefetch_related("lines")[:window]]
+            + made
         )
         rows.sort(key=lambda r: (r["at"], r["id"]), reverse=True)
-        return Response({"count": entries.count() + masters.count() + created.count(), "results": AuditTrailRowSerializer(rows[offset:window], many=True).data})
+        return Response({"count": entries.count() + masters.count() + created.count() + len(made), "results": AuditTrailRowSerializer(rows[offset:window], many=True).data})

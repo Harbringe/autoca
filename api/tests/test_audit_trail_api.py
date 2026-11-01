@@ -7,7 +7,14 @@ import uuid
 
 import pytest
 
-from api.tests.test_bills import base, make_ledger
+from api.tests.test_bills import (  # noqa: F401  (fixtures and helpers)
+    base,
+    make_ledger,
+    post_bill,
+    purchases,
+    ravi,
+    voucher,
+)
 from classify.models import LedgerGroup as G
 from core.db.session import firm_context
 from core.provisioning import create_client
@@ -150,3 +157,14 @@ def test_voucher_classes_and_types_are_in_the_trail(api, client_record):
         ("REMOVED", "Voucher class: Retail 18%"),
         ("CREATED", "Voucher class: Retail 18%"),
     ]
+
+
+def test_a_removed_bill_keeps_its_creation_in_the_trail(api, client_record, ravi, purchases):
+    """Removing deletes the voucher, so its "created" cannot be read from it any more: the removal's snapshot carries it."""
+    bill = post_bill(api, client_record, voucher(ravi, purchases)).json()
+    assert api.post(f"{base(client_record)}/bills/{bill['id']}/remove/", {"note": "Wrong client"}, format="json").status_code == 204
+    rows = trail(api, client_record, "?kind=ENTRY")
+    assert [r["action"] for r in rows] == ["REMOVED", "CREATED"]
+    assert rows[0]["label"] == rows[1]["label"]
+    assert rows[1]["at"] <= rows[0]["at"]
+    assert trail(api, client_record, "?kind=ENTRY&q=Wrong")[0]["action"] == "REMOVED"

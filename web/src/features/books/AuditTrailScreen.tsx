@@ -41,7 +41,7 @@ export function AuditTrailScreen({ clientId }: { clientId: string }) {
   return (
     <div className="grid gap-3">
       <Card className="flex flex-wrap items-end gap-3 p-3">
-        <Select aria-label="Kind of change" value={kind} onChange={(e) => change(setKind, e.target.value as '' | ChangeKind)}>
+        <Select aria-label="Kind of change" className="w-44" value={kind} onChange={(e) => change(setKind, e.target.value as '' | ChangeKind)}>
           <option value="">Everything</option>
           <option value="ENTRY">Vouchers</option>
           <option value="LEDGER">Ledgers</option>

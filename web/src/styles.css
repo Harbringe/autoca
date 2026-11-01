@@ -532,6 +532,19 @@ html {
   border-radius: var(--radius-sm);
 }
 
+/* A printed sheet is black on white whatever theme the screen is in; the theme's heading and muted colours would leave it pale. */
+.print-sheet {
+  color-scheme: light;
+  background: #fff;
+  color: #000;
+}
+.print-sheet :is(h1, h2, h3, p, td, th, dt, dd, span, div) {
+  color: #000;
+}
+.print-sheet .text-gray-600 {
+  color: #4b5563;
+}
+
 @media print {
   .no-print {
     display: none !important;

@@ -769,6 +769,68 @@ paths:
               schema:
                 $ref: '#/components/schemas/AssistantPause'
           description: ''
+  /api/v1/clients/{client_id}/audit-trail/:
+    get:
+      operationId: clients_audit_trail_retrieve
+      description: Changes to vouchers and to ledgers, parties and rules, newest first,
+        each with what it was before and after.
+      summary: The audit trail of the client's books
+      parameters:
+      - in: query
+        name: actor
+        schema:
+          type: string
+          format: uuid
+        description: Only this person's changes.
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: from
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: kind
+        schema:
+          type: string
+          enum:
+          - ENTRY
+          - LEDGER
+          - PARTY
+          - RULE
+      - in: query
+        name: limit
+        schema:
+          type: integer
+      - in: query
+        name: offset
+        schema:
+          type: integer
+      - in: query
+        name: q
+        schema:
+          type: string
+        description: Text in the label or the note.
+      - in: query
+        name: to
+        schema:
+          type: string
+          format: date
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuditTrailPage'
+          description: ''
   /api/v1/clients/{client_id}/bank-accounts/:
     get:
       operationId: clients_bank_accounts_list
@@ -8946,6 +9008,66 @@ components:
         * `unsigned_too_long` - unsigned_too_long
         * `suspense_balance` - suspense_balance
         * `opening_balance_unconfirmed` - opening_balance_unconfirmed
+    AuditTrailPage:
+      type: object
+      properties:
+        count:
+          type: integer
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/AuditTrailRow'
+      required:
+      - count
+      - results
+    AuditTrailRow:
+      type: object
+      properties:
+        id:
+          type: string
+        at:
+          type: string
+          format: date-time
+        kind:
+          $ref: '#/components/schemas/AuditTrailRowKindEnum'
+        action:
+          type: string
+        action_display:
+          type: string
+        label:
+          type: string
+          description: The voucher, ledger, party or rule it was about, as it was
+            named then.
+        actor_name:
+          type: string
+          description: Empty when the change was the assistant's own.
+        note:
+          type: string
+        before: {}
+        after: {}
+      required:
+      - action
+      - action_display
+      - actor_name
+      - after
+      - at
+      - before
+      - id
+      - kind
+      - label
+      - note
+    AuditTrailRowKindEnum:
+      enum:
+      - ENTRY
+      - LEDGER
+      - PARTY
+      - RULE
+      type: string
+      description: |-
+        * `ENTRY` - ENTRY
+        * `LEDGER` - LEDGER
+        * `PARTY` - PARTY
+        * `RULE` - RULE
     BalanceCheck:
       type: object
       description: |-

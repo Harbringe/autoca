@@ -19,6 +19,7 @@ from rest_framework.routers import DefaultRouter
 from api.views.assets import AssetViewSet
 from api.views.assistant import AssistantPauseView, NextBatchView
 from api.views.audit import AuditLogView
+from api.views.audit_trail import AuditTrailView
 from api.views.banking import (
     BankAccountViewSet,
     StatementUploadView,
@@ -283,6 +284,7 @@ urlpatterns = [
         name="tally-import-undo",
     ),
     path("clients/<uuid:client_id>/numbering/", NumberingView.as_view(), name="client-numbering"),
+    path("clients/<uuid:client_id>/audit-trail/", AuditTrailView.as_view(), name="client-audit-trail"),
     path(
         "clients/<uuid:client_id>/tally-imports/check-trial-balance/",
         TallyImportViewSet.as_view({"post": "check_trial_balance"}),

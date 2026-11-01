@@ -53,6 +53,7 @@ from api.serializers.partyreports import PartyStatementSerializer, statement_pay
 from api.serializers.settlement import SettlementContextSerializer
 from api.throttles import enforce
 from api.views.base import ClientScopedMixin, FirmScopedViewSet
+from api.views.master_audit import MasterAuditMixin
 from api.views.partyreports import date_param
 from api.views.settlement import build_context
 from banking.models import Statement
@@ -87,6 +88,7 @@ from core.models import Client
 from core.rbac import has_permission
 from ledger import billing, matching, openings
 from ledger import settlement as settling
+from ledger.audit import LEDGER_FIELDS, PARTY_FIELDS, RULE_FIELDS, snapshot
 from ledger.learning import learn_from_decision
 from ledger.partyreports import party_statement
 from teams import activity
@@ -96,10 +98,16 @@ BANDS = (ReviewBand.HIGH, ReviewBand.ADVISED, ReviewBand.JUDGEMENT)
 
 
 @extend_schema(tags=["review"])
-class LedgerAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
+class LedgerAccountViewSet(MasterAuditMixin, ClientScopedMixin, FirmScopedViewSet):
     """The client's chart of accounts."""
 
     # Meta.ordering is dropped once annotate() adds a GROUP BY, so say it again.
+    audit_kind = "LEDGER"
+    audit_fields = LEDGER_FIELDS
+
+    def audit_label(self, obj) -> str:
+        return obj.name
+
     queryset = LedgerAccount.objects.annotate(row_count=Count("classifications")).order_by(
         "name", "pk"
     )
@@ -123,12 +131,15 @@ class LedgerAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
         self._record(ActivityKind.LEDGER_CREATED)
         if existing is None:
             serializer.save(firm_id=self.request.firm.pk, client=self.client)
+            self.audit_created(serializer.instance)
             return
+        before = snapshot(existing, self.audit_fields)
         existing.status = LedgerStatus.ACTIVE
         existing.is_active = True
         existing.group = serializer.validated_data.get("group", existing.group)
         existing.save(update_fields=["status", "is_active", "group"])
         serializer.instance = existing
+        self._audit("EDITED", existing.pk, existing.name, before, snapshot(existing, self.audit_fields))
 
     def _record(self, kind):
         activity.record(
@@ -217,7 +228,7 @@ class LedgerAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
 
 
 @extend_schema(tags=["review"])
-class PartyViewSet(ClientScopedMixin, FirmScopedViewSet):
+class PartyViewSet(MasterAuditMixin, ClientScopedMixin, FirmScopedViewSet):
     """Parties the client transacts with.
 
     Separate from ledger heads because they answer different questions: the
@@ -225,6 +236,12 @@ class PartyViewSet(ClientScopedMixin, FirmScopedViewSet):
     Reverse-charge and TDS defaults live here, because they are properties of
     who you are paying rather than of the category it was booked under.
     """
+
+    audit_kind = "PARTY"
+    audit_fields = PARTY_FIELDS
+
+    def audit_label(self, obj) -> str:
+        return obj.canonical_name
 
     queryset = Party.objects.all()
     serializer_class = PartySerializer
@@ -375,7 +392,7 @@ def _refuse_if_posted(classification) -> None:
 
 
 @extend_schema(tags=["review"])
-class RuleViewSet(ClientScopedMixin, FirmScopedViewSet):
+class RuleViewSet(MasterAuditMixin, ClientScopedMixin, FirmScopedViewSet):
     """Rules that place transactions automatically.
 
     Mostly written by the system: every decision a reviewer makes mints one,
@@ -383,6 +400,12 @@ class RuleViewSet(ClientScopedMixin, FirmScopedViewSet):
     permanently. Rules can also be created here by hand, which outranks anything
     learned.
     """
+
+    audit_kind = "RULE"
+    audit_fields = RULE_FIELDS
+
+    def audit_label(self, obj) -> str:
+        return f"{obj.pattern} -> {obj.ledger.name}"
 
     queryset = ClassificationRule.objects.select_related("ledger", "party").all()
     serializer_class = ClassificationRuleSerializer

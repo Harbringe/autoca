@@ -40,7 +40,7 @@ export const CLIENT_NAV: ClientNavItem[] = [
     label: 'Bookkeeping',
     icon: BookOpen,
     permission: 'report.view',
-    also: ['bills', 'invoices', 'tds', 'payroll', 'assets', 'daybook', 'open-items', 'ledgers', 'masters', 'books', 'tally'],
+    also: ['bills', 'invoices', 'tds', 'payroll', 'assets', 'daybook', 'open-items', 'ledgers', 'masters', 'books', 'audit', 'tally'],
     group: 'books',
   },
   { screen: 'gst', label: 'GST', icon: FileSpreadsheet, permission: 'gst.view', group: 'books' },
@@ -89,6 +89,7 @@ export const CLIENT_TABS: Record<string, ClientTab[]> = {
     { screen: 'ledgers', label: 'Ledgers', permission: 'report.view' },
     { screen: 'masters', label: 'Parties & rules', permission: 'report.view' },
     { screen: 'books', label: 'Sign-off', permission: 'report.view' },
+    { screen: 'audit', label: 'Audit trail', permission: 'report.view' },
     // Not every client has these every month, so they sit under "More" once the row is full.
     { screen: 'tds', label: 'TDS', permission: 'report.view' },
     { screen: 'payroll', label: 'Payroll', permission: 'report.view' },

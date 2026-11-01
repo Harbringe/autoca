@@ -416,6 +416,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/audit-trail/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The audit trail of the client's books
+         * @description Changes to vouchers and to ledgers, parties and rules, newest first, each with what it was before and after.
+         */
+        get: operations["clients_audit_trail_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/bank-accounts/": {
         parameters: {
             query?: never;
@@ -4062,6 +4082,33 @@ export interface components {
          * @enum {string}
          */
         AttentionReasonCodeEnum: "reconciliation_difference" | "statement_month_missing" | "assistant_entries_unchecked" | "unsigned_too_long" | "suspense_balance" | "opening_balance_unconfirmed";
+        AuditTrailPage: {
+            count: number;
+            results: components["schemas"]["AuditTrailRow"][];
+        };
+        AuditTrailRow: {
+            id: string;
+            /** Format: date-time */
+            at: string;
+            kind: components["schemas"]["AuditTrailRowKindEnum"];
+            action: string;
+            action_display: string;
+            /** @description The voucher, ledger, party or rule it was about, as it was named then. */
+            label: string;
+            /** @description Empty when the change was the assistant's own. */
+            actor_name: string;
+            note: string;
+            before: unknown;
+            after: unknown;
+        };
+        /**
+         * @description * `ENTRY` - ENTRY
+         *     * `LEDGER` - LEDGER
+         *     * `PARTY` - PARTY
+         *     * `RULE` - RULE
+         * @enum {string}
+         */
+        AuditTrailRowKindEnum: "ENTRY" | "LEDGER" | "PARTY" | "RULE";
         /**
          * @description Month end: does the ledger agree with the bank?
          *
@@ -10697,6 +10744,37 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["AssistantPause"];
+                };
+            };
+        };
+    };
+    clients_audit_trail_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Only this person's changes. */
+                actor?: string;
+                from?: string;
+                kind?: "ENTRY" | "LEDGER" | "PARTY" | "RULE";
+                limit?: number;
+                offset?: number;
+                /** @description Text in the label or the note. */
+                q?: string;
+                to?: string;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuditTrailPage"];
                 };
             };
         };

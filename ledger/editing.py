@@ -109,6 +109,7 @@ def snapshot(entry) -> dict:
         "marker": entry.marker,
         # When it was made: a removed voucher is gone, so the audit trail reads its "created" from here.
         "created_at": entry.created_at.isoformat(),
+        "approved_by": str(entry.approved_by_id) if entry.approved_by_id else None,
         "lines": [
             {
                 "ledger": line.ledger_account.name,

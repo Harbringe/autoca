@@ -16,6 +16,7 @@ from rest_framework.views import APIView
 
 from api.permissions import HasFirmPermission
 from core.access import get_visible_client
+from core.models import User
 from ledger.models import EntryChange, JournalEntry, MasterChange
 
 DEFAULT_LIMIT, MAX_LIMIT = 50, 200
@@ -60,11 +61,11 @@ def _created_row(e: JournalEntry) -> dict:
     }
 
 
-def _removed_created_row(pk, entry_no, voucher_type, entry_date, narration, made) -> dict:
+def _removed_created_row(pk, entry_no, voucher_type, entry_date, narration, made, who) -> dict:
     """The creation of a voucher that has since been removed, from the snapshot its removal kept."""
     return {
         "id": f"made-{pk}", "at": made, "kind": "ENTRY", "action": "CREATED", "action_display": "Created",
-        "label": f"{voucher_type} no. {entry_no}, {entry_date:%d-%m-%Y}", "actor_name": "", "note": narration,
+        "label": f"{voucher_type} no. {entry_no}, {entry_date:%d-%m-%Y}", "actor_name": who, "note": narration,
         "before": {}, "after": {"narration": narration},
     }
 
@@ -143,16 +144,18 @@ class AuditTrailView(APIView):
         if kind in ("", "ENTRY") and not actor:
             gone = (
                 EntryChange.objects.filter(firm_id=client.firm_id, client=client, action="REMOVED", before__has_key="created_at")
-                .annotate(made=KeyTextTransform("created_at", "before"), said=KeyTextTransform("narration", "before"))
-                .values_list("pk", "entry_no", "voucher_type", "entry_date", "said", "made")
+                .annotate(made=KeyTextTransform("created_at", "before"), said=KeyTextTransform("narration", "before"), by=KeyTextTransform("approved_by", "before"))
+                .values_list("pk", "entry_no", "voucher_type", "entry_date", "said", "made", "by")
             )
-            for pk, entry_no, voucher_type, entry_date, said, when in gone:
+            gone = list(gone)
+            people = {str(u.pk): _name(u) for u in User.objects.filter(pk__in=[g[6] for g in gone if g[6]])}
+            for pk, entry_no, voucher_type, entry_date, said, when, by in gone:
                 at = datetime.datetime.fromisoformat(when)
                 if (start and at.date() < start) or (end and at.date() > end):
                     continue
                 if text and text.lower() not in f"{said or ''} {voucher_type}".lower():
                     continue
-                made.append(_removed_created_row(pk, entry_no, voucher_type, entry_date, said or "", at))
+                made.append(_removed_created_row(pk, entry_no, voucher_type, entry_date, said or "", at, people.get(by, "")))
 
         window = offset + limit
         rows = (

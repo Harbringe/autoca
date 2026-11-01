@@ -167,4 +167,5 @@ def test_a_removed_bill_keeps_its_creation_in_the_trail(api, client_record, ravi
     assert [r["action"] for r in rows] == ["REMOVED", "CREATED"]
     assert rows[0]["label"] == rows[1]["label"]
     assert rows[1]["at"] <= rows[0]["at"]
+    assert rows[1]["actor_name"] == rows[0]["actor_name"] != "", "the creation names who made it, not the assistant"
     assert trail(api, client_record, "?kind=ENTRY&q=Wrong")[0]["action"] == "REMOVED"

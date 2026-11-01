@@ -10,8 +10,6 @@ import { amountInWords } from '@/lib/amountInWords'
 import { formatDate } from '@/lib/format'
 import { PrintSheet } from './PrintSheet'
 
-const TITLE: Record<string, string> = { PAYMENT: 'Payment voucher', RECEIPT: 'Receipt voucher', JOURNAL: 'Journal voucher', CONTRA: 'Contra voucher' }
-
 export function VoucherPrint({ clientId, entryId }: { clientId: string; entryId: string }) {
   const q = useQuery({ queryKey: ['print', 'entry', clientId, entryId], queryFn: () => raw.get<JournalEntry>(`${V1}/journal-entries/${entryId}/`) })
   if (q.isPending) return <Spinner />
@@ -20,7 +18,7 @@ export function VoucherPrint({ clientId, entryId }: { clientId: string; entryId:
   const name = e.voucher_number || String(e.entry_no)
 
   return (
-    <PrintSheet clientId={clientId} title={TITLE[e.voucher_type] ?? `${e.voucher_type.charAt(0)}${e.voucher_type.slice(1).toLowerCase().replace(/_/g, ' ')} voucher`}>
+    <PrintSheet clientId={clientId} title={e.type_name || `${e.voucher_type} voucher`}>
       <dl className="flex justify-between">
         <div>
           <dt className="text-xs uppercase text-gray-600">Voucher no.</dt>

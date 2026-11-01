@@ -3,7 +3,7 @@
 export function VoucherNo({ entryNo, tallyNumber }: { entryNo: number | string; tallyNumber?: string | null }) {
   return (
     <>
-      <span>{entryNo}</span>
+      <span className="whitespace-nowrap">{entryNo}</span>
       {tallyNumber ? <span className="block text-xs font-normal text-muted-foreground">Tally {tallyNumber}</span> : null}
     </>
   )

@@ -33,6 +33,13 @@ const BILL = {
   total_display: '1,180.00',
   voucher_type: 'SALES',
   entry_no: 7,
+  lines: [
+    { id: 'l1', ledger_name: 'Sunrise Traders', party_name: 'Sunrise Traders', direction: 'DR', amount_paise: 118_000, amount_display: '1,180.00' },
+    { id: 'l2', ledger_name: 'Sales - Widgets', party_name: null, direction: 'CR', amount_paise: 60_000, amount_display: '600.00' },
+    { id: 'l3', ledger_name: 'Sales - Gadgets', party_name: null, direction: 'CR', amount_paise: 40_000, amount_display: '400.00' },
+    { id: 'l4', ledger_name: 'Output CGST', party_name: null, direction: 'CR', amount_paise: 9_000, amount_display: '90.00' },
+    { id: 'l5', ledger_name: 'Output SGST', party_name: null, direction: 'CR', amount_paise: 9_000, amount_display: '90.00' },
+  ],
 }
 
 function renderBill() {
@@ -64,6 +71,9 @@ describe('BillPrint', () => {
     expect(screen.getByText('CGST')).toBeInTheDocument()
     expect(screen.getByText('SGST')).toBeInTheDocument()
     expect(screen.queryByText('IGST')).not.toBeInTheDocument()
+    expect(screen.getByText('Sales - Widgets')).toBeInTheDocument()
+    expect(screen.getByText('Sales - Gadgets')).toBeInTheDocument()
+    expect(screen.queryByText('Output CGST')).not.toBeInTheDocument()
     expect(screen.getByText('Rupees One Thousand One Hundred Eighty Only')).toBeInTheDocument()
   })
 

@@ -268,7 +268,7 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
                           )}
                         </button>
                       </td>
-                      <td className="whitespace-nowrap px-4 py-4 align-top text-muted-foreground max-sm:hidden">{e.voucher_type}</td>
+                      <td className="whitespace-nowrap px-4 py-4 align-top text-muted-foreground max-sm:hidden">{e.type_name || e.voucher_type}</td>
                       <td className={cn(numCell, 'max-sm:hidden')}>
                         <VoucherNo entryNo={e.voucher_number || e.entry_no} tallyNumber={e.tally_number} />
                       </td>
@@ -426,7 +426,7 @@ function EntryDetail({
       <div className="grid content-start gap-5 [&>*]:min-w-0">
         <div className="grid gap-1">
           <div className="text-sm text-muted-foreground">
-            {entry.voucher_type} No. {entry.voucher_number || entry.entry_no} · {formatDate(entry.entry_date)} · FY {entry.fy_label}
+            {entry.type_name || entry.voucher_type} No. {entry.voucher_number || entry.entry_no} · {formatDate(entry.entry_date)} · FY {entry.fy_label}
             {entry.is_locked && ' · In signed-off books'}
           </div>
           <div className="num text-[26px] font-semibold leading-tight text-heading">{formatPaise(total)}</div>
@@ -535,11 +535,16 @@ function EntryDetail({
           isVoucher && entry.bill ? (
             <div className="flex items-center justify-between gap-3 text-sm text-muted-foreground">
               <span>This is a {entry.voucher_type.toLowerCase()} voucher. It is changed through its bill.</span>
-              <Button
-                onClick={() => void navigate({ to: '/clients/$clientId/bills', params: { clientId }, search: { bill: entry.bill ?? undefined } })}
-              >
-                Open the bill
-              </Button>
+              <span className="flex gap-2">
+                <Button variant="outline" onClick={() => void navigate({ to: '/clients/$clientId/print', params: { clientId }, search: { entry: entry.id } })}>
+                  Print
+                </Button>
+                <Button
+                  onClick={() => void navigate({ to: '/clients/$clientId/bills', params: { clientId }, search: { bill: entry.bill ?? undefined } })}
+                >
+                  Open the bill
+                </Button>
+              </span>
             </div>
           ) : (
           <div className="flex flex-wrap items-center justify-between gap-2 border-t pt-4">

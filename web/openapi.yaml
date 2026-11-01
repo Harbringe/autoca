@@ -12565,6 +12565,9 @@ components:
           allOf:
           - $ref: '#/components/schemas/VoucherType933Enum'
           readOnly: true
+        type_name:
+          type: string
+          readOnly: true
         entry_kind:
           allOf:
           - $ref: '#/components/schemas/EntryKindEnum'
@@ -12675,6 +12678,7 @@ components:
       - tally_type
       - total_display
       - total_paise
+      - type_name
       - voucher_number
       - voucher_type
     JournalEntryMarkerEnum:

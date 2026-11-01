@@ -69,6 +69,7 @@ class JournalEntrySerializer(MoneySerializerMixin, serializers.ModelSerializer):
             "tally_number",
             "tally_type",
             "voucher_type",
+            "type_name",
             "entry_kind",
             "entry_kind_display",
             "bill",

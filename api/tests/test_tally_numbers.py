@@ -54,3 +54,20 @@ def test_the_entry_shows_its_number_in_the_clients_format(api, firm, client_reco
         NumberingFormat.objects.create(firm_id=firm.pk, client=client_record, voucher_type="Sales", type_name="", prefix="S/{fy}/", padding=4)
     shown = {e["voucher_type"]: (e["entry_no"], e["voucher_number"]) for e in entries(api, client_record)}
     assert shown == {"Sales": (7, "S/25-26/0007"), "Purchase": (3, "3")}
+
+
+def test_the_entry_names_its_own_voucher_type(api, firm, client_record, chart):
+    from django.utils import timezone
+
+    from ledger.models import JournalEntry
+
+    with firm_context(firm.pk):
+        JournalEntry.objects.create(
+            firm_id=firm.pk, client=client_record, entry_no=1, financial_year=2025, entry_date=datetime.date(2025, 4, 1),
+            voucher_type="Sales", type_name="GST SALE", approved_at=timezone.now(),
+        )
+        JournalEntry.objects.create(
+            firm_id=firm.pk, client=client_record, entry_no=1, financial_year=2025, entry_date=datetime.date(2025, 4, 2),
+            voucher_type="Sales", approved_at=timezone.now(),
+        )
+    assert sorted(e["type_name"] for e in entries(api, client_record)) == ["", "GST SALE"]

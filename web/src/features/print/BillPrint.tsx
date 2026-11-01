@@ -22,6 +22,10 @@ export function BillPrint({ clientId, billId }: { clientId: string; billId: stri
     { label: 'Round off', paise: b.round_off_paise, shown: b.round_off_display },
   ].filter((t) => t.paise !== 0)
 
+  // What the invoice is for: the lines on the side opposite the party's, leaving out the taxes and the round-off, which are shown below.
+  const partyLine = b.lines.find((l) => l.party_name)
+  const heads = b.lines.filter((l) => l !== partyLine && l.direction !== partyLine?.direction && !/cgst|sgst|igst|cess|round/i.test(l.ledger_name))
+
   return (
     <PrintSheet clientId={clientId} title={b.kind_display}>
       <dl className="grid grid-cols-2 gap-x-6 gap-y-1">
@@ -46,7 +50,19 @@ export function BillPrint({ clientId, billId }: { clientId: string; billId: stri
       </dl>
 
       <table className="w-full border-collapse">
+        <thead>
+          <tr className="border-y border-black text-left">
+            <th className="py-1 font-medium">Particulars</th>
+            <th className="py-1 text-right font-medium">Amount</th>
+          </tr>
+        </thead>
         <tbody>
+          {heads.map((l) => (
+            <tr key={l.id}>
+              <td className="py-1">{l.ledger_name}</td>
+              <td className="py-1 text-right tabular-nums">{l.amount_display}</td>
+            </tr>
+          ))}
           <tr className="border-y border-black">
             <th className="py-1 text-left font-medium">Taxable value</th>
             <td className="py-1 text-right tabular-nums">{b.taxable_display}</td>

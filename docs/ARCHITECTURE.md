@@ -554,6 +554,10 @@ is a preset head ledger and GST rate for sales and purchase vouchers that the vo
 `MasterChange` (append-only) is written by `MasterAuditMixin` on the ledger, party and rule viewsets (a party's GSTIN is never copied, only
 `has_gstin`), and `GET clients/{id}/audit-trail/` merges it with `EntryChange` newest first, with filters.
 
+### Stock items (added 2026-11-01)
+
+`StockItem` is the client's product master (name, unit, HSN, GST rate, reorder level, purchase and sales ledgers). It is kept through `clients/{id}/stock-items/` (read `client.view`, write `ledger.manage`), audited as `MasterChange` kind ITEM, and shown on the Stock items screen. The stock register itself is still derived from invoice lines and `StockEntry` rows (`ledger/inventory.py`): the master tidies names and carries the figures the report and the forms agree on; it does not post anything.
+
 ## On OCR — read before wiring a vendor
 
 **Do not use Azure Document Intelligence F0.** It allows 500 pages/month but

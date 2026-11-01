@@ -2362,6 +2362,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/stock-items/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The client's stock items. Purchases and sales name them on their invoice lines; this is where they are kept tidy. */
+        get: operations["clients_stock_items_list"];
+        put?: never;
+        /** @description The client's stock items. Purchases and sales name them on their invoice lines; this is where they are kept tidy. */
+        post: operations["clients_stock_items_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/stock-items/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The client's stock items. Purchases and sales name them on their invoice lines; this is where they are kept tidy. */
+        get: operations["clients_stock_items_retrieve"];
+        /** @description The client's stock items. Purchases and sales name them on their invoice lines; this is where they are kept tidy. */
+        put: operations["clients_stock_items_update"];
+        post?: never;
+        /** @description The client's stock items. Purchases and sales name them on their invoice lines; this is where they are kept tidy. */
+        delete: operations["clients_stock_items_destroy"];
+        options?: never;
+        head?: never;
+        /** @description The client's stock items. Purchases and sales name them on their invoice lines; this is where they are kept tidy. */
+        patch: operations["clients_stock_items_partial_update"];
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/tally-imports/": {
         parameters: {
             query?: never;
@@ -4107,9 +4145,10 @@ export interface components {
          *     * `PARTY` - PARTY
          *     * `RULE` - RULE
          *     * `SETTING` - SETTING
+         *     * `ITEM` - ITEM
          * @enum {string}
          */
-        AuditTrailRowKindEnum: "ENTRY" | "LEDGER" | "PARTY" | "RULE" | "SETTING";
+        AuditTrailRowKindEnum: "ENTRY" | "LEDGER" | "PARTY" | "RULE" | "SETTING" | "ITEM";
         /**
          * @description Month end: does the ledger agree with the bank?
          *
@@ -7077,6 +7116,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["StockEntry"][];
         };
+        PaginatedStockItemList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["StockItem"][];
+        };
         PaginatedTallyImportSummaryList: {
             /** @example 123 */
             count: number;
@@ -7459,6 +7513,20 @@ export interface components {
             msme?: boolean;
             udyam_no?: string;
             is_active?: boolean;
+        };
+        /** @description A product the client buys or sells: its name, unit, HSN, GST rate, reorder level and the ledgers it is booked to. */
+        PatchedStockItemRequest: {
+            name?: string;
+            unit?: string;
+            hsn_sac?: string;
+            /** Format: decimal */
+            gst_rate?: string | null;
+            /** Format: decimal */
+            reorder_level?: string | null;
+            /** Format: uuid */
+            purchase_ledger?: string | null;
+            /** Format: uuid */
+            sales_ledger?: string | null;
         };
         /** @description A preset for a sales or purchase voucher: the head ledger and GST rate it fills in. Nothing posts differently. */
         PatchedVoucherClassRequest: {
@@ -9035,6 +9103,40 @@ export interface components {
          * @enum {string}
          */
         StockEntryDirectionEnum: "IN" | "OUT";
+        /** @description A product the client buys or sells: its name, unit, HSN, GST rate, reorder level and the ledgers it is booked to. */
+        StockItem: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            unit?: string;
+            hsn_sac?: string;
+            /** Format: decimal */
+            gst_rate?: string | null;
+            /** Format: decimal */
+            reorder_level?: string | null;
+            /** Format: uuid */
+            purchase_ledger?: string | null;
+            /** @default  */
+            readonly purchase_ledger_name: string;
+            /** Format: uuid */
+            sales_ledger?: string | null;
+            /** @default  */
+            readonly sales_ledger_name: string;
+        };
+        /** @description A product the client buys or sells: its name, unit, HSN, GST rate, reorder level and the ledgers it is booked to. */
+        StockItemRequest: {
+            name: string;
+            unit?: string;
+            hsn_sac?: string;
+            /** Format: decimal */
+            gst_rate?: string | null;
+            /** Format: decimal */
+            reorder_level?: string | null;
+            /** Format: uuid */
+            purchase_ledger?: string | null;
+            /** Format: uuid */
+            sales_ledger?: string | null;
+        };
         /**
          * @description * `VENDOR` - Supplier
          *     * `CUSTOMER` - Customer
@@ -10756,7 +10858,7 @@ export interface operations {
                 /** @description Only this person's changes. */
                 actor?: string;
                 from?: string;
-                kind?: "ENTRY" | "LEDGER" | "PARTY" | "RULE" | "SETTING";
+                kind?: "ENTRY" | "ITEM" | "LEDGER" | "PARTY" | "RULE" | "SETTING";
                 limit?: number;
                 offset?: number;
                 /** @description Text in the label or the note. */
@@ -14082,6 +14184,158 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    clients_stock_items_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedStockItemList"];
+                };
+            };
+        };
+    };
+    clients_stock_items_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StockItemRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["StockItemRequest"];
+                "multipart/form-data": components["schemas"]["StockItemRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockItem"];
+                };
+            };
+        };
+    };
+    clients_stock_items_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockItem"];
+                };
+            };
+        };
+    };
+    clients_stock_items_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StockItemRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["StockItemRequest"];
+                "multipart/form-data": components["schemas"]["StockItemRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockItem"];
+                };
+            };
+        };
+    };
+    clients_stock_items_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    clients_stock_items_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedStockItemRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedStockItemRequest"];
+                "multipart/form-data": components["schemas"]["PatchedStockItemRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockItem"];
+                };
             };
         };
     };

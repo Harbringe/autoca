@@ -53,6 +53,7 @@ import { Route as AppClientsClientIdPrintRouteImport } from './routes/_app/clien
 import { Route as AppClientsClientIdReportsRouteImport } from './routes/_app/clients/$clientId/reports'
 import { Route as AppClientsClientIdReviewRouteImport } from './routes/_app/clients/$clientId/review'
 import { Route as AppClientsClientIdStatementsRouteImport } from './routes/_app/clients/$clientId/statements'
+import { Route as AppClientsClientIdStockRouteImport } from './routes/_app/clients/$clientId/stock'
 import { Route as AppClientsClientIdTallyRouteImport } from './routes/_app/clients/$clientId/tally'
 import { Route as AppClientsClientIdTdsRouteImport } from './routes/_app/clients/$clientId/tds'
 import { Route as AppClientsClientIdTeamRouteImport } from './routes/_app/clients/$clientId/team'
@@ -290,6 +291,11 @@ const AppClientsClientIdStatementsRoute =
     path: '/statements',
     getParentRoute: () => AppClientsClientIdRouteRoute,
   } as any)
+const AppClientsClientIdStockRoute = AppClientsClientIdStockRouteImport.update({
+  id: '/stock',
+  path: '/stock',
+  getParentRoute: () => AppClientsClientIdRouteRoute,
+} as any)
 const AppClientsClientIdTallyRoute = AppClientsClientIdTallyRouteImport.update({
   id: '/tally',
   path: '/tally',
@@ -355,6 +361,7 @@ export interface FileRoutesByFullPath {
   '/clients/$clientId/reports': typeof AppClientsClientIdReportsRoute
   '/clients/$clientId/review': typeof AppClientsClientIdReviewRoute
   '/clients/$clientId/statements': typeof AppClientsClientIdStatementsRoute
+  '/clients/$clientId/stock': typeof AppClientsClientIdStockRoute
   '/clients/$clientId/tally': typeof AppClientsClientIdTallyRoute
   '/clients/$clientId/tds': typeof AppClientsClientIdTdsRoute
   '/clients/$clientId/team': typeof AppClientsClientIdTeamRoute
@@ -402,6 +409,7 @@ export interface FileRoutesByTo {
   '/clients/$clientId/reports': typeof AppClientsClientIdReportsRoute
   '/clients/$clientId/review': typeof AppClientsClientIdReviewRoute
   '/clients/$clientId/statements': typeof AppClientsClientIdStatementsRoute
+  '/clients/$clientId/stock': typeof AppClientsClientIdStockRoute
   '/clients/$clientId/tally': typeof AppClientsClientIdTallyRoute
   '/clients/$clientId/tds': typeof AppClientsClientIdTdsRoute
   '/clients/$clientId/team': typeof AppClientsClientIdTeamRoute
@@ -453,6 +461,7 @@ export interface FileRoutesById {
   '/_app/clients/$clientId/reports': typeof AppClientsClientIdReportsRoute
   '/_app/clients/$clientId/review': typeof AppClientsClientIdReviewRoute
   '/_app/clients/$clientId/statements': typeof AppClientsClientIdStatementsRoute
+  '/_app/clients/$clientId/stock': typeof AppClientsClientIdStockRoute
   '/_app/clients/$clientId/tally': typeof AppClientsClientIdTallyRoute
   '/_app/clients/$clientId/tds': typeof AppClientsClientIdTdsRoute
   '/_app/clients/$clientId/team': typeof AppClientsClientIdTeamRoute
@@ -504,6 +513,7 @@ export interface FileRouteTypes {
     | '/clients/$clientId/reports'
     | '/clients/$clientId/review'
     | '/clients/$clientId/statements'
+    | '/clients/$clientId/stock'
     | '/clients/$clientId/tally'
     | '/clients/$clientId/tds'
     | '/clients/$clientId/team'
@@ -551,6 +561,7 @@ export interface FileRouteTypes {
     | '/clients/$clientId/reports'
     | '/clients/$clientId/review'
     | '/clients/$clientId/statements'
+    | '/clients/$clientId/stock'
     | '/clients/$clientId/tally'
     | '/clients/$clientId/tds'
     | '/clients/$clientId/team'
@@ -601,6 +612,7 @@ export interface FileRouteTypes {
     | '/_app/clients/$clientId/reports'
     | '/_app/clients/$clientId/review'
     | '/_app/clients/$clientId/statements'
+    | '/_app/clients/$clientId/stock'
     | '/_app/clients/$clientId/tally'
     | '/_app/clients/$clientId/tds'
     | '/_app/clients/$clientId/team'
@@ -924,6 +936,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppClientsClientIdStatementsRouteImport
       parentRoute: typeof AppClientsClientIdRouteRoute
     }
+    '/_app/clients/$clientId/stock': {
+      id: '/_app/clients/$clientId/stock'
+      path: '/stock'
+      fullPath: '/clients/$clientId/stock'
+      preLoaderRoute: typeof AppClientsClientIdStockRouteImport
+      parentRoute: typeof AppClientsClientIdRouteRoute
+    }
     '/_app/clients/$clientId/tally': {
       id: '/_app/clients/$clientId/tally'
       path: '/tally'
@@ -994,6 +1013,7 @@ interface AppClientsClientIdRouteRouteChildren {
   AppClientsClientIdReportsRoute: typeof AppClientsClientIdReportsRoute
   AppClientsClientIdReviewRoute: typeof AppClientsClientIdReviewRoute
   AppClientsClientIdStatementsRoute: typeof AppClientsClientIdStatementsRoute
+  AppClientsClientIdStockRoute: typeof AppClientsClientIdStockRoute
   AppClientsClientIdTallyRoute: typeof AppClientsClientIdTallyRoute
   AppClientsClientIdTdsRoute: typeof AppClientsClientIdTdsRoute
   AppClientsClientIdTeamRoute: typeof AppClientsClientIdTeamRoute
@@ -1021,6 +1041,7 @@ const AppClientsClientIdRouteRouteChildren: AppClientsClientIdRouteRouteChildren
     AppClientsClientIdReportsRoute: AppClientsClientIdReportsRoute,
     AppClientsClientIdReviewRoute: AppClientsClientIdReviewRoute,
     AppClientsClientIdStatementsRoute: AppClientsClientIdStatementsRoute,
+    AppClientsClientIdStockRoute: AppClientsClientIdStockRoute,
     AppClientsClientIdTallyRoute: AppClientsClientIdTallyRoute,
     AppClientsClientIdTdsRoute: AppClientsClientIdTdsRoute,
     AppClientsClientIdTeamRoute: AppClientsClientIdTeamRoute,

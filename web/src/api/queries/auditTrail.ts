@@ -4,7 +4,7 @@ import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { raw } from '@/api/client'
 import { V1 } from './clients'
 
-export type ChangeKind = 'ENTRY' | 'LEDGER' | 'PARTY' | 'RULE' | 'SETTING'
+export type ChangeKind = 'ENTRY' | 'LEDGER' | 'PARTY' | 'RULE' | 'SETTING' | 'ITEM'
 
 export interface AuditRow {
   id: string

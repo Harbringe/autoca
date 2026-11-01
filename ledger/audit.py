@@ -17,6 +17,7 @@ LEDGER_FIELDS = ("name", "group", "is_active", "status", "nce_line", "nce_sectio
 PARTY_FIELDS = ("canonical_name", "role", "rcm_default", "msme", "udyam_no", "tds_section", "ledger", "notes", "is_active", "has_gstin")
 TYPE_FIELDS = ("name", "parent")
 CLASS_FIELDS = ("name", "voucher_type", "type_name", "head_ledger", "gst_rate")
+ITEM_FIELDS = ("name", "unit", "hsn_sac", "gst_rate", "reorder_level", "purchase_ledger", "sales_ledger")
 RULE_FIELDS = ("match_type", "pattern", "direction", "ledger", "party", "rcm", "tds_section", "confidence", "priority", "is_active")
 
 

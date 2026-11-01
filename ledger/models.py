@@ -756,6 +756,10 @@ class StockItem(UUIDModel, FirmScopedModel):
     name = models.CharField(max_length=200)
     unit = models.CharField(max_length=16, blank=True, default="", db_default="")
     hsn_sac = models.CharField(max_length=8, blank=True, default="", db_default="")
+    #: The GST rate the item is sold at, when it has one of its own; filled in on a voucher as a suggestion.
+    gst_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
+    #: The quantity at or below which the item is to be bought again; the stock report flags it.
+    reorder_level = models.DecimalField(max_digits=18, decimal_places=3, null=True, blank=True)
     purchase_ledger = models.ForeignKey(LedgerAccount, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     sales_ledger = models.ForeignKey(LedgerAccount, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
 
@@ -967,6 +971,7 @@ class MasterKind(models.TextChoices):
     PARTY = "PARTY", "Party"
     RULE = "RULE", "Rule"
     SETTING = "SETTING", "Setting"
+    ITEM = "ITEM", "Stock item"
 
 
 class MasterAction(models.TextChoices):

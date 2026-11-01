@@ -799,6 +799,7 @@ paths:
           type: string
           enum:
           - ENTRY
+          - ITEM
           - LEDGER
           - PARTY
           - RULE
@@ -5205,6 +5206,207 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/clients/{client_id}/stock-items/:
+    get:
+      operationId: clients_stock_items_list
+      description: The client's stock items. Purchases and sales name them on their
+        invoice lines; this is where they are kept tidy.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - inventory
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedStockItemList'
+          description: ''
+    post:
+      operationId: clients_stock_items_create
+      description: The client's stock items. Purchases and sales name them on their
+        invoice lines; this is where they are kept tidy.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockItemRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StockItemRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StockItemRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItem'
+          description: ''
+  /api/v1/clients/{client_id}/stock-items/{id}/:
+    get:
+      operationId: clients_stock_items_retrieve
+      description: The client's stock items. Purchases and sales name them on their
+        invoice lines; this is where they are kept tidy.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - inventory
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItem'
+          description: ''
+    put:
+      operationId: clients_stock_items_update
+      description: The client's stock items. Purchases and sales name them on their
+        invoice lines; this is where they are kept tidy.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StockItemRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/StockItemRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StockItemRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItem'
+          description: ''
+    patch:
+      operationId: clients_stock_items_partial_update
+      description: The client's stock items. Purchases and sales name them on their
+        invoice lines; this is where they are kept tidy.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - inventory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedStockItemRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedStockItemRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedStockItemRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockItem'
+          description: ''
+    delete:
+      operationId: clients_stock_items_destroy
+      description: The client's stock items. Purchases and sales name them on their
+        invoice lines; this is where they are kept tidy.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - inventory
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/clients/{client_id}/tally-imports/:
     get:
       operationId: clients_tally_imports_list
@@ -9064,6 +9266,7 @@ components:
       - PARTY
       - RULE
       - SETTING
+      - ITEM
       type: string
       description: |-
         * `ENTRY` - ENTRY
@@ -9071,6 +9274,7 @@ components:
         * `PARTY` - PARTY
         * `RULE` - RULE
         * `SETTING` - SETTING
+        * `ITEM` - ITEM
     BalanceCheck:
       type: object
       description: |-
@@ -15412,6 +15616,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/StockEntry'
+    PaginatedStockItemList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockItem'
     PaginatedTallyImportSummaryList:
       type: object
       required:
@@ -16135,6 +16362,39 @@ components:
           maxLength: 19
         is_active:
           type: boolean
+    PatchedStockItemRequest:
+      type: object
+      description: 'A product the client buys or sells: its name, unit, HSN, GST rate,
+        reorder level and the ledgers it is booked to.'
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        unit:
+          type: string
+          maxLength: 16
+        hsn_sac:
+          type: string
+          maxLength: 8
+        gst_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          nullable: true
+        reorder_level:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
+          nullable: true
+        purchase_ledger:
+          type: string
+          format: uuid
+          nullable: true
+        sales_ledger:
+          type: string
+          format: uuid
+          nullable: true
     PatchedVoucherClassRequest:
       type: object
       description: 'A preset for a sales or purchase voucher: the head ledger and
@@ -19210,6 +19470,90 @@ components:
       description: |-
         * `IN` - In
         * `OUT` - Out
+    StockItem:
+      type: object
+      description: 'A product the client buys or sells: its name, unit, HSN, GST rate,
+        reorder level and the ledgers it is booked to.'
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 200
+        unit:
+          type: string
+          maxLength: 16
+        hsn_sac:
+          type: string
+          maxLength: 8
+        gst_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          nullable: true
+        reorder_level:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
+          nullable: true
+        purchase_ledger:
+          type: string
+          format: uuid
+          nullable: true
+        purchase_ledger_name:
+          type: string
+          readOnly: true
+          default: ''
+        sales_ledger:
+          type: string
+          format: uuid
+          nullable: true
+        sales_ledger_name:
+          type: string
+          readOnly: true
+          default: ''
+      required:
+      - id
+      - name
+      - purchase_ledger_name
+      - sales_ledger_name
+    StockItemRequest:
+      type: object
+      description: 'A product the client buys or sells: its name, unit, HSN, GST rate,
+        reorder level and the ledgers it is booked to.'
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        unit:
+          type: string
+          maxLength: 16
+        hsn_sac:
+          type: string
+          maxLength: 8
+        gst_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          nullable: true
+        reorder_level:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
+          nullable: true
+        purchase_ledger:
+          type: string
+          format: uuid
+          nullable: true
+        sales_ledger:
+          type: string
+          format: uuid
+          nullable: true
+      required:
+      - name
     SuggestedRoleEnum:
       enum:
       - VENDOR

@@ -54,6 +54,7 @@ from ledger.models import (
     BillAllocation,
     BillKind,
     ChangeAction,
+    CustomVoucherType,
     Direction,
     EntryMarker,
     ImportKind,
@@ -76,7 +77,7 @@ from ledger.tally_import import (
 )
 from ledger.tally_learning import learn_rules
 from ledger.tally_parse import normal_name
-from ledger.tally_plan import MAPPABLE_TYPES, Facts, Planned, is_known_type, plan_voucher
+from ledger.tally_plan import Facts, Planned, is_known_type, is_mappable, plan_voucher
 from ledger.tally_vouchers import ParsedVoucher, VoucherLine, parse_vouchers
 
 logger = logging.getLogger("autoca.tally")
@@ -116,7 +117,7 @@ def _doc_name(run) -> str:
 
 def normalise_type_map(voucher_types: dict | None) -> dict[str, str]:
     """What the person said the firm's own voucher types count as, with the names normalised and only known answers kept."""
-    return {normal_name(k): v for k, v in (voucher_types or {}).items() if v in MAPPABLE_TYPES}
+    return {normal_name(k): v for k, v in (voucher_types or {}).items() if is_mappable(v)}
 
 
 def stage_month(client, user, vouchers, skipped, month: str, seed: str, type_map, document):
@@ -285,6 +286,7 @@ def _stage(client, user, all_vouchers, skipped, digest, date_from, date_to, type
                 bill=plan.bill is not None,
                 note=plan.note,
                 voucher_type=plan.voucher_type,
+                type_name=plan.type_name,
                 entry_kind=plan.entry_kind,
                 lines=[[line.ledger, line.signed_paise, [list(b) for b in line.bills]] for line in v.lines],
                 narration=v.narration,
@@ -517,13 +519,18 @@ def _write(client, user, run, row, ledgers) -> dict:
 
     narration = row["narration"] or f"{row['type']} {row['number']} (from Tally)".strip()
     txns = _bank_rows(client, user, run, row, bank, date, narration) if bank else []
+    if row.get("type_name"):  # the firm's own voucher type: made here, once, when its first voucher posts
+        CustomVoucherType.objects.get_or_create(
+            firm_id=client.firm_id, client=client, name=row["type_name"], defaults={"parent": row["voucher_type"]}
+        )
     entry = JournalEntry.objects.create(
         firm_id=client.firm_id,
         client=client,
-        entry_no=allocate_voucher_number(client, year, row["voucher_type"]),
+        entry_no=allocate_voucher_number(client, year, row["voucher_type"], row.get("type_name", "")),
         financial_year=year,
         entry_date=date,
         voucher_type=row["voucher_type"],
+        type_name=row.get("type_name", ""),
         entry_kind=row["entry_kind"],
         narration=narration,
         source_transaction=txns[0] if txns else None,

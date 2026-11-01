@@ -31,3 +31,14 @@ def format_voucher_number(
         return str(number)
     prefix = fmt.prefix.replace("{fy}", f"{financial_year % 100:02d}-{(financial_year + 1) % 100:02d}")
     return f"{prefix}{number:0{fmt.padding}d}" if fmt.padding else f"{prefix}{number}"
+
+
+class VoucherTypeInUseError(RuntimeError):
+    """A firm's own voucher type has vouchers under it, so it cannot be renamed, moved to another parent or removed."""
+
+
+def is_in_use(custom_type) -> bool:
+    """Do any vouchers of this client carry the firm's own voucher type?"""
+    from ledger.models import JournalEntry
+
+    return JournalEntry.objects.filter(firm_id=custom_type.firm_id, client_id=custom_type.client_id, type_name=custom_type.name).exists()

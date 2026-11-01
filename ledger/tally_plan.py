@@ -8,7 +8,7 @@ round-off), the voucher is still written -- the money is right -- and the bill i
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 from classify.models import LedgerGroup as G
 from ledger.models import BillKind, EntryKind, VoucherType
@@ -93,6 +93,8 @@ class Planned:
     bill: BillFigures | None
     note: str = ""
     bank: BankPlan | None = None
+    #: The firm's own voucher type this entry is numbered under ("GST SALE"); empty for the standard series of ``voucher_type``.
+    type_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -127,6 +129,18 @@ _HELD_BACK = {
 }
 
 
+#: A firm's own type may be kept as its own series only when it posts as one of these; a bank voucher keeps the standard series, because
+#: its entry is tied to a statement row.
+OWN_SERIES_PARENTS = ("sales", "purchase", "credit note", "debit note", "journal", "payroll")
+
+
+def is_mappable(answer: str) -> bool:
+    """Is this a valid answer for what a firm's own voucher type counts as?"""
+    if answer in MAPPABLE_TYPES:
+        return True
+    return answer.startswith("own:") and answer[4:] in OWN_SERIES_PARENTS
+
+
 def is_known_type(name: str, type_map: dict[str, str] | None = None) -> bool:
     """Is this voucher type one the importer has a decision for (``name`` normalised)? The rest are asked about."""
     return name in _TYPES or name in NO_ACCOUNTING_TYPES or name in _HELD_BACK or name in (type_map or {})
@@ -136,13 +150,21 @@ def plan_voucher(v: ParsedVoucher, facts: Facts, type_map: dict[str, str] | None
     """``type_map`` says which standard type a firm's own voucher type counts as: ``{"gst sale": "sales"}`` (names normalised)."""
     name = normal_name(v.tally_type)
     mapped = (type_map or {}).get(name, "")
-    vtype = _TYPES.get(name) or _TYPES.get(mapped)
+    own = mapped.startswith("own:")
+    vtype = _TYPES.get(name) or _TYPES.get(mapped.removeprefix("own:"))
     if vtype is None:
         if mapped == "none" or name in NO_ACCOUNTING_TYPES:
             return Skip(v, f"A {v.tally_type} leaves no entries in the books in Tally, so there is nothing to post.")
         if name in _HELD_BACK:
             return Skip(v, _HELD_BACK[name])
         return Skip(v, "This voucher type is not imported.")
+    plan = _plan(v, facts, vtype)
+    if own and name not in _TYPES and isinstance(plan, Planned):
+        return replace(plan, type_name=v.tally_type)
+    return plan
+
+
+def _plan(v: ParsedVoucher, facts: Facts, vtype: str) -> Planned | Skip:
     for line in v.lines:
         if normal_name(line.ledger) not in facts.groups:
             return Skip(v, f"The ledger {line.ledger!r} is not in the client's chart. Import the masters first.")

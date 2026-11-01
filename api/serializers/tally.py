@@ -17,7 +17,7 @@ from classify.models import LedgerGroup
 from ledger.models import ImportKind, ImportStatus, LedgerImportRun
 from ledger.tally_import import ALL_CHOICES, BANK_CHOICES
 from ledger.tally_parse import ALLOWED_EXTENSIONS
-from ledger.tally_plan import MAPPABLE_TYPES
+from ledger.tally_plan import MAPPABLE_TYPES, is_mappable
 from ledger.tally_vouchers import voucher_file_limit
 
 ROW_ACTIONS = ["create", "match", "conflict", "needs_group", "skipped"]
@@ -246,7 +246,7 @@ class TallyVouchersUploadSerializer(serializers.Serializer):
         if not isinstance(value, dict) or len(value) > 50:
             raise serializers.ValidationError("Send an object of voucher type names, at most 50.")
         for name, standard in value.items():
-            if not isinstance(name, str) or not isinstance(standard, str) or standard not in MAPPABLE_TYPES:
+            if not isinstance(name, str) or not isinstance(standard, str) or not is_mappable(standard):
                 raise serializers.ValidationError(f"{name!r} must count as one of: {', '.join(MAPPABLE_TYPES)}.")
         return value
 

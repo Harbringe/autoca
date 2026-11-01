@@ -2791,6 +2791,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/voucher-types/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The voucher types a firm made up in Tally (or here): each posts as its parent and counts in a series of its own. */
+        get: operations["clients_voucher_types_list"];
+        put?: never;
+        /** @description The voucher types a firm made up in Tally (or here): each posts as its parent and counts in a series of its own. */
+        post: operations["clients_voucher_types_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/voucher-types/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The voucher types a firm made up in Tally (or here): each posts as its parent and counts in a series of its own. */
+        get: operations["clients_voucher_types_retrieve"];
+        /** @description The voucher types a firm made up in Tally (or here): each posts as its parent and counts in a series of its own. */
+        put: operations["clients_voucher_types_update"];
+        post?: never;
+        /** @description The voucher types a firm made up in Tally (or here): each posts as its parent and counts in a series of its own. */
+        delete: operations["clients_voucher_types_destroy"];
+        options?: never;
+        head?: never;
+        /** @description The voucher types a firm made up in Tally (or here): each posts as its parent and counts in a series of its own. */
+        patch: operations["clients_voucher_types_partial_update"];
+        trace?: never;
+    };
     "/api/v1/clients/{id}/": {
         parameters: {
             query?: never;
@@ -4909,6 +4947,20 @@ export interface components {
             /** @description Parties made or found, one per name ticked. */
             created: number;
         };
+        CustomVoucherType: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            parent: components["schemas"]["ParentEnum"];
+            /** @description Vouchers are numbered under it, so its name and parent can no longer change. */
+            readonly in_use: boolean;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        CustomVoucherTypeRequest: {
+            name: string;
+            parent: components["schemas"]["ParentEnum"];
+        };
         DailyFinished: {
             /** Format: date */
             date: string;
@@ -5485,6 +5537,8 @@ export interface components {
             /** Format: uuid */
             readonly id: string;
             readonly entry_no: number;
+            /** @description The number as the client's format shows it (prefix and padding); the plain number when none is set. */
+            readonly voucher_number: string;
             /** @description The number the voucher had in Tally; empty unless it was imported from there. */
             readonly tally_number: string;
             /** @description The voucher type's name in Tally; empty unless it was imported from there. */
@@ -6670,6 +6724,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["Client"][];
         };
+        PaginatedCustomVoucherTypeList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["CustomVoucherType"][];
+        };
         PaginatedEmployeeList: {
             /** @example 123 */
             count: number;
@@ -6895,6 +6964,18 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["TallyVoucherRunSummary"][];
         };
+        /**
+         * @description * `Payment` - Payment
+         *     * `Receipt` - Receipt
+         *     * `Contra` - Contra
+         *     * `Journal` - Journal
+         *     * `Purchase` - Purchase
+         *     * `Sales` - Sales
+         *     * `Debit Note` - Debit Note
+         *     * `Credit Note` - Credit Note
+         * @enum {string}
+         */
+        ParentEnum: "Payment" | "Receipt" | "Contra" | "Journal" | "Purchase" | "Sales" | "Debit Note" | "Credit Note";
         PartnerInput: {
             name: string;
             /** @description Share of profit in basis points. */
@@ -7179,6 +7260,10 @@ export interface components {
              *     * `YEARLY` - Yearly (31 Mar)
              */
             close_period?: components["schemas"]["ClosePeriodEnum"];
+        };
+        PatchedCustomVoucherTypeRequest: {
+            name?: string;
+            parent?: components["schemas"]["ParentEnum"];
         };
         PatchedEmployeeRequest: {
             name?: string;
@@ -14972,6 +15057,158 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TdsSummary"];
+                };
+            };
+        };
+    };
+    clients_voucher_types_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedCustomVoucherTypeList"];
+                };
+            };
+        };
+    };
+    clients_voucher_types_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomVoucherTypeRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CustomVoucherTypeRequest"];
+                "multipart/form-data": components["schemas"]["CustomVoucherTypeRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomVoucherType"];
+                };
+            };
+        };
+    };
+    clients_voucher_types_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomVoucherType"];
+                };
+            };
+        };
+    };
+    clients_voucher_types_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CustomVoucherTypeRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CustomVoucherTypeRequest"];
+                "multipart/form-data": components["schemas"]["CustomVoucherTypeRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomVoucherType"];
+                };
+            };
+        };
+    };
+    clients_voucher_types_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    clients_voucher_types_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedCustomVoucherTypeRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedCustomVoucherTypeRequest"];
+                "multipart/form-data": components["schemas"]["PatchedCustomVoucherTypeRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomVoucherType"];
                 };
             };
         };

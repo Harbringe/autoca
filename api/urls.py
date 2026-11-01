@@ -64,6 +64,7 @@ from api.views.payroll import EmployeeViewSet, PayrollRunViewSet
 from api.views.stock import StockEntryViewSet
 from api.views.tally import TallyImportViewSet
 from api.views.tds import TdsChallanViewSet
+from api.views.voucher_series import CustomVoucherTypeViewSet
 from api.views.workload import MyWorkView, PeopleWorkView, WorkFlowView
 from teams.views import FirmOwnerView, FirmSettingsView
 
@@ -92,6 +93,7 @@ per_client.register("employees", EmployeeViewSet, basename="client-employee")
 per_client.register("payroll", PayrollRunViewSet, basename="client-payroll")
 per_client.register("assets", AssetViewSet, basename="client-asset")
 per_client.register("rules", RuleViewSet, basename="client-rule")
+per_client.register("voucher-types", CustomVoucherTypeViewSet, basename="client-voucher-type")
 per_client.register("review-queue", ReviewQueueViewSet, basename="client-review-queue")
 
 #: Ids are UUIDs everywhere, so a router's detail route is pinned to that shape.

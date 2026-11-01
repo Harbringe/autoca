@@ -167,4 +167,17 @@ describe('TallyImportScreen', () => {
     fireEvent.click(screen.getByRole('checkbox', { name: 'Import all anyway' }))
     expect(button).toBeEnabled()
   })
+
+  it('lets a voucher type of the firm own be kept as its own series', async () => {
+    post.mockResolvedValueOnce(preview({ unknown_types: { 'GST SALE': 42 } }))
+    post.mockResolvedValueOnce(preview())
+    renderScreen()
+    choose()
+    const select = await screen.findByLabelText('What GST SALE counts as')
+    fireEvent.change(select, { target: { value: 'own:sales' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Read them like that' }))
+    await waitFor(() =>
+      expect(post).toHaveBeenLastCalledWith('/api/v1/clients/c1/tally-imports/r1/refresh-vouchers/', { voucher_types: { 'GST SALE': 'own:sales' } }),
+    )
+  })
 })

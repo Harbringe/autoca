@@ -6399,6 +6399,207 @@ paths:
               schema:
                 $ref: '#/components/schemas/TdsSummary'
           description: ''
+  /api/v1/clients/{client_id}/voucher-types/:
+    get:
+      operationId: clients_voucher_types_list
+      description: 'The voucher types a firm made up in Tally (or here): each posts
+        as its parent and counts in a series of its own.'
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCustomVoucherTypeList'
+          description: ''
+    post:
+      operationId: clients_voucher_types_create
+      description: 'The voucher types a firm made up in Tally (or here): each posts
+        as its parent and counts in a series of its own.'
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomVoucherTypeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CustomVoucherTypeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CustomVoucherTypeRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomVoucherType'
+          description: ''
+  /api/v1/clients/{client_id}/voucher-types/{id}/:
+    get:
+      operationId: clients_voucher_types_retrieve
+      description: 'The voucher types a firm made up in Tally (or here): each posts
+        as its parent and counts in a series of its own.'
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomVoucherType'
+          description: ''
+    put:
+      operationId: clients_voucher_types_update
+      description: 'The voucher types a firm made up in Tally (or here): each posts
+        as its parent and counts in a series of its own.'
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CustomVoucherTypeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CustomVoucherTypeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CustomVoucherTypeRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomVoucherType'
+          description: ''
+    patch:
+      operationId: clients_voucher_types_partial_update
+      description: 'The voucher types a firm made up in Tally (or here): each posts
+        as its parent and counts in a series of its own.'
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCustomVoucherTypeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedCustomVoucherTypeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedCustomVoucherTypeRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CustomVoucherType'
+          description: ''
+    delete:
+      operationId: clients_voucher_types_destroy
+      description: 'The voucher types a firm made up in Tally (or here): each posts
+        as its parent and counts in a series of its own.'
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/clients/{id}/:
     get:
       operationId: clients_retrieve
@@ -10656,6 +10857,45 @@ components:
           description: Parties made or found, one per name ticked.
       required:
       - created
+    CustomVoucherType:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 64
+        parent:
+          $ref: '#/components/schemas/ParentEnum'
+        in_use:
+          type: boolean
+          readOnly: true
+          description: Vouchers are numbered under it, so its name and parent can
+            no longer change.
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - id
+      - in_use
+      - name
+      - parent
+    CustomVoucherTypeRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        parent:
+          $ref: '#/components/schemas/ParentEnum'
+      required:
+      - name
+      - parent
     DailyFinished:
       type: object
       properties:
@@ -11905,6 +12145,11 @@ components:
         entry_no:
           type: integer
           readOnly: true
+        voucher_number:
+          type: string
+          readOnly: true
+          description: The number as the client's format shows it (prefix and padding);
+            the plain number when none is set.
         tally_number:
           type: string
           readOnly: true
@@ -12029,6 +12274,7 @@ components:
       - tally_type
       - total_display
       - total_paise
+      - voucher_number
       - voucher_type
     JournalEntryMarkerEnum:
       enum:
@@ -14388,6 +14634,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Client'
+    PaginatedCustomVoucherTypeList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustomVoucherType'
     PaginatedEmployeeList:
       type: object
       required:
@@ -14733,6 +15002,26 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TallyVoucherRunSummary'
+    ParentEnum:
+      enum:
+      - Payment
+      - Receipt
+      - Contra
+      - Journal
+      - Purchase
+      - Sales
+      - Debit Note
+      - Credit Note
+      type: string
+      description: |-
+        * `Payment` - Payment
+        * `Receipt` - Receipt
+        * `Contra` - Contra
+        * `Journal` - Journal
+        * `Purchase` - Purchase
+        * `Sales` - Sales
+        * `Debit Note` - Debit Note
+        * `Credit Note` - Credit Note
     PartnerInput:
       type: object
       properties:
@@ -15276,6 +15565,15 @@ components:
             * `QUARTERLY` - Quarterly (30 Jun, 30 Sep, 31 Dec, 31 Mar)
             * `HALF_YEARLY` - Half-yearly (30 Sep, 31 Mar)
             * `YEARLY` - Yearly (31 Mar)
+    PatchedCustomVoucherTypeRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        parent:
+          $ref: '#/components/schemas/ParentEnum'
     PatchedEmployeeRequest:
       type: object
       properties:

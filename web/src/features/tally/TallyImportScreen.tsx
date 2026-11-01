@@ -47,6 +47,15 @@ const STANDARD_TYPE_CHOICES: [string, string][] = [
   ['contra', 'Contra'],
 ]
 
+// What a firm's own voucher type can keep a numbering series of its own as. Bank voucher types keep the standard Payment, Receipt and Contra numbers.
+const OWN_SERIES_CHOICES: [string, string][] = [
+  ['sales', 'Sales'],
+  ['purchase', 'Purchase'],
+  ['credit note', 'Credit note'],
+  ['debit note', 'Debit note'],
+  ['journal', 'Journal'],
+]
+
 const messageOf = (error: unknown) => (error instanceof Error && error.message ? error.message : 'Something went wrong. Try again.')
 
 export function TallyImportScreen({ clientId }: { clientId: string }) {
@@ -266,6 +275,13 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
                         {label}
                       </option>
                     ))}
+                    <optgroup label="Keep as its own voucher type, numbered on its own, counted as">
+                      {OWN_SERIES_CHOICES.map(([value, label]) => (
+                        <option key={`own:${value}`} value={`own:${value}`}>
+                          {label}
+                        </option>
+                      ))}
+                    </optgroup>
                   </Select>
                 </label>
               ))}

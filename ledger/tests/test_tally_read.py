@@ -8,6 +8,7 @@ import pytest
 
 from api.tests.test_background_upload import QuietBeat
 from core import jobqueue
+from core.db.session import firm_context
 from core.models import Job, JobStatus
 from ledger.models import ImportKind, ImportStatus, LedgerImportRun
 from ledger.tally_read import enqueue_read
@@ -98,3 +99,20 @@ def test_a_file_uploaded_again_while_it_is_still_being_read_is_the_same_job(firm
     second = enqueue_read(client, senior, senior.user, data=data, filename="year.xml", voucher_types=None)
     assert second.reused is True and second.job.pk == first.job.pk
     assert Job.objects.filter(pk=first.job.pk).exists()
+
+
+def test_the_read_job_is_finished_inside_its_firm_context(firm, client, senior, chart, monkeypatch):
+    """The worker process has no ambient firm: the job row's last write is refused by the database unless it is made inside one."""
+    from django.db import connection
+
+    original = jobqueue.HANDLERS["tally.read"]
+
+    def as_the_worker_would(ctx):
+        with connection.cursor() as cursor:  # whatever the test left set, a real worker starts with nothing
+            cursor.execute("select set_config('app.firm_id', '', true)")
+        original(ctx)
+
+    monkeypatch.setitem(jobqueue.HANDLERS, "tally.read", as_the_worker_would)
+    outcome = read(client, senior, [sale("g1", "1", "20250401")])
+    with firm_context(firm.pk):
+        assert Job.objects.get(pk=outcome.job.pk).status == JobStatus.SUCCEEDED

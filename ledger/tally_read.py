@@ -99,8 +99,10 @@ def run(ctx: jobqueue.JobContext) -> None:
             if not exc.__class__.__name__.startswith(("Tally", "EntryLocked")):
                 logger.warning("A month of a Tally file could not be staged (%s)", type(exc).__name__)
             failed.append({"month": month, "reason": str(exc) if exc.__class__.__name__.startswith(("Tally", "EntryLocked")) else "This month could not be read."})
-    ctx.hold()
-    ctx.complete({"runs": made, "months": len(months), "failed": failed}, message=f"Read {len(months)} months")
+    # The worker has no ambient firm, and the job row is the firm's: its last write is made inside the firm's context.
+    with firm_context(claim.firm_id):
+        ctx.hold()
+        ctx.complete({"runs": made, "months": len(months), "failed": failed}, message=f"Read {len(months)} months")
 
 
 jobqueue.register(KIND, run)

@@ -55,12 +55,16 @@ class JournalEntrySerializer(MoneySerializerMixin, serializers.ModelSerializer):
     is_locked = serializers.SerializerMethodField()
     entry_kind_display = serializers.CharField(source="get_entry_kind_display", read_only=True)
     bill = serializers.SerializerMethodField()
+    tally_number = serializers.SerializerMethodField(help_text="The number the voucher had in Tally; empty unless it was imported from there.")
+    tally_type = serializers.SerializerMethodField(help_text="The voucher type's name in Tally; empty unless it was imported from there.")
 
     class Meta:
         model = JournalEntry
         fields = [
             "id",
             "entry_no",
+            "tally_number",
+            "tally_type",
             "voucher_type",
             "entry_kind",
             "entry_kind_display",
@@ -89,6 +93,14 @@ class JournalEntrySerializer(MoneySerializerMixin, serializers.ModelSerializer):
         """Inside books a senior has signed off, so no longer changeable."""
         through = getattr(obj.client, "signed_off_through", None)
         return through is not None and obj.entry_date <= through
+
+    def get_tally_number(self, obj) -> str:
+        link = getattr(obj, "tally_voucher", None)
+        return link.tally_number if link else ""
+
+    def get_tally_type(self, obj) -> str:
+        link = getattr(obj, "tally_voucher", None)
+        return link.tally_type if link else ""
 
     @extend_schema_field(serializers.UUIDField(allow_null=True))
     def get_bill(self, obj):

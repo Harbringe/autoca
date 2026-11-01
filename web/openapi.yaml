@@ -11905,6 +11905,16 @@ components:
         entry_no:
           type: integer
           readOnly: true
+        tally_number:
+          type: string
+          readOnly: true
+          description: The number the voucher had in Tally; empty unless it was imported
+            from there.
+        tally_type:
+          type: string
+          readOnly: true
+          description: The voucher type's name in Tally; empty unless it was imported
+            from there.
         voucher_type:
           allOf:
           - $ref: '#/components/schemas/VoucherTypeEnum'
@@ -12015,6 +12025,8 @@ components:
       - source_transaction
       - superseded_by
       - supersedes
+      - tally_number
+      - tally_type
       - total_display
       - total_paise
       - voucher_type

@@ -36,7 +36,9 @@ import { useFy } from '@/features/shell/useFy'
 import { usePageSize } from '@/lib/pageSizes'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
+import { entryMatches } from './entryMatches'
 import { isAssistantEntry, unpostEntry, useUnpostMany } from './unpost'
+import { VoucherNo } from './VoucherNo'
 
 const TYPES = ['Payment', 'Receipt', 'Contra', 'Journal', 'Purchase', 'Sales', 'Debit Note', 'Credit Note'] as const
 
@@ -73,11 +75,10 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
   const bankNames = useMemo(() => new Set((accounts.data?.results ?? []).map((a) => a.ledger_name ?? '')), [accounts.data])
   const inYear = useMemo(() => (entries.data ?? []).filter((e) => e.financial_year === fy), [entries.data, fy])
   const shown = useMemo(() => {
-    const q = text.trim().toLowerCase()
     return inYear
       .filter((e) => !type || e.voucher_type === type)
       .filter((e) => !onlyAi || !!e.marker)
-      .filter((e) => !q || e.narration.toLowerCase().includes(q) || e.lines.some((l) => l.ledger_name.toLowerCase().includes(q) || (l.party_name ?? '').toLowerCase().includes(q)))
+      .filter((e) => entryMatches(e, text))
       .sort((a, b) => a.entry_date.localeCompare(b.entry_date) || a.voucher_type.localeCompare(b.voucher_type) || a.entry_no - b.entry_no)
   }, [inYear, type, text, onlyAi])
 
@@ -268,7 +269,9 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
                         </button>
                       </td>
                       <td className="whitespace-nowrap px-4 py-4 align-top text-muted-foreground max-sm:hidden">{e.voucher_type}</td>
-                      <td className={cn(numCell, 'max-sm:hidden')}>{e.entry_no}</td>
+                      <td className={cn(numCell, 'max-sm:hidden')}>
+                        <VoucherNo entryNo={e.entry_no} tallyNumber={e.tally_number} />
+                      </td>
                       <td className={cn(numCell, 'sm:hidden')}>
                         <Money display={line.amount_display} />
                         <div className="text-xs font-normal text-muted-foreground">{isDr ? 'Dr' : 'Cr'}</div>

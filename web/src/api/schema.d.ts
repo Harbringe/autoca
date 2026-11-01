@@ -5485,6 +5485,10 @@ export interface components {
             /** Format: uuid */
             readonly id: string;
             readonly entry_no: number;
+            /** @description The number the voucher had in Tally; empty unless it was imported from there. */
+            readonly tally_number: string;
+            /** @description The voucher type's name in Tally; empty unless it was imported from there. */
+            readonly tally_type: string;
             readonly voucher_type: components["schemas"]["VoucherTypeEnum"];
             readonly entry_kind: components["schemas"]["EntryKindEnum"];
             readonly entry_kind_display: string;

@@ -289,6 +289,7 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
             </div>
             <div className="flex items-center gap-2">
               {manage && selected.group !== 'BANK' && <Button size="sm" variant="outline" onClick={() => setEditing(selected)}>Edit ledger</Button>}
+              <Link to="/clients/$clientId/print" params={{ clientId }} search={{ ledger: selected.id }} className="inline-flex h-8 items-center rounded-md border px-3 text-sm hover:bg-hover">Print statement</Link>
               <Button size="sm" variant="ghost" onClick={() => setSelectedLedger(null)}>Close</Button>
             </div>
           </div>

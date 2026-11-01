@@ -552,6 +552,7 @@ function EntryDetail({
             </div>
             <div className="flex flex-wrap items-center gap-2">
               <Button variant="ghost" onClick={onClose}>Close</Button>
+              <Button variant="outline" onClick={() => void navigate({ to: '/clients/$clientId/print', params: { clientId }, search: { entry: entry.id } })}>Print</Button>
               {mayEdit && <Button variant="outline" onClick={() => setCorrecting(true)}>Correct</Button>}
               {mayMark && (
                 <Button onClick={onMark} loading={marking}>

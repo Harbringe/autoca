@@ -53,7 +53,7 @@ export function PostedEntries({ clientId }: { clientId: string }) {
         .filter((e) => {
           if (!q) return true
           const { debit, credit } = particulars(e)
-          return [e.narration, debit, credit, `${e.voucher_type} ${e.entry_no}`, e.tally_number ?? ''].some((v) => v.toLowerCase().includes(q))
+          return [e.narration, debit, credit, `${e.voucher_type} ${e.entry_no}`, e.voucher_number ?? '', e.tally_number ?? ''].some((v) => v.toLowerCase().includes(q))
         })
         .sort((a, b) => b.entry_date.localeCompare(a.entry_date) || b.entry_no - a.entry_no),
     [entries.data, year, q],
@@ -132,7 +132,7 @@ export function PostedEntries({ clientId }: { clientId: string }) {
                             {e.marker_display && <Badge className="ml-2">{e.marker_display}</Badge>}
                           </span>
                           <span className="mt-0.5 block truncate text-[13px] text-muted-foreground">
-                            {e.voucher_type} · {e.entry_no}{e.tally_number ? ` (Tally ${e.tally_number})` : ''} · FY {e.fy_label}
+                            {e.voucher_type} · {e.voucher_number || e.entry_no}{e.tally_number ? ` (Tally ${e.tally_number})` : ''} · FY {e.fy_label}
                           </span>
                         </span>
                         <span className="num text-right font-mono text-heading">

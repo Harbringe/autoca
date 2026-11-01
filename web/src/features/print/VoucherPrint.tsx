@@ -44,7 +44,7 @@ export function VoucherPrint({ clientId, entryId }: { clientId: string; entryId:
             <tr key={l.id}>
               <td className="py-1">
                 {l.ledger_name}
-                {l.party_name ? <span className="text-gray-600"> ({l.party_name})</span> : null}
+                {l.party_name && l.party_name !== l.ledger_name ? <span className="text-gray-600"> ({l.party_name})</span> : null}
               </td>
               <td className="py-1 text-right tabular-nums">{l.direction === 'DR' ? l.amount_display : ''}</td>
               <td className="py-1 text-right tabular-nums">{l.direction === 'CR' ? l.amount_display : ''}</td>

@@ -50,32 +50,41 @@ export function NumberingSettings({ clientId, mayEdit }: { clientId: string; may
         {list.data.map((s) => {
           const v = valueOf(s)
           return (
-            <li key={key(s)} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-3 py-2">
-              <span className="min-w-36 flex-1 font-medium">
-                {nameOf(s)}
-                {s.type_name ? <span className="font-normal text-muted-foreground"> (as {s.voucher_type})</span> : null}
-              </span>
-              <Input
-                aria-label={`Prefix for ${nameOf(s)}`}
-                className="w-36"
-                maxLength={16}
-                value={v.prefix}
-                disabled={!mayEdit}
-                onChange={(e) => setEdits((c) => ({ ...c, [key(s)]: { ...v, prefix: e.target.value } }))}
-              />
-              <Input
-                aria-label={`Digits for ${nameOf(s)}`}
-                className="w-20"
-                type="number"
-                min={0}
-                max={8}
-                value={v.padding}
-                disabled={!mayEdit}
-                onChange={(e) => setEdits((c) => ({ ...c, [key(s)]: { ...v, padding: Number(e.target.value) } }))}
-              />
-              <span data-testid={`example-${s.voucher_type}-${s.type_name}`} className="num w-28 text-right text-muted-foreground">
-                {s.example}
-              </span>
+            <li key={key(s)} className="grid gap-2 px-3 py-2">
+              <div className="flex items-baseline justify-between gap-3">
+                <span className="font-medium">
+                  {nameOf(s)}
+                  {s.type_name ? <span className="font-normal text-muted-foreground"> (as {s.voucher_type})</span> : null}
+                </span>
+                <span data-testid={`example-${s.voucher_type}-${s.type_name}`} className="num text-muted-foreground">
+                  {s.example}
+                </span>
+              </div>
+              <div className="flex gap-3">
+                <label className="grid flex-1 gap-0.5 text-xs text-muted-foreground">
+                  <span aria-hidden>Prefix</span>
+                  <Input
+                    aria-label={`Prefix for ${nameOf(s)}`}
+                    maxLength={16}
+                    placeholder="none"
+                    value={v.prefix}
+                    disabled={!mayEdit}
+                    onChange={(e) => setEdits((c) => ({ ...c, [key(s)]: { ...v, prefix: e.target.value } }))}
+                  />
+                </label>
+                <label className="grid w-24 gap-0.5 text-xs text-muted-foreground">
+                  <span aria-hidden>Digits</span>
+                  <Input
+                    aria-label={`Digits for ${nameOf(s)}`}
+                    type="number"
+                    min={0}
+                    max={8}
+                    value={v.padding}
+                    disabled={!mayEdit}
+                    onChange={(e) => setEdits((c) => ({ ...c, [key(s)]: { ...v, padding: Number(e.target.value) } }))}
+                  />
+                </label>
+              </div>
             </li>
           )
         })}

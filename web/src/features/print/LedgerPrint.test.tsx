@@ -9,14 +9,24 @@ const get = vi.fn()
 vi.mock('@/api/client', async (orig) => ({ ...(await orig<object>()), raw: { get: (...a: unknown[]) => get(...a), post: vi.fn() } }))
 
 const page = (results: unknown[]) => ({ count: results.length, next: null, previous: null, results })
+const entry = (id: string, date: string, no: number, narration: string, lines: [string, string, 'DR' | 'CR', number][]) => ({
+  id,
+  entry_date: date,
+  entry_no: no,
+  voucher_number: `S/${no}`,
+  narration,
+  is_superseded: false,
+  lines: lines.map(([ledger_account, ledger_name, direction, amount_paise], i) => ({ id: `${id}-${i}`, ledger_account, ledger_name, direction, amount_paise })),
+})
 
 beforeEach(() => {
   get.mockReset()
   get.mockImplementation(async (url: string) => {
-    if (url.includes('/ledgers/g1/rows/'))
+    if (url.includes('/journal-entries/'))
       return page([
-        { id: 'r1', value_date: '2026-04-02', narration: 'Opening sale', counterparty: 'Sunrise Traders', amount_paise: 50_000, amount_display: '500.00', is_debit: true, is_posted: true },
-        { id: 'r2', value_date: '2026-04-09', narration: 'Part payment', counterparty: 'Sunrise Traders', amount_paise: 20_000, amount_display: '200.00', is_debit: false, is_posted: true },
+        entry('e1', '2026-04-02', 1, 'Opening sale', [['g1', 'Sunrise Traders', 'DR', 50_000], ['s1', 'Sales', 'CR', 50_000]]),
+        entry('e2', '2026-04-09', 2, 'Part payment', [['b1', 'HDFC', 'DR', 20_000], ['g1', 'Sunrise Traders', 'CR', 20_000]]),
+        entry('e3', '2026-04-10', 3, 'Not ours', [['s1', 'Sales', 'CR', 9_000], ['b1', 'HDFC', 'DR', 9_000]]),
       ])
     if (url.includes('/ledgers/')) return page([{ id: 'g1', name: 'Sunrise Traders' }])
     if (url.includes('/gst/registrations/')) return { results: [] }

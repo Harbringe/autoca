@@ -15,6 +15,11 @@ describe('VoucherNo', () => {
     expect(screen.getByText('7')).toBeInTheDocument()
     expect(screen.queryByText(/Tally/)).not.toBeInTheDocument()
   })
+
+  it('shows a number in the client format as written', () => {
+    render(<VoucherNo entryNo="S/26-27/0001" tallyNumber="" />)
+    expect(screen.getByText('S/26-27/0001')).toBeInTheDocument()
+  })
 })
 
 describe('entryMatches', () => {

@@ -327,7 +327,7 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
                   rowKey={(entry) => entry.id}
                   columns={[
                     { key: 'date', header: 'Date', align: 'right', cell: (entry) => formatDate(entry.entry_date) },
-                    { key: 'vch', header: 'Voucher', priority: 2, cell: (entry) => `${entry.voucher_type} · ${entry.entry_no}` },
+                    { key: 'vch', header: 'Voucher', priority: 2, cell: (entry) => `${entry.voucher_type} · ${entry.voucher_number || entry.entry_no}` },
                     { key: 'narr', header: 'Narration', className: 'max-w-0 w-full truncate', cell: (entry) => <span title={entry.narration}>{entry.narration}</span> },
                     { key: 'dr', header: 'Debit', align: 'right', cell: (entry) => sideOf(entry, selected.id, 'DR') },
                     { key: 'cr', header: 'Credit', align: 'right', cell: (entry) => sideOf(entry, selected.id, 'CR') },

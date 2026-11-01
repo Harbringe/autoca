@@ -1,6 +1,6 @@
 // A voucher's number as the Day Book shows it: ours, and under it Tally's own when the voucher was imported from there.
 
-export function VoucherNo({ entryNo, tallyNumber }: { entryNo: number; tallyNumber?: string | null }) {
+export function VoucherNo({ entryNo, tallyNumber }: { entryNo: number | string; tallyNumber?: string | null }) {
   return (
     <>
       <span>{entryNo}</span>

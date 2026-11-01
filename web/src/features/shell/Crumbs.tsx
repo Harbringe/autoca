@@ -37,8 +37,8 @@ function Keys({ combo }: { combo?: string }) {
   if (!combo) return null
   return (
     <span aria-hidden className="ml-auto flex shrink-0 gap-0.5 pl-6 text-[11px] font-semibold uppercase text-muted-foreground">
-      {combo.split(' ').map((k) => (
-        <kbd key={k} className="rounded-sm border px-1 font-sans">
+      {combo.split(' ').map((k, i) => (
+        <kbd key={`${i}${k}`} className="rounded-sm border px-1 font-sans">
           {k}
         </kbd>
       ))}

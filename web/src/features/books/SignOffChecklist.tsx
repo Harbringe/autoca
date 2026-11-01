@@ -136,7 +136,7 @@ export function SignOffChecklist({
                     )}
                     <span className="num text-xs text-muted-foreground">{formatDate(e.entry_date)}</span>
                     <span className="min-w-0 truncate" title={e.narration}>
-                      {e.voucher_type} · {e.entry_no}
+                      {e.voucher_type} · {e.voucher_number || e.entry_no}
                       <span className="text-muted-foreground"> {e.narration}</span>
                       {e.marker === 'AI_REVISED' && <span className="ml-2 text-xs text-accent-foreground">Changed after a correction</span>}
                     </span>

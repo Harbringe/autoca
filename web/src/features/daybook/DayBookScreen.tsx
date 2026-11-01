@@ -270,7 +270,7 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
                       </td>
                       <td className="whitespace-nowrap px-4 py-4 align-top text-muted-foreground max-sm:hidden">{e.voucher_type}</td>
                       <td className={cn(numCell, 'max-sm:hidden')}>
-                        <VoucherNo entryNo={e.entry_no} tallyNumber={e.tally_number} />
+                        <VoucherNo entryNo={e.voucher_number || e.entry_no} tallyNumber={e.tally_number} />
                       </td>
                       <td className={cn(numCell, 'sm:hidden')}>
                         <Money display={line.amount_display} />
@@ -426,7 +426,7 @@ function EntryDetail({
       <div className="grid content-start gap-5 [&>*]:min-w-0">
         <div className="grid gap-1">
           <div className="text-sm text-muted-foreground">
-            {entry.voucher_type} No. {entry.entry_no} · {formatDate(entry.entry_date)} · FY {entry.fy_label}
+            {entry.voucher_type} No. {entry.voucher_number || entry.entry_no} · {formatDate(entry.entry_date)} · FY {entry.fy_label}
             {entry.is_locked && ' · In signed-off books'}
           </div>
           <div className="num text-[26px] font-semibold leading-tight text-heading">{formatPaise(total)}</div>
@@ -435,7 +435,7 @@ function EntryDetail({
           </div>
         </div>
         <DataTable
-          caption={`Lines of ${entry.voucher_type} No. ${entry.entry_no}`}
+          caption={`Lines of ${entry.voucher_type} No. ${entry.voucher_number || entry.entry_no}`}
           rows={entry.lines}
           rowKey={(l) => String(l.id)}
           columns={[

@@ -6474,6 +6474,207 @@ paths:
               schema:
                 $ref: '#/components/schemas/TdsSummary'
           description: ''
+  /api/v1/clients/{client_id}/voucher-classes/:
+    get:
+      operationId: clients_voucher_classes_list
+      description: 'Presets for sales and purchase vouchers: choosing one fills in
+        the head ledger and the GST rate. Nothing posts differently.'
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedVoucherClassList'
+          description: ''
+    post:
+      operationId: clients_voucher_classes_create
+      description: 'Presets for sales and purchase vouchers: choosing one fills in
+        the head ledger and the GST rate. Nothing posts differently.'
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoucherClassRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/VoucherClassRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/VoucherClassRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherClass'
+          description: ''
+  /api/v1/clients/{client_id}/voucher-classes/{id}/:
+    get:
+      operationId: clients_voucher_classes_retrieve
+      description: 'Presets for sales and purchase vouchers: choosing one fills in
+        the head ledger and the GST rate. Nothing posts differently.'
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherClass'
+          description: ''
+    put:
+      operationId: clients_voucher_classes_update
+      description: 'Presets for sales and purchase vouchers: choosing one fills in
+        the head ledger and the GST rate. Nothing posts differently.'
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VoucherClassRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/VoucherClassRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/VoucherClassRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherClass'
+          description: ''
+    patch:
+      operationId: clients_voucher_classes_partial_update
+      description: 'Presets for sales and purchase vouchers: choosing one fills in
+        the head ledger and the GST rate. Nothing posts differently.'
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - ledger
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedVoucherClassRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedVoucherClassRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedVoucherClassRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VoucherClass'
+          description: ''
+    delete:
+      operationId: clients_voucher_classes_destroy
+      description: 'Presets for sales and purchase vouchers: choosing one fills in
+        the head ledger and the GST rate. Nothing posts differently.'
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/clients/{client_id}/voucher-types/:
     get:
       operationId: clients_voucher_types_list
@@ -12237,7 +12438,7 @@ components:
             from there.
         voucher_type:
           allOf:
-          - $ref: '#/components/schemas/VoucherTypeEnum'
+          - $ref: '#/components/schemas/VoucherType933Enum'
           readOnly: true
         entry_kind:
           allOf:
@@ -13874,7 +14075,7 @@ components:
       type: object
       properties:
         voucher_type:
-          $ref: '#/components/schemas/VoucherTypeEnum'
+          $ref: '#/components/schemas/VoucherType933Enum'
         type_name:
           type: string
           default: ''
@@ -13902,7 +14103,7 @@ components:
       type: object
       properties:
         voucher_type:
-          $ref: '#/components/schemas/VoucherTypeEnum'
+          $ref: '#/components/schemas/VoucherType933Enum'
         type_name:
           type: string
           default: ''
@@ -15128,6 +15329,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TallyVoucherRunSummary'
+    PaginatedVoucherClassList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/VoucherClass'
     ParentEnum:
       enum:
       - Payment
@@ -15782,6 +16006,28 @@ components:
           maxLength: 19
         is_active:
           type: boolean
+    PatchedVoucherClassRequest:
+      type: object
+      description: 'A preset for a sales or purchase voucher: the head ledger and
+        GST rate it fills in. Nothing posts differently.'
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        voucher_type:
+          $ref: '#/components/schemas/VoucherClassVoucherTypeEnum'
+        type_name:
+          type: string
+          maxLength: 64
+        head_ledger:
+          type: string
+          format: uuid
+        gst_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          nullable: true
     PaymentHint:
       type: object
       properties:
@@ -20718,7 +20964,80 @@ components:
       required:
       - rows
       - run
-    VoucherTypeEnum:
+    VoucherClass:
+      type: object
+      description: 'A preset for a sales or purchase voucher: the head ledger and
+        GST rate it fills in. Nothing posts differently.'
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 64
+        voucher_type:
+          $ref: '#/components/schemas/VoucherClassVoucherTypeEnum'
+        type_name:
+          type: string
+          maxLength: 64
+        head_ledger:
+          type: string
+          format: uuid
+        head_ledger_name:
+          type: string
+          readOnly: true
+        gst_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          nullable: true
+        created_at:
+          type: string
+          format: date-time
+          readOnly: true
+      required:
+      - created_at
+      - head_ledger
+      - head_ledger_name
+      - id
+      - name
+      - voucher_type
+    VoucherClassRequest:
+      type: object
+      description: 'A preset for a sales or purchase voucher: the head ledger and
+        GST rate it fills in. Nothing posts differently.'
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 64
+        voucher_type:
+          $ref: '#/components/schemas/VoucherClassVoucherTypeEnum'
+        type_name:
+          type: string
+          maxLength: 64
+        head_ledger:
+          type: string
+          format: uuid
+        gst_rate:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
+          nullable: true
+      required:
+      - head_ledger
+      - name
+      - voucher_type
+    VoucherClassVoucherTypeEnum:
+      enum:
+      - Sales
+      - Purchase
+      type: string
+      description: |-
+        * `Sales` - Sales
+        * `Purchase` - Purchase
+    VoucherType933Enum:
       enum:
       - Payment
       - Receipt

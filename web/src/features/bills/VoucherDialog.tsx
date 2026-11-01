@@ -14,6 +14,7 @@ import { isApiError, messageOf } from '@/api/errors'
 import { ledgers as ledgersQuery, parties as partiesQuery } from '@/api/queries/books'
 import { useItemLedgers, usePostBill, useReviseBill } from '@/api/queries/bills'
 import { gstRegistrations } from '@/api/queries/gst'
+import { voucherClasses } from '@/api/queries/voucherClasses'
 import { clientDetail, useInvalidateClient, V1 } from '@/api/queries/clients'
 import type { BillCreateRequest, InvoiceReading, Party } from '@/api/types'
 import { Money } from '@/components/ca/Money'
@@ -241,6 +242,11 @@ export function VoucherForm({
     igst: asRupees(prefill?.igstPaise),
     cess: asRupees(prefill?.cessPaise),
   })
+  // A voucher class fills in the head ledger and, from the taxable value, the GST at its rate (half CGST, half SGST); tax the person
+  // typed themselves is never overwritten.
+  const classes = useQuery(voucherClasses(clientId))
+  const [classRate, setClassRate] = useState<number | null>(null)
+  const [taxTouched, setTaxTouched] = useState(false)
   const [roundOff, setRoundOff] = useState(prefill?.roundOffPaise ? (prefill.roundOffPaise / 100).toFixed(2) : '')
   const [tcs, setTcs] = useState(() => asRupees(prefill?.tcsPaise ?? prefill?.facts?.tcsPaise))
   const [otherCharges, setOtherCharges] = useState(() => asRupees(prefill?.otherChargesPaise ?? prefill?.facts?.otherChargesPaise))
@@ -304,6 +310,20 @@ export function VoucherForm({
   // Each line to its own ledger: on unless switched off, and only where the lines are all there and add up to what the form is booking
   // (to a few paise of rounding; the server puts that on the largest line). Otherwise the one general ledger, as before.
   const headsTotal = amounts.heads.reduce((sum, h) => sum + h.paise, 0)
+  useEffect(() => {
+    if (classRate == null || taxTouched || headsTotal <= 0) return
+    const half = asRupees(Math.round((headsTotal * classRate) / 200))
+    setTax((t) => (t.cgst === half && t.sgst === half && !t.igst ? t : { ...t, cgst: half, sgst: half, igst: '' }))
+  }, [classRate, taxTouched, headsTotal])
+  const kindName = kind === 'SALES' ? 'Sales' : kind === 'PURCHASE' ? 'Purchase' : null
+  const kindClasses = (classes.data ?? []).filter((c) => c.voucher_type === kindName)
+  function chooseClass(id: string) {
+    const chosen = kindClasses.find((c) => c.id === id)
+    if (!chosen) return setClassRate(null)
+    setHeads((hs) => hs.map((h, i) => (i === 0 ? { ...h, ledger: chosen.head_ledger } : h)))
+    setClassRate(chosen.gst_rate ? Number(chosen.gst_rate) : null)
+    setTaxTouched(false)
+  }
   const itemwise = !itemwiseOff && items.length > 0 && items.every((i) => i.amount_paise != null) && Math.abs(itemsSum - headsTotal) <= ITEM_ROUNDING_PAISE
   const unreadable = [...amounts.heads, amounts.cgst, amounts.sgst, amounts.igst, amounts.cess, amounts.roundOff, amounts.tds, amounts.tcs, amounts.otherCharges].some((a) => !a.ok)
   // Only the lines something has been typed on, so an empty form shows no complaint.
@@ -777,6 +797,21 @@ export function VoucherForm({
         </div>
       </div>
 
+      {kindClasses.length > 0 && (
+        <Field label="Voucher class" hint="Fills in the ledger and the GST rate; you can still change them">
+          {(props) => (
+            <Select {...props} defaultValue="" onChange={(e) => chooseClass(e.target.value)}>
+              <option value="">No class</option>
+              {kindClasses.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.name}
+                </option>
+              ))}
+            </Select>
+          )}
+        </Field>
+      )}
+
       <fieldset className="grid gap-3">
         <legend className="mb-1 text-[13px] font-medium">What it is for <span className="font-normal text-muted-foreground">(before GST)</span></legend>
         {heads.map((head, index) => (
@@ -829,7 +864,10 @@ export function VoucherForm({
                   inputMode="decimal"
                   className="text-right tabular-nums"
                   value={tax[name]}
-                  onChange={(e) => setTax({ ...tax, [name]: e.target.value })}
+                  onChange={(e) => {
+                    setTaxTouched(true)
+                    setTax({ ...tax, [name]: e.target.value })
+                  }}
                 />
               )}
             </Field>

@@ -12,11 +12,21 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from api.permissions import HasFirmPermission
-from api.serializers.voucher_series import CustomVoucherTypeSerializer, NumberingItemSerializer
+from api.serializers.voucher_series import (
+    CustomVoucherTypeSerializer,
+    NumberingItemSerializer,
+    VoucherClassSerializer,
+)
 from api.views.base import ClientScopedMixin, FirmScopedViewSet
 from core.access import get_visible_client
 from core.fy import financial_year
-from ledger.models import CustomVoucherType, NumberingFormat, VoucherSequence, VoucherType
+from ledger.models import (
+    CustomVoucherType,
+    NumberingFormat,
+    VoucherClass,
+    VoucherSequence,
+    VoucherType,
+)
 from ledger.numbering import VoucherTypeInUseError, format_voucher_number, is_in_use, load_formats
 
 
@@ -115,3 +125,18 @@ class NumberingView(APIView):
                 else:
                     NumberingFormat.objects.update_or_create(**key, defaults={"prefix": item["prefix"], "padding": item["padding"]})
         return Response(self._payload(client, self._year(request)))
+
+
+@extend_schema(tags=["ledger"])
+class VoucherClassViewSet(ClientScopedMixin, FirmScopedViewSet):
+    """Presets for sales and purchase vouchers: choosing one fills in the head ledger and the GST rate. Nothing posts differently."""
+
+    queryset = VoucherClass.objects.select_related("head_ledger").order_by("name")
+    serializer_class = VoucherClassSerializer
+    required_permission = {
+        "GET": "client.view",
+        "POST": "ledger.manage",
+        "PUT": "ledger.manage",
+        "PATCH": "ledger.manage",
+        "DELETE": "ledger.manage",
+    }

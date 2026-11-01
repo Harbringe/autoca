@@ -6,7 +6,7 @@ import re
 
 from rest_framework import serializers
 
-from ledger.models import CustomVoucherType, VoucherType
+from ledger.models import CustomVoucherType, VoucherClass, VoucherType
 from ledger.numbering import VoucherTypeInUseError, is_in_use
 from ledger.tally_parse import normal_name
 from ledger.tally_plan import NO_ACCOUNTING_TYPES, OWN_SERIES_PARENTS, STANDARD_TYPES
@@ -70,3 +70,46 @@ class NumberingItemSerializer(serializers.Serializer):
         if not _PREFIX.match(value):
             raise serializers.ValidationError("Use letters, digits and / _ . - only, with {fy} for the financial year.")
         return value
+
+
+class VoucherClassSerializer(serializers.ModelSerializer):
+    """A preset for a sales or purchase voucher: the head ledger and GST rate it fills in. Nothing posts differently."""
+
+    head_ledger_name = serializers.CharField(source="head_ledger.name", read_only=True)
+
+    class Meta:
+        model = VoucherClass
+        fields = ["id", "name", "voucher_type", "type_name", "head_ledger", "head_ledger_name", "gst_rate", "created_at"]
+        read_only_fields = ["id", "created_at"]
+
+    def validate_voucher_type(self, value):
+        if value not in (VoucherType.SALES, VoucherType.PURCHASE):
+            raise serializers.ValidationError("A class is for a Sales or Purchase voucher.")
+        return value
+
+    def validate_gst_rate(self, value):
+        if value is not None and not 0 <= value <= 100:
+            raise serializers.ValidationError("A GST rate is between 0 and 100.")
+        return value
+
+    def validate_name(self, value):
+        name = " ".join(value.split())
+        if not name:
+            raise serializers.ValidationError("Give the class a name.")
+        return name
+
+    def validate(self, attrs):
+        client = self.context["view"].client
+        ledger = attrs.get("head_ledger")
+        if ledger is not None and ledger.client_id != client.pk:
+            raise serializers.ValidationError({"head_ledger": "That ledger belongs to another client."})
+        voucher_type = attrs.get("voucher_type", getattr(self.instance, "voucher_type", None))
+        type_name = attrs.get("type_name", getattr(self.instance, "type_name", ""))
+        if type_name and not CustomVoucherType.objects.filter(firm_id=client.firm_id, client=client, name=type_name, parent=voucher_type).exists():
+            raise serializers.ValidationError({"type_name": "That is not a voucher type of this client that counts as the chosen type."})
+        name = attrs.get("name")
+        if name is not None:
+            clash = VoucherClass.objects.filter(firm_id=client.firm_id, client=client, name=name).exclude(pk=getattr(self.instance, "pk", None))
+            if clash.exists():
+                raise serializers.ValidationError({"name": "This client already has a class with that name."})
+        return attrs

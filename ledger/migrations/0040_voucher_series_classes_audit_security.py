@@ -1,6 +1,6 @@
 """Tenant isolation for the voucher-series tables, the client boundary inside a firm, and an append-only master audit trail.
 
-A voucher class names ledgers; each must belong to the class's own client, checked by composite foreign keys to the ledger table's
+A voucher class names a head ledger, which must belong to the class's own client, checked by composite foreign keys to the ledger table's
 ``(client_id, id)`` key, as in 0010 and 0035. The master change log may only ever be inserted into, like the entry change log. Additive
 only: constraints and policies on tables this release creates.
 """
@@ -9,7 +9,7 @@ from django.db import migrations
 
 from core.db.rls import append_only_operations, ddl_tenant_context_operations, rls_operations
 
-LEDGER_COLUMNS = ("head_ledger_id", "cgst_ledger_id", "sgst_ledger_id", "igst_ledger_id")
+LEDGER_COLUMNS = ("head_ledger_id",)
 
 FORWARD = [
     f"ALTER TABLE ledger_voucher_class ADD CONSTRAINT voucher_class_{column.removesuffix('_id')}_same_client "

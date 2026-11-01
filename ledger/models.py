@@ -947,16 +947,13 @@ class NumberingFormat(UUIDModel, FirmScopedModel):
 
 
 class VoucherClass(UUIDModel, FirmScopedModel):
-    """A preset for a sales or purchase voucher: the head and tax ledgers and the rate it fills in. Nothing posts differently."""
+    """A preset for a sales or purchase voucher: the head ledger and the GST rate it fills in. Nothing posts differently."""
 
     client = models.ForeignKey(Client, on_delete=models.CASCADE, related_name="voucher_classes")
     name = models.CharField(max_length=64)
     voucher_type = models.CharField(max_length=16, choices=[(VoucherType.SALES, "Sales"), (VoucherType.PURCHASE, "Purchase")])
     type_name = models.CharField(max_length=64, blank=True, default="")
     head_ledger = models.ForeignKey("classify.LedgerAccount", on_delete=models.PROTECT, related_name="+")
-    cgst_ledger = models.ForeignKey("classify.LedgerAccount", on_delete=models.PROTECT, null=True, blank=True, related_name="+")
-    sgst_ledger = models.ForeignKey("classify.LedgerAccount", on_delete=models.PROTECT, null=True, blank=True, related_name="+")
-    igst_ledger = models.ForeignKey("classify.LedgerAccount", on_delete=models.PROTECT, null=True, blank=True, related_name="+")
     gst_rate = models.DecimalField(max_digits=5, decimal_places=2, null=True, blank=True)
 
     class Meta:

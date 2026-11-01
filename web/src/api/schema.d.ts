@@ -2815,6 +2815,44 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/voucher-classes/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Presets for sales and purchase vouchers: choosing one fills in the head ledger and the GST rate. Nothing posts differently. */
+        get: operations["clients_voucher_classes_list"];
+        put?: never;
+        /** @description Presets for sales and purchase vouchers: choosing one fills in the head ledger and the GST rate. Nothing posts differently. */
+        post: operations["clients_voucher_classes_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/voucher-classes/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Presets for sales and purchase vouchers: choosing one fills in the head ledger and the GST rate. Nothing posts differently. */
+        get: operations["clients_voucher_classes_retrieve"];
+        /** @description Presets for sales and purchase vouchers: choosing one fills in the head ledger and the GST rate. Nothing posts differently. */
+        put: operations["clients_voucher_classes_update"];
+        post?: never;
+        /** @description Presets for sales and purchase vouchers: choosing one fills in the head ledger and the GST rate. Nothing posts differently. */
+        delete: operations["clients_voucher_classes_destroy"];
+        options?: never;
+        head?: never;
+        /** @description Presets for sales and purchase vouchers: choosing one fills in the head ledger and the GST rate. Nothing posts differently. */
+        patch: operations["clients_voucher_classes_partial_update"];
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/voucher-types/": {
         parameters: {
             query?: never;
@@ -5567,7 +5605,7 @@ export interface components {
             readonly tally_number: string;
             /** @description The voucher type's name in Tally; empty unless it was imported from there. */
             readonly tally_type: string;
-            readonly voucher_type: components["schemas"]["VoucherTypeEnum"];
+            readonly voucher_type: components["schemas"]["VoucherType933Enum"];
             readonly entry_kind: components["schemas"]["EntryKindEnum"];
             readonly entry_kind_display: string;
             /** Format: uuid */
@@ -6316,7 +6354,7 @@ export interface components {
         /** @enum {unknown} */
         NullEnum: null;
         NumberingItem: {
-            voucher_type: components["schemas"]["VoucherTypeEnum"];
+            voucher_type: components["schemas"]["VoucherType933Enum"];
             /** @default  */
             type_name: string;
             /**
@@ -6333,7 +6371,7 @@ export interface components {
             readonly example: string;
         };
         NumberingItemRequest: {
-            voucher_type: components["schemas"]["VoucherTypeEnum"];
+            voucher_type: components["schemas"]["VoucherType933Enum"];
             /** @default  */
             type_name: string;
             /**
@@ -7020,6 +7058,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["TallyVoucherRunSummary"][];
         };
+        PaginatedVoucherClassList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["VoucherClass"][];
+        };
         /**
          * @description * `Payment` - Payment
          *     * `Receipt` - Receipt
@@ -7357,6 +7410,16 @@ export interface components {
             msme?: boolean;
             udyam_no?: string;
             is_active?: boolean;
+        };
+        /** @description A preset for a sales or purchase voucher: the head ledger and GST rate it fills in. Nothing posts differently. */
+        PatchedVoucherClassRequest: {
+            name?: string;
+            voucher_type?: components["schemas"]["VoucherClassVoucherTypeEnum"];
+            type_name?: string;
+            /** Format: uuid */
+            head_ledger?: string;
+            /** Format: decimal */
+            gst_rate?: string | null;
         };
         PaymentHint: {
             /** Format: date */
@@ -9899,6 +9962,37 @@ export interface components {
             rows: number;
             run: components["schemas"]["RunReport"];
         };
+        /** @description A preset for a sales or purchase voucher: the head ledger and GST rate it fills in. Nothing posts differently. */
+        VoucherClass: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+            voucher_type: components["schemas"]["VoucherClassVoucherTypeEnum"];
+            type_name?: string;
+            /** Format: uuid */
+            head_ledger: string;
+            readonly head_ledger_name: string;
+            /** Format: decimal */
+            gst_rate?: string | null;
+            /** Format: date-time */
+            readonly created_at: string;
+        };
+        /** @description A preset for a sales or purchase voucher: the head ledger and GST rate it fills in. Nothing posts differently. */
+        VoucherClassRequest: {
+            name: string;
+            voucher_type: components["schemas"]["VoucherClassVoucherTypeEnum"];
+            type_name?: string;
+            /** Format: uuid */
+            head_ledger: string;
+            /** Format: decimal */
+            gst_rate?: string | null;
+        };
+        /**
+         * @description * `Sales` - Sales
+         *     * `Purchase` - Purchase
+         * @enum {string}
+         */
+        VoucherClassVoucherTypeEnum: "Sales" | "Purchase";
         /**
          * @description * `Payment` - Payment
          *     * `Receipt` - Receipt
@@ -9910,7 +10004,7 @@ export interface components {
          *     * `Credit Note` - Credit Note
          * @enum {string}
          */
-        VoucherTypeEnum: "Payment" | "Receipt" | "Contra" | "Journal" | "Purchase" | "Sales" | "Debit Note" | "Credit Note";
+        VoucherType933Enum: "Payment" | "Receipt" | "Contra" | "Journal" | "Purchase" | "Sales" | "Debit Note" | "Credit Note";
         WantedPartyRequest: {
             name: string;
             /** @default VENDOR */
@@ -15164,6 +15258,158 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TdsSummary"];
+                };
+            };
+        };
+    };
+    clients_voucher_classes_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedVoucherClassList"];
+                };
+            };
+        };
+    };
+    clients_voucher_classes_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoucherClassRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["VoucherClassRequest"];
+                "multipart/form-data": components["schemas"]["VoucherClassRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoucherClass"];
+                };
+            };
+        };
+    };
+    clients_voucher_classes_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoucherClass"];
+                };
+            };
+        };
+    };
+    clients_voucher_classes_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["VoucherClassRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["VoucherClassRequest"];
+                "multipart/form-data": components["schemas"]["VoucherClassRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoucherClass"];
+                };
+            };
+        };
+    };
+    clients_voucher_classes_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    clients_voucher_classes_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedVoucherClassRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedVoucherClassRequest"];
+                "multipart/form-data": components["schemas"]["PatchedVoucherClassRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["VoucherClass"];
                 };
             };
         };

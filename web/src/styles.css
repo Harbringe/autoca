@@ -540,4 +540,20 @@ html {
     background: #fff;
     color: #000;
   }
+  /* Only the sheet reaches the printer: everything else on the page is hidden and the sheet takes the whole paper. */
+  body * {
+    visibility: hidden;
+  }
+  .print-sheet,
+  .print-sheet * {
+    visibility: visible;
+  }
+  .print-sheet {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    border: 0;
+    border-radius: 0;
+  }
 }

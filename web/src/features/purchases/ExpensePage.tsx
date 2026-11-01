@@ -221,6 +221,9 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
                   </DropdownMenuItem>
                 )}
                 {bill && <DropdownMenuItem onSelect={() => setStatement(true)}>Statement of account</DropdownMenuItem>}
+                {bill && (bill.kind === 'SALES' || bill.kind === 'PURCHASE') && (
+                  <DropdownMenuItem onSelect={() => void navigate({ to: '/clients/$clientId/print', params: { clientId }, search: { bill: bill.id } })}>Print invoice</DropdownMenuItem>
+                )}
                 {reading?.status === 'OPEN' && mayPost && !bill && (
                   <DropdownMenuItem disabled={reread.isPending} onSelect={() => void readAgain()}>Read the file again</DropdownMenuItem>
                 )}

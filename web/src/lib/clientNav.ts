@@ -40,7 +40,7 @@ export const CLIENT_NAV: ClientNavItem[] = [
     label: 'Bookkeeping',
     icon: BookOpen,
     permission: 'report.view',
-    also: ['bills', 'invoices', 'tds', 'payroll', 'assets', 'daybook', 'open-items', 'ledgers', 'masters', 'books', 'audit', 'tally'],
+    also: ['bills', 'invoices', 'tds', 'payroll', 'assets', 'daybook', 'open-items', 'ledgers', 'masters', 'books', 'audit', 'print', 'tally'],
     group: 'books',
   },
   { screen: 'gst', label: 'GST', icon: FileSpreadsheet, permission: 'gst.view', group: 'books' },

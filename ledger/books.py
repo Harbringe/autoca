@@ -420,17 +420,17 @@ def _renumber(client, actor, *, after: datetime.date | None) -> int:
     # order_by() matters: JournalEntry's default ordering would otherwise join the DISTINCT,
     # returning one pair per entry rather than one per voucher type, and every group would be
     # renumbered once per entry in it -- minutes, for a year of bank statements.
-    for (year, voucher_type) in scope.order_by().values_list("financial_year", "voucher_type").distinct():
+    for (year, voucher_type, type_name) in scope.order_by().values_list("financial_year", "voucher_type", "type_name").distinct():
         floor = 0
         if after is not None:
             floor = max(
                 entries.filter(
-                    financial_year=year, voucher_type=voucher_type, entry_date__lte=after
+                    financial_year=year, voucher_type=voucher_type, type_name=type_name, entry_date__lte=after
                 ).values_list("entry_no", flat=True),
                 default=0,
             )
         group = list(
-            scope.filter(financial_year=year, voucher_type=voucher_type)
+            scope.filter(financial_year=year, voucher_type=voucher_type, type_name=type_name)
             .order_by("entry_date", "created_at", "id")
         )
         moves = [(entry, floor + offset) for offset, entry in enumerate(group, start=1) if floor + offset != entry.entry_no]
@@ -461,7 +461,7 @@ def _renumber(client, actor, *, after: datetime.date | None) -> int:
             )
             changed += len(moves)
         VoucherSequence.objects.filter(
-            firm_id=client.firm_id, client=client, financial_year=year, voucher_type=voucher_type
+            firm_id=client.firm_id, client=client, financial_year=year, voucher_type=voucher_type, type_name=type_name
         ).update(next_number=floor + len(group) + 1)
     return changed
 

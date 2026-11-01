@@ -38,3 +38,19 @@ def test_an_entry_not_from_tally_has_empty_tally_fields(api, firm, client_record
         post(client_record, datetime.date(2025, 4, 5), make_ledger(client_record, "Rent", G.INDIRECT_EXPENSE), make_ledger(client_record, "Cash", G.CASH), 100)
     [entry] = entries(api, client_record)
     assert (entry["tally_number"], entry["tally_type"]) == ("", "")
+
+
+def test_the_entry_shows_its_number_in_the_clients_format(api, firm, client_record, chart):
+    from django.utils import timezone
+
+    from ledger.models import JournalEntry, NumberingFormat
+
+    with firm_context(firm.pk):
+        for voucher_type, number in (("Sales", 7), ("Purchase", 3)):
+            JournalEntry.objects.create(
+                firm_id=firm.pk, client=client_record, entry_no=number, financial_year=2025, entry_date=datetime.date(2025, 4, 1),
+                voucher_type=voucher_type, approved_at=timezone.now(),
+            )
+        NumberingFormat.objects.create(firm_id=firm.pk, client=client_record, voucher_type="Sales", type_name="", prefix="S/{fy}/", padding=4)
+    shown = {e["voucher_type"]: (e["entry_no"], e["voucher_number"]) for e in entries(api, client_record)}
+    assert shown == {"Sales": (7, "S/25-26/0007"), "Purchase": (3, "3")}

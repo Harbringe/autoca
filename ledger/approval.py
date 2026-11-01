@@ -744,15 +744,15 @@ def _bank_ledger_for(classification):
     return contra_ledger_for(classification.transaction.bank_account)
 
 
-def allocate_voucher_number(client, year: int, voucher_type: str) -> int:
-    """Next number in this book, under a row lock.
+def allocate_voucher_number(client, year: int, voucher_type: str, type_name: str = "") -> int:
+    """Next number in this book's series (a standard voucher type, or a firm's own ``type_name``), under a row lock.
 
     ``MAX(entry_no) + 1`` would let two concurrent approvals read the same
     maximum and allocate the same number. Locking the counter row makes the
     second wait for the first.
     """
     sequence, _ = VoucherSequence.objects.get_or_create(
-        firm_id=client.firm_id, client=client, financial_year=year, voucher_type=voucher_type
+        firm_id=client.firm_id, client=client, financial_year=year, voucher_type=voucher_type, type_name=type_name
     )
     locked = VoucherSequence.objects.select_for_update().get(pk=sequence.pk)
     number = locked.next_number

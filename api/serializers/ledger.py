@@ -14,6 +14,7 @@ from rest_framework import serializers
 from api.fields import MoneySerializerMixin, PaiseField
 from api.serializers.classify import TreatmentSerializer
 from ledger.models import EntryChange, JournalEntry, JournalLine
+from ledger.numbering import format_voucher_number, load_formats
 
 
 class JournalLineSerializer(MoneySerializerMixin, serializers.ModelSerializer):
@@ -55,6 +56,7 @@ class JournalEntrySerializer(MoneySerializerMixin, serializers.ModelSerializer):
     is_locked = serializers.SerializerMethodField()
     entry_kind_display = serializers.CharField(source="get_entry_kind_display", read_only=True)
     bill = serializers.SerializerMethodField()
+    voucher_number = serializers.SerializerMethodField(help_text="The number as the client's format shows it (prefix and padding); the plain number when none is set.")
     tally_number = serializers.SerializerMethodField(help_text="The number the voucher had in Tally; empty unless it was imported from there.")
     tally_type = serializers.SerializerMethodField(help_text="The voucher type's name in Tally; empty unless it was imported from there.")
 
@@ -63,6 +65,7 @@ class JournalEntrySerializer(MoneySerializerMixin, serializers.ModelSerializer):
         fields = [
             "id",
             "entry_no",
+            "voucher_number",
             "tally_number",
             "tally_type",
             "voucher_type",
@@ -93,6 +96,17 @@ class JournalEntrySerializer(MoneySerializerMixin, serializers.ModelSerializer):
         """Inside books a senior has signed off, so no longer changeable."""
         through = getattr(obj.client, "signed_off_through", None)
         return through is not None and obj.entry_date <= through
+
+    def get_voucher_number(self, obj) -> str:
+        # A list shows many numbers of one client: its formats are read once and kept for the rest.
+        formats = self._formats.get(obj.client_id)
+        if formats is None:
+            formats = self._formats[obj.client_id] = load_formats(obj.client)
+        return format_voucher_number(obj.client, obj.voucher_type, obj.type_name, obj.entry_no, obj.financial_year, formats=formats)
+
+    @property
+    def _formats(self) -> dict:
+        return self.__dict__.setdefault("_format_cache", {})
 
     def get_tally_number(self, obj) -> str:
         link = getattr(obj, "tally_voucher", None)

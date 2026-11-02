@@ -4,6 +4,7 @@
 // count found different (damage, shortage, samples), have no invoice, so they are recorded here and the report counts them.
 
 import { useQuery } from '@tanstack/react-query'
+import { godowns as godownsQuery } from '@/api/queries/godowns'
 import { useState } from 'react'
 import { toast } from '@/lib/toast'
 import { raw } from '@/api/client'
@@ -44,6 +45,8 @@ export function StockEntries({ clientId, fy, onClose }: { clientId: string; fy: 
   const [value, setValue] = useState('')
   const [date, setDate] = useState(`${fy}-04-01`)
   const [note, setNote] = useState('')
+  const [godown, setGodown] = useState('')
+  const places = useQuery(godownsQuery(clientId)).data ?? []
 
   const [saving, setSaving] = useState(false)
   const [removing, setRemoving] = useState<string | null>(null)
@@ -53,6 +56,7 @@ export function StockEntries({ clientId, fy, onClose }: { clientId: string; fy: 
     try {
       await raw.post(`${V1}/clients/${clientId}/stock-entries/`, {
         kind, entry_date: date, direction, name, unit, quantity, value_paise: parseRupees(value || '0') ?? 0, note,
+        ...(godown ? { godown } : {}),
       })
       toast.success('Recorded')
       setName('')
@@ -118,6 +122,20 @@ export function StockEntries({ clientId, fy, onClose }: { clientId: string; fy: 
             <Field label="Value carried at (₹)">{(p) => <Input {...p} inputMode="decimal" value={value} onChange={(e) => setValue(e.target.value)} />}</Field>
             <Field label="Date">{(p) => <DateInput {...p} value={date} onChange={(e) => setDate(e.target.value)} />}</Field>
           </div>
+          {places.length > 0 && (
+            <Field label="Where is it">
+              {(p) => (
+                <Select {...p} value={godown} onChange={(e) => setGodown(e.target.value)}>
+                  <option value="">Main location</option>
+                  {places.map((g) => (
+                    <option key={g.id} value={g.id}>
+                      {g.name}
+                    </option>
+                  ))}
+                </Select>
+              )}
+            </Field>
+          )}
           {kind === 'ADJUSTMENT' && <Field label="Why">{(p) => <Textarea {...p} value={note} onChange={(e) => setNote(e.target.value)} />}</Field>}
           <div className="flex justify-end">
             <Button onClick={() => void save()} loading={saving} disabled={!name.trim() || !quantity.trim()}>Record</Button>

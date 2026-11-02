@@ -800,6 +800,7 @@ paths:
           enum:
           - BUDGET
           - CENTRE
+          - CHEQUE
           - ENTRY
           - GODOWN
           - ITEM
@@ -1758,6 +1759,300 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BudgetVariance'
+          description: ''
+  /api/v1/clients/{client_id}/cheques/:
+    get:
+      operationId: clients_cheques_list
+      description: Cheques issued and received. A record to follow up and print from;
+        it books nothing.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - cheques
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedChequeList'
+          description: ''
+    post:
+      operationId: clients_cheques_create
+      description: Cheques issued and received. A record to follow up and print from;
+        it books nothing.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - cheques
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChequeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ChequeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ChequeRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cheque'
+          description: ''
+  /api/v1/clients/{client_id}/cheques/{id}/:
+    get:
+      operationId: clients_cheques_retrieve
+      description: Cheques issued and received. A record to follow up and print from;
+        it books nothing.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - cheques
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cheque'
+          description: ''
+    put:
+      operationId: clients_cheques_update
+      description: Cheques issued and received. A record to follow up and print from;
+        it books nothing.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - cheques
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChequeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ChequeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ChequeRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cheque'
+          description: ''
+    patch:
+      operationId: clients_cheques_partial_update
+      description: Cheques issued and received. A record to follow up and print from;
+        it books nothing.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - cheques
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedChequeRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedChequeRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedChequeRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cheque'
+          description: ''
+    delete:
+      operationId: clients_cheques_destroy
+      description: Cheques issued and received. A record to follow up and print from;
+        it books nothing.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - cheques
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/clients/{client_id}/cheques/{id}/status/:
+    post:
+      operationId: clients_cheques_status_create
+      description: Sets the status and the day it happened (today when left out);
+        `PENDING` puts it back. Recorded in the audit trail.
+      summary: Clear, bounce, cancel or reopen a cheque
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - cheques
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ChequeStatusRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ChequeStatusRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ChequeStatusRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Cheque'
+          description: ''
+  /api/v1/clients/{client_id}/cheques/accounts/:
+    get:
+      operationId: clients_cheques_accounts_list
+      description: Cheques issued and received. A record to follow up and print from;
+        it books nothing.
+      summary: The client's bank accounts a cheque can be drawn on
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - cheques
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/BankAccountChoice'
+          description: ''
+  /api/v1/clients/{client_id}/cheques/pdc/:
+    get:
+      operationId: clients_cheques_pdc_retrieve
+      description: What the client has issued and received that is dated after the
+        day it was written and not yet presented, by month; those falling due in the
+        next seven days; and pending cheques more than three months past their date.
+      summary: Post-dated cheques still pending
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - cheques
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Pdc'
           description: ''
   /api/v1/clients/{client_id}/cost-centre-report/:
     get:
@@ -10402,6 +10697,7 @@ components:
       - GODOWN
       - CENTRE
       - BUDGET
+      - CHEQUE
       type: string
       description: |-
         * `ENTRY` - ENTRY
@@ -10413,6 +10709,7 @@ components:
         * `GODOWN` - GODOWN
         * `CENTRE` - CENTRE
         * `BUDGET` - BUDGET
+        * `CHEQUE` - CHEQUE
     BalanceCheck:
       type: object
       description: |-
@@ -10675,6 +10972,19 @@ components:
       - opening_as_of
       - opening_balance_display
       - opening_balance_paise
+    BankAccountChoice:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        label:
+          type: string
+          readOnly: true
+      required:
+      - id
+      - label
     BankAccountDetail:
       type: object
       description: As above, plus the decrypted identifiers. One account at a time.
@@ -11893,6 +12203,151 @@ components:
       - detail
       - name
       - ok
+    Cheque:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        bank_account:
+          type: string
+          format: uuid
+        bank_label:
+          type: string
+          readOnly: true
+        direction:
+          $ref: '#/components/schemas/ChequeDirectionEnum'
+        number:
+          type: string
+          maxLength: 12
+        cheque_date:
+          type: string
+          format: date
+        issued_on:
+          type: string
+          format: date
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 1
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        party:
+          type: string
+          format: uuid
+          nullable: true
+        party_name:
+          type: string
+          readOnly: true
+          default: ''
+        payee_name:
+          type: string
+          maxLength: 200
+        print_name:
+          type: string
+          readOnly: true
+          description: 'Who the cheque is made out to: the name typed for it, else
+            the party''s.'
+        status:
+          allOf:
+          - $ref: '#/components/schemas/Status3b7Enum'
+          readOnly: true
+        status_display:
+          type: string
+          readOnly: true
+        status_on:
+          type: string
+          format: date
+          readOnly: true
+          nullable: true
+        note:
+          type: string
+          maxLength: 300
+        is_post_dated:
+          type: boolean
+          readOnly: true
+        is_stale:
+          type: boolean
+          readOnly: true
+          description: Still not presented more than three months after its date.
+      required:
+      - amount_paise
+      - bank_account
+      - bank_label
+      - cheque_date
+      - direction
+      - id
+      - is_post_dated
+      - is_stale
+      - number
+      - party_name
+      - print_name
+      - status
+      - status_display
+      - status_on
+    ChequeDirectionEnum:
+      enum:
+      - ISSUED
+      - RECEIVED
+      type: string
+      description: |-
+        * `ISSUED` - Issued by the client
+        * `RECEIVED` - Received by the client
+    ChequeRequest:
+      type: object
+      properties:
+        bank_account:
+          type: string
+          format: uuid
+        direction:
+          $ref: '#/components/schemas/ChequeDirectionEnum'
+        number:
+          type: string
+          minLength: 1
+          maxLength: 12
+        cheque_date:
+          type: string
+          format: date
+        issued_on:
+          type: string
+          format: date
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 1
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        party:
+          type: string
+          format: uuid
+          nullable: true
+        payee_name:
+          type: string
+          maxLength: 200
+        note:
+          type: string
+          maxLength: 300
+      required:
+      - amount_paise
+      - bank_account
+      - cheque_date
+      - direction
+      - number
+    ChequeStatusRequest:
+      type: object
+      properties:
+        status:
+          $ref: '#/components/schemas/Status3b7Enum'
+        'on':
+          type: string
+          format: date
+          description: The day it cleared, bounced or was cancelled; today when left
+            out.
+      required:
+      - status
     ChoiceEnum:
       enum:
       - keep_ours
@@ -17294,6 +17749,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Challan'
+    PaginatedChequeList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Cheque'
     PaginatedClassificationList:
       type: object
       required:
@@ -18309,6 +18787,41 @@ components:
         ledger_name:
           type: string
           maxLength: 255
+    PatchedChequeRequest:
+      type: object
+      properties:
+        bank_account:
+          type: string
+          format: uuid
+        direction:
+          $ref: '#/components/schemas/ChequeDirectionEnum'
+        number:
+          type: string
+          minLength: 1
+          maxLength: 12
+        cheque_date:
+          type: string
+          format: date
+        issued_on:
+          type: string
+          format: date
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 1
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        party:
+          type: string
+          format: uuid
+          nullable: true
+        payee_name:
+          type: string
+          maxLength: 200
+        note:
+          type: string
+          maxLength: 300
     PatchedClassificationRuleRequest:
       type: object
       properties:
@@ -18754,6 +19267,62 @@ components:
       - lines
       - month
       - year
+    Pdc:
+      type: object
+      properties:
+        issued_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Post-dated cheques the client issued that are still pending.
+        received_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Post-dated cheques the client received that are still pending.
+        by_month:
+          type: array
+          items:
+            $ref: '#/components/schemas/PdcMonth'
+        due_soon:
+          type: array
+          items:
+            $ref: '#/components/schemas/Cheque'
+        stale:
+          type: array
+          items:
+            $ref: '#/components/schemas/Cheque'
+      required:
+      - by_month
+      - due_soon
+      - issued_paise
+      - received_paise
+      - stale
+    PdcMonth:
+      type: object
+      properties:
+        month:
+          type: string
+        issued_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        received_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - issued_paise
+      - month
+      - received_paise
     PeopleWork:
       type: object
       properties:
@@ -21585,6 +22154,18 @@ components:
         * `PREVIEW` - Previewed, not applied
         * `CONFIRMED` - Applied
         * `DISCARDED` - Discarded
+    Status3b7Enum:
+      enum:
+      - PENDING
+      - CLEARED
+      - BOUNCED
+      - CANCELLED
+      type: string
+      description: |-
+        * `PENDING` - Not yet presented
+        * `CLEARED` - Cleared
+        * `BOUNCED` - Bounced
+        * `CANCELLED` - Cancelled
     Status42dEnum:
       enum:
       - draft

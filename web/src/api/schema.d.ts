@@ -889,6 +889,104 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/cheques/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Cheques issued and received. A record to follow up and print from; it books nothing. */
+        get: operations["clients_cheques_list"];
+        put?: never;
+        /** @description Cheques issued and received. A record to follow up and print from; it books nothing. */
+        post: operations["clients_cheques_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/cheques/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description Cheques issued and received. A record to follow up and print from; it books nothing. */
+        get: operations["clients_cheques_retrieve"];
+        /** @description Cheques issued and received. A record to follow up and print from; it books nothing. */
+        put: operations["clients_cheques_update"];
+        post?: never;
+        /** @description Cheques issued and received. A record to follow up and print from; it books nothing. */
+        delete: operations["clients_cheques_destroy"];
+        options?: never;
+        head?: never;
+        /** @description Cheques issued and received. A record to follow up and print from; it books nothing. */
+        patch: operations["clients_cheques_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/cheques/{id}/status/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Clear, bounce, cancel or reopen a cheque
+         * @description Sets the status and the day it happened (today when left out); `PENDING` puts it back. Recorded in the audit trail.
+         */
+        post: operations["clients_cheques_status_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/cheques/accounts/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The client's bank accounts a cheque can be drawn on
+         * @description Cheques issued and received. A record to follow up and print from; it books nothing.
+         */
+        get: operations["clients_cheques_accounts_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/cheques/pdc/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Post-dated cheques still pending
+         * @description What the client has issued and received that is dated after the day it was written and not yet presented, by month; those falling due in the next seven days; and pending cheques more than three months past their date.
+         */
+        get: operations["clients_cheques_pdc_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/cost-centre-report/": {
         parameters: {
             query?: never;
@@ -4573,9 +4671,10 @@ export interface components {
          *     * `GODOWN` - GODOWN
          *     * `CENTRE` - CENTRE
          *     * `BUDGET` - BUDGET
+         *     * `CHEQUE` - CHEQUE
          * @enum {string}
          */
-        AuditTrailRowKindEnum: "ENTRY" | "LEDGER" | "PARTY" | "RULE" | "SETTING" | "ITEM" | "GODOWN" | "CENTRE" | "BUDGET";
+        AuditTrailRowKindEnum: "ENTRY" | "LEDGER" | "PARTY" | "RULE" | "SETTING" | "ITEM" | "GODOWN" | "CENTRE" | "BUDGET" | "CHEQUE";
         /**
          * @description Month end: does the ledger agree with the bank?
          *
@@ -4693,6 +4792,11 @@ export interface components {
             readonly created_at: string;
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly opening_balance_display: string | null;
+        };
+        BankAccountChoice: {
+            /** Format: uuid */
+            readonly id: string;
+            readonly label: string;
         };
         /** @description As above, plus the decrypted identifiers. One account at a time. */
         BankAccountDetail: {
@@ -5217,6 +5321,72 @@ export interface components {
             name: string;
             ok: boolean;
             detail: string;
+        };
+        Cheque: {
+            /** Format: uuid */
+            readonly id: string;
+            /** Format: uuid */
+            bank_account: string;
+            readonly bank_label: string;
+            direction: components["schemas"]["ChequeDirectionEnum"];
+            number: string;
+            /** Format: date */
+            cheque_date: string;
+            /** Format: date */
+            issued_on?: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            amount_paise: number;
+            /** Format: uuid */
+            party?: string | null;
+            /** @default  */
+            readonly party_name: string;
+            payee_name?: string;
+            /** @description Who the cheque is made out to: the name typed for it, else the party's. */
+            readonly print_name: string;
+            readonly status: components["schemas"]["Status3b7Enum"];
+            readonly status_display: string;
+            /** Format: date */
+            readonly status_on: string | null;
+            note?: string;
+            readonly is_post_dated: boolean;
+            /** @description Still not presented more than three months after its date. */
+            readonly is_stale: boolean;
+        };
+        /**
+         * @description * `ISSUED` - Issued by the client
+         *     * `RECEIVED` - Received by the client
+         * @enum {string}
+         */
+        ChequeDirectionEnum: "ISSUED" | "RECEIVED";
+        ChequeRequest: {
+            /** Format: uuid */
+            bank_account: string;
+            direction: components["schemas"]["ChequeDirectionEnum"];
+            number: string;
+            /** Format: date */
+            cheque_date: string;
+            /** Format: date */
+            issued_on?: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            amount_paise: number;
+            /** Format: uuid */
+            party?: string | null;
+            payee_name?: string;
+            note?: string;
+        };
+        ChequeStatusRequest: {
+            status: components["schemas"]["Status3b7Enum"];
+            /**
+             * Format: date
+             * @description The day it cleared, bounced or was cancelled; today when left out.
+             */
+            on?: string;
         };
         /**
          * @description * `keep_ours` - keep_ours
@@ -7791,6 +7961,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["Challan"][];
         };
+        PaginatedChequeList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["Cheque"][];
+        };
         PaginatedClassificationList: {
             /** @example 123 */
             count: number;
@@ -8401,6 +8586,25 @@ export interface components {
         PatchedBankAccountRequest: {
             ledger_name?: string;
         };
+        PatchedChequeRequest: {
+            /** Format: uuid */
+            bank_account?: string;
+            direction?: components["schemas"]["ChequeDirectionEnum"];
+            number?: string;
+            /** Format: date */
+            cheque_date?: string;
+            /** Format: date */
+            issued_on?: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            amount_paise?: number;
+            /** Format: uuid */
+            party?: string | null;
+            payee_name?: string;
+            note?: string;
+        };
         PatchedClassificationRuleRequest: {
             /** Format: uuid */
             ledger?: string;
@@ -8589,6 +8793,34 @@ export interface components {
             year: number;
             month: number;
             lines: components["schemas"]["SalaryLineRequest"][];
+        };
+        Pdc: {
+            /**
+             * Format: int64
+             * @description Post-dated cheques the client issued that are still pending.
+             */
+            issued_paise: number;
+            /**
+             * Format: int64
+             * @description Post-dated cheques the client received that are still pending.
+             */
+            received_paise: number;
+            by_month: components["schemas"]["PdcMonth"][];
+            due_soon: components["schemas"]["Cheque"][];
+            stale: components["schemas"]["Cheque"][];
+        };
+        PdcMonth: {
+            month: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            issued_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            received_paise: number;
         };
         PeopleWork: {
             period: components["schemas"]["MetricsPeriod"];
@@ -10072,6 +10304,14 @@ export interface components {
          * @enum {string}
          */
         Status105Enum: "PREVIEW" | "CONFIRMED" | "DISCARDED";
+        /**
+         * @description * `PENDING` - Not yet presented
+         *     * `CLEARED` - Cleared
+         *     * `BOUNCED` - Bounced
+         *     * `CANCELLED` - Cancelled
+         * @enum {string}
+         */
+        Status3b7Enum: "PENDING" | "CLEARED" | "BOUNCED" | "CANCELLED";
         /**
          * @description * `draft` - Draft
          *     * `signed_off` - Signed off
@@ -12157,7 +12397,7 @@ export interface operations {
                 /** @description Only this person's changes. */
                 actor?: string;
                 from?: string;
-                kind?: "BUDGET" | "CENTRE" | "ENTRY" | "GODOWN" | "ITEM" | "LEDGER" | "PARTY" | "RULE" | "SETTING";
+                kind?: "BUDGET" | "CENTRE" | "CHEQUE" | "ENTRY" | "GODOWN" | "ITEM" | "LEDGER" | "PARTY" | "RULE" | "SETTING";
                 limit?: number;
                 offset?: number;
                 /** @description Text in the label or the note. */
@@ -12822,6 +13062,228 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BudgetVariance"];
+                };
+            };
+        };
+    };
+    clients_cheques_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedChequeList"];
+                };
+            };
+        };
+    };
+    clients_cheques_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChequeRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ChequeRequest"];
+                "multipart/form-data": components["schemas"]["ChequeRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Cheque"];
+                };
+            };
+        };
+    };
+    clients_cheques_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Cheque"];
+                };
+            };
+        };
+    };
+    clients_cheques_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChequeRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ChequeRequest"];
+                "multipart/form-data": components["schemas"]["ChequeRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Cheque"];
+                };
+            };
+        };
+    };
+    clients_cheques_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    clients_cheques_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedChequeRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedChequeRequest"];
+                "multipart/form-data": components["schemas"]["PatchedChequeRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Cheque"];
+                };
+            };
+        };
+    };
+    clients_cheques_status_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ChequeStatusRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ChequeStatusRequest"];
+                "multipart/form-data": components["schemas"]["ChequeStatusRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Cheque"];
+                };
+            };
+        };
+    };
+    clients_cheques_accounts_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BankAccountChoice"][];
+                };
+            };
+        };
+    };
+    clients_cheques_pdc_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Pdc"];
                 };
             };
         };

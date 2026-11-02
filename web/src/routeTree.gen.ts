@@ -40,6 +40,7 @@ import { Route as AppClientsClientIdAuditRouteImport } from './routes/_app/clien
 import { Route as AppClientsClientIdBillsRouteImport } from './routes/_app/clients/$clientId/bills'
 import { Route as AppClientsClientIdBookkeepingRouteImport } from './routes/_app/clients/$clientId/bookkeeping'
 import { Route as AppClientsClientIdBooksRouteImport } from './routes/_app/clients/$clientId/books'
+import { Route as AppClientsClientIdChequesRouteImport } from './routes/_app/clients/$clientId/cheques'
 import { Route as AppClientsClientIdDaybookRouteImport } from './routes/_app/clients/$clientId/daybook'
 import { Route as AppClientsClientIdDocumentsRouteImport } from './routes/_app/clients/$clientId/documents'
 import { Route as AppClientsClientIdGstRouteImport } from './routes/_app/clients/$clientId/gst'
@@ -215,6 +216,12 @@ const AppClientsClientIdBooksRoute = AppClientsClientIdBooksRouteImport.update({
   path: '/books',
   getParentRoute: () => AppClientsClientIdRouteRoute,
 } as any)
+const AppClientsClientIdChequesRoute =
+  AppClientsClientIdChequesRouteImport.update({
+    id: '/cheques',
+    path: '/cheques',
+    getParentRoute: () => AppClientsClientIdRouteRoute,
+  } as any)
 const AppClientsClientIdDaybookRoute =
   AppClientsClientIdDaybookRouteImport.update({
     id: '/daybook',
@@ -348,6 +355,7 @@ export interface FileRoutesByFullPath {
   '/clients/$clientId/bills': typeof AppClientsClientIdBillsRoute
   '/clients/$clientId/bookkeeping': typeof AppClientsClientIdBookkeepingRoute
   '/clients/$clientId/books': typeof AppClientsClientIdBooksRoute
+  '/clients/$clientId/cheques': typeof AppClientsClientIdChequesRoute
   '/clients/$clientId/daybook': typeof AppClientsClientIdDaybookRoute
   '/clients/$clientId/documents': typeof AppClientsClientIdDocumentsRoute
   '/clients/$clientId/gst': typeof AppClientsClientIdGstRoute
@@ -396,6 +404,7 @@ export interface FileRoutesByTo {
   '/clients/$clientId/bills': typeof AppClientsClientIdBillsRoute
   '/clients/$clientId/bookkeeping': typeof AppClientsClientIdBookkeepingRoute
   '/clients/$clientId/books': typeof AppClientsClientIdBooksRoute
+  '/clients/$clientId/cheques': typeof AppClientsClientIdChequesRoute
   '/clients/$clientId/daybook': typeof AppClientsClientIdDaybookRoute
   '/clients/$clientId/documents': typeof AppClientsClientIdDocumentsRoute
   '/clients/$clientId/gst': typeof AppClientsClientIdGstRoute
@@ -448,6 +457,7 @@ export interface FileRoutesById {
   '/_app/clients/$clientId/bills': typeof AppClientsClientIdBillsRoute
   '/_app/clients/$clientId/bookkeeping': typeof AppClientsClientIdBookkeepingRoute
   '/_app/clients/$clientId/books': typeof AppClientsClientIdBooksRoute
+  '/_app/clients/$clientId/cheques': typeof AppClientsClientIdChequesRoute
   '/_app/clients/$clientId/daybook': typeof AppClientsClientIdDaybookRoute
   '/_app/clients/$clientId/documents': typeof AppClientsClientIdDocumentsRoute
   '/_app/clients/$clientId/gst': typeof AppClientsClientIdGstRoute
@@ -500,6 +510,7 @@ export interface FileRouteTypes {
     | '/clients/$clientId/bills'
     | '/clients/$clientId/bookkeeping'
     | '/clients/$clientId/books'
+    | '/clients/$clientId/cheques'
     | '/clients/$clientId/daybook'
     | '/clients/$clientId/documents'
     | '/clients/$clientId/gst'
@@ -548,6 +559,7 @@ export interface FileRouteTypes {
     | '/clients/$clientId/bills'
     | '/clients/$clientId/bookkeeping'
     | '/clients/$clientId/books'
+    | '/clients/$clientId/cheques'
     | '/clients/$clientId/daybook'
     | '/clients/$clientId/documents'
     | '/clients/$clientId/gst'
@@ -599,6 +611,7 @@ export interface FileRouteTypes {
     | '/_app/clients/$clientId/bills'
     | '/_app/clients/$clientId/bookkeeping'
     | '/_app/clients/$clientId/books'
+    | '/_app/clients/$clientId/cheques'
     | '/_app/clients/$clientId/daybook'
     | '/_app/clients/$clientId/documents'
     | '/_app/clients/$clientId/gst'
@@ -845,6 +858,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppClientsClientIdBooksRouteImport
       parentRoute: typeof AppClientsClientIdRouteRoute
     }
+    '/_app/clients/$clientId/cheques': {
+      id: '/_app/clients/$clientId/cheques'
+      path: '/cheques'
+      fullPath: '/clients/$clientId/cheques'
+      preLoaderRoute: typeof AppClientsClientIdChequesRouteImport
+      parentRoute: typeof AppClientsClientIdRouteRoute
+    }
     '/_app/clients/$clientId/daybook': {
       id: '/_app/clients/$clientId/daybook'
       path: '/daybook'
@@ -1000,6 +1020,7 @@ interface AppClientsClientIdRouteRouteChildren {
   AppClientsClientIdBillsRoute: typeof AppClientsClientIdBillsRoute
   AppClientsClientIdBookkeepingRoute: typeof AppClientsClientIdBookkeepingRoute
   AppClientsClientIdBooksRoute: typeof AppClientsClientIdBooksRoute
+  AppClientsClientIdChequesRoute: typeof AppClientsClientIdChequesRoute
   AppClientsClientIdDaybookRoute: typeof AppClientsClientIdDaybookRoute
   AppClientsClientIdDocumentsRoute: typeof AppClientsClientIdDocumentsRoute
   AppClientsClientIdGstRoute: typeof AppClientsClientIdGstRoute
@@ -1028,6 +1049,7 @@ const AppClientsClientIdRouteRouteChildren: AppClientsClientIdRouteRouteChildren
     AppClientsClientIdBillsRoute: AppClientsClientIdBillsRoute,
     AppClientsClientIdBookkeepingRoute: AppClientsClientIdBookkeepingRoute,
     AppClientsClientIdBooksRoute: AppClientsClientIdBooksRoute,
+    AppClientsClientIdChequesRoute: AppClientsClientIdChequesRoute,
     AppClientsClientIdDaybookRoute: AppClientsClientIdDaybookRoute,
     AppClientsClientIdDocumentsRoute: AppClientsClientIdDocumentsRoute,
     AppClientsClientIdGstRoute: AppClientsClientIdGstRoute,

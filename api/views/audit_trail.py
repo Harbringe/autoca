@@ -20,7 +20,7 @@ from core.models import User
 from ledger.models import EntryChange, JournalEntry, MasterChange
 
 DEFAULT_LIMIT, MAX_LIMIT = 50, 200
-KINDS = ("ENTRY", "LEDGER", "PARTY", "RULE", "SETTING", "ITEM", "GODOWN")
+KINDS = ("ENTRY", "LEDGER", "PARTY", "RULE", "SETTING", "ITEM", "GODOWN", "CENTRE", "BUDGET")
 
 
 class AuditTrailRowSerializer(serializers.Serializer):

@@ -1000,6 +1000,8 @@ class MasterKind(models.TextChoices):
     SETTING = "SETTING", "Setting"
     ITEM = "ITEM", "Stock item"
     GODOWN = "GODOWN", "Godown"
+    CENTRE = "CENTRE", "Cost centre"
+    BUDGET = "BUDGET", "Budget"
 
 
 class MasterAction(models.TextChoices):
@@ -1024,3 +1026,55 @@ class MasterChange(UUIDModel, FirmScopedModel):
         db_table = "ledger_master_change"
         ordering = ["created_at"]
         indexes = [models.Index(fields=["firm", "client", "created_at"], name="idx_master_change")]
+
+
+class CostCentre(UUIDModel, FirmScopedModel):
+    """A place costs and income are tracked against besides the ledger: a project, a branch, a department."""
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="cost_centres")
+    name = models.CharField(max_length=100)
+
+    class Meta:
+        db_table = "ledger_cost_centre"
+        ordering = ["name"]
+        constraints = [models.UniqueConstraint(fields=["firm", "client", "name"], name="uniq_cost_centre_name")]
+
+    def __str__(self) -> str:
+        return self.name
+
+
+class CostCentreTag(UUIDModel, FirmScopedModel):
+    """Part of one journal line's amount assigned to a cost centre. A line can be split across several; what is not tagged is unallocated.
+
+    Kept apart from the line itself, which is append-only: tagging never changes the books, only how they are read.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="cost_centre_tags")
+    line = models.ForeignKey(JournalLine, on_delete=models.PROTECT, related_name="cost_centre_tags")
+    cost_centre = models.ForeignKey(CostCentre, on_delete=models.PROTECT, related_name="tags")
+    amount_paise = models.BigIntegerField()
+
+    class Meta:
+        db_table = "ledger_cost_centre_tag"
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount_paise__gt=0), name="ck_cost_tag_positive"),
+            models.UniqueConstraint(fields=["line", "cost_centre"], name="uniq_cost_tag_per_line_centre"),
+        ]
+
+
+class Budget(UUIDModel, FirmScopedModel):
+    """What a ledger is expected to come to in one month. Compared with the books by the budget report."""
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="budgets")
+    ledger = models.ForeignKey(LedgerAccount, on_delete=models.PROTECT, related_name="budgets")
+    #: The first day of the month it is for.
+    period = models.DateField()
+    amount_paise = models.BigIntegerField()
+
+    class Meta:
+        db_table = "ledger_budget"
+        ordering = ["period"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount_paise__gte=0), name="ck_budget_not_negative"),
+            models.UniqueConstraint(fields=["firm", "client", "ledger", "period"], name="uniq_budget_ledger_month"),
+        ]

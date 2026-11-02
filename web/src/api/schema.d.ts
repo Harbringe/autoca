@@ -829,6 +829,148 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/budgets/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The year's budgets
+         * @description What each ledger is expected to come to, month by month.
+         */
+        get: operations["clients_budgets_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/budgets/set/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set a ledger's budget for a year
+         * @description An amount for each month named (whole paise); null clears a month, a month left out is kept. Recorded in the audit trail.
+         */
+        put: operations["clients_budgets_set_update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/budgets/variance/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Budget against the books
+         * @description Each budgeted ledger month by month: the budget, what the books show and the difference. `through` (YYYY-MM) limits the year-to-date totals.
+         */
+        get: operations["clients_budgets_variance_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/cost-centre-report/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Income and expense by cost centre
+         * @description From the journal lines tagged to each centre, with what is not tagged yet. Read from the books; nothing is written.
+         */
+        get: operations["clients_cost_centre_report_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/cost-centre-tags/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Cost centre tags on an entry's lines
+         * @description Which cost centres a journal line belongs to. Reads from an entry; writes replace one line's split.
+         */
+        get: operations["clients_cost_centre_tags_list"];
+        put?: never;
+        /**
+         * Split a journal line across cost centres
+         * @description Replaces the line's cost centres with the ones sent; an empty list clears them. Only income and expense lines can be tagged, the amounts together cannot exceed the line, and what is not tagged stays unallocated. The books are not changed.
+         */
+        post: operations["clients_cost_centre_tags_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/cost-centres/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The client's cost centres. One with lines tagged to it cannot be removed. */
+        get: operations["clients_cost_centres_list"];
+        put?: never;
+        /** @description The client's cost centres. One with lines tagged to it cannot be removed. */
+        post: operations["clients_cost_centres_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/cost-centres/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description The client's cost centres. One with lines tagged to it cannot be removed. */
+        get: operations["clients_cost_centres_retrieve"];
+        /** @description The client's cost centres. One with lines tagged to it cannot be removed. */
+        put: operations["clients_cost_centres_update"];
+        post?: never;
+        /** @description The client's cost centres. One with lines tagged to it cannot be removed. */
+        delete: operations["clients_cost_centres_destroy"];
+        options?: never;
+        head?: never;
+        /** @description The client's cost centres. One with lines tagged to it cannot be removed. */
+        patch: operations["clients_cost_centres_partial_update"];
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/dashboard/": {
         parameters: {
             query?: never;
@@ -4429,9 +4571,11 @@ export interface components {
          *     * `SETTING` - SETTING
          *     * `ITEM` - ITEM
          *     * `GODOWN` - GODOWN
+         *     * `CENTRE` - CENTRE
+         *     * `BUDGET` - BUDGET
          * @enum {string}
          */
-        AuditTrailRowKindEnum: "ENTRY" | "LEDGER" | "PARTY" | "RULE" | "SETTING" | "ITEM" | "GODOWN";
+        AuditTrailRowKindEnum: "ENTRY" | "LEDGER" | "PARTY" | "RULE" | "SETTING" | "ITEM" | "GODOWN" | "CENTRE" | "BUDGET";
         /**
          * @description Month end: does the ledger agree with the bank?
          *
@@ -4921,6 +5065,41 @@ export interface components {
          * @enum {string}
          */
         BucketEnum: "0-30" | "31-60" | "61-90" | "Over 90";
+        Budget: {
+            /** Format: uuid */
+            ledger_id: string;
+            ledger: string;
+            group: string;
+            months: components["schemas"]["BudgetMonth"][];
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            total_paise: number;
+        };
+        BudgetMonth: {
+            month: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            amount_paise: number | null;
+        };
+        /** @description One ledger's budget for a year: an amount for each month named; a month set to null is cleared, a month left out is kept. */
+        BudgetSetRequest: {
+            fy: number;
+            /** Format: uuid */
+            ledger: string;
+            /** @description By month, YYYY-MM, e.g. '2025-04'. */
+            months: {
+                [key: string]: number | null;
+            };
+        };
+        BudgetVariance: {
+            fy: number;
+            through: string | null;
+            ledgers: components["schemas"]["VarianceLedger"][];
+        };
         BulkInviteRequest: {
             /** @description Up to 50 people. */
             rows: components["schemas"]["InviteRequest"][];
@@ -4977,6 +5156,36 @@ export interface components {
              * @description Owners' funds on the balance sheet less the partners' closing balances; nil when they agree.
              */
             difference_paise: number;
+        };
+        CentreLedger: {
+            ledger: string;
+            is_income: boolean;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            amount_paise: number;
+        };
+        CentreReportRow: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            income_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            expense_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            net_paise: number;
+            ledgers: components["schemas"]["CentreLedger"][];
         };
         Challan: {
             /** Format: uuid */
@@ -5371,6 +5580,34 @@ export interface components {
             treatment: components["schemas"]["TreatmentRequest"];
             /** @description Defaults to the original entry's narration. */
             narration?: string;
+        };
+        CostCentre: {
+            /** Format: uuid */
+            readonly id: string;
+            name: string;
+        };
+        CostCentreReport: {
+            fy: number;
+            centres: components["schemas"]["CentreReportRow"][];
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            unallocated_income_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            unallocated_expense_paise: number;
+        };
+        CostCentreRequest: {
+            name: string;
+        };
+        /** @description The cost centres one journal line is split across. Replaces what the line had; an empty list clears it. */
+        CostCentreTagsRequest: {
+            /** Format: uuid */
+            line: string;
+            allocations: components["schemas"]["TagAllocationRequest"][];
         };
         CreatePartiesRequest: {
             parties: components["schemas"]["WantedPartyRequest"][];
@@ -7523,6 +7760,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["Bill"][];
         };
+        PaginatedBudgetList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["Budget"][];
+        };
         PaginatedChallanList: {
             /** @example 123 */
             count: number;
@@ -7582,6 +7834,36 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["Client"][];
+        };
+        PaginatedCostCentreList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["CostCentre"][];
+        };
+        PaginatedCostCentreReportList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["CostCentreReport"][];
         };
         PaginatedCustomVoucherTypeList: {
             /** @example 123 */
@@ -7822,6 +8104,21 @@ export interface components {
              */
             previous?: string | null;
             results: components["schemas"]["StockItem"][];
+        };
+        PaginatedTagRowList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["TagRow"][];
         };
         PaginatedTallyImportSummaryList: {
             /** @example 123 */
@@ -8164,6 +8461,9 @@ export interface components {
              *     * `YEARLY` - Yearly (31 Mar)
              */
             close_period?: components["schemas"]["ClosePeriodEnum"];
+        };
+        PatchedCostCentreRequest: {
+            name?: string;
         };
         PatchedCustomVoucherTypeRequest: {
             name?: string;
@@ -10013,6 +10313,27 @@ export interface components {
          * @enum {string}
          */
         SuggestedRoleEnum: "VENDOR" | "CUSTOMER" | "BOTH" | "OTHER";
+        TagAllocationRequest: {
+            /** Format: uuid */
+            cost_centre: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            amount_paise: number;
+        };
+        TagRow: {
+            /** Format: uuid */
+            line: string;
+            /** Format: uuid */
+            cost_centre: string;
+            cost_centre_name: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            amount_paise: number;
+        };
         TallyAccountChoiceRequest: {
             ledger: string;
             kind: components["schemas"]["Kind226Enum"];
@@ -11050,6 +11371,46 @@ export interface components {
             rows: number;
             run: components["schemas"]["RunReport"];
         };
+        VarianceLedger: {
+            /** Format: uuid */
+            ledger_id: string;
+            ledger: string;
+            is_income: boolean;
+            months: components["schemas"]["VarianceMonth"][];
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            budget_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            actual_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            variance_paise: number;
+        };
+        VarianceMonth: {
+            month: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            budget_paise: number | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            actual_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            variance_paise: number;
+        };
         /** @description A preset for a sales or purchase voucher: the head ledger and GST rate it fills in. Nothing posts differently. */
         VoucherClass: {
             /** Format: uuid */
@@ -11795,7 +12156,7 @@ export interface operations {
                 /** @description Only this person's changes. */
                 actor?: string;
                 from?: string;
-                kind?: "ENTRY" | "GODOWN" | "ITEM" | "LEDGER" | "PARTY" | "RULE" | "SETTING";
+                kind?: "BUDGET" | "CENTRE" | "ENTRY" | "GODOWN" | "ITEM" | "LEDGER" | "PARTY" | "RULE" | "SETTING";
                 limit?: number;
                 offset?: number;
                 /** @description Text in the label or the note. */
@@ -12375,6 +12736,330 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BooksStatus"];
+                };
+            };
+        };
+    };
+    clients_budgets_list: {
+        parameters: {
+            query?: {
+                /** @description The calendar year the financial year starts in (2025 for 2025-26). */
+                fy?: number;
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedBudgetList"];
+                };
+            };
+        };
+    };
+    clients_budgets_set_update: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BudgetSetRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["BudgetSetRequest"];
+                "multipart/form-data": components["schemas"]["BudgetSetRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedBudgetList"];
+                };
+            };
+        };
+    };
+    clients_budgets_variance_retrieve: {
+        parameters: {
+            query?: {
+                /** @description The calendar year the financial year starts in (2025 for 2025-26). */
+                fy?: number;
+                through?: string;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BudgetVariance"];
+                };
+            };
+        };
+    };
+    clients_cost_centre_report_list: {
+        parameters: {
+            query?: {
+                /** @description The calendar year the financial year starts in (2025 for 2025-26). */
+                fy?: number;
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedCostCentreReportList"];
+                };
+            };
+        };
+    };
+    clients_cost_centre_tags_list: {
+        parameters: {
+            query: {
+                entry: string;
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedTagRowList"];
+                };
+            };
+        };
+    };
+    clients_cost_centre_tags_create: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostCentreTagsRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CostCentreTagsRequest"];
+                "multipart/form-data": components["schemas"]["CostCentreTagsRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedTagRowList"];
+                };
+            };
+        };
+    };
+    clients_cost_centres_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedCostCentreList"];
+                };
+            };
+        };
+    };
+    clients_cost_centres_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostCentreRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CostCentreRequest"];
+                "multipart/form-data": components["schemas"]["CostCentreRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostCentre"];
+                };
+            };
+        };
+    };
+    clients_cost_centres_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostCentre"];
+                };
+            };
+        };
+    };
+    clients_cost_centres_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["CostCentreRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["CostCentreRequest"];
+                "multipart/form-data": components["schemas"]["CostCentreRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostCentre"];
+                };
+            };
+        };
+    };
+    clients_cost_centres_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    clients_cost_centres_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedCostCentreRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedCostCentreRequest"];
+                "multipart/form-data": components["schemas"]["PatchedCostCentreRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CostCentre"];
                 };
             };
         };

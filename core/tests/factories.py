@@ -54,6 +54,9 @@ from ledger.models import (
     Employee,
     EntryChange,
     FixedAsset,
+    Budget,
+    CostCentre,
+    CostCentreTag,
     Godown,
     InvoiceReading,
     JournalEntry,
@@ -504,6 +507,23 @@ def _godown(firm, **kw):
     return Godown.objects.create(firm=firm, client=client, name="Shop")
 
 
+def _cost_centre(firm, **kw):
+    client = kw.get("client") or _client(firm)
+    return CostCentre.objects.create(firm=firm, client=client, name=f"Centre {uuid.uuid4().hex[:6]}")
+
+
+def _cost_centre_tag(firm, **kw):
+    line = kw.get("line") or _journal_line(firm)
+    centre = kw.get("cost_centre") or CostCentre.objects.create(firm=firm, client=line.entry.client, name=f"Centre {uuid.uuid4().hex[:6]}")
+    return CostCentreTag.objects.create(firm=firm, client=line.entry.client, line=line, cost_centre=centre, amount_paise=5_000)
+
+
+def _budget(firm, **kw):
+    client = kw.get("client") or _client(firm)
+    ledger = kw.get("ledger") or _ledger_account(firm, client=client)
+    return Budget.objects.create(firm=firm, client=client, ledger=ledger, period=datetime.date(2025, 4, 1), amount_paise=100_000)
+
+
 def _tds_challan(firm, **kw):
     client = kw.get("client") or _client(firm)
     entry = JournalEntry.objects.create(
@@ -613,6 +633,9 @@ FACTORIES = {
     NumberingFormat: _numbering_format,
     VoucherClass: _voucher_class,
     Godown: _godown,
+    CostCentre: _cost_centre,
+    CostCentreTag: _cost_centre_tag,
+    Budget: _budget,
     MasterChange: _master_change,
     Bill: _bill,
     BillAllocation: _bill_allocation,

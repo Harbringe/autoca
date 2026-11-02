@@ -16,6 +16,12 @@ from __future__ import annotations
 from django.urls import include, path
 from rest_framework.routers import DefaultRouter
 
+from api.views.analysis import (
+    BudgetViewSet,
+    CostCentreReportViewSet,
+    CostCentreTagViewSet,
+    CostCentreViewSet,
+)
 from api.views.assets import AssetViewSet
 from api.views.assistant import AssistantPauseView, NextBatchView
 from api.views.audit import AuditLogView
@@ -92,6 +98,10 @@ per_client.register("tds", TdsChallanViewSet, basename="client-tds")
 per_client.register("stock-entries", StockEntryViewSet, basename="client-stock-entries")
 per_client.register("stock-items", StockItemViewSet, basename="client-stock-items")
 per_client.register("godowns", GodownViewSet, basename="client-godowns")
+per_client.register("cost-centres", CostCentreViewSet, basename="client-cost-centres")
+per_client.register("cost-centre-tags", CostCentreTagViewSet, basename="client-cost-centre-tags")
+per_client.register("budgets", BudgetViewSet, basename="client-budgets")
+per_client.register("cost-centre-report", CostCentreReportViewSet, basename="client-cost-centre-report")
 per_client.register("employees", EmployeeViewSet, basename="client-employee")
 per_client.register("payroll", PayrollRunViewSet, basename="client-payroll")
 per_client.register("assets", AssetViewSet, basename="client-asset")

@@ -50,6 +50,8 @@ export function AuditTrailScreen({ clientId }: { clientId: string }) {
           <option value="SETTING">Settings</option>
           <option value="ITEM">Stock items</option>
           <option value="GODOWN">Godowns</option>
+          <option value="CENTRE">Cost centres</option>
+          <option value="BUDGET">Budgets</option>
         </Select>
         <Input aria-label="Search the changes" placeholder="Search…" className="w-56" value={q} onChange={(e) => change(setQ, e.target.value)} />
         <Input aria-label="From" type="date" className="w-40" value={from} onChange={(e) => change(setFrom, e.target.value)} />

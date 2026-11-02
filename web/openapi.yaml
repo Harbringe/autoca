@@ -798,6 +798,8 @@ paths:
         schema:
           type: string
           enum:
+          - BUDGET
+          - CENTRE
           - ENTRY
           - GODOWN
           - ITEM
@@ -1636,6 +1638,460 @@ paths:
               schema:
                 $ref: '#/components/schemas/BooksStatus'
           description: ''
+  /api/v1/clients/{client_id}/budgets/:
+    get:
+      operationId: clients_budgets_list
+      description: What each ledger is expected to come to, month by month.
+      summary: The year's budgets
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: The calendar year the financial year starts in (2025 for 2025-26).
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - analysis
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBudgetList'
+          description: ''
+  /api/v1/clients/{client_id}/budgets/set/:
+    put:
+      operationId: clients_budgets_set_update
+      description: An amount for each month named (whole paise); null clears a month,
+        a month left out is kept. Recorded in the audit trail.
+      summary: Set a ledger's budget for a year
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - analysis
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BudgetSetRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BudgetSetRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BudgetSetRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBudgetList'
+          description: ''
+  /api/v1/clients/{client_id}/budgets/variance/:
+    get:
+      operationId: clients_budgets_variance_retrieve
+      description: 'Each budgeted ledger month by month: the budget, what the books
+        show and the difference. `through` (YYYY-MM) limits the year-to-date totals.'
+      summary: Budget against the books
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: The calendar year the financial year starts in (2025 for 2025-26).
+      - in: query
+        name: through
+        schema:
+          type: string
+      tags:
+      - analysis
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/BudgetVariance'
+          description: ''
+  /api/v1/clients/{client_id}/cost-centre-report/:
+    get:
+      operationId: clients_cost_centre_report_list
+      description: From the journal lines tagged to each centre, with what is not
+        tagged yet. Read from the books; nothing is written.
+      summary: Income and expense by cost centre
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: The calendar year the financial year starts in (2025 for 2025-26).
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - analysis
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCostCentreReportList'
+          description: ''
+  /api/v1/clients/{client_id}/cost-centre-tags/:
+    get:
+      operationId: clients_cost_centre_tags_list
+      description: Which cost centres a journal line belongs to. Reads from an entry;
+        writes replace one line's split.
+      summary: Cost centre tags on an entry's lines
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: entry
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - analysis
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTagRowList'
+          description: ''
+    post:
+      operationId: clients_cost_centre_tags_create
+      description: Replaces the line's cost centres with the ones sent; an empty list
+        clears them. Only income and expense lines can be tagged, the amounts together
+        cannot exceed the line, and what is not tagged stays unallocated. The books
+        are not changed.
+      summary: Split a journal line across cost centres
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - analysis
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CostCentreTagsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CostCentreTagsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CostCentreTagsRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedTagRowList'
+          description: ''
+  /api/v1/clients/{client_id}/cost-centres/:
+    get:
+      operationId: clients_cost_centres_list
+      description: The client's cost centres. One with lines tagged to it cannot be
+        removed.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - analysis
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedCostCentreList'
+          description: ''
+    post:
+      operationId: clients_cost_centres_create
+      description: The client's cost centres. One with lines tagged to it cannot be
+        removed.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - analysis
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CostCentreRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CostCentreRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CostCentreRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostCentre'
+          description: ''
+  /api/v1/clients/{client_id}/cost-centres/{id}/:
+    get:
+      operationId: clients_cost_centres_retrieve
+      description: The client's cost centres. One with lines tagged to it cannot be
+        removed.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - analysis
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostCentre'
+          description: ''
+    put:
+      operationId: clients_cost_centres_update
+      description: The client's cost centres. One with lines tagged to it cannot be
+        removed.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - analysis
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CostCentreRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/CostCentreRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/CostCentreRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostCentre'
+          description: ''
+    patch:
+      operationId: clients_cost_centres_partial_update
+      description: The client's cost centres. One with lines tagged to it cannot be
+        removed.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - analysis
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedCostCentreRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedCostCentreRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedCostCentreRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CostCentre'
+          description: ''
+    delete:
+      operationId: clients_cost_centres_destroy
+      description: The client's cost centres. One with lines tagged to it cannot be
+        removed.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - analysis
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
   /api/v1/clients/{client_id}/dashboard/:
     get:
       operationId: clients_dashboard_retrieve
@@ -9944,6 +10400,8 @@ components:
       - SETTING
       - ITEM
       - GODOWN
+      - CENTRE
+      - BUDGET
       type: string
       description: |-
         * `ENTRY` - ENTRY
@@ -9953,6 +10411,8 @@ components:
         * `SETTING` - SETTING
         * `ITEM` - ITEM
         * `GODOWN` - GODOWN
+        * `CENTRE` - CENTRE
+        * `BUDGET` - BUDGET
     BalanceCheck:
       type: object
       description: |-
@@ -11082,6 +11542,92 @@ components:
         * `31-60` - 31-60
         * `61-90` - 61-90
         * `Over 90` - Over 90
+    Budget:
+      type: object
+      properties:
+        ledger_id:
+          type: string
+          format: uuid
+        ledger:
+          type: string
+        group:
+          type: string
+        months:
+          type: array
+          items:
+            $ref: '#/components/schemas/BudgetMonth'
+        total_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - group
+      - ledger
+      - ledger_id
+      - months
+      - total_paise
+    BudgetMonth:
+      type: object
+      properties:
+        month:
+          type: string
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - amount_paise
+      - month
+    BudgetSetRequest:
+      type: object
+      description: 'One ledger''s budget for a year: an amount for each month named;
+        a month set to null is cleared, a month left out is kept.'
+      properties:
+        fy:
+          type: integer
+          maximum: 2100
+          minimum: 2000
+        ledger:
+          type: string
+          format: uuid
+        months:
+          type: object
+          additionalProperties:
+            type: integer
+            maximum: 1000000000000000000
+            minimum: 0
+            format: int64
+            nullable: true
+            description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+              a decimal.
+          description: By month, YYYY-MM, e.g. '2025-04'.
+      required:
+      - fy
+      - ledger
+      - months
+    BudgetVariance:
+      type: object
+      properties:
+        fy:
+          type: integer
+        through:
+          type: string
+          nullable: true
+        ledgers:
+          type: array
+          items:
+            $ref: '#/components/schemas/VarianceLedger'
+      required:
+      - fy
+      - ledgers
+      - through
     BulkInviteRequest:
       type: object
       properties:
@@ -11214,6 +11760,64 @@ components:
       - owners_funds_paise
       - previous
       - rows
+    CentreLedger:
+      type: object
+      properties:
+        ledger:
+          type: string
+        is_income:
+          type: boolean
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - amount_paise
+      - is_income
+      - ledger
+    CentreReportRow:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        income_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        expense_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        net_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        ledgers:
+          type: array
+          items:
+            $ref: '#/components/schemas/CentreLedger'
+      required:
+      - expense_paise
+      - id
+      - income_paise
+      - ledgers
+      - name
+      - net_paise
     Challan:
       type: object
       properties:
@@ -12123,6 +12727,71 @@ components:
           description: Defaults to the original entry's narration.
       required:
       - treatment
+    CostCentre:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          maxLength: 100
+      required:
+      - id
+      - name
+    CostCentreReport:
+      type: object
+      properties:
+        fy:
+          type: integer
+        centres:
+          type: array
+          items:
+            $ref: '#/components/schemas/CentreReportRow'
+        unallocated_income_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        unallocated_expense_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - centres
+      - fy
+      - unallocated_expense_paise
+      - unallocated_income_paise
+    CostCentreRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+      required:
+      - name
+    CostCentreTagsRequest:
+      type: object
+      description: The cost centres one journal line is split across. Replaces what
+        the line had; an empty list clears it.
+      properties:
+        line:
+          type: string
+          format: uuid
+        allocations:
+          type: array
+          items:
+            $ref: '#/components/schemas/TagAllocationRequest'
+      required:
+      - allocations
+      - line
     CreatePartiesRequest:
       type: object
       properties:
@@ -16575,6 +17244,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Bill'
+    PaginatedBudgetList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Budget'
     PaginatedChallanList:
       type: object
       required:
@@ -16667,6 +17359,52 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Client'
+    PaginatedCostCentreList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CostCentre'
+    PaginatedCostCentreReportList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/CostCentreReport'
     PaginatedCustomVoucherTypeList:
       type: object
       required:
@@ -17035,6 +17773,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/StockItem'
+    PaginatedTagRowList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/TagRow'
     PaginatedTallyImportSummaryList:
       type: object
       required:
@@ -17667,6 +18428,13 @@ components:
             * `QUARTERLY` - Quarterly (30 Jun, 30 Sep, 31 Dec, 31 Mar)
             * `HALF_YEARLY` - Half-yearly (30 Sep, 31 Mar)
             * `YEARLY` - Yearly (31 Mar)
+    PatchedCostCentreRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
     PatchedCustomVoucherTypeRequest:
       type: object
       properties:
@@ -21306,6 +22074,45 @@ components:
         * `CUSTOMER` - Customer
         * `BOTH` - Both supplier and customer
         * `OTHER` - Other (lender, employee, related party)
+    TagAllocationRequest:
+      type: object
+      properties:
+        cost_centre:
+          type: string
+          format: uuid
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 1
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - amount_paise
+      - cost_centre
+    TagRow:
+      type: object
+      properties:
+        line:
+          type: string
+          format: uuid
+        cost_centre:
+          type: string
+          format: uuid
+        cost_centre_name:
+          type: string
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - amount_paise
+      - cost_centre
+      - cost_centre_name
+      - line
     TallyAccountChoiceRequest:
       type: object
       properties:
@@ -23293,6 +24100,81 @@ components:
       required:
       - rows
       - run
+    VarianceLedger:
+      type: object
+      properties:
+        ledger_id:
+          type: string
+          format: uuid
+        ledger:
+          type: string
+        is_income:
+          type: boolean
+        months:
+          type: array
+          items:
+            $ref: '#/components/schemas/VarianceMonth'
+        budget_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        actual_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        variance_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - actual_paise
+      - budget_paise
+      - is_income
+      - ledger
+      - ledger_id
+      - months
+      - variance_paise
+    VarianceMonth:
+      type: object
+      properties:
+        month:
+          type: string
+        budget_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        actual_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        variance_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - actual_paise
+      - budget_paise
+      - month
+      - variance_paise
     VoucherClass:
       type: object
       description: 'A preset for a sales or purchase voucher: the head ledger and

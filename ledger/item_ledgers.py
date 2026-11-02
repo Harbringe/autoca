@@ -29,7 +29,11 @@ GROUP = {BillKind.PURCHASE: LedgerGroup.PURCHASE, BillKind.SALES: LedgerGroup.SA
 def item_for(client, description: str, unit: str = "", hsn_sac: str = "") -> StockItem:
     name = normalise(description)[:150] or "Item"
     items = list(StockItem.objects.filter(firm_id=client.firm_id, client=client))
-    found = next((i for i in items if i.name.lower() == name.lower()), None) or next((i for i in items if similar(i.name, name)), None)
+    found = (
+        next((i for i in items if i.name.lower() == name.lower()), None)
+        or next((i for i in items if name.lower() in [str(a).strip().lower() for a in (i.aliases or [])]), None)
+        or next((i for i in items if similar(i.name, name)), None)
+    )
     if found is None:
         found = StockItem.objects.create(firm_id=client.firm_id, client=client, name=name, unit=unit[:16], hsn_sac=hsn_sac[:8])
     return found

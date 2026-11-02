@@ -77,11 +77,12 @@ class CostCentreTagViewSet(ClientScopedMixin, viewsets.GenericViewSet):
         responses=TagRowSerializer(many=True),
     )
     def list(self, request, client_id=None):
+        client = self.client  # who may see this client is decided before anything about the request is
         try:
             entry = uuid.UUID(request.query_params.get("entry", ""))
         except ValueError:
             raise ValidationError({"entry": "Give the entry's id."}) from None
-        tags = CostCentreTag.objects.filter(firm_id=request.firm.pk, client=self.client, line__entry_id=entry).select_related("cost_centre")
+        tags = CostCentreTag.objects.filter(firm_id=request.firm.pk, client=client, line__entry_id=entry).select_related("cost_centre")
         rows = [{"line": t.line_id, "cost_centre": t.cost_centre_id, "cost_centre_name": t.cost_centre.name, "amount_paise": t.amount_paise} for t in tags]
         return Response(TagRowSerializer(rows, many=True).data)
 

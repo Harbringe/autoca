@@ -59,6 +59,9 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
   const deleteInvoice = useDeleteInvoice(clientId)
   const removeBill = useRemoveBill(clientId)
   const input = useRef<HTMLInputElement>(null)
+  const formId = 'expense-form'
+  // Before any early return below: a hook after one would change the hook count between renders.
+  useHotkey('ctrl+s', 'Save the voucher', () => document.getElementById(formId) instanceof HTMLFormElement && (document.getElementById(formId) as HTMLFormElement).requestSubmit(), 'Voucher entry')
   const [viewer, setViewer] = useState(true)
   const [alerts, setAlerts] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -178,8 +181,6 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
     listPath()
   }
 
-  const formId = 'expense-form'
-  useHotkey('ctrl+s', 'Save the voucher', () => document.getElementById(formId) instanceof HTMLFormElement && (document.getElementById(formId) as HTMLFormElement).requestSubmit(), 'Voucher entry')
   const busy = !!uploadingName
 
   return (

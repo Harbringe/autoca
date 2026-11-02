@@ -14,6 +14,7 @@ import { Spinner } from '@/components/ui/spinner'
 import { toast } from '@/lib/toast'
 import { GodownsCard } from './GodownsCard'
 import { say } from './say'
+import { ManufacturingCard } from './ManufacturingCard'
 import { StockCountCard } from './StockCountCard'
 import { StockMoveCard } from './StockMoveCard'
 import { StockTallyImportCard } from './StockTallyImportCard'
@@ -184,6 +185,7 @@ export function StockItemsScreen({ clientId, mayEdit }: { clientId: string; mayE
       <GodownsCard clientId={clientId} mayEdit={mayEdit} />
       {mayEdit && <StockMoveCard clientId={clientId} />}
       {mayEdit && <StockCountCard clientId={clientId} />}
+      <ManufacturingCard clientId={clientId} mayEdit={mayEdit} />
 
       <Confirm
         open={removing !== null}

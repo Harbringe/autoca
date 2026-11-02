@@ -798,6 +798,7 @@ paths:
         schema:
           type: string
           enum:
+          - BOM
           - BUDGET
           - CENTRE
           - CHEQUE
@@ -1295,6 +1296,309 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ItemLedgerResponse'
+          description: ''
+  /api/v1/clients/{client_id}/boms/:
+    get:
+      operationId: clients_boms_list
+      description: What each finished item is made from, and the production runs that
+        make it.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - manufacturing
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedBomList'
+          description: ''
+    post:
+      operationId: clients_boms_create
+      description: What each finished item is made from, and the production runs that
+        make it.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - manufacturing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BomRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BomRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BomRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bom'
+          description: ''
+  /api/v1/clients/{client_id}/boms/{id}/:
+    get:
+      operationId: clients_boms_retrieve
+      description: What each finished item is made from, and the production runs that
+        make it.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - manufacturing
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bom'
+          description: ''
+    put:
+      operationId: clients_boms_update
+      description: What each finished item is made from, and the production runs that
+        make it.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - manufacturing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BomRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/BomRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/BomRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bom'
+          description: ''
+    patch:
+      operationId: clients_boms_partial_update
+      description: What each finished item is made from, and the production runs that
+        make it.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - manufacturing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PatchedBomRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PatchedBomRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PatchedBomRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Bom'
+          description: ''
+    delete:
+      operationId: clients_boms_destroy
+      description: What each finished item is made from, and the production runs that
+        make it.
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - manufacturing
+      security:
+      - cookieAuth: []
+      responses:
+        '204':
+          description: No response body
+  /api/v1/clients/{client_id}/boms/{id}/plan/:
+    get:
+      operationId: clients_boms_plan_retrieve
+      description: 'For a quantity of the finished item on a date: each component
+        needed, what is on hand, what it costs at the average, and which are short.
+        Writes nothing.'
+      summary: What a production run would take and cost
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: date
+        schema:
+          type: string
+          format: date
+      - in: query
+        name: godown
+        schema:
+          type: string
+          format: uuid
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      - in: query
+        name: quantity
+        schema:
+          type: string
+        required: true
+      tags:
+      - manufacturing
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RunPlan'
+          description: ''
+  /api/v1/clients/{client_id}/boms/{id}/produce/:
+    post:
+      operationId: clients_boms_produce_create
+      description: Takes each component out of stock at its average cost and brings
+        the finished item in at their total plus the extra cost given. Refused when
+        a component is short, naming it, or inside sealed books. Removing any row
+        of the run removes all of it. Needs `journal.approve`.
+      summary: Run production
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - manufacturing
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProduceRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ProduceRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ProduceRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '201':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedStockEntryList'
           description: ''
   /api/v1/clients/{client_id}/books/:
     get:
@@ -10849,6 +11153,7 @@ components:
       - CENTRE
       - BUDGET
       - CHEQUE
+      - BOM
       type: string
       description: |-
         * `ENTRY` - ENTRY
@@ -10861,6 +11166,7 @@ components:
         * `CENTRE` - CENTRE
         * `BUDGET` - BUDGET
         * `CHEQUE` - CHEQUE
+        * `BOM` - BOM
     BalanceCheck:
       type: object
       description: |-
@@ -11837,6 +12143,56 @@ components:
     BlankEnum:
       enum:
       - ''
+    Bom:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+          readOnly: true
+        name:
+          type: string
+          description: The finished item.
+          maxLength: 200
+        unit:
+          type: string
+          maxLength: 16
+        output_quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
+          default: '1.000'
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/Component'
+      required:
+      - components
+      - id
+      - name
+    BomRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: The finished item.
+          maxLength: 200
+        unit:
+          type: string
+          maxLength: 16
+        output_quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
+          default: '1.000'
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/ComponentRequest'
+      required:
+      - components
+      - name
     BooksEvent:
       type: object
       properties:
@@ -13236,6 +13592,41 @@ components:
       - ready
       - through
       - unexplained_blocking
+    Component:
+      type: object
+      properties:
+        name:
+          type: string
+          maxLength: 200
+        unit:
+          type: string
+          default: ''
+          maxLength: 16
+        quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
+      required:
+      - name
+      - quantity
+    ComponentRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          maxLength: 200
+        unit:
+          type: string
+          default: ''
+          maxLength: 16
+        quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
+      required:
+      - name
+      - quantity
     ConfirmPartyRequest:
       type: object
       properties:
@@ -17864,6 +18255,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Bill'
+    PaginatedBomList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Bom'
     PaginatedBudgetList:
       type: object
       required:
@@ -18971,6 +19385,26 @@ components:
         ledger_name:
           type: string
           maxLength: 255
+    PatchedBomRequest:
+      type: object
+      properties:
+        name:
+          type: string
+          minLength: 1
+          description: The finished item.
+          maxLength: 200
+        unit:
+          type: string
+          maxLength: 16
+        output_quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
+          default: '1.000'
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/ComponentRequest'
     PatchedChequeRequest:
       type: object
       properties:
@@ -20118,6 +20552,34 @@ components:
       - stage
       - tds_overdue_display
       - unresolved
+    ProduceRequest:
+      type: object
+      properties:
+        quantity:
+          type: string
+          format: decimal
+          pattern: ^-?\d{0,15}(?:\.\d{0,3})?$
+        entry_date:
+          type: string
+          format: date
+        godown:
+          type: string
+          format: uuid
+          nullable: true
+        extra_cost_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          default: 0
+          description: Labour, power and the like added to the finished goods' cost.
+        note:
+          type: string
+          default: ''
+          maxLength: 200
+      required:
+      - entry_date
+      - quantity
     ProfitAndLoss:
       type: object
       description: Adds a ``*_display`` string beside every ``*_paise`` field named
@@ -21350,6 +21812,33 @@ components:
       - ledger
       - narration
       - paise
+    RunComponent:
+      type: object
+      properties:
+        name:
+          type: string
+        unit:
+          type: string
+        needed:
+          type: string
+        available:
+          type: string
+        cost_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        enough:
+          type: boolean
+      required:
+      - available
+      - cost_paise
+      - enough
+      - name
+      - needed
+      - unit
     RunCreateRequest:
       type: object
       properties:
@@ -21388,6 +21877,31 @@ components:
       - period_start
       - registration
       - status
+    RunPlan:
+      type: object
+      properties:
+        quantity:
+          type: string
+        components:
+          type: array
+          items:
+            $ref: '#/components/schemas/RunComponent'
+        cost_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: What the components cost at their average, before any extra
+            cost.
+        short:
+          type: array
+          items:
+            type: string
+      required:
+      - components
+      - cost_paise
+      - quantity
+      - short
     RunReport:
       type: object
       description: The reconciliation as data. The Excel working paper is laid out
@@ -22696,12 +23210,14 @@ components:
       - ADJUSTMENT
       - TALLY
       - TRANSFER
+      - PRODUCTION
       type: string
       description: |-
         * `OPENING` - Opening stock
         * `ADJUSTMENT` - Stock adjustment
         * `TALLY` - Imported from Tally
         * `TRANSFER` - Stock transfer
+        * `PRODUCTION` - Production
     StockImport:
       type: object
       properties:

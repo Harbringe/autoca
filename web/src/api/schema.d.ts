@@ -625,6 +625,84 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/boms/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description What each finished item is made from, and the production runs that make it. */
+        get: operations["clients_boms_list"];
+        put?: never;
+        /** @description What each finished item is made from, and the production runs that make it. */
+        post: operations["clients_boms_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/boms/{id}/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** @description What each finished item is made from, and the production runs that make it. */
+        get: operations["clients_boms_retrieve"];
+        /** @description What each finished item is made from, and the production runs that make it. */
+        put: operations["clients_boms_update"];
+        post?: never;
+        /** @description What each finished item is made from, and the production runs that make it. */
+        delete: operations["clients_boms_destroy"];
+        options?: never;
+        head?: never;
+        /** @description What each finished item is made from, and the production runs that make it. */
+        patch: operations["clients_boms_partial_update"];
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/boms/{id}/plan/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What a production run would take and cost
+         * @description For a quantity of the finished item on a date: each component needed, what is on hand, what it costs at the average, and which are short. Writes nothing.
+         */
+        get: operations["clients_boms_plan_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/boms/{id}/produce/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run production
+         * @description Takes each component out of stock at its average cost and brings the finished item in at their total plus the extra cost given. Refused when a component is short, naming it, or inside sealed books. Removing any row of the run removes all of it. Needs `journal.approve`.
+         */
+        post: operations["clients_boms_produce_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/books/": {
         parameters: {
             query?: never;
@@ -4720,9 +4798,10 @@ export interface components {
          *     * `CENTRE` - CENTRE
          *     * `BUDGET` - BUDGET
          *     * `CHEQUE` - CHEQUE
+         *     * `BOM` - BOM
          * @enum {string}
          */
-        AuditTrailRowKindEnum: "ENTRY" | "LEDGER" | "PARTY" | "RULE" | "SETTING" | "ITEM" | "GODOWN" | "CENTRE" | "BUDGET" | "CHEQUE";
+        AuditTrailRowKindEnum: "ENTRY" | "LEDGER" | "PARTY" | "RULE" | "SETTING" | "ITEM" | "GODOWN" | "CENTRE" | "BUDGET" | "CHEQUE" | "BOM";
         /**
          * @description Month end: does the ledger agree with the bank?
          *
@@ -5144,6 +5223,30 @@ export interface components {
         BillStatusStatusEnum: "NO_INVOICE_EXPECTED" | "NEEDS_INVOICE";
         /** @enum {unknown} */
         BlankEnum: "";
+        Bom: {
+            /** Format: uuid */
+            readonly id: string;
+            /** @description The finished item. */
+            name: string;
+            unit?: string;
+            /**
+             * Format: decimal
+             * @default 1.000
+             */
+            output_quantity: string;
+            components: components["schemas"]["Component"][];
+        };
+        BomRequest: {
+            /** @description The finished item. */
+            name: string;
+            unit?: string;
+            /**
+             * Format: decimal
+             * @default 1.000
+             */
+            output_quantity: string;
+            components: components["schemas"]["ComponentRequest"][];
+        };
         BooksEvent: {
             /** Format: uuid */
             readonly id: string;
@@ -5741,6 +5844,20 @@ export interface components {
             unexplained_blocking: number;
             checks: components["schemas"]["CloseCheck"][];
             items: components["schemas"]["CloseItem"][];
+        };
+        Component: {
+            name: string;
+            /** @default  */
+            unit: string;
+            /** Format: decimal */
+            quantity: string;
+        };
+        ComponentRequest: {
+            name: string;
+            /** @default  */
+            unit: string;
+            /** Format: decimal */
+            quantity: string;
         };
         ConfirmPartyRequest: {
             /**
@@ -7986,6 +8103,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["Bill"][];
         };
+        PaginatedBomList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["Bom"][];
+        };
         PaginatedBudgetList: {
             /** @example 123 */
             count: number;
@@ -8656,6 +8788,17 @@ export interface components {
         PatchedBankAccountRequest: {
             ledger_name?: string;
         };
+        PatchedBomRequest: {
+            /** @description The finished item. */
+            name?: string;
+            unit?: string;
+            /**
+             * Format: decimal
+             * @default 1.000
+             */
+            output_quantity: string;
+            components?: components["schemas"]["ComponentRequest"][];
+        };
         PatchedChequeRequest: {
             /** Format: uuid */
             bank_account?: string;
@@ -9182,6 +9325,22 @@ export interface components {
             readonly receivables_display: string | null;
             /** @description The amount with Indian digit grouping, e.g. ₹6,03,490.57. */
             readonly payables_display: string | null;
+        };
+        ProduceRequest: {
+            /** Format: decimal */
+            quantity: string;
+            /** Format: date */
+            entry_date: string;
+            /** Format: uuid */
+            godown?: string | null;
+            /**
+             * Format: int64
+             * @description Labour, power and the like added to the finished goods' cost.
+             * @default 0
+             */
+            extra_cost_paise: number;
+            /** @default  */
+            note: string;
         };
         /** @description Adds a ``*_display`` string beside every ``*_paise`` field named in ``money``. */
         ProfitAndLoss: {
@@ -9851,6 +10010,18 @@ export interface components {
             is_debit: boolean;
             ledger: string;
         };
+        RunComponent: {
+            name: string;
+            unit: string;
+            needed: string;
+            available: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            cost_paise: number;
+            enough: boolean;
+        };
         RunCreateRequest: {
             /** Format: uuid */
             registration: string;
@@ -9872,6 +10043,16 @@ export interface components {
              */
             period_start: string;
             status: components["schemas"]["Status42dEnum"];
+        };
+        RunPlan: {
+            quantity: string;
+            components: components["schemas"]["RunComponent"][];
+            /**
+             * Format: int64
+             * @description What the components cost at their average, before any extra cost.
+             */
+            cost_paise: number;
+            short: string[];
         };
         /** @description The reconciliation as data. The Excel working paper is laid out from this same dictionary. */
         RunReport: {
@@ -10551,9 +10732,10 @@ export interface components {
          *     * `ADJUSTMENT` - Stock adjustment
          *     * `TALLY` - Imported from Tally
          *     * `TRANSFER` - Stock transfer
+         *     * `PRODUCTION` - Production
          * @enum {string}
          */
-        StockEntryKindEnum: "OPENING" | "ADJUSTMENT" | "TALLY" | "TRANSFER";
+        StockEntryKindEnum: "OPENING" | "ADJUSTMENT" | "TALLY" | "TRANSFER" | "PRODUCTION";
         StockImport: {
             applied: boolean;
             rows: components["schemas"]["StockImportRow"][];
@@ -12518,7 +12700,7 @@ export interface operations {
                 /** @description Only this person's changes. */
                 actor?: string;
                 from?: string;
-                kind?: "BUDGET" | "CENTRE" | "CHEQUE" | "ENTRY" | "GODOWN" | "ITEM" | "LEDGER" | "PARTY" | "RULE" | "SETTING";
+                kind?: "BOM" | "BUDGET" | "CENTRE" | "CHEQUE" | "ENTRY" | "GODOWN" | "ITEM" | "LEDGER" | "PARTY" | "RULE" | "SETTING";
                 limit?: number;
                 offset?: number;
                 /** @description Text in the label or the note. */
@@ -12837,6 +13019,217 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ItemLedgerResponse"];
+                };
+            };
+        };
+    };
+    clients_boms_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedBomList"];
+                };
+            };
+        };
+    };
+    clients_boms_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BomRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["BomRequest"];
+                "multipart/form-data": components["schemas"]["BomRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Bom"];
+                };
+            };
+        };
+    };
+    clients_boms_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Bom"];
+                };
+            };
+        };
+    };
+    clients_boms_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BomRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["BomRequest"];
+                "multipart/form-data": components["schemas"]["BomRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Bom"];
+                };
+            };
+        };
+    };
+    clients_boms_destroy: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description No response body */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    clients_boms_partial_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PatchedBomRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PatchedBomRequest"];
+                "multipart/form-data": components["schemas"]["PatchedBomRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Bom"];
+                };
+            };
+        };
+    };
+    clients_boms_plan_retrieve: {
+        parameters: {
+            query: {
+                date?: string;
+                godown?: string;
+                quantity: string;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RunPlan"];
+                };
+            };
+        };
+    };
+    clients_boms_produce_create: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProduceRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["ProduceRequest"];
+                "multipart/form-data": components["schemas"]["ProduceRequest"];
+            };
+        };
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedStockEntryList"];
                 };
             };
         };

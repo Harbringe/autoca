@@ -782,6 +782,8 @@ class StockEntryKind(models.TextChoices):
     TALLY = "TALLY", "Imported from Tally"
     #: Stock moved between two of the client's godowns: two rows (out of one, into the other) sharing a ``transfer`` id.
     TRANSFER = "TRANSFER", "Stock transfer"
+    #: Components used up, or finished goods made, by a production run; the legs of one run share a ``production`` id.
+    PRODUCTION = "PRODUCTION", "Production"
 
 
 class Godown(UUIDModel, FirmScopedModel):
@@ -824,6 +826,8 @@ class StockEntry(UUIDModel, FirmScopedModel):
     godown = models.ForeignKey(Godown, null=True, blank=True, on_delete=models.PROTECT, related_name="stock_entries")
     #: Both rows of one stock transfer carry the same id; removing one removes the other.
     transfer = models.UUIDField(null=True, blank=True, db_index=True)
+    #: Every row of one production run carries the same id; removing one removes the run.
+    production = models.UUIDField(null=True, blank=True, db_index=True)
 
     class Meta:
         db_table = "ledger_stock_entry"
@@ -1003,6 +1007,7 @@ class MasterKind(models.TextChoices):
     CENTRE = "CENTRE", "Cost centre"
     BUDGET = "BUDGET", "Budget"
     CHEQUE = "CHEQUE", "Cheque"
+    BOM = "BOM", "Bill of materials"
 
 
 class MasterAction(models.TextChoices):
@@ -1126,4 +1131,26 @@ class Cheque(UUIDModel, FirmScopedModel):
 
     def __str__(self) -> str:
         return f"Cheque {self.number}"
+
+
+class BillOfMaterials(UUIDModel, FirmScopedModel):
+    """What it takes to make a finished item: the components and how much of each goes into ``output_quantity`` of it."""
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="boms")
+    name = models.CharField(max_length=200, help_text="The finished item.")
+    unit = models.CharField(max_length=16, blank=True, default="", db_default="")
+    output_quantity = models.DecimalField(max_digits=18, decimal_places=3, default=1)
+    #: ``[{"name": ..., "unit": ..., "quantity": "2.500"}]``: the amount of each component for ``output_quantity`` of the finished item.
+    components = models.JSONField(default=list)
+
+    class Meta:
+        db_table = "ledger_bom"
+        ordering = ["name"]
+        constraints = [
+            models.UniqueConstraint(fields=["firm", "client", "name"], name="uniq_bom_name"),
+            models.CheckConstraint(condition=models.Q(output_quantity__gt=0), name="ck_bom_output_positive"),
+        ]
+
+    def __str__(self) -> str:
+        return self.name
 

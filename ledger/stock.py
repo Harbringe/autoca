@@ -40,6 +40,8 @@ def record(
         raise StockError("That godown belongs to another client.")
     if kind == StockEntryKind.TRANSFER:
         raise StockError("Use a stock transfer to move stock between godowns.")
+    if kind == StockEntryKind.PRODUCTION:
+        raise StockError("Use a production run to make finished goods from components.")
     if kind == StockEntryKind.OPENING:
         direction = "IN"
     elif direction not in ("IN", "OUT"):
@@ -150,5 +152,8 @@ def remove(row: StockEntry, *, membership) -> None:
         raise StockError(f"The books are sealed through {through:%d-%m-%Y}, so this entry cannot be removed.")
     if row.transfer:
         StockEntry.objects.filter(firm_id=row.firm_id, client=row.client, transfer=row.transfer).delete()
+        return
+    if row.production:
+        StockEntry.objects.filter(firm_id=row.firm_id, client=row.client, production=row.production).delete()
         return
     row.delete()

@@ -44,6 +44,7 @@ from ledger.models import (
     Bill,
     BillAllocation,
     BillKind,
+    BillOfMaterials,
     BooksAction,
     BooksEvent,
     Budget,
@@ -534,6 +535,13 @@ def _cheque(firm, **kw):
     )
 
 
+def _bom(firm, **kw):
+    client = kw.get("client") or _client(firm)
+    return BillOfMaterials.objects.create(
+        firm=firm, client=client, name="Finished Widget", unit="pcs", output_quantity=1, components=[{"name": "Raw", "unit": "kg", "quantity": "2"}]
+    )
+
+
 def _tds_challan(firm, **kw):
     client = kw.get("client") or _client(firm)
     entry = JournalEntry.objects.create(
@@ -646,6 +654,7 @@ FACTORIES = {
     CostCentre: _cost_centre,
     CostCentreTag: _cost_centre_tag,
     Budget: _budget,
+    BillOfMaterials: _bom,
     Cheque: _cheque,
     MasterChange: _master_change,
     Bill: _bill,

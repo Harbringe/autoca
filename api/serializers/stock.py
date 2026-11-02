@@ -18,7 +18,7 @@ class StockEntrySerializer(serializers.ModelSerializer):
 
 
 class StockEntryCreateSerializer(serializers.Serializer):
-    kind = serializers.ChoiceField(choices=[c for c in StockEntryKind.choices if c[0] != StockEntryKind.TRANSFER])
+    kind = serializers.ChoiceField(choices=[c for c in StockEntryKind.choices if c[0] not in (StockEntryKind.TRANSFER, StockEntryKind.PRODUCTION)])
     entry_date = serializers.DateField()
     direction = serializers.ChoiceField(choices=["IN", "OUT"], default="IN", help_text="Ignored for opening stock, which is always in.")
     name = serializers.CharField(max_length=200)

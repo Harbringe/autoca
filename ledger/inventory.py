@@ -269,7 +269,7 @@ def _collect(client, end: datetime.date, since: datetime.date):
             other = where.get(row.transfer, {}).get("OUT" if row.direction == "IN" else "IN", "")
             source = f"Stock transfer {'from' if row.direction == 'IN' else 'to'} {other}".strip()
         else:
-            source = row.get_kind_display() + (f" · {row.note}" if row.note else "")
+            source = row.note if row.kind == "PRODUCTION" and row.note else row.get_kind_display() + (f" · {row.note}" if row.note else "")
         movements.append(
             Movement(
                 date=row.entry_date, direction=row.direction, name=row.name, unit=row.unit,

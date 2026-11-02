@@ -1,7 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { ReportsScreen, type ReportTab } from '@/features/reports/ReportsScreen'
+import { REPORT_TABS } from '@/features/reports/tabs'
 
-const TABS: ReportTab[] = ['tb', 'pl', 'bs', 'nce', 'payables', 'receivables', 'inventory', 'recon']
+// Read from the one list the tab row is drawn from, so a tab that is shown can always be reached.
+const TABS: ReportTab[] = REPORT_TABS.map((t) => t.tab)
 
 export const Route = createFileRoute('/_app/clients/$clientId/reports')({
   // The tab is always in the search (Trial Balance by default), so each tab link can tell it is current.

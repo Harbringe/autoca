@@ -8,6 +8,7 @@ import { godowns } from '@/api/queries/godowns'
 import { stockItems, type StockItem } from '@/api/queries/stockItems'
 import { StockItemsScreen } from './StockItemsScreen'
 
+vi.mock('@/features/shell/useFy', () => ({ useFy: () => ({ fy: 2025 }) }))
 const post = vi.fn()
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 const patch = vi.fn()

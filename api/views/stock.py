@@ -6,6 +6,7 @@ from drf_spectacular.utils import extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.exceptions import ValidationError
+from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
 from api.pagination import DefaultPagination
@@ -16,14 +17,27 @@ from api.serializers.stock import (
     StockCountSerializer,
     StockEntryCreateSerializer,
     StockEntrySerializer,
+    StockImportRequestSerializer,
+    StockImportSerializer,
     StockItemSerializer,
     StockTransferSerializer,
 )
 from api.views.base import ClientScopedMixin, FirmScopedViewSet
 from api.views.master_audit import MasterAuditMixin
-from ledger import stock
+from ledger import stock, tally_stock_import
 from ledger.audit import GODOWN_FIELDS, ITEM_FIELDS
 from ledger.models import Godown, StockEntry, StockItem
+from ledger.tally_stock import read_stock_items
+
+MAX_STOCK_FILE = 10 * 1024 * 1024
+
+
+class _CanImport(HasFirmPermission):
+    """Bringing items in from Tally is an import: it needs the import right, not the ledger-management one the rest of the list needs."""
+
+    @staticmethod
+    def _required(request, view) -> str | None:
+        return "ledger.import"
 
 
 @extend_schema(tags=["inventory"])
@@ -93,6 +107,27 @@ class StockItemViewSet(MasterAuditMixin, ClientScopedMixin, FirmScopedViewSet):
 
     def audit_label(self, obj) -> str:
         return f"Stock item: {obj.name}"
+
+    @extend_schema(
+        summary="Bring stock items in from Tally",
+        description=(
+            "Reads Tally's stock-item export and, with `apply` false, says what would happen to each item and its opening stock without writing "
+            "anything; with `apply` true it writes them. New names make items, existing ones are only filled in where blank, opening stock is "
+            "dated 1 April of the financial year and is not added twice. Safe to repeat."
+        ),
+        request={"multipart/form-data": StockImportRequestSerializer},
+        responses=StockImportSerializer,
+    )
+    @action(detail=False, methods=["post"], url_path="import-tally", parser_classes=[MultiPartParser, FormParser], permission_classes=[_CanImport])
+    def import_tally(self, request, client_id=None):
+        payload = StockImportRequestSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        upload = payload.validated_data["file"]
+        rows = read_stock_items(upload.read(MAX_STOCK_FILE + 1), upload.name or "", max_bytes=MAX_STOCK_FILE)
+        result = tally_stock_import.run(
+            self.client, rows, payload.validated_data["financial_year"], apply=payload.validated_data["apply"], membership=request.membership
+        )
+        return Response(StockImportSerializer(result).data)
 
 
 def _plain(value) -> str:

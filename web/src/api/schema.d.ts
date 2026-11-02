@@ -2478,6 +2478,26 @@ export interface paths {
         patch: operations["clients_stock_items_partial_update"];
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/stock-items/import-tally/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Bring stock items in from Tally
+         * @description Reads Tally's stock-item export and, with `apply` false, says what would happen to each item and its opening stock without writing anything; with `apply` true it writes them. New names make items, existing ones are only filled in where blank, opening stock is dated 1 April of the financial year and is not added twice. Safe to repeat.
+         */
+        post: operations["clients_stock_items_import_tally_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/tally-imports/": {
         parameters: {
             query?: never;
@@ -5731,6 +5751,13 @@ export interface components {
          * @enum {string}
          */
         ItcStatusEnum: "eligible" | "blocked" | "not_eligible" | "rcm_on_payment";
+        /**
+         * @description * `new` - new
+         *     * `fill` - fill
+         *     * `same` - same
+         * @enum {string}
+         */
+        ItemEnum: "new" | "fill" | "same";
         ItemLedger: {
             /** @description The line, as it was sent. */
             description: string;
@@ -6705,6 +6732,14 @@ export interface components {
         OpeningBillsRequestRequest: {
             bills: components["schemas"]["OpeningBillRequest"][];
         };
+        /**
+         * @description * `add` - add
+         *     * `exists` - exists
+         *     * `sealed` - sealed
+         *     * `none` - none
+         * @enum {string}
+         */
+        OpeningEnum: "add" | "exists" | "sealed" | "none";
         OpeningStanding: {
             /** @description The year the balance stands at the start of. */
             financial_year: number | null;
@@ -9272,6 +9307,40 @@ export interface components {
          * @enum {string}
          */
         StockEntryKindEnum: "OPENING" | "ADJUSTMENT" | "TALLY" | "TRANSFER";
+        StockImport: {
+            applied: boolean;
+            rows: components["schemas"]["StockImportRow"][];
+            counts: {
+                [key: string]: number;
+            };
+        };
+        StockImportRequestRequest: {
+            /** Format: binary */
+            file: string;
+            /** @description Starting year: 2025 is FY 2025-26. Opening stock is dated 1 April of it. */
+            financial_year: number;
+            /**
+             * @description False is the preview: nothing is written.
+             * @default false
+             */
+            apply: boolean;
+        };
+        StockImportRow: {
+            name: string;
+            unit: string;
+            opening_qty: string;
+            opening_value_paise: number;
+            /**
+             * @description Made, blanks filled in, or nothing to add.
+             *
+             *     * `new` - new
+             *     * `fill` - fill
+             *     * `same` - same
+             */
+            item: components["schemas"]["ItemEnum"];
+            opening: components["schemas"]["OpeningEnum"];
+            reason: string;
+        };
         /** @description A product the client buys or sells: its name, unit, HSN, GST rate, reorder level and the ledgers it is booked to. */
         StockItem: {
             /** Format: uuid */
@@ -14746,6 +14815,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StockItem"];
+                };
+            };
+        };
+    };
+    clients_stock_items_import_tally_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "multipart/form-data": components["schemas"]["StockImportRequestRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockImport"];
                 };
             };
         };

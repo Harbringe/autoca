@@ -5706,6 +5706,39 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/clients/{client_id}/stock-items/import-tally/:
+    post:
+      operationId: clients_stock_items_import_tally_create
+      description: Reads Tally's stock-item export and, with `apply` false, says what
+        would happen to each item and its opening stock without writing anything;
+        with `apply` true it writes them. New names make items, existing ones are
+        only filled in where blank, opening stock is dated 1 April of the financial
+        year and is not added twice. Safe to repeat.
+      summary: Bring stock items in from Tally
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - inventory
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/StockImportRequestRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockImport'
+          description: ''
   /api/v1/clients/{client_id}/tally-imports/:
     get:
       operationId: clients_tally_imports_list
@@ -12972,6 +13005,16 @@ components:
         * `blocked` - blocked
         * `not_eligible` - not_eligible
         * `rcm_on_payment` - rcm_on_payment
+    ItemEnum:
+      enum:
+      - new
+      - fill
+      - same
+      type: string
+      description: |-
+        * `new` - new
+        * `fill` - fill
+        * `same` - same
     ItemLedger:
       type: object
       properties:
@@ -15074,6 +15117,18 @@ components:
             $ref: '#/components/schemas/OpeningBillRequest'
       required:
       - bills
+    OpeningEnum:
+      enum:
+      - add
+      - exists
+      - sealed
+      - none
+      type: string
+      description: |-
+        * `add` - add
+        * `exists` - exists
+        * `sealed` - sealed
+        * `none` - none
     OpeningStanding:
       type: object
       properties:
@@ -19960,6 +20015,74 @@ components:
         * `ADJUSTMENT` - Stock adjustment
         * `TALLY` - Imported from Tally
         * `TRANSFER` - Stock transfer
+    StockImport:
+      type: object
+      properties:
+        applied:
+          type: boolean
+        rows:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockImportRow'
+        counts:
+          type: object
+          additionalProperties:
+            type: integer
+      required:
+      - applied
+      - counts
+      - rows
+    StockImportRequestRequest:
+      type: object
+      properties:
+        file:
+          type: string
+          format: binary
+        financial_year:
+          type: integer
+          maximum: 2100
+          minimum: 2000
+          description: 'Starting year: 2025 is FY 2025-26. Opening stock is dated
+            1 April of it.'
+        apply:
+          type: boolean
+          default: false
+          description: 'False is the preview: nothing is written.'
+      required:
+      - file
+      - financial_year
+    StockImportRow:
+      type: object
+      properties:
+        name:
+          type: string
+        unit:
+          type: string
+        opening_qty:
+          type: string
+        opening_value_paise:
+          type: integer
+        item:
+          allOf:
+          - $ref: '#/components/schemas/ItemEnum'
+          description: |-
+            Made, blanks filled in, or nothing to add.
+
+            * `new` - new
+            * `fill` - fill
+            * `same` - same
+        opening:
+          $ref: '#/components/schemas/OpeningEnum'
+        reason:
+          type: string
+      required:
+      - item
+      - name
+      - opening
+      - opening_qty
+      - opening_value_paise
+      - reason
+      - unit
     StockItem:
       type: object
       description: 'A product the client buys or sells: its name, unit, HSN, GST rate,

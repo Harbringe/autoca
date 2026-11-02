@@ -16,6 +16,7 @@ import { GodownsCard } from './GodownsCard'
 import { say } from './say'
 import { StockCountCard } from './StockCountCard'
 import { StockMoveCard } from './StockMoveCard'
+import { StockTallyImportCard } from './StockTallyImportCard'
 
 /** "5.00" is shown as "5", "20.000" as "20": the stored figures carry zeros nobody writes. */
 const plain = (value: string | null) => (value === null || value === '' ? '' : String(Number(value)))
@@ -172,6 +173,7 @@ export function StockItemsScreen({ clientId, mayEdit }: { clientId: string; mayE
         )}
       </Card>
 
+      {mayEdit && <StockTallyImportCard clientId={clientId} />}
       <GodownsCard clientId={clientId} mayEdit={mayEdit} />
       {mayEdit && <StockMoveCard clientId={clientId} />}
       {mayEdit && <StockCountCard clientId={clientId} />}

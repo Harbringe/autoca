@@ -55,6 +55,28 @@ class StockCountResultSerializer(serializers.Serializer):
     entry = StockEntrySerializer(allow_null=True, help_text="The adjustment booked; null when the count agreed with the books.")
 
 
+class StockImportRequestSerializer(serializers.Serializer):
+    file = serializers.FileField()
+    financial_year = serializers.IntegerField(min_value=2000, max_value=2100, help_text="Starting year: 2025 is FY 2025-26. Opening stock is dated 1 April of it.")
+    apply = serializers.BooleanField(default=False, help_text="False is the preview: nothing is written.")
+
+
+class StockImportRowSerializer(serializers.Serializer):
+    name = serializers.CharField()
+    unit = serializers.CharField(allow_blank=True)
+    opening_qty = serializers.CharField()
+    opening_value_paise = serializers.IntegerField()
+    item = serializers.ChoiceField(choices=["new", "fill", "same"], help_text="Made, blanks filled in, or nothing to add.")
+    opening = serializers.ChoiceField(choices=["add", "exists", "sealed", "none"])
+    reason = serializers.CharField(allow_blank=True)
+
+
+class StockImportSerializer(serializers.Serializer):
+    applied = serializers.BooleanField()
+    rows = StockImportRowSerializer(many=True)
+    counts = serializers.DictField(child=serializers.IntegerField())
+
+
 class GodownSerializer(serializers.ModelSerializer):
     class Meta:
         model = Godown

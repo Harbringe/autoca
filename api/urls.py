@@ -241,6 +241,11 @@ urlpatterns = [
         name="report-stock-reconciliation",
     ),
     path(
+        "clients/<uuid:client_id>/reports/stock-reconciliation/use-register/",
+        ReportView.as_view({"post": "use_register_stock"}),
+        name="report-stock-use-register",
+    ),
+    path(
         "clients/<uuid:client_id>/reports/balance-sheet/",
         ReportView.as_view({"get": "balance_sheet"}),
         name="report-balance-sheet",

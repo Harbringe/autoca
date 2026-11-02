@@ -4659,6 +4659,37 @@ paths:
               schema:
                 $ref: '#/components/schemas/StockReconciliation'
           description: ''
+  /api/v1/clients/{client_id}/reports/stock-reconciliation/use-register/:
+    post:
+      operationId: clients_reports_stock_reconciliation_use_register_create
+      description: Sets the year's closing stock in the statement settings to what
+        the stock register holds at the year's end, so the profit and the balance
+        sheet agree with the register. Replaces any figure entered before, and says
+        what it replaced. Requires `ledger.manage`.
+      summary: Use the register's closing stock for the year
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: 'Financial year by its starting year: 2025 means FY2025-26.'
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockReconciliation'
+          description: ''
   /api/v1/clients/{client_id}/reports/trial-balance/:
     get:
       operationId: clients_reports_trial_balance_retrieve

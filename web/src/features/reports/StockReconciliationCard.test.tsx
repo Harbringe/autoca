@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { raw } from '@/api/client'
 import { StockReconciliationCard } from './StockReconciliationCard'
 
-vi.mock('@/api/client', () => ({ raw: { get: vi.fn() } }))
+vi.mock('@/api/client', () => ({ raw: { get: vi.fn(), post: vi.fn() } }))
 
 function show(body: object) {
   vi.mocked(raw.get).mockResolvedValue(body)
@@ -34,5 +35,12 @@ describe('StockReconciliationCard', () => {
   it('says so when everything agrees', async () => {
     show({ ...base, difference_paise: 0, books_value_paise: 400000, agrees: true, checks: [{ key: 'value', title: 'v', status: 'ok', message: 'fine', examples: [] }] })
     expect(await screen.findByText(/agree/)).toBeInTheDocument()
+  })
+
+  it('takes the register figure as the closing stock when asked', async () => {
+    vi.mocked(raw.post).mockResolvedValue({})
+    show({ ...base, agrees: false, checks: [{ key: 'value', title: 'Stock value against the books', status: 'attention', message: 'Gap.', examples: [] }] })
+    await userEvent.click(await screen.findByRole('button', { name: "Use the register's closing stock" }))
+    await waitFor(() => expect(raw.post).toHaveBeenCalledWith('/api/v1/clients/c1/reports/stock-reconciliation/use-register/?fy=2025', {}))
   })
 })

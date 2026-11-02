@@ -60,3 +60,35 @@ def test_the_check_writes_nothing(api, client_record):
     check(api, client_record)
     assert len(api.get(f"{base(client_record)}/stock-entries/").json()["results"]) == 1
     assert api.get(f"{base(client_record)}/stock-items/").json()["results"] == []
+
+
+def use_register(api, client, fy=2025):
+    return api.post(f"{base(client)}/reports/stock-reconciliation/use-register/?fy={fy}")
+
+
+def test_using_the_register_sets_the_years_closing_stock_and_the_gap_closes(api, client_record):
+    opening(api, client_record)
+    done = use_register(api, client_record)
+    assert done.status_code == 200, done.content
+    assert done.json()["difference_paise"] == 0 and done.json()["checks"][0]["status"] == "ok"
+    settings = api.get(f"{base(client_record)}/reports/financial-statements/settings/").json()
+    assert settings["years"]["2025"]["closing_stock_paise"] == 4_000_00
+    audit = api.get(f"{base(client_record)}/audit-trail/", {"kind": "SETTING"}).json()
+    assert any("taken from the stock register" in row["label"] for row in audit["results"])
+
+
+def test_using_the_register_twice_changes_nothing_more(api, client_record):
+    opening(api, client_record)
+    use_register(api, client_record)
+    again = use_register(api, client_record)
+    assert again.status_code == 200
+    settings = api.get(f"{base(client_record)}/reports/financial-statements/settings/").json()
+    assert settings["years"]["2025"]["closing_stock_paise"] == 4_000_00
+
+
+def test_only_someone_who_manages_ledgers_may_use_it(firm, client_record):
+    from api.tests.conftest import member, sign_in
+    from core.models import Role
+
+    reader = sign_in(member(firm, Role.READ_ONLY, "reader@example.test").user)
+    assert use_register(reader, client_record).status_code == 403

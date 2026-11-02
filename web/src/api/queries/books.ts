@@ -5,7 +5,7 @@
 // year is a few hundred rows, and a screen that pages through its own books is a screen a
 // CA cannot scan.
 
-import { queryOptions } from '@tanstack/react-query'
+import { queryOptions, useMutation } from '@tanstack/react-query'
 import { raw } from '@/api/client'
 import type {
   BalanceCheck,
@@ -25,7 +25,7 @@ import type {
   StatementTransaction,
   TrialBalance,
 } from '@/api/types'
-import { clientKeys, V1 } from './clients'
+import { clientKeys, useInvalidateClient, V1 } from './clients'
 
 /** Pages fetched at once after the first. A few at a time: quicker than one after another, and kind to the server and an old machine. */
 const PAGES_AT_ONCE = 4
@@ -133,6 +133,14 @@ export const stockReconciliation = (clientId: string, fy: number) =>
     queryKey: clientKeys.part(clientId, 'reports', 'stock-reconciliation', fy),
     queryFn: () => raw.get<StockReconciliation>(`${V1}/clients/${clientId}/reports/stock-reconciliation/`, { fy }),
   })
+
+export function useUseRegisterStock(clientId: string, fy: number) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: () => raw.post<StockReconciliation>(`${V1}/clients/${clientId}/reports/stock-reconciliation/use-register/?fy=${fy}`, {}),
+    onSuccess: invalidate,
+  })
+}
 
 export const trialBalance = (clientId: string, fy: number) =>
   queryOptions({

@@ -11,7 +11,7 @@ from __future__ import annotations
 import datetime
 
 from classify.models import LedgerGroup
-from ledger import inventory
+from ledger import inventory, nce
 from ledger.models import StockItem
 from ledger.reports import _balances
 
@@ -41,7 +41,11 @@ def _rupees(paise: int) -> str:
 def build(client, fy: int) -> dict:
     report = inventory.build(client, fy)
     rows, _footer = _balances(client, fy)
-    books_paise = sum(r.net_paise for r in rows if r.group == LedgerGroup.STOCK)
+    ledgers_paise = sum(r.net_paise for r in rows if r.group == LedgerGroup.STOCK)
+    # A closing stock entered for the year in the statement settings is what the statements use (the gap to the ledgers is
+    # added to the profit); with none entered the statements use the ledgers.
+    entered = nce.read_settings(client)["years"].get(str(fy), {}).get("closing_stock_paise")
+    books_paise = ledgers_paise if entered is None else entered
     # What the register holds: items with stock on hand. A negative quantity carries no cost, so it adds nothing here.
     register_paise = sum(i.closing_value_paise for i in report.items if i.closing_qty > 0)
     checks: list[dict] = []
@@ -50,16 +54,16 @@ def build(client, fy: int) -> dict:
     if not report.items and not books_paise:
         checks.append(_check("value", "Stock value against the books", "ok", "No stock in the register and none in the books."))
     elif gap == 0:
-        checks.append(_check("value", "Stock value against the books", "ok", f"The register's closing stock, {_rupees(register_paise)}, is what the stock ledgers carry."))
+        checks.append(_check("value", "Stock value against the books", "ok", f"The register's closing stock, {_rupees(register_paise)}, is what the statements use."))
     else:
         checks.append(
             _check(
                 "value",
                 "Stock value against the books",
                 "attention",
-                f"The register's closing stock is {_rupees(register_paise)}; the Stock-in-Hand ledgers carry {_rupees(books_paise)}. "
-                f"The profit and the balance sheet use the ledgers, so they are {_rupees(abs(gap))} "
-                f"{'lower' if gap > 0 else 'higher'} on stock than the register says. Book the closing stock as a journal, or enter it in the year's statement settings.",
+                f"The register's closing stock is {_rupees(register_paise)}; the statements use {_rupees(books_paise)}. "
+                f"The profit and the balance sheet are therefore {_rupees(abs(gap))} "
+                f"{'lower' if gap > 0 else 'higher'} on stock than the register says. Use the register's figure as the year's closing stock, or correct the register.",
             )
         )
 

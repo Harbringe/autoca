@@ -2038,6 +2038,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/reports/stock-reconciliation/use-register/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Use the register's closing stock for the year
+         * @description Sets the year's closing stock in the statement settings to what the stock register holds at the year's end, so the profit and the balance sheet agree with the register. Replaces any figure entered before, and says what it replaced. Requires `ledger.manage`.
+         */
+        post: operations["clients_reports_stock_reconciliation_use_register_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/reports/trial-balance/": {
         parameters: {
             query?: never;
@@ -14110,6 +14130,30 @@ export interface operations {
         };
     };
     clients_reports_stock_reconciliation_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Financial year by its starting year: 2025 means FY2025-26. */
+                fy?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockReconciliation"];
+                };
+            };
+        };
+    };
+    clients_reports_stock_reconciliation_use_register_create: {
         parameters: {
             query?: {
                 /** @description Financial year by its starting year: 2025 means FY2025-26. */

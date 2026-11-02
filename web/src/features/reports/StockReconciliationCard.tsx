@@ -2,11 +2,15 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2, Info } from 'lucide-react'
-import { stockReconciliation } from '@/api/queries/books'
+import { stockReconciliation, useUseRegisterStock } from '@/api/queries/books'
+import { messageOf } from '@/api/errors'
+import { toast } from '@/lib/toast'
+import { Button } from '@/components/ui/button'
 import { formatPaise } from '@/lib/format'
 
 export function StockReconciliationCard({ clientId, fy }: { clientId: string; fy: number }) {
   const query = useQuery(stockReconciliation(clientId, fy))
+  const use = useUseRegisterStock(clientId, fy)
   if (!query.data) return null
   const data = query.data
   const open = data.checks.filter((c) => c.status !== 'ok')
@@ -32,6 +36,22 @@ export function StockReconciliationCard({ clientId, fy }: { clientId: string; fy
               <span>
                 <strong>{c.title}.</strong> {c.message}
                 {c.examples.length > 0 && <span className="text-gray-600"> {c.examples.join('; ')}.</span>}
+                {c.key === 'value' && c.status === 'attention' && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="ml-2"
+                    disabled={use.isPending}
+                    onClick={() =>
+                      use.mutate(undefined, {
+                        onSuccess: () => toast.success("The year's closing stock now follows the stock register."),
+                        onError: (e) => toast.error(messageOf(e)),
+                      })
+                    }
+                  >
+                    Use the register's closing stock
+                  </Button>
+                )}
               </span>
             </li>
           ))}

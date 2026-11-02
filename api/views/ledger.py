@@ -403,7 +403,7 @@ class ReportView(viewsets.GenericViewSet):
     """
 
     permission_classes = [HasFirmPermission]
-    required_permission = "report.view"
+    required_permission = {"GET": "report.view", "POST": "ledger.manage"}
     serializer_class = TrialBalanceSerializer
 
     def _client_and_year(self, request, client_id):
@@ -478,6 +478,39 @@ class ReportView(viewsets.GenericViewSet):
         from ledger import stock_recon
 
         client, year = self._client_and_year(request, client_id)
+        return Response(StockReconciliationSerializer(stock_recon.build(client, year)).data)
+
+    @extend_schema(
+        summary="Use the register's closing stock for the year",
+        description=(
+            "Sets the year's closing stock in the statement settings to what the stock register holds at the year's end, so the "
+            "profit and the balance sheet agree with the register. Replaces any figure entered before, and says what it replaced. "
+            "Requires `ledger.manage`."
+        ),
+        parameters=[FY_PARAM],
+        request=None,
+        responses=StockReconciliationSerializer,
+    )
+    @action(detail=False, methods=["post"], url_path="stock-reconciliation/use-register")
+    def use_register_stock(self, request, client_id=None):
+        import uuid
+
+        from ledger import nce, stock_recon
+        from ledger.audit import record_master_change
+
+        client, year = self._client_and_year(request, client_id)
+        register = stock_recon.build(client, year)["register_value_paise"]
+        current = nce.read_settings(client)
+        before = current["years"].get(str(year), {}).get("closing_stock_paise")
+        year_body = current["years"].setdefault(str(year), {"partners": []})
+        year_body["closing_stock_paise"] = register
+        client.nce_settings = nce.normalise_settings(current)
+        client.save(update_fields=["nce_settings"])
+        record_master_change(
+            client, "SETTING", uuid.uuid4(), "EDITED",
+            label=f"Closing stock {year}-{str(year + 1)[2:]} taken from the stock register",
+            before={"closing_stock_paise": before}, after={"closing_stock_paise": register}, actor=request.user,
+        )
         return Response(StockReconciliationSerializer(stock_recon.build(client, year)).data)
 
     @extend_schema(

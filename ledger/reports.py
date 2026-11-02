@@ -242,27 +242,69 @@ def trial_balance(client, financial_year: int) -> TrialBalance:
     return TrialBalance(rows=rows, footer=footer)
 
 
+STOCK_VALUATION = "Closing stock as valued at the year end"
+STOCK_BROUGHT_FORWARD = "Stock valuation brought forward"
+STOCK_CHANGE = "Increase/(decrease) in stock"
+
+
+def _stock_valuation(client, financial_year: int, rows) -> tuple[int, int]:
+    """Closing stock the person entered for the year, less what the stock ledgers carry, and the same for the year before.
+
+    Nothing entered, nothing added: the reports read the ledgers as they always did. Where a figure is entered it is the
+    stock the year closes with, so the sheet shows it, the year's result moves by the change from last year's, and what
+    earlier years' changes came to sits in reserves -- the same treatment the ICAI statements give it (``ledger.nce``).
+    """
+    from ledger import nce
+
+    settings = nce.read_settings(client)
+    entered = settings["years"].get(str(financial_year), {}).get("closing_stock_paise")
+    entered_before = settings["years"].get(str(financial_year - 1), {}).get("closing_stock_paise")
+    if entered is None and entered_before is None:
+        return 0, 0
+    now = nce._stock_gap(rows, settings, financial_year)
+    before = nce._stock_gap(_balances(client, financial_year - 1)[0], settings, financial_year - 1) if entered_before is not None else 0
+    return now, before
+
+
+def _stock_rows(now: int, before: int) -> tuple[tuple[LedgerBalance, ...], tuple[LedgerBalance, ...]]:
+    """``(profit and loss rows, balance sheet rows)`` for the valuation; both empty when there is none."""
+    change = now - before
+    pl = ()
+    if change:
+        pl = (
+            LedgerBalance(STOCK_CHANGE, LedgerGroup.DIRECT_INCOME, 0, change)
+            if change > 0
+            else LedgerBalance(STOCK_CHANGE, LedgerGroup.DIRECT_EXPENSE, -change, 0),
+        )
+    bs = []
+    if now:
+        bs.append(LedgerBalance(STOCK_VALUATION, LedgerGroup.STOCK, now if now > 0 else 0, -now if now < 0 else 0))
+    if before:
+        bs.append(LedgerBalance(STOCK_BROUGHT_FORWARD, LedgerGroup.RESERVES, -before if before < 0 else 0, before if before > 0 else 0))
+    return pl, tuple(bs)
+
+
 def profit_and_loss(client, financial_year: int) -> ProfitAndLoss:
     rows, footer = _balances(client, financial_year)
+    pl_stock, _ = _stock_rows(*_stock_valuation(client, financial_year, rows))
     return ProfitAndLoss(
-        income=tuple(r for r in rows if r.group in INCOME_GROUPS),
-        expenses=tuple(
-            r for r in rows if r.is_profit_and_loss and r.group not in INCOME_GROUPS
-        ),
+        income=tuple(r for r in rows if r.group in INCOME_GROUPS) + tuple(r for r in pl_stock if r.group in INCOME_GROUPS),
+        expenses=tuple(r for r in rows if r.is_profit_and_loss and r.group not in INCOME_GROUPS)
+        + tuple(r for r in pl_stock if r.group not in INCOME_GROUPS),
         footer=footer,
     )
 
 
 def balance_sheet(client, financial_year: int) -> BalanceSheet:
     rows, footer = _balances(client, financial_year)
+    pl_stock, bs_stock = _stock_rows(*_stock_valuation(client, financial_year, rows))
     trading = ProfitAndLoss(
-        income=tuple(r for r in rows if r.group in INCOME_GROUPS),
-        expenses=tuple(
-            r for r in rows if r.is_profit_and_loss and r.group not in INCOME_GROUPS
-        ),
+        income=tuple(r for r in rows if r.group in INCOME_GROUPS) + tuple(r for r in pl_stock if r.group in INCOME_GROUPS),
+        expenses=tuple(r for r in rows if r.is_profit_and_loss and r.group not in INCOME_GROUPS)
+        + tuple(r for r in pl_stock if r.group not in INCOME_GROUPS),
         footer=footer,
     )
-    standing = [r for r in rows if not r.is_profit_and_loss]
+    standing = [r for r in rows if not r.is_profit_and_loss] + list(bs_stock)
 
     return BalanceSheet(
         assets=tuple(r for r in standing if r.group in ASSET_GROUPS),

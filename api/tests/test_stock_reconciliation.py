@@ -113,3 +113,33 @@ def test_an_alias_cannot_be_another_items_name(api, client_record):
     api.post(f"{base(client_record)}/stock-items/", {"name": "Rice", "unit": "Kg"}, format="json")
     refused = api.post(f"{base(client_record)}/stock-items/", {"name": "Wheat", "aliases": ["rice"]}, format="json")
     assert refused.status_code == 400 and "another item" in str(refused.json())
+
+
+def settle(api, client, paise=4_000_00, fy="2025"):
+    done = api.put(f"{base(client)}/reports/financial-statements/settings/", {"years": {fy: {"closing_stock_paise": paise}}}, format="json")
+    assert done.status_code == 200, done.content
+
+
+def test_the_plain_reports_show_the_closing_stock_that_was_entered_and_still_balance(api, client_record):
+    settle(api, client_record)
+    sheet = api.get(f"{base(client_record)}/reports/balance-sheet/", {"fy": 2025}).json()
+    assert [a["name"] for a in sheet["assets"]] == ["Closing stock as valued at the year end"]
+    assert sheet["total_assets_paise"] == 4_000_00 and sheet["net_profit_paise"] == 4_000_00
+    assert sheet["balances"] is True
+    pl = api.get(f"{base(client_record)}/reports/profit-and-loss/", {"fy": 2025}).json()
+    assert [r["name"] for r in pl["income"]] == ["Increase/(decrease) in stock"] and pl["net_profit_paise"] == 4_000_00
+
+
+def test_the_next_year_carries_the_valuation_and_shows_only_the_change(api, client_record):
+    settle(api, client_record, 4_000_00, "2025")
+    settle(api, client_record, 3_000_00, "2026")
+    sheet = api.get(f"{base(client_record)}/reports/balance-sheet/", {"fy": 2026}).json()
+    assert sheet["total_assets_paise"] == 3_000_00
+    assert sheet["net_profit_paise"] == -1_000_00, "stock fell by 1,000"
+    assert [l["name"] for l in sheet["liabilities"]] == ["Stock valuation brought forward"]
+    assert sheet["balances"] is True
+
+
+def test_with_no_closing_stock_entered_the_plain_reports_are_as_they_were(api, client_record):
+    sheet = api.get(f"{base(client_record)}/reports/balance-sheet/", {"fy": 2025}).json()
+    assert sheet["assets"] == [] and sheet["liabilities"] == [] and sheet["net_profit_paise"] == 0

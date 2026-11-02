@@ -16,9 +16,10 @@ export interface StockItem {
   purchase_ledger_name: string
   sales_ledger: string | null
   sales_ledger_name: string
+  aliases?: string[]
 }
 
-export type StockItemInput = Partial<Pick<StockItem, 'name' | 'unit' | 'hsn_sac' | 'gst_rate' | 'reorder_level' | 'purchase_ledger' | 'sales_ledger'>>
+export type StockItemInput = Partial<Pick<StockItem, 'name' | 'unit' | 'hsn_sac' | 'gst_rate' | 'reorder_level' | 'purchase_ledger' | 'sales_ledger' | 'aliases'>>
 
 const base = (clientId: string) => `${V1}/clients/${clientId}/stock-items/`
 

@@ -92,3 +92,24 @@ def test_only_someone_who_manages_ledgers_may_use_it(firm, client_record):
 
     reader = sign_in(member(firm, Role.READ_ONLY, "reader@example.test").user)
     assert use_register(reader, client_record).status_code == 403
+
+
+def test_an_invoice_name_kept_as_an_alias_counts_as_the_item(api, client_record):
+    opening(api, client_record)
+    opening(api, client_record, name="MO 1 ltr", qty="10", value=1_000_00)
+    report = api.get(f"{base(client_record)}/reports/inventory/", {"fy": 2025}).json()
+    assert len(report["items"]) == 2, "different words are two items until told otherwise"
+    made = api.post(f"{base(client_record)}/stock-items/", {"name": "Mustard Oil 1L", "unit": "Nos", "aliases": ["mo 1 LTR", " mo 1 ltr "]}, format="json")
+    assert made.status_code == 201, made.content
+    assert made.json()["aliases"] == ["mo 1 LTR"], "tidied and not repeated"
+    report = api.get(f"{base(client_record)}/reports/inventory/", {"fy": 2025}).json()
+    (item,) = report["items"]
+    assert item["name"] == "Mustard Oil 1L" and item["closing_qty"] == "50"
+    _, checks = check(api, client_record)
+    assert checks["unlisted"]["status"] == "ok"
+
+
+def test_an_alias_cannot_be_another_items_name(api, client_record):
+    api.post(f"{base(client_record)}/stock-items/", {"name": "Rice", "unit": "Kg"}, format="json")
+    refused = api.post(f"{base(client_record)}/stock-items/", {"name": "Wheat", "aliases": ["rice"]}, format="json")
+    assert refused.status_code == 400 and "another item" in str(refused.json())

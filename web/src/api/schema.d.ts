@@ -7729,6 +7729,7 @@ export interface components {
             purchase_ledger?: string | null;
             /** Format: uuid */
             sales_ledger?: string | null;
+            aliases?: unknown;
         };
         /** @description A preset for a sales or purchase voucher: the head ledger and GST rate it fills in. Nothing posts differently. */
         PatchedVoucherClassRequest: {
@@ -9414,6 +9415,7 @@ export interface components {
             sales_ledger?: string | null;
             /** @default  */
             readonly sales_ledger_name: string;
+            aliases?: unknown;
         };
         /** @description A product the client buys or sells: its name, unit, HSN, GST rate, reorder level and the ledgers it is booked to. */
         StockItemRequest: {
@@ -9428,6 +9430,7 @@ export interface components {
             purchase_ledger?: string | null;
             /** Format: uuid */
             sales_ledger?: string | null;
+            aliases?: unknown;
         };
         StockReconciliation: {
             fy: number;

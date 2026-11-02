@@ -277,7 +277,22 @@ def _collect(client, end: datetime.date, since: datetime.date):
                 godown=str(row.godown_id) if row.godown_id else None, transfer=row.kind == StockEntryKind.TRANSFER,
             )
         )
-    return movements, counted, left_out, examples, no_value
+    return _canonical(client, movements), counted, left_out, examples, no_value
+
+
+def _canonical(client, movements: list[Movement]) -> list[Movement]:
+    """A line named by one of an item's other names counts as that item, however different the spelling."""
+    from dataclasses import replace
+
+    from ledger.models import StockItem
+
+    by_alias = {}
+    for item in StockItem.objects.filter(firm_id=client.firm_id, client=client):
+        for alias in item.aliases or []:
+            by_alias[str(alias).strip().lower()] = item.name
+    if not by_alias:
+        return movements
+    return [replace(m, name=by_alias[m.name.strip().lower()]) if m.name.strip().lower() in by_alias else m for m in movements]
 
 
 def book_quantity(client, name: str, as_at: datetime.date, godown: str | None = None) -> tuple[Decimal, int]:

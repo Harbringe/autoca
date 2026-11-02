@@ -27,8 +27,10 @@ interface Fields {
   hsn_sac: string
   gst_rate: string
   reorder_level: string
+  /** Other names the item goes by on invoices, separated by semicolons. */
+  aliases: string
 }
-const EMPTY: Fields = { name: '', unit: '', hsn_sac: '', gst_rate: '', reorder_level: '' }
+const EMPTY: Fields = { name: '', unit: '', hsn_sac: '', gst_rate: '', reorder_level: '', aliases: '' }
 
 /** Only what was filled in: an empty box is left out on adding, and clears the figure on a change. */
 function toInput(f: Fields, clearing: boolean): StockItemInput {
@@ -36,6 +38,7 @@ function toInput(f: Fields, clearing: boolean): StockItemInput {
   if (f.hsn_sac.trim() || clearing) out.hsn_sac = f.hsn_sac.trim()
   if (f.gst_rate.trim() || clearing) out.gst_rate = f.gst_rate.trim() || null
   if (f.reorder_level.trim() || clearing) out.reorder_level = f.reorder_level.trim() || null
+  if (f.aliases.trim() || clearing) out.aliases = f.aliases.split(';').map((a) => a.trim()).filter(Boolean)
   return out
 }
 
@@ -54,6 +57,7 @@ function FieldsRow({ f, set, idPrefix, about }: { f: Fields; set: (next: Fields)
       {field('hsn_sac', 'HSN', 'w-24', { maxLength: '8' })}
       {field('gst_rate', 'GST %', 'w-20', { inputMode: 'decimal' })}
       {field('reorder_level', 'Reorder level', 'w-28', { inputMode: 'decimal' })}
+      {field('aliases', 'Also called (separate with ;)', 'w-64')}
     </>
   )
 }
@@ -131,7 +135,10 @@ export function StockItemsScreen({ clientId, mayEdit }: { clientId: string; mayE
                     </tr>
                   ) : (
                     <tr key={item.id} aria-label={item.name} className="border-b border-border-strong last:border-0">
-                      <td className="px-3 py-2 font-medium">{item.name}</td>
+                      <td className="px-3 py-2 font-medium">
+                        {item.name}
+                        {(item.aliases ?? []).length > 0 && <span className="block text-xs font-normal text-muted-foreground">Also: {(item.aliases ?? []).join('; ')}</span>}
+                      </td>
                       <td className="px-3 py-2">{item.unit}</td>
                       <td className="px-3 py-2">{item.hsn_sac}</td>
                       <td className="px-3 py-2 text-right tabular-nums">{item.gst_rate ? `${plain(item.gst_rate)}%` : ''}</td>
@@ -145,7 +152,7 @@ export function StockItemsScreen({ clientId, mayEdit }: { clientId: string; mayE
                             onClick={() =>
                               setEditing({
                                 id: item.id,
-                                fields: { name: item.name, unit: item.unit, hsn_sac: item.hsn_sac, gst_rate: plain(item.gst_rate), reorder_level: plain(item.reorder_level) },
+                                fields: { name: item.name, unit: item.unit, hsn_sac: item.hsn_sac, gst_rate: plain(item.gst_rate), reorder_level: plain(item.reorder_level), aliases: (item.aliases ?? []).join('; ') },
                               })
                             }
                           >

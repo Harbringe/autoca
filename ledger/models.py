@@ -762,6 +762,9 @@ class StockItem(UUIDModel, FirmScopedModel):
     reorder_level = models.DecimalField(max_digits=18, decimal_places=3, null=True, blank=True)
     purchase_ledger = models.ForeignKey(LedgerAccount, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
     sales_ledger = models.ForeignKey(LedgerAccount, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    #: Other names this item goes by on invoices ("Mustard Oil 1 Ltr", a supplier's own spelling). An invoice line carrying one of
+    #: them counts as this item in the stock register, however different it looks.
+    aliases = models.JSONField(default=list, blank=True, db_default=[])
 
     class Meta:
         db_table = "ledger_stock_item"

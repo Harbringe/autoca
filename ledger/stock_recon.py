@@ -75,9 +75,9 @@ def build(client, fy: int) -> dict:
     )
 
     kept = list(StockItem.objects.filter(firm_id=client.firm_id, client=client))
-    unlisted = [i.name for i in report.items if not any(inventory._same_item(i.name, k.name) for k in kept)]
+    unlisted = [i.name for i in report.items if not any(inventory._same_item(i.name, k.name) for k in kept)]  # aliases are already folded into the register's names
     checks.append(
-        _check("unlisted", "Items missing from the item list", "attention", f"{len(unlisted)} item(s) in the register are not on the Stock items list, so their unit, HSN, GST rate and reorder level are not kept.", unlisted[:8])
+        _check("unlisted", "Items missing from the item list", "attention", f"{len(unlisted)} item(s) in the register are not on the Stock items list, so their unit, HSN, GST rate and reorder level are not kept. If one is only another spelling of an item you have, add it to that item as another name.", unlisted[:8])
         if unlisted
         else _check("unlisted", "Items missing from the item list", "ok", "Every item in the register is on the Stock items list.")
     )

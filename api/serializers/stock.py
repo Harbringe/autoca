@@ -109,9 +109,18 @@ class StockItemSerializer(serializers.ModelSerializer):
         model = StockItem
         fields = [
             "id", "name", "unit", "hsn_sac", "gst_rate", "reorder_level",
-            "purchase_ledger", "purchase_ledger_name", "sales_ledger", "sales_ledger_name",
+            "purchase_ledger", "purchase_ledger_name", "sales_ledger", "sales_ledger_name", "aliases",
         ]
         read_only_fields = ["id"]
+
+    def validate_aliases(self, value):
+        names, seen = [], set()
+        for raw in value or []:
+            name = " ".join(str(raw).split())[:200]
+            if name and name.lower() not in seen:
+                seen.add(name.lower())
+                names.append(name)
+        return names
 
     def validate_name(self, value):
         name = " ".join(value.split())
@@ -140,5 +149,12 @@ class StockItemSerializer(serializers.ModelSerializer):
             clash = StockItem.objects.filter(firm_id=client.firm_id, client=client, name__iexact=name).exclude(pk=getattr(self.instance, "pk", None))
             if clash.exists():
                 raise serializers.ValidationError({"name": "This client already has an item with that name."})
+        own = (attrs.get("name") or getattr(self.instance, "name", "") or "").lower()
+        for alias in attrs.get("aliases") or []:
+            if alias.lower() == own:
+                raise serializers.ValidationError({"aliases": f"{alias} is this item's own name."})
+            other = StockItem.objects.filter(firm_id=client.firm_id, client=client).exclude(pk=getattr(self.instance, "pk", None))
+            if other.filter(name__iexact=alias).exists() or any(alias.lower() in [a.lower() for a in o.aliases] for o in other):
+                raise serializers.ValidationError({"aliases": f"{alias} already belongs to another item."})
         return attrs
 

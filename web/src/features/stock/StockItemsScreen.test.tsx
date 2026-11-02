@@ -101,4 +101,15 @@ describe('StockItemsScreen', () => {
     expect(screen.queryByLabelText('Item name')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /Edit|Remove/ })).not.toBeInTheDocument()
   })
+
+  it('keeps another name for an item', async () => {
+    patch.mockResolvedValueOnce({ ...ITEMS[0], aliases: ['MO 1 ltr'] })
+    setup()
+    await userEvent.click(screen.getByRole('button', { name: 'Edit Mustard Oil 1L' }))
+    await userEvent.type(screen.getByLabelText('Also called (separate with ;) of Mustard Oil 1L'), 'MO 1 ltr; Sarson oil')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() =>
+      expect(patch).toHaveBeenCalledWith('/api/v1/clients/c1/stock-items/i1/', expect.objectContaining({ aliases: ['MO 1 ltr', 'Sarson oil'] })),
+    )
+  })
 })

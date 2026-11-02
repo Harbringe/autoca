@@ -16914,6 +16914,7 @@ components:
           type: string
           format: uuid
           nullable: true
+        aliases: {}
     PatchedVoucherClassRequest:
       type: object
       description: 'A preset for a sales or purchase voucher: the head ledger and
@@ -20220,6 +20221,7 @@ components:
           type: string
           readOnly: true
           default: ''
+        aliases: {}
       required:
       - id
       - name
@@ -20258,6 +20260,7 @@ components:
           type: string
           format: uuid
           nullable: true
+        aliases: {}
       required:
       - name
     StockReconciliation:

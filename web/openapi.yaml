@@ -1174,6 +1174,50 @@ paths:
               schema:
                 $ref: '#/components/schemas/BillDetail'
           description: ''
+  /api/v1/clients/{client_id}/bills/{id}/e-documents/:
+    post:
+      operationId: clients_bills_e_documents_create
+      description: 'Fills the IRP e-invoice JSON and the e-way bill bulk-upload JSON
+        as far as the books go and lists what is still needed: addresses and pincodes,
+        HSN codes, the distance and vehicle. Send the details you have in the body
+        and they are used. Nothing is sent to any portal; whether e-invoicing applies
+        to the client depends on its turnover, which the books cannot say.'
+      summary: Draft the e-invoice and e-way bill JSON for an invoice
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - bills
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/EDocumentDetailsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/EDocumentDetailsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/EDocumentDetailsRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EDocuments'
+          description: ''
   /api/v1/clients/{client_id}/bills/{id}/remove/:
     post:
       operationId: clients_bills_remove_create
@@ -14045,6 +14089,109 @@ components:
       required:
       - filename
       - pages
+    EDocument:
+      type: object
+      properties:
+        json:
+          description: The file to upload to the portal, as far as the books can fill
+            it.
+        missing:
+          type: array
+          items:
+            type: string
+          description: What a person must supply before it is uploaded.
+      required:
+      - json
+      - missing
+    EDocumentDetailsModeEnum:
+      enum:
+      - ROAD
+      - RAIL
+      - AIR
+      - SHIP
+      type: string
+      description: |-
+        * `ROAD` - ROAD
+        * `RAIL` - RAIL
+        * `AIR` - AIR
+        * `SHIP` - SHIP
+    EDocumentDetailsRequest:
+      type: object
+      description: 'What the books do not hold, supplied for this invoice. Everything
+        is optional: what is left out is listed as missing.'
+      properties:
+        seller_address:
+          type: string
+          maxLength: 100
+        seller_place:
+          type: string
+          maxLength: 60
+        seller_pin:
+          type: string
+          maxLength: 6
+        buyer_address:
+          type: string
+          maxLength: 100
+        buyer_place:
+          type: string
+          maxLength: 60
+        buyer_pin:
+          type: string
+          maxLength: 6
+        distance_km:
+          type: integer
+          maximum: 4000
+          minimum: 0
+        mode:
+          $ref: '#/components/schemas/EDocumentDetailsModeEnum'
+        vehicle_no:
+          type: string
+          maxLength: 15
+        transporter_name:
+          type: string
+          maxLength: 100
+        transporter_id:
+          type: string
+          maxLength: 15
+    EDocuments:
+      type: object
+      properties:
+        eligible:
+          type: boolean
+        note:
+          type: string
+        e_invoice:
+          allOf:
+          - $ref: '#/components/schemas/EDocument'
+          nullable: true
+        eway_bill:
+          allOf:
+          - $ref: '#/components/schemas/EWayBill'
+          nullable: true
+      required:
+      - e_invoice
+      - eligible
+      - eway_bill
+      - note
+    EWayBill:
+      type: object
+      properties:
+        json:
+          description: The file to upload to the portal, as far as the books can fill
+            it.
+        missing:
+          type: array
+          items:
+            type: string
+          description: What a person must supply before it is uploaded.
+        required:
+          type: boolean
+          description: The invoice is over Rs 50,000, so goods moving on it need an
+            e-way bill.
+      required:
+      - json
+      - missing
+      - required
     Employee:
       type: object
       properties:
@@ -17141,16 +17288,6 @@ components:
       - median_days_upload_to_posted
       - member
       - statements_completed
-    ModeEnum:
-      enum:
-      - NEFT
-      - RTGS
-      - IMPS
-      type: string
-      description: |-
-        * `NEFT` - NEFT
-        * `RTGS` - RTGS
-        * `IMPS` - IMPS
     ModelStateEnum:
       enum:
       - waiting
@@ -19796,6 +19933,16 @@ components:
           type: string
           description: The name the bank holds the account in.
           maxLength: 200
+    PaymentFileModeEnum:
+      enum:
+      - NEFT
+      - RTGS
+      - IMPS
+      type: string
+      description: |-
+        * `NEFT` - NEFT
+        * `RTGS` - RTGS
+        * `IMPS` - IMPS
     PaymentFileRequest:
       type: object
       properties:
@@ -19804,7 +19951,7 @@ components:
           format: uuid
           description: The client's account the money is paid from.
         mode:
-          $ref: '#/components/schemas/ModeEnum'
+          $ref: '#/components/schemas/PaymentFileModeEnum'
         payment_date:
           type: string
           format: date

@@ -565,6 +565,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/bills/{id}/e-documents/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Draft the e-invoice and e-way bill JSON for an invoice
+         * @description Fills the IRP e-invoice JSON and the e-way bill bulk-upload JSON as far as the books go and lists what is still needed: addresses and pincodes, HSN codes, the distance and vehicle. Send the details you have in the body and they are used. Nothing is sent to any portal; whether e-invoicing applies to the client depends on its turnover, which the books cannot say.
+         */
+        post: operations["clients_bills_e_documents_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/bills/{id}/remove/": {
         parameters: {
             query?: never;
@@ -6063,6 +6083,48 @@ export interface components {
             pages: number;
             filename: string;
         };
+        EDocument: {
+            /** @description The file to upload to the portal, as far as the books can fill it. */
+            json: unknown;
+            /** @description What a person must supply before it is uploaded. */
+            missing: string[];
+        };
+        /**
+         * @description * `ROAD` - ROAD
+         *     * `RAIL` - RAIL
+         *     * `AIR` - AIR
+         *     * `SHIP` - SHIP
+         * @enum {string}
+         */
+        EDocumentDetailsModeEnum: "ROAD" | "RAIL" | "AIR" | "SHIP";
+        /** @description What the books do not hold, supplied for this invoice. Everything is optional: what is left out is listed as missing. */
+        EDocumentDetailsRequest: {
+            seller_address?: string;
+            seller_place?: string;
+            seller_pin?: string;
+            buyer_address?: string;
+            buyer_place?: string;
+            buyer_pin?: string;
+            distance_km?: number;
+            mode?: components["schemas"]["EDocumentDetailsModeEnum"];
+            vehicle_no?: string;
+            transporter_name?: string;
+            transporter_id?: string;
+        };
+        EDocuments: {
+            eligible: boolean;
+            note: string;
+            e_invoice: components["schemas"]["EDocument"] | null;
+            eway_bill: components["schemas"]["EWayBill"] | null;
+        };
+        EWayBill: {
+            /** @description The file to upload to the portal, as far as the books can fill it. */
+            json: unknown;
+            /** @description What a person must supply before it is uploaded. */
+            missing: string[];
+            /** @description The invoice is over Rs 50,000, so goods moving on it need an e-way bill. */
+            required: boolean;
+        };
         Employee: {
             /** Format: uuid */
             readonly id: string;
@@ -7523,13 +7585,6 @@ export interface components {
             median_days_request_to_sign_off: number | null;
         };
         /**
-         * @description * `NEFT` - NEFT
-         *     * `RTGS` - RTGS
-         *     * `IMPS` - IMPS
-         * @enum {string}
-         */
-        ModeEnum: "NEFT" | "RTGS" | "IMPS";
-        /**
          * @description * `waiting` - Waiting for the assistant
          *     * `claimed` - Being read by the assistant
          *     * `done` - The assistant suggested a ledger
@@ -8984,13 +9039,20 @@ export interface components {
             /** @description The name the bank holds the account in. */
             account_name?: string;
         };
+        /**
+         * @description * `NEFT` - NEFT
+         *     * `RTGS` - RTGS
+         *     * `IMPS` - IMPS
+         * @enum {string}
+         */
+        PaymentFileModeEnum: "NEFT" | "RTGS" | "IMPS";
         PaymentFileRequest: {
             /**
              * Format: uuid
              * @description The client's account the money is paid from.
              */
             bank_account: string;
-            mode: components["schemas"]["ModeEnum"];
+            mode: components["schemas"]["PaymentFileModeEnum"];
             /** Format: date */
             payment_date: string;
             items: components["schemas"]["PaymentItemRequest"][];
@@ -12937,6 +12999,34 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BillDetail"];
+                };
+            };
+        };
+    };
+    clients_bills_e_documents_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["EDocumentDetailsRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["EDocumentDetailsRequest"];
+                "multipart/form-data": components["schemas"]["EDocumentDetailsRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EDocuments"];
                 };
             };
         };

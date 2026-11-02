@@ -42,6 +42,7 @@ import { normaliseName } from '@/lib/names'
 import { KIND_LABEL, NOT_A_HEAD, type VoucherKind } from '@/lib/vouchers'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
+import { EDocumentsDialog } from './EDocumentsDialog'
 import { suggestLedger } from './model'
 import { blankPrefill, prefillFromReading, prefillOfBill } from './prefill'
 
@@ -63,6 +64,7 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
   const reread = useRereadInvoice(clientId)
   const [formTab, setFormTab] = useState<'details' | 'items'>('details')
   const [statement, setStatement] = useState(false)
+  const [eDocuments, setEDocuments] = useState(false)
   const [uploadingName, setUploadingName] = useState<string | null>(null)
   const [over, setOver] = useState(false)
 
@@ -224,6 +226,9 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
                 {bill && (bill.kind === 'SALES' || bill.kind === 'PURCHASE') && (
                   <DropdownMenuItem onSelect={() => void navigate({ to: '/clients/$clientId/print', params: { clientId }, search: { bill: bill.id } })}>Print invoice</DropdownMenuItem>
                 )}
+                {bill && bill.kind === 'SALES' && (
+                  <DropdownMenuItem onSelect={() => setEDocuments(true)}>E-invoice and e-way bill</DropdownMenuItem>
+                )}
                 {reading?.status === 'OPEN' && mayPost && !bill && (
                   <DropdownMenuItem disabled={reread.isPending} onSelect={() => void readAgain()}>Read the file again</DropdownMenuItem>
                 )}
@@ -380,6 +385,7 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
         </DialogContent>
       </Dialog>
 
+      {eDocuments && bill && <EDocumentsDialog clientId={clientId} billId={bill.id} reference={bill.reference} onClose={() => setEDocuments(false)} />}
       {statement && bill && <PartyStatementDialog clientId={clientId} partyId={bill.party} partyName={bill.party_name} onClose={() => setStatement(false)} />}
 
       {locked && (

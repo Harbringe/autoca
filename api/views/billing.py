@@ -23,6 +23,7 @@ from api.serializers.billing import (
     ItemLedgerResponseSerializer,
     RemoveBillSerializer,
 )
+from api.serializers.einvoice import EDocumentDetailsSerializer, EDocumentsSerializer
 from api.views.base import ClientScopedMixin
 from classify.models import LedgerAccount, Party
 from documents.models import Document
@@ -222,6 +223,25 @@ class BillViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.RetrieveModel
         # The revised amount may now be exactly a payment that was waiting.
         invoice_intake.settle_payment(fresh)
         return Response(BillDetailSerializer(self.get_queryset().get(pk=fresh.pk)).data)
+
+    @extend_schema(
+        summary="Draft the e-invoice and e-way bill JSON for an invoice",
+        description=(
+            "Fills the IRP e-invoice JSON and the e-way bill bulk-upload JSON as far as the books go and lists what is still needed: "
+            "addresses and pincodes, HSN codes, the distance and vehicle. Send the details you have in the body and they are used. "
+            "Nothing is sent to any portal; whether e-invoicing applies to the client depends on its turnover, which the books cannot say."
+        ),
+        request=EDocumentDetailsSerializer,
+        responses={200: EDocumentsSerializer},
+    )
+    @action(detail=True, methods=["post"], url_path="e-documents")
+    def e_documents(self, request, client_id=None, pk=None):
+        from ledger import einvoice
+
+        bill = self.get_object()
+        details = EDocumentDetailsSerializer(data=request.data)
+        details.is_valid(raise_exception=True)
+        return Response(EDocumentsSerializer(einvoice.draft(self.client, bill, dict(details.validated_data))).data)
 
     @extend_schema(
         summary="Give each invoice line a ledger of its own",

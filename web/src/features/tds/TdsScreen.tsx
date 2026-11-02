@@ -10,6 +10,7 @@ import { toast } from '@/lib/toast'
 import { raw } from '@/api/client'
 import { messageOf } from '@/api/errors'
 import { tdsSummary, useRecordChallan } from '@/api/queries/bills'
+import { TdsTieOutCard } from './TdsTieOutCard'
 import { clientDetail, V1 } from '@/api/queries/clients'
 import { Money } from '@/components/ca/Money'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
@@ -149,6 +150,7 @@ export function TdsScreen({ clientId }: { clientId: string }) {
   return (
     <div className="grid gap-4">
       <ReturnData clientId={clientId} />
+      <TdsTieOutCard clientId={clientId} />
       {loose.length > 0 && (
         <section className="grid gap-2" aria-labelledby="tds-loose">
           <h2 id="tds-loose" className="text-[15px] font-semibold text-heading">Payments to the tax department with no challan</h2>

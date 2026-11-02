@@ -19,6 +19,7 @@ from api.serializers.tds import (
     SalaryReturnSerializer,
     TdsReturnSerializer,
     TdsSummarySerializer,
+    TdsTieOutSerializer,
     return_payload,
     salary_return_payload,
     summary_payload,
@@ -49,6 +50,26 @@ class TdsChallanViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.CreateM
     def summary(self, request, client_id=None):
         payload = summary_payload(tds.position(self.client), tds.payments_without_challan(self.client), datetime.date.today())
         return Response(TdsSummarySerializer(payload).data)
+
+    @extend_schema(
+        summary="TDS on the bills against TDS in the books, by quarter",
+        description=(
+            "For each quarter of the year: the TDS the bills say was deducted, what the TDS Payable ledger was credited (from bills and "
+            "from anything else), what was deposited and how much of it has a challan. Salary TDS shares the ledger, so credits that do "
+            "not come from a bill are shown on their own line. Writes nothing."
+        ),
+        parameters=[OpenApiParameter("fy", int, description="The calendar year the financial year starts in (2025 for 2025-26).")],
+        responses={200: TdsTieOutSerializer},
+    )
+    @action(detail=False, methods=["get"], url_path="tieout", pagination_class=None)
+    def tieout(self, request, client_id=None):
+        from ledger import tds_tieout
+
+        try:
+            year = int(request.query_params["fy"])
+        except (KeyError, ValueError):
+            raise serializers.ValidationError({"fy": "Give fy, the year the financial year starts."}) from None
+        return Response(TdsTieOutSerializer(tds_tieout.build(self.client, year)).data)
 
     def _pack(self, request):
         try:

@@ -158,3 +158,26 @@ def salary_return_payload(pack) -> dict:
         "employees": [{"employee": r.employee, "gross_paise": r.gross_paise, "tds_paise": r.tds_paise} for r in pack.rows],
         "challans": pack.challans,
     }
+
+
+class TdsTieOutQuarterSerializer(serializers.Serializer):
+    quarter = serializers.IntegerField()
+    bills_paise = PaiseField(help_text="TDS the bills say was deducted in the quarter.")
+    credited_from_bills_paise = PaiseField(help_text="Credited to TDS Payable by entries that are bills.")
+    credited_other_paise = PaiseField(help_text="Credited to TDS Payable by anything else (salary, a journal).")
+    bills_difference_paise = PaiseField(help_text="What the ledger credits from bills less what the bills say; zero when they agree.")
+    deducted_paise = PaiseField()
+    deposited_paise = PaiseField(help_text="Debited to TDS Payable in the quarter.")
+    with_challan_paise = PaiseField(help_text="Of the deposits, what has a challan recorded.")
+    without_challan_paise = PaiseField()
+
+
+class TdsTieOutSerializer(serializers.Serializer):
+    fy = serializers.IntegerField()
+    quarters = TdsTieOutQuarterSerializer(many=True)
+    deducted_paise = PaiseField()
+    deposited_paise = PaiseField()
+    still_to_deposit_paise = PaiseField()
+    without_section_paise = PaiseField(help_text="Deducted on bills but carrying no section, so it cannot be reported.")
+    agrees = serializers.BooleanField()
+    has_ledger = serializers.BooleanField()

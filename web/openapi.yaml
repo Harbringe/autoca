@@ -7281,6 +7281,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/TdsSummary'
           description: ''
+  /api/v1/clients/{client_id}/tds/tieout/:
+    get:
+      operationId: clients_tds_tieout_retrieve
+      description: 'For each quarter of the year: the TDS the bills say was deducted,
+        what the TDS Payable ledger was credited (from bills and from anything else),
+        what was deposited and how much of it has a challan. Salary TDS shares the
+        ledger, so credits that do not come from a bill are shown on their own line.
+        Writes nothing.'
+      summary: TDS on the bills against TDS in the books, by quarter
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: The calendar year the financial year starts in (2025 for 2025-26).
+      tags:
+      - tds
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TdsTieOut'
+          description: ''
   /api/v1/clients/{client_id}/voucher-classes/:
     get:
       operationId: clients_voucher_classes_list
@@ -22342,6 +22374,122 @@ components:
       required:
       - months
       - payments_without_challan
+    TdsTieOut:
+      type: object
+      properties:
+        fy:
+          type: integer
+        quarters:
+          type: array
+          items:
+            $ref: '#/components/schemas/TdsTieOutQuarter'
+        deducted_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        deposited_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        still_to_deposit_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        without_section_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Deducted on bills but carrying no section, so it cannot be
+            reported.
+        agrees:
+          type: boolean
+        has_ledger:
+          type: boolean
+      required:
+      - agrees
+      - deducted_paise
+      - deposited_paise
+      - fy
+      - has_ledger
+      - quarters
+      - still_to_deposit_paise
+      - without_section_paise
+    TdsTieOutQuarter:
+      type: object
+      properties:
+        quarter:
+          type: integer
+        bills_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: TDS the bills say was deducted in the quarter.
+        credited_from_bills_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Credited to TDS Payable by entries that are bills.
+        credited_other_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Credited to TDS Payable by anything else (salary, a journal).
+        bills_difference_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: What the ledger credits from bills less what the bills say;
+            zero when they agree.
+        deducted_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        deposited_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Debited to TDS Payable in the quarter.
+        with_challan_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Of the deposits, what has a challan recorded.
+        without_challan_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - bills_difference_paise
+      - bills_paise
+      - credited_from_bills_paise
+      - credited_other_paise
+      - deducted_paise
+      - deposited_paise
+      - quarter
+      - with_challan_paise
+      - without_challan_paise
     TeamClient:
       type: object
       properties:

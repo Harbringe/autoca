@@ -3075,6 +3075,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/tds/tieout/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * TDS on the bills against TDS in the books, by quarter
+         * @description For each quarter of the year: the TDS the bills say was deducted, what the TDS Payable ledger was credited (from bills and from anything else), what was deposited and how much of it has a challan. Salary TDS shares the ledger, so credits that do not come from a bill are shown on their own line. Writes nothing.
+         */
+        get: operations["clients_tds_tieout_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/voucher-classes/": {
         parameters: {
             query?: never;
@@ -10520,6 +10540,75 @@ export interface components {
             months: components["schemas"]["TdsMonth"][];
             payments_without_challan: components["schemas"]["TdsPayment"][];
         };
+        TdsTieOut: {
+            fy: number;
+            quarters: components["schemas"]["TdsTieOutQuarter"][];
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            deducted_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            deposited_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            still_to_deposit_paise: number;
+            /**
+             * Format: int64
+             * @description Deducted on bills but carrying no section, so it cannot be reported.
+             */
+            without_section_paise: number;
+            agrees: boolean;
+            has_ledger: boolean;
+        };
+        TdsTieOutQuarter: {
+            quarter: number;
+            /**
+             * Format: int64
+             * @description TDS the bills say was deducted in the quarter.
+             */
+            bills_paise: number;
+            /**
+             * Format: int64
+             * @description Credited to TDS Payable by entries that are bills.
+             */
+            credited_from_bills_paise: number;
+            /**
+             * Format: int64
+             * @description Credited to TDS Payable by anything else (salary, a journal).
+             */
+            credited_other_paise: number;
+            /**
+             * Format: int64
+             * @description What the ledger credits from bills less what the bills say; zero when they agree.
+             */
+            bills_difference_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            deducted_paise: number;
+            /**
+             * Format: int64
+             * @description Debited to TDS Payable in the quarter.
+             */
+            deposited_paise: number;
+            /**
+             * Format: int64
+             * @description Of the deposits, what has a challan recorded.
+             */
+            with_challan_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            without_challan_paise: number;
+        };
         TeamClient: {
             /** @description Rows nobody has placed in a ledger yet. */
             unresolved: number;
@@ -16616,6 +16705,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["TdsSummary"];
+                };
+            };
+        };
+    };
+    clients_tds_tieout_retrieve: {
+        parameters: {
+            query?: {
+                /** @description The calendar year the financial year starts in (2025 for 2025-26). */
+                fy?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TdsTieOut"];
                 };
             };
         };

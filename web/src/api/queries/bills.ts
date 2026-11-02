@@ -312,6 +312,34 @@ export function useBookDepreciation(clientId: string) {
   })
 }
 
+export interface TdsTieOut {
+  fy: number
+  quarters: {
+    quarter: number
+    bills_paise: number
+    credited_from_bills_paise: number
+    credited_other_paise: number
+    bills_difference_paise: number
+    deducted_paise: number
+    deposited_paise: number
+    with_challan_paise: number
+    without_challan_paise: number
+  }[]
+  deducted_paise: number
+  deposited_paise: number
+  still_to_deposit_paise: number
+  without_section_paise: number
+  agrees: boolean
+  has_ledger: boolean
+}
+
+/** TDS on the bills against TDS in the books, by quarter. */
+export const tdsTieOut = (clientId: string, fy: number) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'tds', 'tieout', fy),
+    queryFn: () => raw.get<TdsTieOut>(`${V1}/clients/${clientId}/tds/tieout/`, { fy }),
+  })
+
 /** TDS deducted, deposited and due, by section and month; and deposits that have no challan recorded. */
 export const tdsSummary = (clientId: string) =>
   queryOptions({

@@ -118,3 +118,31 @@ def test_a_read_only_member_may_look_but_not_record(api, client_record, statemen
 
     assert viewer.get(f"{base(client_record)}/tds/summary/").status_code == 200
     assert challan(viewer, client_record, entry).status_code == 403
+
+
+def tieout(api, client_record, fy=2025):
+    done = api.get(f"{base(client_record)}/tds/tieout/", {"fy": fy})
+    assert done.status_code == 200, done.content
+    return done.json()
+
+
+def test_the_tieout_agrees_with_the_bill_and_shows_what_is_still_to_deposit(api, client_record, deducted):
+    body = tieout(api, client_record)
+    q1 = body["quarters"][0]
+    assert q1["bills_paise"] == 1_00_000_00 and q1["credited_from_bills_paise"] == 1_00_000_00 and q1["bills_difference_paise"] == 0
+    assert body["deducted_paise"] == 1_00_000_00 and body["deposited_paise"] == 0 and body["still_to_deposit_paise"] == 1_00_000_00
+    assert body["without_section_paise"] == 0 and body["agrees"] is True
+
+
+def test_a_deposit_without_a_challan_is_a_difference_until_the_challan_is_recorded(api, client_record, statement, deducted):
+    entry = deposit(api, client_record)
+    before = tieout(api, client_record)
+    assert before["deposited_paise"] > 0 and sum(q["without_challan_paise"] for q in before["quarters"]) == before["deposited_paise"]
+    assert before["agrees"] is False
+    assert challan(api, client_record, entry).status_code == 201
+    after = tieout(api, client_record)
+    assert sum(q["without_challan_paise"] for q in after["quarters"]) == 0 and after["agrees"] is True
+
+
+def test_the_tieout_needs_a_year(api, client_record):
+    assert api.get(f"{base(client_record)}/tds/tieout/").status_code == 400

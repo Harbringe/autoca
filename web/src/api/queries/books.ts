@@ -103,10 +103,11 @@ export const statementRowsPage = (clientId: string, statementId: string, page: n
   })
 
 /** `godown` is a godown's id, or `none` for the main location; leave it out for the whole business. */
-export const inventoryReport = (clientId: string, fy: number, godown?: string) =>
+export const inventoryReport = (clientId: string, fy: number, godown?: string, asAt?: string) =>
   queryOptions({
-    queryKey: clientKeys.part(clientId, 'reports', 'inventory', fy, godown ?? 'all'),
-    queryFn: () => raw.get<InventoryReportData>(`${V1}/clients/${clientId}/reports/inventory/`, godown ? { fy, godown } : { fy }),
+    queryKey: clientKeys.part(clientId, 'reports', 'inventory', fy, godown ?? 'all', asAt ?? 'year-end'),
+    queryFn: () =>
+      raw.get<InventoryReportData>(`${V1}/clients/${clientId}/reports/inventory/`, { fy, ...(godown ? { godown } : {}), ...(asAt ? { as_at: asAt } : {}) }),
   })
 
 export interface StockCheck {

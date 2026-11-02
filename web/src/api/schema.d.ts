@@ -14165,6 +14165,8 @@ export interface operations {
     clients_reports_inventory_retrieve: {
         parameters: {
             query?: {
+                /** @description Stock as it stood on this day: movements after it are left out. */
+                as_at?: string;
                 /** @description Financial year by its starting year: 2025 means FY2025-26. */
                 fy?: number;
                 /** @description A godown's id, or `none` for the main location; leave out for the whole business. */

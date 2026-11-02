@@ -450,7 +450,7 @@ class ReportView(viewsets.GenericViewSet):
             "from the lines of the invoices behind the booked purchases (stock in) and sales (stock out), valued at weighted "
             "average cost. Purchases and sales with no invoice lines are counted and named as left out."
         ),
-        parameters=[FY_PARAM, OpenApiParameter("godown", OpenApiTypes.STR, description="A godown's id, or `none` for the main location; leave out for the whole business.")],
+        parameters=[FY_PARAM, OpenApiParameter("godown", OpenApiTypes.STR, description="A godown's id, or `none` for the main location; leave out for the whole business."), OpenApiParameter("as_at", OpenApiTypes.DATE, description="Stock as it stood on this day: movements after it are left out.")],
         responses=InventorySerializer,
     )
     @action(detail=False, methods=["get"], url_path="inventory")
@@ -460,7 +460,12 @@ class ReportView(viewsets.GenericViewSet):
 
         client, year = self._client_and_year(request, client_id)
         godown = request.query_params.get("godown") or None
-        report = stock.build(client, year, godown=godown)
+        as_at = request.query_params.get("as_at")
+        try:
+            as_at_date = datetime.date.fromisoformat(as_at) if as_at else None
+        except ValueError as exc:
+            raise serializers.ValidationError({"as_at": "A date as YYYY-MM-DD."}) from exc
+        report = stock.build(client, year, godown=godown, as_at=as_at_date)
         footer = _footer(client, year, datetime.date(year, 4, 1), datetime.date(year + 1, 3, 31))
         return Response(InventorySerializer(inventory_payload(report, footer)).data)
 

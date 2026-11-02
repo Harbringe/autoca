@@ -143,3 +143,16 @@ def test_the_next_year_carries_the_valuation_and_shows_only_the_change(api, clie
 def test_with_no_closing_stock_entered_the_plain_reports_are_as_they_were(api, client_record):
     sheet = api.get(f"{base(client_record)}/reports/balance-sheet/", {"fy": 2025}).json()
     assert sheet["assets"] == [] and sheet["liabilities"] == [] and sheet["net_profit_paise"] == 0
+
+
+def test_stock_can_be_read_as_it_stood_on_a_day(api, client_record):
+    opening(api, client_record)
+    api.post(
+        f"{base(client_record)}/stock-entries/",
+        {"kind": "ADJUSTMENT", "entry_date": "2025-09-10", "direction": "OUT", "name": "Mustard Oil 1L", "unit": "Nos", "quantity": "15", "value_paise": 1_500_00},
+        format="json",
+    )
+    now = api.get(f"{base(client_record)}/reports/inventory/", {"fy": 2025}).json()["items"][0]
+    before = api.get(f"{base(client_record)}/reports/inventory/", {"fy": 2025, "as_at": "2025-08-31"}).json()["items"][0]
+    assert now["closing_qty"] == "25" and before["closing_qty"] == "40"
+    assert api.get(f"{base(client_record)}/reports/inventory/", {"fy": 2025, "as_at": "nope"}).status_code == 400

@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { raw } from '@/api/client'
@@ -131,5 +131,12 @@ describe('the inventory report', () => {
   it('says so when there is nothing to show', async () => {
     renderIt({ ...REPORT, items: [], bills_left_out: 0, bills_counted: 0 })
     expect(await screen.findByText('No stock movements yet')).toBeInTheDocument()
+  })
+
+  it('asks for the stock as it stood on a day', async () => {
+    renderIt()
+    const day = await screen.findByLabelText('Stock as at')
+    fireEvent.change(day, { target: { value: '2025-08-31' } })
+    await waitFor(() => expect(raw.get).toHaveBeenCalledWith('/api/v1/clients/c1/reports/inventory/', { fy: 2025, as_at: '2025-08-31' }))
   })
 })

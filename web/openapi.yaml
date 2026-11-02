@@ -4599,6 +4599,12 @@ paths:
         as left out.
       summary: 'Inventory: stock by item and month'
       parameters:
+      - in: query
+        name: as_at
+        schema:
+          type: string
+          format: date
+        description: 'Stock as it stood on this day: movements after it are left out.'
       - in: path
         name: client_id
         schema:

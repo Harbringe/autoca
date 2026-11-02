@@ -305,12 +305,15 @@ def book_quantity(client, name: str, as_at: datetime.date, godown: str | None = 
     return qty, value
 
 
-def build(client, fy: int, godown: str | None = None) -> InventoryReport:
+def build(client, fy: int, godown: str | None = None, as_at: datetime.date | None = None) -> InventoryReport:
     """The year's stock summary for ``client``, from the invoice lines behind its booked purchases and sales and the stock entries.
     ``godown`` limits it to one godown (``"none"``: the main location)."""
     end = datetime.date(fy + 1, 3, 31)
     movements, counted, left_out, examples, no_value = _collect(client, end, datetime.date(fy, 4, 1))
     movements = _in_godown(movements, godown)
+    if as_at is not None:
+        # Stock as it stood on that day: nothing after it counts, so every closing figure is the one at that date.
+        movements = [m for m in movements if m.date <= as_at]
     from ledger.models import StockItem
 
     items = summarise(movements, fy)

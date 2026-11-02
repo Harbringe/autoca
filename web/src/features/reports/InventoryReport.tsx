@@ -48,7 +48,8 @@ const money = (paise: number) => (paise === 0 ? '' : formatPaise(paise, { symbol
 
 export function InventoryReport({ clientId, fy }: { clientId: string; fy: number }) {
   const [place, setPlace] = useState('')
-  const query = useQuery(inventoryReport(clientId, fy, place || undefined))
+  const [asAt, setAsAt] = useState('')
+  const query = useQuery(inventoryReport(clientId, fy, place || undefined, asAt || undefined))
   const places = useQuery(godownsQuery(clientId)).data ?? []
   const [picked, setPicked] = useState('')
   const [recording, setRecording] = useState(false)
@@ -80,7 +81,7 @@ export function InventoryReport({ clientId, fy }: { clientId: string; fy: number
         </div>
       )}
 
-      {!place && <StockReconciliationCard clientId={clientId} fy={fy} />}
+      {!place && !asAt && <StockReconciliationCard clientId={clientId} fy={fy} />}
 
       {report.below_reorder > 0 && (
         <div role="status" className="mb-4 flex gap-2 rounded-md border border-accent-edge bg-accent p-3 text-sm">
@@ -142,6 +143,21 @@ export function InventoryReport({ clientId, fy }: { clientId: string; fy: number
                   ))}
                 </Select>
               </>
+            )}
+            <label htmlFor="inventory-as-at" className="font-medium">Stock as at</label>
+            <input
+              id="inventory-as-at"
+              type="date"
+              className="h-9 rounded-md border border-border-strong bg-transparent px-2"
+              min={`${fy}-04-01`}
+              max={`${fy + 1}-03-31`}
+              value={asAt}
+              onChange={(e) => setAsAt(e.target.value)}
+            />
+            {asAt && (
+              <button type="button" className="text-xs underline" onClick={() => setAsAt('')}>
+                Back to the year end
+              </button>
             )}
             <span className="text-muted-foreground">
               {report.quantities_only ? 'This place shows quantities only: moving stock between places carries no cost.' : 'Values are at weighted-average cost.'} {plural(report.bills_counted, 'bill')} counted.

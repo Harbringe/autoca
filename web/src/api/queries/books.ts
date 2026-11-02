@@ -109,6 +109,31 @@ export const inventoryReport = (clientId: string, fy: number, godown?: string) =
     queryFn: () => raw.get<InventoryReportData>(`${V1}/clients/${clientId}/reports/inventory/`, godown ? { fy, godown } : { fy }),
   })
 
+export interface StockCheck {
+  key: string
+  title: string
+  status: 'ok' | 'attention' | 'info'
+  message: string
+  examples: string[]
+}
+
+export interface StockReconciliation {
+  fy: number
+  as_at: string
+  register_value_paise: number
+  books_value_paise: number
+  difference_paise: number
+  agrees: boolean
+  checks: StockCheck[]
+}
+
+/** The stock register read against the books, the bills and the item list. Writes nothing. */
+export const stockReconciliation = (clientId: string, fy: number) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'reports', 'stock-reconciliation', fy),
+    queryFn: () => raw.get<StockReconciliation>(`${V1}/clients/${clientId}/reports/stock-reconciliation/`, { fy }),
+  })
+
 export const trialBalance = (clientId: string, fy: number) =>
   queryOptions({
     queryKey: clientKeys.part(clientId, 'reports', 'tb', fy),

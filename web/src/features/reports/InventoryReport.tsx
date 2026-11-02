@@ -27,6 +27,7 @@ import { normaliseName } from '@/lib/names'
 import { Button } from '@/components/ui/button'
 import { ReportFrame } from './ReportFrame'
 import { StockEntries } from './StockEntries'
+import { StockReconciliationCard } from './StockReconciliationCard'
 
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
@@ -78,6 +79,8 @@ export function InventoryReport({ clientId, fy }: { clientId: string; fy: number
           </div>
         </div>
       )}
+
+      {!place && <StockReconciliationCard clientId={clientId} fy={fy} />}
 
       {report.below_reorder > 0 && (
         <div role="status" className="mb-4 flex gap-2 rounded-md border border-accent-edge bg-accent p-3 text-sm">

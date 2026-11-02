@@ -43,8 +43,10 @@ const REPORT = {
   ],
 }
 
+const RECON = { fy: 2025, as_at: '2026-03-31', register_value_paise: 0, books_value_paise: 0, difference_paise: 0, agrees: true, checks: [] }
+
 function renderIt(data = REPORT) {
-  vi.mocked(raw.get).mockResolvedValue(data)
+  vi.mocked(raw.get).mockImplementation(((url: string) => Promise.resolve(url.includes('stock-reconciliation') ? RECON : data)) as never)
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
       <InventoryReport clientId="c1" fy={2025} />
@@ -56,7 +58,7 @@ describe('the inventory report by godown', () => {
   it('offers a godown picker only when the client has godowns, and asks for that godown', async () => {
     const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false, staleTime: Infinity } } })
     queryClient.setQueryData(godowns('c1').queryKey, [{ id: 'g1', name: 'Shop' }])
-    vi.mocked(raw.get).mockResolvedValue(REPORT)
+    vi.mocked(raw.get).mockImplementation(((url: string) => Promise.resolve(url.includes('stock-reconciliation') ? RECON : REPORT)) as never)
     render(
       <QueryClientProvider client={queryClient}>
         <InventoryReport clientId="c1" fy={2025} />

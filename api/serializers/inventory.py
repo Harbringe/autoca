@@ -109,3 +109,21 @@ def inventory_payload(report, footer) -> dict:
         "left_out_examples": report.left_out_examples,
         "lines_without_value": report.lines_without_value,
     }
+
+
+class StockCheckSerializer(serializers.Serializer):
+    key = serializers.CharField()
+    title = serializers.CharField()
+    status = serializers.ChoiceField(choices=["ok", "attention", "info"])
+    message = serializers.CharField()
+    examples = serializers.ListField(child=serializers.CharField())
+
+
+class StockReconciliationSerializer(serializers.Serializer):
+    fy = serializers.IntegerField()
+    as_at = serializers.DateField()
+    register_value_paise = PaiseField()
+    books_value_paise = PaiseField()
+    difference_paise = PaiseField()
+    agrees = serializers.BooleanField()
+    checks = StockCheckSerializer(many=True)

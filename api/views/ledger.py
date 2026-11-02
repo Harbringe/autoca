@@ -17,7 +17,11 @@ from rest_framework.response import Response
 from api.pagination import DefaultPagination
 from api.permissions import CanApprove, HasFirmPermission
 from api.serializers.classify import ApproveSerializer
-from api.serializers.inventory import InventorySerializer, inventory_payload
+from api.serializers.inventory import (
+    InventorySerializer,
+    StockReconciliationSerializer,
+    inventory_payload,
+)
 from api.serializers.ledger import (
     BalanceCheckSerializer,
     BalanceSheetSerializer,
@@ -458,6 +462,23 @@ class ReportView(viewsets.GenericViewSet):
         report = stock.build(client, year, godown=godown)
         footer = _footer(client, year, datetime.date(year, 4, 1), datetime.date(year + 1, 3, 31))
         return Response(InventorySerializer(inventory_payload(report, footer)).data)
+
+    @extend_schema(
+        summary="Stock against the books",
+        description=(
+            "Reads the stock register, the Stock-in-Hand ledgers, the bills and the item list and says where they part: closing stock "
+            "value against the books, items sold before bought, items missing from the list, units that differ, purchases and sales that "
+            "move no stock. Writes nothing."
+        ),
+        parameters=[FY_PARAM],
+        responses=StockReconciliationSerializer,
+    )
+    @action(detail=False, methods=["get"], url_path="stock-reconciliation")
+    def stock_reconciliation(self, request, client_id=None):
+        from ledger import stock_recon
+
+        client, year = self._client_and_year(request, client_id)
+        return Response(StockReconciliationSerializer(stock_recon.build(client, year)).data)
 
     @extend_schema(
         summary="Balance sheet", parameters=[FY_PARAM], responses=BalanceSheetSerializer

@@ -2018,6 +2018,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/reports/stock-reconciliation/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stock against the books
+         * @description Reads the stock register, the Stock-in-Hand ledgers, the bills and the item list and says where they part: closing stock value against the books, items sold before bought, items missing from the list, units that differ, purchases and sales that move no stock. Writes nothing.
+         */
+        get: operations["clients_reports_stock_reconciliation_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/reports/trial-balance/": {
         parameters: {
             query?: never;
@@ -9213,6 +9233,20 @@ export interface components {
          * @enum {string}
          */
         Status58cEnum: "RECEIVED" | "PARSED" | "FAILED";
+        StockCheck: {
+            key: string;
+            title: string;
+            status: components["schemas"]["StockCheckStatusEnum"];
+            message: string;
+            examples: string[];
+        };
+        /**
+         * @description * `ok` - ok
+         *     * `attention` - attention
+         *     * `info` - info
+         * @enum {string}
+         */
+        StockCheckStatusEnum: "ok" | "attention" | "info";
         StockCountRequest: {
             /** Format: date */
             entry_date: string;
@@ -9374,6 +9408,28 @@ export interface components {
             purchase_ledger?: string | null;
             /** Format: uuid */
             sales_ledger?: string | null;
+        };
+        StockReconciliation: {
+            fy: number;
+            /** Format: date */
+            as_at: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            register_value_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            books_value_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            difference_paise: number;
+            agrees: boolean;
+            checks: components["schemas"]["StockCheck"][];
         };
         StockTransferRequest: {
             /** Format: date */
@@ -14049,6 +14105,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProfitAndLoss"];
+                };
+            };
+        };
+    };
+    clients_reports_stock_reconciliation_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Financial year by its starting year: 2025 means FY2025-26. */
+                fy?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockReconciliation"];
                 };
             };
         };

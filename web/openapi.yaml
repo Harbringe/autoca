@@ -4628,6 +4628,37 @@ paths:
               schema:
                 $ref: '#/components/schemas/ProfitAndLoss'
           description: ''
+  /api/v1/clients/{client_id}/reports/stock-reconciliation/:
+    get:
+      operationId: clients_reports_stock_reconciliation_retrieve
+      description: 'Reads the stock register, the Stock-in-Hand ledgers, the bills
+        and the item list and says where they part: closing stock value against the
+        books, items sold before bought, items missing from the list, units that differ,
+        purchases and sales that move no stock. Writes nothing.'
+      summary: Stock against the books
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: 'Financial year by its starting year: 2025 means FY2025-26.'
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StockReconciliation'
+          description: ''
   /api/v1/clients/{client_id}/reports/trial-balance/:
     get:
       operationId: clients_reports_trial_balance_retrieve
@@ -19818,6 +19849,37 @@ components:
         * `RECEIVED` - Received
         * `PARSED` - Parsed
         * `FAILED` - Could not be read
+    StockCheck:
+      type: object
+      properties:
+        key:
+          type: string
+        title:
+          type: string
+        status:
+          $ref: '#/components/schemas/StockCheckStatusEnum'
+        message:
+          type: string
+        examples:
+          type: array
+          items:
+            type: string
+      required:
+      - examples
+      - key
+      - message
+      - status
+      - title
+    StockCheckStatusEnum:
+      enum:
+      - ok
+      - attention
+      - info
+      type: string
+      description: |-
+        * `ok` - ok
+        * `attention` - attention
+        * `info` - info
     StockCountRequest:
       type: object
       properties:
@@ -20167,6 +20229,49 @@ components:
           nullable: true
       required:
       - name
+    StockReconciliation:
+      type: object
+      properties:
+        fy:
+          type: integer
+        as_at:
+          type: string
+          format: date
+        register_value_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        books_value_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        difference_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        agrees:
+          type: boolean
+        checks:
+          type: array
+          items:
+            $ref: '#/components/schemas/StockCheck'
+      required:
+      - agrees
+      - as_at
+      - books_value_paise
+      - checks
+      - difference_paise
+      - fy
+      - register_value_paise
     StockTransferRequest:
       type: object
       properties:

@@ -1994,6 +1994,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/reports/group-summary/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Group summary
+         * @description Each group's opening, debit, credit and closing for the year, with the ledgers under it. Read from the same balances as the Trial Balance.
+         */
+        get: operations["clients_reports_group_summary_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/reports/gst-tieout/": {
         parameters: {
             query?: never;
@@ -2070,6 +2090,26 @@ export interface paths {
          * @description Inwards, outwards and closing stock for each item, month by month, with the earlier years as the opening. Taken from the lines of the invoices behind the booked purchases (stock in) and sales (stock out), valued at weighted average cost. Purchases and sales with no invoice lines are counted and named as left out.
          */
         get: operations["clients_reports_inventory_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/reports/ledger-monthly/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * A ledger month by month
+         * @description One ledger through the twelve months of the year: debit, credit and the balance after each, ending at the Trial Balance closing.
+         */
+        get: operations["clients_reports_ledger_monthly_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -5635,6 +5675,70 @@ export interface components {
         GodownRequest: {
             name: string;
         };
+        Group: {
+            group: string;
+            label: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            opening_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            debit_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            credit_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            closing_paise: number;
+            ledgers: components["schemas"]["GroupLedger"][];
+        };
+        GroupLedger: {
+            /** Format: uuid */
+            ledger_id: string | null;
+            name: string;
+            /**
+             * Format: int64
+             * @description Debits positive.
+             */
+            opening_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            debit_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            credit_paise: number;
+            /**
+             * Format: int64
+             * @description Debits positive.
+             */
+            closing_paise: number;
+        };
+        GroupSummary: {
+            fy: number;
+            groups: components["schemas"]["Group"][];
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            total_debit_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            total_credit_paise: number;
+        };
         GstError: {
             /** @description Stable code: gst_rule (409), gst_file_unreadable (422), invalid (400), not_found (404), forbidden (403). */
             code: string;
@@ -6465,6 +6569,57 @@ export interface components {
          * @enum {string}
          */
         LedgerGroupEnum: "BANK" | "CASH" | "DEBTOR" | "CREDITOR" | "INDIRECT_EXPENSE" | "DIRECT_EXPENSE" | "INDIRECT_INCOME" | "DIRECT_INCOME" | "DUTIES_AND_TAXES" | "LOAN" | "INVESTMENT" | "CAPITAL" | "SUSPENSE" | "FIXED_ASSET" | "STOCK" | "CURRENT_ASSET" | "LOAN_ADVANCE" | "DEPOSIT" | "MISC_EXPENDITURE" | "BANK_OD" | "CURRENT_LIABILITY" | "PROVISION" | "RESERVES" | "SALES" | "PURCHASE";
+        LedgerInfo: {
+            /** Format: uuid */
+            id: string;
+            name: string;
+            group: string;
+            group_label: string;
+        };
+        LedgerMonth: {
+            /** @description YYYY-MM */
+            month: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            debit_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            credit_paise: number;
+            /**
+             * Format: int64
+             * @description The balance after the month, debits positive.
+             */
+            closing_paise: number;
+        };
+        LedgerMonthly: {
+            fy: number;
+            ledger: components["schemas"]["LedgerInfo"];
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            opening_paise: number;
+            months: components["schemas"]["LedgerMonth"][];
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            total_debit_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            total_credit_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            closing_paise: number;
+        };
         /**
          * @description A row placed in a ledger, and whether it has reached the books yet.
          *
@@ -14550,6 +14705,30 @@ export interface operations {
             };
         };
     };
+    clients_reports_group_summary_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Financial year by its starting year: 2025 means FY2025-26. */
+                fy?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroupSummary"];
+                };
+            };
+        };
+    };
     clients_reports_gst_tieout_retrieve: {
         parameters: {
             query?: {
@@ -14676,6 +14855,31 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Inventory"];
+                };
+            };
+        };
+    };
+    clients_reports_ledger_monthly_retrieve: {
+        parameters: {
+            query: {
+                /** @description Financial year by its starting year: 2025 means FY2025-26. */
+                fy?: number;
+                ledger: string;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LedgerMonthly"];
                 };
             };
         };

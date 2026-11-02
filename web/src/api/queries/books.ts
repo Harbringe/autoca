@@ -229,6 +229,53 @@ export function useSaveGstr3bEntries(clientId: string, month: string) {
   })
 }
 
+export interface GroupLedger {
+  ledger_id: string | null
+  name: string
+  opening_paise: number
+  debit_paise: number
+  credit_paise: number
+  closing_paise: number
+}
+export interface GroupRow {
+  group: string
+  label: string
+  opening_paise: number
+  debit_paise: number
+  credit_paise: number
+  closing_paise: number
+  ledgers: GroupLedger[]
+}
+export interface GroupSummary {
+  fy: number
+  groups: GroupRow[]
+  total_debit_paise: number
+  total_credit_paise: number
+}
+export interface LedgerMonthly {
+  fy: number
+  ledger: { id: string; name: string; group: string; group_label: string }
+  opening_paise: number
+  months: { month: string; debit_paise: number; credit_paise: number; closing_paise: number }[]
+  total_debit_paise: number
+  total_credit_paise: number
+  closing_paise: number
+}
+
+/** Each group's year with the ledgers under it, read from the same balances as the Trial Balance. */
+export const groupSummary = (clientId: string, fy: number) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'reports', 'group-summary', fy),
+    queryFn: () => raw.get<GroupSummary>(`${V1}/clients/${clientId}/reports/group-summary/`, { fy }),
+  })
+
+/** One ledger through the twelve months of the year. */
+export const ledgerMonthly = (clientId: string, fy: number, ledger: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'reports', 'ledger-monthly', fy, ledger),
+    queryFn: () => raw.get<LedgerMonthly>(`${V1}/clients/${clientId}/reports/ledger-monthly/`, { fy, ledger }),
+  })
+
 export function useUseRegisterStock(clientId: string, fy: number) {
   const invalidate = useInvalidateClient(clientId)
   return useMutation({

@@ -4595,6 +4595,35 @@ paths:
               schema:
                 $ref: '#/components/schemas/StatementSettings'
           description: ''
+  /api/v1/clients/{client_id}/reports/group-summary/:
+    get:
+      operationId: clients_reports_group_summary_retrieve
+      description: Each group's opening, debit, credit and closing for the year, with
+        the ledgers under it. Read from the same balances as the Trial Balance.
+      summary: Group summary
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: 'Financial year by its starting year: 2025 means FY2025-26.'
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GroupSummary'
+          description: ''
   /api/v1/clients/{client_id}/reports/gst-tieout/:
     get:
       operationId: clients_reports_gst_tieout_retrieve
@@ -4780,6 +4809,41 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Inventory'
+          description: ''
+  /api/v1/clients/{client_id}/reports/ledger-monthly/:
+    get:
+      operationId: clients_reports_ledger_monthly_retrieve
+      description: 'One ledger through the twelve months of the year: debit, credit
+        and the balance after each, ending at the Trial Balance closing.'
+      summary: A ledger month by month
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: 'Financial year by its starting year: 2025 means FY2025-26.'
+      - in: query
+        name: ledger
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LedgerMonthly'
           description: ''
   /api/v1/clients/{client_id}/reports/profit-and-loss/:
     get:
@@ -12752,6 +12816,123 @@ components:
           maxLength: 100
       required:
       - name
+    Group:
+      type: object
+      properties:
+        group:
+          type: string
+        label:
+          type: string
+        opening_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        debit_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        credit_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        closing_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        ledgers:
+          type: array
+          items:
+            $ref: '#/components/schemas/GroupLedger'
+      required:
+      - closing_paise
+      - credit_paise
+      - debit_paise
+      - group
+      - label
+      - ledgers
+      - opening_paise
+    GroupLedger:
+      type: object
+      properties:
+        ledger_id:
+          type: string
+          format: uuid
+          nullable: true
+        name:
+          type: string
+        opening_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Debits positive.
+        debit_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        credit_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        closing_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Debits positive.
+      required:
+      - closing_paise
+      - credit_paise
+      - debit_paise
+      - ledger_id
+      - name
+      - opening_paise
+    GroupSummary:
+      type: object
+      properties:
+        fy:
+          type: integer
+        groups:
+          type: array
+          items:
+            $ref: '#/components/schemas/Group'
+        total_debit_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        total_credit_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - fy
+      - groups
+      - total_credit_paise
+      - total_debit_paise
     GstError:
       type: object
       properties:
@@ -14423,6 +14604,101 @@ components:
         * `RESERVES` - Reserves & Surplus
         * `SALES` - Sales Accounts
         * `PURCHASE` - Purchase Accounts
+    LedgerInfo:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+        group:
+          type: string
+        group_label:
+          type: string
+      required:
+      - group
+      - group_label
+      - id
+      - name
+    LedgerMonth:
+      type: object
+      properties:
+        month:
+          type: string
+          description: YYYY-MM
+        debit_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        credit_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        closing_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: The balance after the month, debits positive.
+      required:
+      - closing_paise
+      - credit_paise
+      - debit_paise
+      - month
+    LedgerMonthly:
+      type: object
+      properties:
+        fy:
+          type: integer
+        ledger:
+          $ref: '#/components/schemas/LedgerInfo'
+        opening_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        months:
+          type: array
+          items:
+            $ref: '#/components/schemas/LedgerMonth'
+        total_debit_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        total_credit_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        closing_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - closing_paise
+      - fy
+      - ledger
+      - months
+      - opening_paise
+      - total_credit_paise
+      - total_debit_paise
     LedgerRow:
       type: object
       description: |-

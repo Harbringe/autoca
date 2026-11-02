@@ -16,6 +16,7 @@ from rest_framework.response import Response
 
 from api.pagination import DefaultPagination
 from api.permissions import CanApprove, HasFirmPermission
+from api.serializers.analysis import GroupSummarySerializer, LedgerMonthlySerializer
 from api.serializers.classify import ApproveSerializer
 from api.serializers.inventory import (
     Gstr1Serializer,
@@ -573,6 +574,41 @@ class ReportView(viewsets.GenericViewSet):
 
         client = get_visible_client(request, client_id)
         return Response(Gstr1Serializer(gstr1.build(client, self._month(request))).data)
+
+    @extend_schema(
+        summary="Group summary",
+        description="Each group's opening, debit, credit and closing for the year, with the ledgers under it. Read from the same balances as the Trial Balance.",
+        parameters=[FY_PARAM],
+        responses=GroupSummarySerializer,
+    )
+    @action(detail=False, methods=["get"], url_path="group-summary")
+    def group_summary(self, request, client_id=None):
+        from ledger import analysis
+
+        client, year = self._client_and_year(request, client_id)
+        return Response(GroupSummarySerializer(analysis.group_summary(client, year)).data)
+
+    @extend_schema(
+        summary="A ledger month by month",
+        description="One ledger through the twelve months of the year: debit, credit and the balance after each, ending at the Trial Balance closing.",
+        parameters=[FY_PARAM, OpenApiParameter("ledger", OpenApiTypes.UUID, required=True)],
+        responses=LedgerMonthlySerializer,
+    )
+    @action(detail=False, methods=["get"], url_path="ledger-monthly")
+    def ledger_monthly(self, request, client_id=None):
+        from ledger import analysis
+
+        client, year = self._client_and_year(request, client_id)
+        try:
+            ledger_id = uuid.UUID(request.query_params.get("ledger", ""))
+        except ValueError:
+            raise serializers.ValidationError({"ledger": "Give the ledger's id."}) from None
+        ledger = LedgerAccount.objects.filter(firm_id=client.firm_id, client=client, pk=ledger_id).first()
+        if ledger is None:
+            from rest_framework.exceptions import NotFound
+
+            raise NotFound("No such ledger for this client.")
+        return Response(LedgerMonthlySerializer(analysis.ledger_monthly(client, year, ledger)).data)
 
     @staticmethod
     def _month(request) -> str:

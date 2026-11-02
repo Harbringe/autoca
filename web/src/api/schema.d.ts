@@ -2017,6 +2017,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/parties/{id}/payment-details/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Where to pay a party
+         * @description GET shows whether the party can be paid and the last four digits of its account. PUT saves the account number (encrypted, never returned), IFSC and the name the bank holds the account in, for the bank payment file. Needs `party.manage`.
+         */
+        get: operations["clients_parties_payment_details_retrieve"];
+        /**
+         * Where to pay a party
+         * @description GET shows whether the party can be paid and the last four digits of its account. PUT saves the account number (encrypted, never returned), IFSC and the name the bank holds the account in, for the bank payment file. Needs `party.manage`.
+         */
+        put: operations["clients_parties_payment_details_update"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/parties/{id}/statement/": {
         parameters: {
             query?: never;
@@ -2055,6 +2079,30 @@ export interface paths {
          * @description Makes a party for each name (or reuses one that exists) and attaches every row of theirs that has no party yet. Posted entries are not changed: a party is a label on the row. Needs `party.manage`.
          */
         post: operations["clients_parties_found_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/payment-files/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Parties the client owes, and whether each can be paid
+         * @description What is owed, and a file to pay it from. Prepares the file only: nothing is booked, and the money moves when the bank is given the file.
+         */
+        get: operations["clients_payment_files_list"];
+        put?: never;
+        /**
+         * Prepare a bank payment file
+         * @description A CSV with one line per payee (mode, beneficiary name, account number, IFSC, amount, date, narration) to give the bank. RTGS needs at least Rs 2,00,000 a payee and IMPS at most Rs 5,00,000; every payee needs bank details saved. The account numbers are in the file in full, so it should be handled as sensitive. Nothing is booked; the payment is recorded when it shows on the statement. The columns are generic: banks differ in layout, so check your bank's template before uploading.
+         */
+        post: operations["clients_payment_files_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -7358,6 +7406,13 @@ export interface components {
             median_days_request_to_sign_off: number | null;
         };
         /**
+         * @description * `NEFT` - NEFT
+         *     * `RTGS` - RTGS
+         *     * `IMPS` - IMPS
+         * @enum {string}
+         */
+        ModeEnum: "NEFT" | "RTGS" | "IMPS";
+        /**
          * @description * `waiting` - Waiting for the assistant
          *     * `claimed` - Being read by the assistant
          *     * `done` - The assistant suggested a ledger
@@ -8201,6 +8256,21 @@ export interface components {
             previous?: string | null;
             results: components["schemas"]["Party"][];
         };
+        PaginatedPayableList: {
+            /** @example 123 */
+            count: number;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=4
+             */
+            next?: string | null;
+            /**
+             * Format: uri
+             * @example http://api.example.org/accounts/?page=2
+             */
+            previous?: string | null;
+            results: components["schemas"]["Payable"][];
+        };
         PaginatedPayrollRunList: {
             /** @example 123 */
             count: number;
@@ -8741,6 +8811,47 @@ export interface components {
             /** Format: decimal */
             gst_rate?: string | null;
         };
+        Payable: {
+            /** Format: uuid */
+            party: string;
+            name: string;
+            /**
+             * Format: int64
+             * @description What is owed to the party on its open bills.
+             */
+            open_paise: number;
+            bills: number;
+            /** @description Whether the party has the bank details a payment needs. */
+            ready: boolean;
+            account_last4: string;
+        };
+        /** @description Read: the last four digits only. Write: the whole account number, which is stored encrypted and never returned. */
+        PaymentDetails: {
+            ifsc?: string;
+            /** @description The name the bank holds the account in. */
+            account_name?: string;
+            readonly account_last4: string;
+            /** @description An account number, an IFSC and a name are all present. */
+            readonly ready: boolean;
+        };
+        /** @description Read: the last four digits only. Write: the whole account number, which is stored encrypted and never returned. */
+        PaymentDetailsRequest: {
+            account_number?: string;
+            ifsc?: string;
+            /** @description The name the bank holds the account in. */
+            account_name?: string;
+        };
+        PaymentFileRequest: {
+            /**
+             * Format: uuid
+             * @description The client's account the money is paid from.
+             */
+            bank_account: string;
+            mode: components["schemas"]["ModeEnum"];
+            /** Format: date */
+            payment_date: string;
+            items: components["schemas"]["PaymentItemRequest"][];
+        };
         PaymentHint: {
             /** Format: date */
             date: string;
@@ -8758,6 +8869,16 @@ export interface components {
              *     * `amount` - amount
              */
             evidence: components["schemas"]["EvidenceEnum"];
+        };
+        PaymentItemRequest: {
+            /** Format: uuid */
+            party: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            amount_paise: number;
+            narration?: string;
         };
         PayrollLine: {
             /** Format: uuid */
@@ -15509,6 +15630,56 @@ export interface operations {
             };
         };
     };
+    clients_parties_payment_details_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentDetails"];
+                };
+            };
+        };
+    };
+    clients_parties_payment_details_update: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["PaymentDetailsRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PaymentDetailsRequest"];
+                "multipart/form-data": components["schemas"]["PaymentDetailsRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaymentDetails"];
+                };
+            };
+        };
+    };
     clients_parties_statement_retrieve: {
         parameters: {
             query?: {
@@ -15583,6 +15754,59 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CreatedParties"];
+                };
+            };
+        };
+    };
+    clients_payment_files_list: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedPayableList"];
+                };
+            };
+        };
+    };
+    clients_payment_files_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PaymentFileRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["PaymentFileRequest"];
+                "multipart/form-data": components["schemas"]["PaymentFileRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
                 };
             };
         };

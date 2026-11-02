@@ -7,6 +7,7 @@ import { ChequesScreen } from './ChequesScreen'
 
 vi.mock('@/api/client', () => ({ raw: { get: vi.fn(), post: vi.fn(), delete: vi.fn() } }))
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
+vi.mock('./PaymentFileCard', () => ({ PaymentFileCard: () => null }))
 vi.mock('@tanstack/react-router', async (orig) => ({
   ...(await orig<object>()),
   Link: ({ children, ...p }: { children: React.ReactNode } & Record<string, unknown>) => <a href="#" aria-label={p['aria-label'] as string}>{children}</a>,

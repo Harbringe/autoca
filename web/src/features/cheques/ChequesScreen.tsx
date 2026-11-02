@@ -11,6 +11,7 @@ import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDate, formatPaise, parseRupees } from '@/lib/format'
 import { toast } from '@/lib/toast'
+import { PaymentFileCard } from './PaymentFileCard'
 
 const money = (paise: number) => formatPaise(paise, { symbol: false })
 const today = () => new Date().toISOString().slice(0, 10)
@@ -117,6 +118,7 @@ export function ChequesScreen({ clientId, mayEdit }: { clientId: string; mayEdit
       </section>
 
       {mayEdit && <AddCheque clientId={clientId} />}
+      {mayEdit && <PaymentFileCard clientId={clientId} />}
 
       <div className="flex items-center gap-2">
         <select aria-label="Show direction" className="h-9 rounded-md border border-border-strong bg-transparent px-2" value={direction} onChange={(e) => setDirection(e.target.value)}>

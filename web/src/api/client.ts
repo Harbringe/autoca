@@ -149,6 +149,13 @@ export const raw = {
   put: async <T>(path: string, body?: unknown) => json<T>(await apiFetch(withBody('PUT', path, body))),
   patch: async <T>(path: string, body?: unknown) => json<T>(await apiFetch(withBody('PATCH', path, body))),
   delete: async <T = void>(path: string) => json<T>(await apiFetch(withBody('DELETE', path))),
+  /** A file the server sends back in answer to a POST: a bank payment file. */
+  postBlob: async (path: string, body?: unknown) => {
+    const response = await apiFetch(withBody('POST', path, body))
+    const disposition = response.headers.get('Content-Disposition') ?? ''
+    const name = /filename="?([^";]+)"?/.exec(disposition)?.[1]
+    return { blob: await response.blob(), filename: name }
+  },
   /** A file the server sends back: the GST working paper, for one. */
   blob: async (path: string, query?: Query) => {
     const response = await apiFetch(new Request(url(path, query), { credentials: 'include' }))

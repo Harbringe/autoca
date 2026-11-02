@@ -68,6 +68,7 @@ from api.views.ledger import (
 )
 from api.views.overview import FirmMetricsView, FirmOverviewView
 from api.views.partyreports import OpenItemsView, OutstandingView
+from api.views.payment_files import PaymentFileViewSet
 from api.views.payroll import EmployeeViewSet, PayrollRunViewSet
 from api.views.stock import GodownViewSet, StockEntryViewSet, StockItemViewSet
 from api.views.tally import TallyImportViewSet
@@ -103,6 +104,7 @@ per_client.register("cost-centres", CostCentreViewSet, basename="client-cost-cen
 per_client.register("cost-centre-tags", CostCentreTagViewSet, basename="client-cost-centre-tags")
 per_client.register("budgets", BudgetViewSet, basename="client-budgets")
 per_client.register("cheques", ChequeViewSet, basename="client-cheques")
+per_client.register("payment-files", PaymentFileViewSet, basename="client-payment-files")
 per_client.register("cost-centre-report", CostCentreReportViewSet, basename="client-cost-centre-report")
 per_client.register("employees", EmployeeViewSet, basename="client-employee")
 per_client.register("payroll", PayrollRunViewSet, basename="client-payroll")

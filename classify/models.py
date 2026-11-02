@@ -42,6 +42,7 @@ from core.models import Client, FirmScopedModel, User, UUIDModel
 #: GSTIN already stored undecryptable and every hash already indexed unfindable.
 #: It is a storage detail, not a name anyone reads.
 CRYPTO_PURPOSE = "classify.vendor"
+PAY_ACCOUNT_PURPOSE = "classify.party_pay_account"
 
 #: Separate domain for counterparty account numbers, so that a party's account
 #: and one of the client's own accounts never produce the same blind index.
@@ -227,6 +228,13 @@ class Party(UUIDModel, FirmScopedModel):
     gstin_enc = models.BinaryField(blank=True, null=True)
     gstin_hash = models.CharField(max_length=64, blank=True, db_index=True)
 
+    #: Where to pay this party, for a bank payment file: the account number (encrypted, never shown in full), the IFSC, and the
+    #: name as the bank holds the account. Kept apart from ``PartyBankAccount``, which only recognises accounts money has come from.
+    pay_account_enc = models.BinaryField(blank=True, null=True)
+    pay_account_last4 = models.CharField(max_length=4, blank=True, default="", db_default="")
+    pay_ifsc = models.CharField(max_length=11, blank=True, default="", db_default="")
+    pay_account_name = models.CharField(max_length=200, blank=True, default="", db_default="")
+
     #: Reverse charge applies to this party by default. Learned once per client
     #: and then applied, rather than re-decided every month.
     rcm_default = models.BooleanField(default=False)
@@ -276,6 +284,22 @@ class Party(UUIDModel, FirmScopedModel):
         if not self.gstin_enc:
             return ""
         return decrypt_text_for_firm(bytes(self.gstin_enc), self.firm_id, CRYPTO_PURPOSE)
+
+    @property
+    def pay_account(self) -> str:
+        if not self.pay_account_enc:
+            return ""
+        return decrypt_text_for_firm(bytes(self.pay_account_enc), self.firm_id, PAY_ACCOUNT_PURPOSE)
+
+    def set_pay_account(self, number: str) -> None:
+        """Store the account number to pay encrypted; only its last four digits are kept in the clear."""
+        number = re.sub(r"[^A-Za-z0-9]", "", number or "").upper()
+        if not number:
+            self.pay_account_enc = None
+            self.pay_account_last4 = ""
+            return
+        self.pay_account_enc = encrypt_for_firm(number, self.firm_id, PAY_ACCOUNT_PURPOSE)
+        self.pay_account_last4 = number[-4:]
 
     def set_gstin(self, gstin: str) -> None:
         """Store the GSTIN encrypted, with a blind index for reconciliation.

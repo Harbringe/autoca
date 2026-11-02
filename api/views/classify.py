@@ -50,6 +50,7 @@ from api.serializers.partydiscovery import (
     candidates_payload,
 )
 from api.serializers.partyreports import PartyStatementSerializer, statement_payload
+from api.serializers.payment_files import PaymentDetailsSerializer
 from api.serializers.settlement import SettlementContextSerializer
 from api.throttles import enforce
 from api.views.base import ClientScopedMixin, FirmScopedViewSet
@@ -252,6 +253,43 @@ class PartyViewSet(MasterAuditMixin, ClientScopedMixin, FirmScopedViewSet):
         "PATCH": "party.manage",
         "DELETE": "party.manage",
     }
+
+    @extend_schema(
+        summary="Where to pay a party",
+        description=(
+            "GET shows whether the party can be paid and the last four digits of its account. PUT saves the account number (encrypted, "
+            "never returned), IFSC and the name the bank holds the account in, for the bank payment file. Needs `party.manage`."
+        ),
+        request=PaymentDetailsSerializer,
+        responses=PaymentDetailsSerializer,
+    )
+    @action(detail=True, methods=["get", "put"], url_path="payment-details", pagination_class=None)
+    def payment_details(self, request, client_id=None, pk=None):
+        party = self.get_object()
+        if request.method == "PUT":
+            body = PaymentDetailsSerializer(data=request.data)
+            body.is_valid(raise_exception=True)
+            data = body.validated_data
+            before = {"account_last4": party.pay_account_last4, "ifsc": party.pay_ifsc, "account_name": party.pay_account_name}
+            if "account_number" in data:
+                party.set_pay_account(data["account_number"])
+            if "ifsc" in data:
+                party.pay_ifsc = data["ifsc"]
+            if "account_name" in data:
+                party.pay_account_name = " ".join(data["account_name"].split())
+            party.save(update_fields=["pay_account_enc", "pay_account_last4", "pay_ifsc", "pay_account_name"])
+            self._audit(
+                "EDITED", party.pk, f"Payment details: {party.canonical_name}", before,
+                {"account_last4": party.pay_account_last4, "ifsc": party.pay_ifsc, "account_name": party.pay_account_name},
+            )
+        return Response(
+            PaymentDetailsSerializer(
+                {
+                    "ifsc": party.pay_ifsc, "account_name": party.pay_account_name, "account_last4": party.pay_account_last4,
+                    "ready": bool(party.pay_account_enc and party.pay_ifsc and party.pay_account_name),
+                }
+            ).data
+        )
 
     def perform_create(self, serializer):
         super().perform_create(serializer)

@@ -4885,6 +4885,80 @@ paths:
               schema:
                 $ref: '#/components/schemas/OpeningStanding'
           description: ''
+  /api/v1/clients/{client_id}/parties/{id}/payment-details/:
+    get:
+      operationId: clients_parties_payment_details_retrieve
+      description: GET shows whether the party can be paid and the last four digits
+        of its account. PUT saves the account number (encrypted, never returned),
+        IFSC and the name the bank holds the account in, for the bank payment file.
+        Needs `party.manage`.
+      summary: Where to pay a party
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentDetails'
+          description: ''
+    put:
+      operationId: clients_parties_payment_details_update
+      description: GET shows whether the party can be paid and the last four digits
+        of its account. PUT saves the account number (encrypted, never returned),
+        IFSC and the name the bank holds the account in, for the bank payment file.
+        Needs `party.manage`.
+      summary: Where to pay a party
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - review
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentDetailsRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PaymentDetailsRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PaymentDetailsRequest'
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaymentDetails'
+          description: ''
   /api/v1/clients/{client_id}/parties/{id}/statement/:
     get:
       operationId: clients_parties_statement_retrieve
@@ -4995,6 +5069,83 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/CreatedParties'
+          description: ''
+  /api/v1/clients/{client_id}/payment-files/:
+    get:
+      operationId: clients_payment_files_list
+      description: 'What is owed, and a file to pay it from. Prepares the file only:
+        nothing is booked, and the money moves when the bank is given the file.'
+      summary: Parties the client owes, and whether each can be paid
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - name: page
+        required: false
+        in: query
+        description: A page number within the paginated result set.
+        schema:
+          type: integer
+      - name: page_size
+        required: false
+        in: query
+        description: Number of results to return per page.
+        schema:
+          type: integer
+      tags:
+      - payment-files
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PaginatedPayableList'
+          description: ''
+    post:
+      operationId: clients_payment_files_create
+      description: 'A CSV with one line per payee (mode, beneficiary name, account
+        number, IFSC, amount, date, narration) to give the bank. RTGS needs at least
+        Rs 2,00,000 a payee and IMPS at most Rs 5,00,000; every payee needs bank details
+        saved. The account numbers are in the file in full, so it should be handled
+        as sensitive. Nothing is booked; the payment is recorded when it shows on
+        the statement. The columns are generic: banks differ in layout, so check your
+        bank''s template before uploading.'
+      summary: Prepare a bank payment file
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - payment-files
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PaymentFileRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/PaymentFileRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/PaymentFileRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: string
+                format: binary
           description: ''
   /api/v1/clients/{client_id}/payroll/:
     get:
@@ -16599,6 +16750,16 @@ components:
       - median_days_upload_to_posted
       - member
       - statements_completed
+    ModeEnum:
+      enum:
+      - NEFT
+      - RTGS
+      - IMPS
+      type: string
+      description: |-
+        * `NEFT` - NEFT
+        * `RTGS` - RTGS
+        * `IMPS` - IMPS
     ModelStateEnum:
       enum:
       - waiting
@@ -18117,6 +18278,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/Party'
+    PaginatedPayableList:
+      type: object
+      required:
+      - count
+      - results
+      properties:
+        count:
+          type: integer
+          example: 123
+        next:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=4
+        previous:
+          type: string
+          nullable: true
+          format: uri
+          example: http://api.example.org/accounts/?page=2
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/Payable'
     PaginatedPayrollRunList:
       type: object
       required:
@@ -19112,6 +19296,93 @@ components:
           format: decimal
           pattern: ^-?\d{0,3}(?:\.\d{0,2})?$
           nullable: true
+    Payable:
+      type: object
+      properties:
+        party:
+          type: string
+          format: uuid
+        name:
+          type: string
+        open_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: What is owed to the party on its open bills.
+        bills:
+          type: integer
+        ready:
+          type: boolean
+          description: Whether the party has the bank details a payment needs.
+        account_last4:
+          type: string
+      required:
+      - account_last4
+      - bills
+      - name
+      - open_paise
+      - party
+      - ready
+    PaymentDetails:
+      type: object
+      description: 'Read: the last four digits only. Write: the whole account number,
+        which is stored encrypted and never returned.'
+      properties:
+        ifsc:
+          type: string
+          maxLength: 11
+        account_name:
+          type: string
+          description: The name the bank holds the account in.
+          maxLength: 200
+        account_last4:
+          type: string
+          readOnly: true
+        ready:
+          type: boolean
+          readOnly: true
+          description: An account number, an IFSC and a name are all present.
+      required:
+      - account_last4
+      - ready
+    PaymentDetailsRequest:
+      type: object
+      description: 'Read: the last four digits only. Write: the whole account number,
+        which is stored encrypted and never returned.'
+      properties:
+        account_number:
+          type: string
+          writeOnly: true
+          maxLength: 34
+        ifsc:
+          type: string
+          maxLength: 11
+        account_name:
+          type: string
+          description: The name the bank holds the account in.
+          maxLength: 200
+    PaymentFileRequest:
+      type: object
+      properties:
+        bank_account:
+          type: string
+          format: uuid
+          description: The client's account the money is paid from.
+        mode:
+          $ref: '#/components/schemas/ModeEnum'
+        payment_date:
+          type: string
+          format: date
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/PaymentItemRequest'
+      required:
+      - bank_account
+      - items
+      - mode
+      - payment_date
     PaymentHint:
       type: object
       properties:
@@ -19146,6 +19417,25 @@ components:
       - narration
       - on_party_account
       - posted_to
+    PaymentItemRequest:
+      type: object
+      properties:
+        party:
+          type: string
+          format: uuid
+        amount_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 1
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        narration:
+          type: string
+          maxLength: 60
+      required:
+      - amount_paise
+      - party
     PayrollLine:
       type: object
       properties:

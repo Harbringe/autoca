@@ -18,6 +18,7 @@ from api.pagination import DefaultPagination
 from api.permissions import CanApprove, HasFirmPermission
 from api.serializers.classify import ApproveSerializer
 from api.serializers.inventory import (
+    GstTieOutSerializer,
     InventorySerializer,
     StockReconciliationSerializer,
     inventory_payload,
@@ -479,6 +480,23 @@ class ReportView(viewsets.GenericViewSet):
 
         client, year = self._client_and_year(request, client_id)
         return Response(StockReconciliationSerializer(stock_recon.build(client, year)).data)
+
+    @extend_schema(
+        summary="GST on the invoices against GST in the books",
+        description=(
+            "For each tax head (CGST, SGST, IGST, Cess), the output and input tax on the year's sales, purchases and their notes "
+            "against what the Output and Input GST ledgers moved, with the month-by-month outward and inward working a 3B return starts "
+            "from. Reverse-charge purchases are left out of both sides. Writes nothing."
+        ),
+        parameters=[FY_PARAM],
+        responses=GstTieOutSerializer,
+    )
+    @action(detail=False, methods=["get"], url_path="gst-tieout")
+    def gst_tieout(self, request, client_id=None):
+        from ledger import gst_tieout
+
+        client, year = self._client_and_year(request, client_id)
+        return Response(GstTieOutSerializer(gst_tieout.build(client, year)).data)
 
     @extend_schema(
         summary="Use the register's closing stock for the year",

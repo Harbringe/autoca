@@ -1,4 +1,4 @@
-export type ReportTab = 'tb' | 'pl' | 'bs' | 'nce' | 'payables' | 'receivables' | 'inventory' | 'recon'
+export type ReportTab = 'tb' | 'pl' | 'bs' | 'nce' | 'payables' | 'receivables' | 'inventory' | 'gst' | 'recon'
 
 /** The reports, in the order they are read. They are the tab row of the Reports module. */
 export const REPORT_TABS: { tab: ReportTab; label: string }[] = [
@@ -9,5 +9,6 @@ export const REPORT_TABS: { tab: ReportTab; label: string }[] = [
   { tab: 'payables', label: 'Payables' },
   { tab: 'receivables', label: 'Receivables' },
   { tab: 'inventory', label: 'Inventory' },
+  { tab: 'gst', label: 'GST tie-out' },
   { tab: 'recon', label: 'Bank reconciliation' },
 ]

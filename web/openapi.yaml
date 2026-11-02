@@ -4557,6 +4557,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/StatementSettings'
           description: ''
+  /api/v1/clients/{client_id}/reports/gst-tieout/:
+    get:
+      operationId: clients_reports_gst_tieout_retrieve
+      description: For each tax head (CGST, SGST, IGST, Cess), the output and input
+        tax on the year's sales, purchases and their notes against what the Output
+        and Input GST ledgers moved, with the month-by-month outward and inward working
+        a 3B return starts from. Reverse-charge purchases are left out of both sides.
+        Writes nothing.
+      summary: GST on the invoices against GST in the books
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: fy
+        schema:
+          type: integer
+        description: 'Financial year by its starting year: 2025 means FY2025-26.'
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GstTieOut'
+          description: ''
   /api/v1/clients/{client_id}/reports/inventory/:
     get:
       operationId: clients_reports_inventory_retrieve
@@ -12535,6 +12567,74 @@ components:
       required:
       - code
       - detail
+    GstHead:
+      type: object
+      properties:
+        side:
+          $ref: '#/components/schemas/GstHeadSideEnum'
+        head:
+          type: string
+        invoices_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        books_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        difference_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - books_paise
+      - difference_paise
+      - head
+      - invoices_paise
+      - side
+    GstHeadSideEnum:
+      enum:
+      - output
+      - input
+      type: string
+      description: |-
+        * `output` - output
+        * `input` - input
+    GstTieOut:
+      type: object
+      properties:
+        fy:
+          type: integer
+        agrees:
+          type: boolean
+        heads:
+          type: array
+          items:
+            $ref: '#/components/schemas/GstHead'
+        months:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+        net:
+          type: object
+          additionalProperties:
+            type: integer
+      required:
+      - agrees
+      - fy
+      - heads
+      - months
+      - net
     GstinCheck:
       type: object
       properties:
@@ -15252,7 +15352,7 @@ components:
       type: object
       properties:
         side:
-          $ref: '#/components/schemas/SideEnum'
+          $ref: '#/components/schemas/OutstandingSideEnum'
         as_of:
           type: string
           format: date
@@ -15399,6 +15499,14 @@ components:
       - party
       - total_display
       - total_paise
+    OutstandingSideEnum:
+      enum:
+      - payables
+      - receivables
+      type: string
+      description: |-
+        * `payables` - payables
+        * `receivables` - receivables
     OverviewByStage:
       type: object
       properties:
@@ -19224,14 +19332,6 @@ components:
         * `critical` - critical
         * `high` - high
         * `medium` - medium
-    SideEnum:
-      enum:
-      - payables
-      - receivables
-      type: string
-      description: |-
-        * `payables` - payables
-        * `receivables` - receivables
     SignOffRequest:
       type: object
       properties:

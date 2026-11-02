@@ -1974,6 +1974,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/reports/gst-tieout/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GST on the invoices against GST in the books
+         * @description For each tax head (CGST, SGST, IGST, Cess), the output and input tax on the year's sales, purchases and their notes against what the Output and Input GST ledgers moved, with the month-by-month outward and inward working a 3B return starts from. Reverse-charge purchases are left out of both sides. Writes nothing.
+         */
+        get: operations["clients_reports_gst_tieout_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/reports/inventory/": {
         parameters: {
             query?: never;
@@ -5533,6 +5553,42 @@ export interface components {
             /** @description A sentence for a person; show it as it is. */
             detail: string;
         };
+        GstHead: {
+            side: components["schemas"]["GstHeadSideEnum"];
+            head: string;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            invoices_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            books_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            difference_paise: number;
+        };
+        /**
+         * @description * `output` - output
+         *     * `input` - input
+         * @enum {string}
+         */
+        GstHeadSideEnum: "output" | "input";
+        GstTieOut: {
+            fy: number;
+            agrees: boolean;
+            heads: components["schemas"]["GstHead"][];
+            months: {
+                [key: string]: unknown;
+            }[];
+            net: {
+                [key: string]: number;
+            };
+        };
         GstinCheck: {
             gstin: string;
             outcome: components["schemas"]["OutcomeEnum"];
@@ -6816,7 +6872,7 @@ export interface components {
          */
         OutcomeEnum: "found" | "not_found" | "unavailable";
         Outstanding: {
-            side: components["schemas"]["SideEnum"];
+            side: components["schemas"]["OutstandingSideEnum"];
             /** Format: date */
             as_of: string;
             /** @description The ageing buckets, in reading order. */
@@ -6882,6 +6938,12 @@ export interface components {
             total_paise: number;
             total_display: string;
         };
+        /**
+         * @description * `payables` - payables
+         *     * `receivables` - receivables
+         * @enum {string}
+         */
+        OutstandingSideEnum: "payables" | "receivables";
         OverviewByStage: {
             no_statements: number;
             needs_ledger: number;
@@ -8919,12 +8981,6 @@ export interface components {
          * @enum {string}
          */
         SeverityEnum: "critical" | "high" | "medium";
-        /**
-         * @description * `payables` - payables
-         *     * `receivables` - receivables
-         * @enum {string}
-         */
-        SideEnum: "payables" | "receivables";
         SignOffRequest: {
             /**
              * Format: date
@@ -14078,6 +14134,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StatementSettings"];
+                };
+            };
+        };
+    };
+    clients_reports_gst_tieout_retrieve: {
+        parameters: {
+            query?: {
+                /** @description Financial year by its starting year: 2025 means FY2025-26. */
+                fy?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GstTieOut"];
                 };
             };
         };

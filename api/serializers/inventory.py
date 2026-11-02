@@ -127,3 +127,19 @@ class StockReconciliationSerializer(serializers.Serializer):
     difference_paise = PaiseField()
     agrees = serializers.BooleanField()
     checks = StockCheckSerializer(many=True)
+
+
+class GstHeadSerializer(serializers.Serializer):
+    side = serializers.ChoiceField(choices=["output", "input"])
+    head = serializers.CharField()
+    invoices_paise = PaiseField()
+    books_paise = PaiseField()
+    difference_paise = PaiseField()
+
+
+class GstTieOutSerializer(serializers.Serializer):
+    fy = serializers.IntegerField()
+    agrees = serializers.BooleanField()
+    heads = GstHeadSerializer(many=True)
+    months = serializers.ListField(child=serializers.DictField(child=serializers.JSONField()))
+    net = serializers.DictField(child=serializers.IntegerField())

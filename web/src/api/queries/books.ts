@@ -134,6 +134,20 @@ export const stockReconciliation = (clientId: string, fy: number) =>
     queryFn: () => raw.get<StockReconciliation>(`${V1}/clients/${clientId}/reports/stock-reconciliation/`, { fy }),
   })
 
+export interface GstTieOut {
+  fy: number
+  agrees: boolean
+  heads: { side: 'output' | 'input'; head: string; invoices_paise: number; books_paise: number; difference_paise: number }[]
+  months: Record<string, string | number>[]
+  net: { output_paise: number; input_paise: number; payable_paise: number }
+}
+
+export const gstTieOut = (clientId: string, fy: number) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'reports', 'gst-tieout', fy),
+    queryFn: () => raw.get<GstTieOut>(`${V1}/clients/${clientId}/reports/gst-tieout/`, { fy }),
+  })
+
 export function useUseRegisterStock(clientId: string, fy: number) {
   const invalidate = useInvalidateClient(clientId)
   return useMutation({

@@ -143,3 +143,14 @@ class GstTieOutSerializer(serializers.Serializer):
     heads = GstHeadSerializer(many=True)
     months = serializers.ListField(child=serializers.DictField(child=serializers.JSONField()))
     net = serializers.DictField(child=serializers.IntegerField())
+
+
+class Gstr3bSerializer(serializers.Serializer):
+    month = serializers.CharField()
+    outward_taxable = serializers.DictField(child=serializers.IntegerField())
+    inward_reverse_charge = serializers.DictField(child=serializers.IntegerField())
+    itc_all_other = serializers.DictField(child=serializers.IntegerField())
+    itc_reverse_charge = serializers.DictField(child=serializers.IntegerField())
+    payable = serializers.DictField(child=serializers.IntegerField())
+    counts = serializers.DictField(child=serializers.IntegerField())
+    not_covered = serializers.ListField(child=serializers.CharField())

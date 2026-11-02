@@ -149,6 +149,25 @@ export const gstTieOut = (clientId: string, fy: number) =>
     queryFn: () => raw.get<GstTieOut>(`${V1}/clients/${clientId}/reports/gst-tieout/`, { fy }),
   })
 
+export type Gstr3bRow = { taxable_paise: number; igst_paise: number; cgst_paise: number; sgst_paise: number; cess_paise: number }
+
+export interface Gstr3b {
+  month: string
+  outward_taxable: Gstr3bRow
+  inward_reverse_charge: Gstr3bRow
+  itc_all_other: Gstr3bRow
+  itc_reverse_charge: Gstr3bRow
+  payable: Omit<Gstr3bRow, 'taxable_paise'>
+  counts: { sales: number; purchases: number; reverse_charge: number }
+  not_covered: string[]
+}
+
+export const gstr3b = (clientId: string, month: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'reports', 'gstr3b', month),
+    queryFn: () => raw.get<Gstr3b>(`${V1}/clients/${clientId}/reports/gstr3b/`, { month }),
+  })
+
 export function useUseRegisterStock(clientId: string, fy: number) {
   const invalidate = useInvalidateClient(clientId)
   return useMutation({

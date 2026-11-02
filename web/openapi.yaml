@@ -4589,6 +4589,39 @@ paths:
               schema:
                 $ref: '#/components/schemas/GstTieOut'
           description: ''
+  /api/v1/clients/{client_id}/reports/gstr3b/:
+    get:
+      operationId: clients_reports_gstr3b_retrieve
+      description: 'The figures a GSTR-3B return is filled from for one month, from
+        the booked invoices: outward taxable supplies (3.1(a)), reverse-charge inward
+        supplies (3.1(d)), input tax credit (4(A)(5) and 4(A)(3)) and the tax payable
+        (6.1). Zero-rated, exempt and nil-rated supplies, reversed ITC, interest and
+        credit brought forward are not in the books and are not included.'
+      summary: GSTR-3B working for a month
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: month
+        schema:
+          type: string
+        description: YYYY-MM
+        required: true
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gstr3b'
+          description: ''
   /api/v1/clients/{client_id}/reports/inventory/:
     get:
       operationId: clients_reports_inventory_retrieve
@@ -12712,6 +12745,48 @@ components:
           default: false
           description: Ask the portal again instead of reusing an answer under 30
             days old.
+    Gstr3b:
+      type: object
+      properties:
+        month:
+          type: string
+        outward_taxable:
+          type: object
+          additionalProperties:
+            type: integer
+        inward_reverse_charge:
+          type: object
+          additionalProperties:
+            type: integer
+        itc_all_other:
+          type: object
+          additionalProperties:
+            type: integer
+        itc_reverse_charge:
+          type: object
+          additionalProperties:
+            type: integer
+        payable:
+          type: object
+          additionalProperties:
+            type: integer
+        counts:
+          type: object
+          additionalProperties:
+            type: integer
+        not_covered:
+          type: array
+          items:
+            type: string
+      required:
+      - counts
+      - inward_reverse_charge
+      - itc_all_other
+      - itc_reverse_charge
+      - month
+      - not_covered
+      - outward_taxable
+      - payable
     HeadRequest:
       type: object
       properties:

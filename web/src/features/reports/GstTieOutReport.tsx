@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { gstTieOut } from '@/api/queries/books'
 import { ErrorState } from '@/components/ca/Page'
 import { formatPaise } from '@/lib/format'
+import { Gstr3bWorking } from './Gstr3bWorking'
 import { ReportSkeleton } from './ReportPicture'
 
 const money = (paise: number) => (paise === 0 ? '' : formatPaise(paise, { symbol: false }))
@@ -85,6 +86,7 @@ export function GstTieOutReport({ clientId, fy }: { clientId: string; fy: number
           })}
         </tbody>
       </table>
+      <Gstr3bWorking clientId={clientId} fy={fy} />
     </div>
   )
 }

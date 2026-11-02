@@ -18,6 +18,7 @@ from api.pagination import DefaultPagination
 from api.permissions import CanApprove, HasFirmPermission
 from api.serializers.classify import ApproveSerializer
 from api.serializers.inventory import (
+    Gstr3bSerializer,
     GstTieOutSerializer,
     InventorySerializer,
     StockReconciliationSerializer,
@@ -502,6 +503,28 @@ class ReportView(viewsets.GenericViewSet):
 
         client, year = self._client_and_year(request, client_id)
         return Response(GstTieOutSerializer(gst_tieout.build(client, year)).data)
+
+    @extend_schema(
+        summary="GSTR-3B working for a month",
+        description=(
+            "The figures a GSTR-3B return is filled from for one month, from the booked invoices: outward taxable supplies (3.1(a)), "
+            "reverse-charge inward supplies (3.1(d)), input tax credit (4(A)(5) and 4(A)(3)) and the tax payable (6.1). Zero-rated, "
+            "exempt and nil-rated supplies, reversed ITC, interest and credit brought forward are not in the books and are not included."
+        ),
+        parameters=[OpenApiParameter("month", OpenApiTypes.STR, description="YYYY-MM", required=True)],
+        responses=Gstr3bSerializer,
+    )
+    @action(detail=False, methods=["get"], url_path="gstr3b")
+    def gstr3b(self, request, client_id=None):
+        import re
+
+        from ledger import gstr3b
+
+        client = get_visible_client(request, client_id)
+        month = request.query_params.get("month", "")
+        if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month):
+            raise serializers.ValidationError({"month": "A month as YYYY-MM."})
+        return Response(Gstr3bSerializer(gstr3b.build(client, month)).data)
 
     @extend_schema(
         summary="Use the register's closing stock for the year",

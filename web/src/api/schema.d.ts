@@ -1994,6 +1994,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/reports/gstr3b/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GSTR-3B working for a month
+         * @description The figures a GSTR-3B return is filled from for one month, from the booked invoices: outward taxable supplies (3.1(a)), reverse-charge inward supplies (3.1(d)), input tax credit (4(A)(5) and 4(A)(3)) and the tax payable (6.1). Zero-rated, exempt and nil-rated supplies, reversed ITC, interest and credit brought forward are not in the books and are not included.
+         */
+        get: operations["clients_reports_gstr3b_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/reports/inventory/": {
         parameters: {
             query?: never;
@@ -5625,6 +5645,28 @@ export interface components {
              * @default false
              */
             refresh: boolean;
+        };
+        Gstr3b: {
+            month: string;
+            outward_taxable: {
+                [key: string]: number;
+            };
+            inward_reverse_charge: {
+                [key: string]: number;
+            };
+            itc_all_other: {
+                [key: string]: number;
+            };
+            itc_reverse_charge: {
+                [key: string]: number;
+            };
+            payable: {
+                [key: string]: number;
+            };
+            counts: {
+                [key: string]: number;
+            };
+            not_covered: string[];
         };
         HeadRequest: {
             /**
@@ -14158,6 +14200,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GstTieOut"];
+                };
+            };
+        };
+    };
+    clients_reports_gstr3b_retrieve: {
+        parameters: {
+            query: {
+                /** @description YYYY-MM */
+                month: string;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Gstr3b"];
                 };
             };
         };

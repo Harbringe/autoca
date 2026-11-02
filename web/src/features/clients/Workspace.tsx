@@ -68,6 +68,15 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
   useHotkey('g k', 'This client: Sign-off', go('/clients/$clientId/books'), 'Go to')
   useHotkey('g e', 'This client: Client profile', go('/clients/$clientId/team'), 'Go to')
   useHotkey('g m', 'This client: Parties & rules', go('/clients/$clientId/masters'), 'Go to')
+  useHotkey('g y', 'This client: Day Book', go('/clients/$clientId/daybook'), 'Go to')
+  useHotkey('g i', 'This client: Stock items', go('/clients/$clientId/stock'), 'Go to')
+  useHotkey('g q', 'This client: Cheques', go('/clients/$clientId/cheques'), 'Go to')
+  useHotkey('g a', 'This client: Audit trail', go('/clients/$clientId/audit'), 'Go to')
+  useHotkey('g x', 'This client: TDS', go('/clients/$clientId/tds'), 'Go to')
+  useHotkey('g p', 'This client: Payroll', go('/clients/$clientId/payroll'), 'Go to')
+  // Tally's own keys for a new sale and a new purchase.
+  useHotkey('f8', 'New sales voucher', () => can('journal.approve') && void navigate({ to: '/clients/$clientId/bills/$itemId' as never, params: { clientId, itemId: 'new' } as never, search: { as: 'new', kind: 'SALES' } as never }), 'Voucher entry')
+  useHotkey('f9', 'New purchase voucher', () => can('journal.approve') && void navigate({ to: '/clients/$clientId/bills/$itemId' as never, params: { clientId, itemId: 'new' } as never, search: { as: 'new', kind: 'PURCHASE' } as never }), 'Voucher entry')
 
   if (client.isPending) return <Spinner label="Opening client…" />
   if (client.error) return <ErrorState error={client.error} retry={() => void client.refetch()} />

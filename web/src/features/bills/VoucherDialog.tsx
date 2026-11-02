@@ -5,6 +5,7 @@
 // arithmetic and is the authority: what it refuses, it says in words, and those words are shown as they are. So the
 // preview can only ever be early, never different.
 
+import { advanceOnEnter } from '@/lib/enterToAdvance'
 import { useQuery } from '@tanstack/react-query'
 import { ArrowDown, ArrowRight, Plus, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -629,6 +630,7 @@ export function VoucherForm({
       id={formId}
       className="grid gap-4"
       noValidate
+      onKeyDown={(e) => advanceOnEnter(e, e.currentTarget)}
       onSubmit={(e) => {
         e.preventDefault()
         void submit()

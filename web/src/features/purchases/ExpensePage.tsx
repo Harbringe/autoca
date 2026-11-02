@@ -9,6 +9,7 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { ChevronLeft, EyeOff, MoreHorizontal, PanelRight, Sparkles, TriangleAlert, Upload } from 'lucide-react'
 import { useRef, useState } from 'react'
+import { useHotkey } from '@/lib/hotkeys'
 import { toast } from '@/lib/toast'
 import { isApiError, messageOf } from '@/api/errors'
 import { ledgers as ledgersQuery } from '@/api/queries/books'
@@ -178,6 +179,7 @@ export function ExpensePage({ clientId, itemId, as, kind }: { clientId: string; 
   }
 
   const formId = 'expense-form'
+  useHotkey('ctrl+s', 'Save the voucher', () => document.getElementById(formId) instanceof HTMLFormElement && (document.getElementById(formId) as HTMLFormElement).requestSubmit(), 'Voucher entry')
   const busy = !!uploadingName
 
   return (

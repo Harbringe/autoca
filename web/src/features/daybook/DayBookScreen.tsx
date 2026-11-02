@@ -38,6 +38,7 @@ import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { entryMatches } from './entryMatches'
 import { isAssistantEntry, unpostEntry, useUnpostMany } from './unpost'
+import { CostCentreTags } from './CostCentreTags'
 import { StockVouchers } from './StockVouchers'
 import { VoucherNo } from './VoucherNo'
 
@@ -462,6 +463,7 @@ function EntryDetail({
             { key: 'credit', header: 'Credit', align: 'right', cell: (l) => (l.direction === 'CR' ? <Money display={l.amount_display} /> : <span className="text-faint" aria-hidden>–</span>) },
           ]}
         />
+        <CostCentreTags clientId={clientId} entry={entry} mayTag={can('journal.approve') && !!client.data?.can_post} />
         <div className="grid gap-1 text-sm">
           <span className="text-muted-foreground">Narration</span>
           <span className="leading-relaxed">{entry.narration}</span>

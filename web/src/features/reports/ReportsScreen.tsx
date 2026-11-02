@@ -29,6 +29,8 @@ import { Picture, ReportSkeleton } from './ReportPicture'
 import { asAt, formatDate, formatDrCr, formatPaise, fyLabel, parseDate } from '@/lib/format'
 import { useFy } from '@/features/shell/useFy'
 import { FinancialStatements } from './FinancialStatements'
+import { BudgetReport } from './BudgetReport'
+import { CostCentresReport } from './CostCentresReport'
 import { GroupSummaryReport } from './GroupSummaryReport'
 import { GstTieOutReport } from './GstTieOutReport'
 import { InventoryReport } from './InventoryReport'
@@ -54,6 +56,8 @@ export function ReportsScreen({ clientId, report }: { clientId: string; report: 
       {(report === 'nce' || report === 'pl' || report === 'bs') && <FinancialStatements clientId={clientId} fy={fy} part={report === 'nce' ? undefined : report} />}
       {report === 'inventory' && <InventoryReport clientId={clientId} fy={fy} />}
       {report === 'groups' && <GroupSummaryReport clientId={clientId} fy={fy} />}
+      {report === 'budget' && <BudgetReport clientId={clientId} fy={fy} />}
+      {report === 'centres' && <CostCentresReport clientId={clientId} fy={fy} />}
       {report === 'gst' && <GstTieOutReport clientId={clientId} fy={fy} />}
       {report === 'recon' && <Reconciliation clientId={clientId} />}
     </div>

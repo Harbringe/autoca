@@ -6597,6 +6597,7 @@ export interface components {
             /** Format: uuid */
             readonly ledger_account: string;
             readonly ledger_name: string;
+            readonly ledger_group: string;
             /** Format: uuid */
             readonly party: string | null;
             readonly party_name: string | null;

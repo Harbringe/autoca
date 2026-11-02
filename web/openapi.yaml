@@ -14847,6 +14847,9 @@ components:
         ledger_name:
           type: string
           readOnly: true
+        ledger_group:
+          type: string
+          readOnly: true
         party:
           type: string
           format: uuid
@@ -14880,6 +14883,7 @@ components:
       - direction
       - id
       - ledger_account
+      - ledger_group
       - ledger_name
       - party
       - party_name

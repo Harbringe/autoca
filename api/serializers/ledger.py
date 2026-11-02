@@ -21,6 +21,7 @@ class JournalLineSerializer(MoneySerializerMixin, serializers.ModelSerializer):
     money = ("amount_paise",)
 
     ledger_name = serializers.CharField(source="ledger_account.name", read_only=True)
+    ledger_group = serializers.CharField(source="ledger_account.group", read_only=True)
     party_name = serializers.CharField(
         source="party.canonical_name", read_only=True, allow_null=True
     )
@@ -31,6 +32,7 @@ class JournalLineSerializer(MoneySerializerMixin, serializers.ModelSerializer):
             "id",
             "ledger_account",
             "ledger_name",
+            "ledger_group",
             "party",
             "party_name",
             "direction",

@@ -38,6 +38,7 @@ import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 import { entryMatches } from './entryMatches'
 import { isAssistantEntry, unpostEntry, useUnpostMany } from './unpost'
+import { StockVouchers } from './StockVouchers'
 import { VoucherNo } from './VoucherNo'
 
 const TYPES = ['Payment', 'Receipt', 'Contra', 'Journal', 'Purchase', 'Sales', 'Debit Note', 'Credit Note'] as const
@@ -331,6 +332,7 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
           transaction goes back to Review to be decided. What each entry was is kept in its change log. Entries you have already corrected are not included.
         </p>
       </Confirm>
+      <StockVouchers clientId={clientId} fy={fy} />
     </div>
   )
 }

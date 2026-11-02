@@ -136,7 +136,7 @@ def test_the_next_year_carries_the_valuation_and_shows_only_the_change(api, clie
     sheet = api.get(f"{base(client_record)}/reports/balance-sheet/", {"fy": 2026}).json()
     assert sheet["total_assets_paise"] == 3_000_00
     assert sheet["net_profit_paise"] == -1_000_00, "stock fell by 1,000"
-    assert [l["name"] for l in sheet["liabilities"]] == ["Stock valuation brought forward"]
+    assert [row["name"] for row in sheet["liabilities"]] == ["Stock valuation brought forward"]
     assert sheet["balances"] is True
 
 

@@ -360,7 +360,7 @@ export function useRecordChallan(clientId: string) {
 export const employees = (clientId: string) =>
   queryOptions({
     queryKey: clientKeys.part(clientId, 'employees'),
-    queryFn: () => allPages<{ id: string; name: string; is_active: boolean; ledger: string | null }>(`${V1}/clients/${clientId}/employees/`),
+    queryFn: () => allPages<{ id: string; name: string; is_active: boolean; ledger: string | null; uan?: string; esic_number?: string }>(`${V1}/clients/${clientId}/employees/`),
   })
 
 /** Salary runs already booked, newest first. */
@@ -372,6 +372,51 @@ export const payrollRuns = (clientId: string) =>
         `${V1}/clients/${clientId}/payroll/`,
       ),
   })
+
+export interface PfEsi {
+  year: number
+  month: number
+  has_run: boolean
+  due: string
+  rows?: {
+    employee: string
+    uan: string
+    esic_number: string
+    gross_paise: number
+    pf_wages_paise: number
+    pf_employee_paise: number
+    pf_employer_paise: number
+    eps_paise: number
+    epf_paise: number
+    esi_applies: boolean
+    esi_employee_paise: number
+    esi_employer_paise: number
+  }[]
+  totals?: Record<string, number>
+  pf_total_paise?: number
+  admin_charge_paise?: number
+  edli_paise?: number
+  esi_total_paise?: number
+  pf_deposit?: Record<string, number>
+  esi_deposit?: Record<string, number>
+  warnings?: string[]
+}
+
+/** A month's PF and ESI working, from the booked salary run. */
+export const pfEsi = (clientId: string, year: number, month: number) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'payroll', 'pf-esi', year, month),
+    queryFn: () => raw.get<PfEsi>(`${V1}/clients/${clientId}/payroll/pf-esi/`, { year, month }),
+  })
+
+export function useSetEmployeeNumbers(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: ({ id, uan, esic_number }: { id: string; uan: string; esic_number: string }) =>
+      raw.patch<unknown>(`${V1}/clients/${clientId}/employees/${id}/`, { uan, esic_number }),
+    onSuccess: invalidate,
+  })
+}
 
 export function useAddEmployee(clientId: string) {
   const invalidate = useInvalidateClient(clientId)

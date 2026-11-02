@@ -8,6 +8,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { toast } from '@/lib/toast'
 import { messageOf } from '@/api/errors'
+import { PfEsiWorking } from './PfEsiWorking'
 import { employees, payrollRuns, useAddEmployee, useBookSalaries, useRemoveSalaries, type SalaryLine } from '@/api/queries/bills'
 import { clientDetail } from '@/api/queries/clients'
 import { Money } from '@/components/ca/Money'
@@ -125,6 +126,8 @@ export function PayrollScreen({ clientId }: { clientId: string }) {
           <p className="text-sm text-muted-foreground">{plural(active.length, 'employee')}: {active.map((p) => p.name).join(', ')}.</p>
         )}
       </section>
+
+      {active.length > 0 && <PfEsiWorking clientId={clientId} mayEdit={mayEdit} people={active} />}
 
       {mayEdit && active.length > 0 && (
         <section className="grid gap-2" aria-labelledby="pay-run">

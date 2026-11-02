@@ -12,8 +12,20 @@ from ledger.models import Employee, PayrollLine, PayrollRun
 class EmployeeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Employee
-        fields = ["id", "name", "is_active", "ledger"]
+        fields = ["id", "name", "is_active", "ledger", "uan", "esic_number"]
         read_only_fields = ["id", "ledger"]
+
+    def validate_uan(self, value):
+        value = value.strip()
+        if value and not (value.isdigit() and len(value) == 12):
+            raise serializers.ValidationError("A UAN is 12 digits.")
+        return value
+
+    def validate_esic_number(self, value):
+        value = value.strip()
+        if value and not (value.isdigit() and len(value) in (10, 17)):
+            raise serializers.ValidationError("An ESIC number is 10 or 17 digits.")
+        return value
 
 
 class SalaryLineSerializer(serializers.Serializer):
@@ -68,3 +80,21 @@ class PayrollRunSerializer(serializers.ModelSerializer):
 
     def get_net_display(self, obj) -> str:
         return format_inr(obj.net_paise)
+
+
+class PfEsiSerializer(serializers.Serializer):
+    """A month's PF and ESI working. ``has_run`` is false when no salary run is booked for the month; nothing else is then present."""
+
+    year = serializers.IntegerField()
+    month = serializers.IntegerField()
+    has_run = serializers.BooleanField()
+    due = serializers.DateField()
+    rows = serializers.ListField(child=serializers.DictField(), required=False)
+    totals = serializers.DictField(child=serializers.IntegerField(), required=False)
+    pf_total_paise = PaiseField(required=False)
+    admin_charge_paise = PaiseField(required=False)
+    edli_paise = PaiseField(required=False)
+    esi_total_paise = PaiseField(required=False)
+    pf_deposit = serializers.DictField(child=serializers.IntegerField(), required=False)
+    esi_deposit = serializers.DictField(child=serializers.IntegerField(), required=False)
+    warnings = serializers.ListField(child=serializers.CharField(), required=False)

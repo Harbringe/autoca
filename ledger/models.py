@@ -898,6 +898,9 @@ class Employee(UUIDModel, FirmScopedModel):
         LedgerAccount, null=True, blank=True, on_delete=models.PROTECT, related_name="employee_record"
     )
     is_active = models.BooleanField(default=True)
+    #: The numbers the PF and ESI returns name the person by: the 12-digit UAN and the 10- or 17-digit ESIC number.
+    uan = models.CharField(max_length=12, blank=True, default="", db_default="")
+    esic_number = models.CharField(max_length=17, blank=True, default="", db_default="")
 
     class Meta:
         db_table = "ledger_employee"

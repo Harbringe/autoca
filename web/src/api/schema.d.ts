@@ -1862,6 +1862,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/payroll/pf-esi/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * PF and ESI working for a month
+         * @description From the booked salary run: PF wages, the employer's share split into pension and provident fund, the administration charge and EDLI, the ESI figures and whether ESI applies, whether what was credited to PF Payable and ESI Payable was deposited by the 15th of the next month, and what would stop a return being filed (a missing UAN or ESIC number). Interest and damages are not worked out. Writes nothing.
+         */
+        get: operations["clients_payroll_pf_esi_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/profile/": {
         parameters: {
             query?: never;
@@ -5438,10 +5458,14 @@ export interface components {
             is_active?: boolean;
             /** Format: uuid */
             readonly ledger: string | null;
+            uan?: string;
+            esic_number?: string;
         };
         EmployeeRequest: {
             name: string;
             is_active?: boolean;
+            uan?: string;
+            esic_number?: string;
         };
         /**
          * @description * `` -
@@ -7993,6 +8017,8 @@ export interface components {
         PatchedEmployeeRequest: {
             name?: string;
             is_active?: boolean;
+            uan?: string;
+            esic_number?: string;
         };
         PatchedFirmSettingsRequest: {
             name?: string;
@@ -8150,6 +8176,47 @@ export interface components {
             overdue: number;
             /** @description On their clients: statement months missing (waiting on the client) plus books sent to a senior and not yet decided. Right now. */
             waiting_on_others: number;
+        };
+        /** @description A month's PF and ESI working. ``has_run`` is false when no salary run is booked for the month; nothing else is then present. */
+        PfEsi: {
+            year: number;
+            month: number;
+            has_run: boolean;
+            /** Format: date */
+            due: string;
+            rows?: {
+                [key: string]: unknown;
+            }[];
+            totals?: {
+                [key: string]: number;
+            };
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            pf_total_paise?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            admin_charge_paise?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            edli_paise?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            esi_total_paise?: number;
+            pf_deposit?: {
+                [key: string]: number;
+            };
+            esi_deposit?: {
+                [key: string]: number;
+            };
+            warnings?: string[];
         };
         /**
          * @description * `UNKNOWN` - Not yet routed
@@ -14288,6 +14355,30 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    clients_payroll_pf_esi_retrieve: {
+        parameters: {
+            query: {
+                month: number;
+                year: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PfEsi"];
+                };
             };
         };
     };

@@ -4342,6 +4342,44 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/clients/{client_id}/payroll/pf-esi/:
+    get:
+      operationId: clients_payroll_pf_esi_retrieve
+      description: 'From the booked salary run: PF wages, the employer''s share split
+        into pension and provident fund, the administration charge and EDLI, the ESI
+        figures and whether ESI applies, whether what was credited to PF Payable and
+        ESI Payable was deposited by the 15th of the next month, and what would stop
+        a return being filed (a missing UAN or ESIC number). Interest and damages
+        are not worked out. Writes nothing.'
+      summary: PF and ESI working for a month
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: month
+        schema:
+          type: integer
+        required: true
+      - in: query
+        name: year
+        schema:
+          type: integer
+        required: true
+      tags:
+      - payroll
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PfEsi'
+          description: ''
   /api/v1/clients/{client_id}/profile/:
     get:
       operationId: clients_profile_retrieve
@@ -12294,6 +12332,12 @@ components:
           format: uuid
           readOnly: true
           nullable: true
+        uan:
+          type: string
+          maxLength: 12
+        esic_number:
+          type: string
+          maxLength: 17
       required:
       - id
       - ledger
@@ -12307,6 +12351,12 @@ components:
           maxLength: 200
         is_active:
           type: boolean
+        uan:
+          type: string
+          maxLength: 12
+        esic_number:
+          type: string
+          maxLength: 17
       required:
       - name
     EntityTypeEnum:
@@ -17359,6 +17409,12 @@ components:
           maxLength: 200
         is_active:
           type: boolean
+        uan:
+          type: string
+          maxLength: 12
+        esic_number:
+          type: string
+          maxLength: 17
     PatchedFirmSettingsRequest:
       type: object
       properties:
@@ -17747,6 +17803,74 @@ components:
       - overdue
       - role
       - waiting_on_others
+    PfEsi:
+      type: object
+      description: A month's PF and ESI working. ``has_run`` is false when no salary
+        run is booked for the month; nothing else is then present.
+      properties:
+        year:
+          type: integer
+        month:
+          type: integer
+        has_run:
+          type: boolean
+        due:
+          type: string
+          format: date
+        rows:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+        totals:
+          type: object
+          additionalProperties:
+            type: integer
+        pf_total_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        admin_charge_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        edli_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        esi_total_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        pf_deposit:
+          type: object
+          additionalProperties:
+            type: integer
+        esi_deposit:
+          type: object
+          additionalProperties:
+            type: integer
+        warnings:
+          type: array
+          items:
+            type: string
+      required:
+      - due
+      - has_run
+      - month
+      - year
     PipelineTierEnum:
       enum:
       - UNKNOWN

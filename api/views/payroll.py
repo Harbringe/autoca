@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from django.shortcuts import get_object_or_404
-from drf_spectacular.utils import extend_schema
+from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
@@ -14,6 +14,7 @@ from api.serializers.payroll import (
     EmployeeSerializer,
     PayrollRunCreateSerializer,
     PayrollRunSerializer,
+    PfEsiSerializer,
 )
 from api.views.base import ClientScopedMixin
 from ledger import payroll
@@ -44,10 +45,16 @@ class EmployeeViewSet(
 
     def partial_update(self, request, *args, **kwargs):
         employee = self.get_object()
-        if set(request.data) - {"is_active"}:
-            raise serializers.ValidationError({"non_field_errors": "Only is_active can be changed."})
+        if set(request.data) - {"is_active", "uan", "esic_number"}:
+            raise serializers.ValidationError({"non_field_errors": "Only is_active, uan and esic_number can be changed."})
+        body = EmployeeSerializer(employee, data={k: v for k, v in request.data.items() if k in ("uan", "esic_number")}, partial=True)
+        body.is_valid(raise_exception=True)
+        fields = ["is_active"]
         employee.is_active = bool(request.data.get("is_active", employee.is_active))
-        employee.save(update_fields=["is_active"])
+        for key, value in body.validated_data.items():
+            setattr(employee, key, value)
+            fields.append(key)
+        employee.save(update_fields=fields)
         return Response(EmployeeSerializer(employee).data)
 
 
@@ -98,6 +105,29 @@ class PayrollRunViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.CreateM
         ]
         run = payroll.post_run(self.client, data["year"], data["month"], items, membership=request.membership)
         return Response(PayrollRunSerializer(self.get_queryset().get(pk=run.pk)).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        summary="PF and ESI working for a month",
+        description=(
+            "From the booked salary run: PF wages, the employer's share split into pension and provident fund, the administration "
+            "charge and EDLI, the ESI figures and whether ESI applies, whether what was credited to PF Payable and ESI Payable was "
+            "deposited by the 15th of the next month, and what would stop a return being filed (a missing UAN or ESIC number). "
+            "Interest and damages are not worked out. Writes nothing."
+        ),
+        parameters=[OpenApiParameter("year", int, required=True), OpenApiParameter("month", int, required=True)],
+        responses={200: PfEsiSerializer},
+    )
+    @action(detail=False, methods=["get"], url_path="pf-esi", pagination_class=None)
+    def pf_esi(self, request, client_id=None):
+        from ledger import pf_esi
+
+        try:
+            year, month = int(request.query_params["year"]), int(request.query_params["month"])
+            if not 1 <= month <= 12:
+                raise ValueError
+        except (KeyError, ValueError):
+            raise serializers.ValidationError({"detail": "Give year and month (1 to 12)."}) from None
+        return Response(PfEsiSerializer(pf_esi.build(self.client, year, month)).data)
 
     @extend_schema(summary="Take a month of salaries out of the books", responses={204: None})
     @action(detail=True, methods=["post"], url_path="remove", permission_classes=[CanApprove])

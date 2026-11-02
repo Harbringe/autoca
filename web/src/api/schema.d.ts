@@ -1994,6 +1994,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/reports/gstr1/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GSTR-1 working for a month
+         * @description The tables a GSTR-1 return is filled from, from the booked sales invoices and credit notes: B2B (4), B2C large (5), B2C other by rate and inter/intra-state (7), credit notes (9B), exempt, nil and non-GST from the month's GSTR-3B entries (8), the HSN summary from invoices with item lines (12) and documents issued (13). Place of supply is not recorded, so B2C is not by state.
+         */
+        get: operations["clients_reports_gstr1_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/reports/gstr3b/": {
         parameters: {
             query?: never;
@@ -5649,6 +5669,29 @@ export interface components {
              * @default false
              */
             refresh: boolean;
+        };
+        Gstr1: {
+            month: string;
+            b2b: unknown;
+            b2cl: unknown;
+            b2cs: unknown;
+            credit_notes_registered: unknown;
+            credit_notes_unregistered: unknown;
+            exempt_nil_non_gst: unknown;
+            hsn: unknown;
+            hsn_bills_without_items: number;
+            documents: unknown;
+            agrees_with_3b: boolean;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            taxable_in_tables_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            taxable_in_3b_paise: number;
         };
         Gstr3b: {
             month: string;
@@ -14347,6 +14390,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GstTieOut"];
+                };
+            };
+        };
+    };
+    clients_reports_gstr1_retrieve: {
+        parameters: {
+            query: {
+                /** @description YYYY-MM */
+                month: string;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Gstr1"];
                 };
             };
         };

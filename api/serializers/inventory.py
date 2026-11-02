@@ -189,3 +189,19 @@ class Gstr3bEntriesSerializer(serializers.Serializer):
     opening_credit_cgst_paise = PaiseField(required=False, min_value=0, allow_null=True)
     opening_credit_sgst_paise = PaiseField(required=False, min_value=0, allow_null=True)
     opening_credit_cess_paise = PaiseField(required=False, min_value=0, allow_null=True)
+
+
+class Gstr1Serializer(serializers.Serializer):
+    month = serializers.CharField()
+    b2b = serializers.JSONField()
+    b2cl = serializers.JSONField()
+    b2cs = serializers.JSONField()
+    credit_notes_registered = serializers.JSONField()
+    credit_notes_unregistered = serializers.JSONField()
+    exempt_nil_non_gst = serializers.JSONField()
+    hsn = serializers.JSONField()
+    hsn_bills_without_items = serializers.IntegerField()
+    documents = serializers.JSONField()
+    agrees_with_3b = serializers.BooleanField()
+    taxable_in_tables_paise = PaiseField()
+    taxable_in_3b_paise = PaiseField()

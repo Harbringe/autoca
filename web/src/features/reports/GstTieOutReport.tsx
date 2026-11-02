@@ -5,6 +5,7 @@ import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { gstTieOut } from '@/api/queries/books'
 import { ErrorState } from '@/components/ca/Page'
 import { formatPaise } from '@/lib/format'
+import { Gstr1Working } from './Gstr1Working'
 import { Gstr3bWorking } from './Gstr3bWorking'
 import { ReportSkeleton } from './ReportPicture'
 
@@ -87,6 +88,7 @@ export function GstTieOutReport({ clientId, fy }: { clientId: string; fy: number
         </tbody>
       </table>
       <Gstr3bWorking clientId={clientId} fy={fy} />
+      <Gstr1Working clientId={clientId} fy={fy} />
     </div>
   )
 }

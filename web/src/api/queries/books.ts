@@ -182,6 +182,45 @@ export const gstr3b = (clientId: string, month: string) =>
     queryFn: () => raw.get<Gstr3b>(`${V1}/clients/${clientId}/reports/gstr3b/`, { month }),
   })
 
+export interface Gstr1Row {
+  number: string
+  date: string
+  party: string
+  gstin: string
+  value_paise: number
+  taxable_paise: number
+  rate: string
+  igst_paise: number
+  cgst_paise: number
+  sgst_paise: number
+  cess_paise: number
+}
+export interface Gstr1Section {
+  rows: Gstr1Row[]
+  total: Record<string, number>
+}
+export interface Gstr1 {
+  month: string
+  b2b: Gstr1Section
+  b2cl: Gstr1Section
+  b2cs: { rows: { supply: string; rate: string; taxable_paise: number; igst_paise: number; cgst_paise: number; sgst_paise: number; cess_paise: number }[] }
+  credit_notes_registered: Gstr1Section
+  credit_notes_unregistered: Gstr1Section
+  exempt_nil_non_gst: { zero_rated_paise: number; exempt_paise: number; non_gst_paise: number; untaxed_sales_paise: number }
+  hsn: { hsn: string; unit: string; quantity: number; taxable_paise: number; igst_paise: number; cgst_paise: number; sgst_paise: number; cess_paise: number }[]
+  hsn_bills_without_items: number
+  documents: { label: string; from: string; to: string; count: number }[]
+  agrees_with_3b: boolean
+  taxable_in_tables_paise: number
+  taxable_in_3b_paise: number
+}
+
+export const gstr1 = (clientId: string, month: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'reports', 'gstr1', month),
+    queryFn: () => raw.get<Gstr1>(`${V1}/clients/${clientId}/reports/gstr1/`, { month }),
+  })
+
 export function useSaveGstr3bEntries(clientId: string, month: string) {
   const invalidate = useInvalidateClient(clientId)
   return useMutation({

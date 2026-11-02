@@ -4589,6 +4589,39 @@ paths:
               schema:
                 $ref: '#/components/schemas/GstTieOut'
           description: ''
+  /api/v1/clients/{client_id}/reports/gstr1/:
+    get:
+      operationId: clients_reports_gstr1_retrieve
+      description: 'The tables a GSTR-1 return is filled from, from the booked sales
+        invoices and credit notes: B2B (4), B2C large (5), B2C other by rate and inter/intra-state
+        (7), credit notes (9B), exempt, nil and non-GST from the month''s GSTR-3B
+        entries (8), the HSN summary from invoices with item lines (12) and documents
+        issued (13). Place of supply is not recorded, so B2C is not by state.'
+      summary: GSTR-1 working for a month
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: month
+        schema:
+          type: string
+        description: YYYY-MM
+        required: true
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gstr1'
+          description: ''
   /api/v1/clients/{client_id}/reports/gstr3b/:
     get:
       operationId: clients_reports_gstr3b_retrieve
@@ -12789,6 +12822,51 @@ components:
           default: false
           description: Ask the portal again instead of reusing an answer under 30
             days old.
+    Gstr1:
+      type: object
+      properties:
+        month:
+          type: string
+        b2b: {}
+        b2cl: {}
+        b2cs: {}
+        credit_notes_registered: {}
+        credit_notes_unregistered: {}
+        exempt_nil_non_gst: {}
+        hsn: {}
+        hsn_bills_without_items:
+          type: integer
+        documents: {}
+        agrees_with_3b:
+          type: boolean
+        taxable_in_tables_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        taxable_in_3b_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+      required:
+      - agrees_with_3b
+      - b2b
+      - b2cl
+      - b2cs
+      - credit_notes_registered
+      - credit_notes_unregistered
+      - documents
+      - exempt_nil_non_gst
+      - hsn
+      - hsn_bills_without_items
+      - month
+      - taxable_in_3b_paise
+      - taxable_in_tables_paise
     Gstr3b:
       type: object
       properties:

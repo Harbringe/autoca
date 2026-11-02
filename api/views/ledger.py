@@ -18,6 +18,7 @@ from api.pagination import DefaultPagination
 from api.permissions import CanApprove, HasFirmPermission
 from api.serializers.classify import ApproveSerializer
 from api.serializers.inventory import (
+    Gstr1Serializer,
     Gstr3bEntriesSerializer,
     Gstr3bSerializer,
     GstTieOutSerializer,
@@ -555,6 +556,23 @@ class ReportView(viewsets.GenericViewSet):
             before=before, after=gstr3b.read_entries(client, month), actor=request.user,
         )
         return Response(Gstr3bSerializer(gstr3b.build(client, month)).data)
+
+    @extend_schema(
+        summary="GSTR-1 working for a month",
+        description=(
+            "The tables a GSTR-1 return is filled from, from the booked sales invoices and credit notes: B2B (4), B2C large (5), B2C other "
+            "by rate and inter/intra-state (7), credit notes (9B), exempt, nil and non-GST from the month's GSTR-3B entries (8), the HSN "
+            "summary from invoices with item lines (12) and documents issued (13). Place of supply is not recorded, so B2C is not by state."
+        ),
+        parameters=[OpenApiParameter("month", OpenApiTypes.STR, description="YYYY-MM", required=True)],
+        responses=Gstr1Serializer,
+    )
+    @action(detail=False, methods=["get"], url_path="gstr1")
+    def gstr1(self, request, client_id=None):
+        from ledger import gstr1
+
+        client = get_visible_client(request, client_id)
+        return Response(Gstr1Serializer(gstr1.build(client, self._month(request))).data)
 
     @staticmethod
     def _month(request) -> str:

@@ -55,6 +55,7 @@ from ledger.models import (
     EntryChange,
     FixedAsset,
     Budget,
+    Cheque,
     CostCentre,
     CostCentreTag,
     Godown,
@@ -524,6 +525,15 @@ def _budget(firm, **kw):
     return Budget.objects.create(firm=firm, client=client, ledger=ledger, period=datetime.date(2025, 4, 1), amount_paise=100_000)
 
 
+def _cheque(firm, **kw):
+    client = kw.get("client") or _client(firm)
+    account = kw.get("bank_account") or _bank_account(firm, client=client)
+    return Cheque.objects.create(
+        firm=firm, client=client, bank_account=account, direction="ISSUED", number="000123",
+        cheque_date=datetime.date(2025, 5, 1), issued_on=datetime.date(2025, 5, 1), amount_paise=100_000,
+    )
+
+
 def _tds_challan(firm, **kw):
     client = kw.get("client") or _client(firm)
     entry = JournalEntry.objects.create(
@@ -636,6 +646,7 @@ FACTORIES = {
     CostCentre: _cost_centre,
     CostCentreTag: _cost_centre_tag,
     Budget: _budget,
+    Cheque: _cheque,
     MasterChange: _master_change,
     Bill: _bill,
     BillAllocation: _bill_allocation,

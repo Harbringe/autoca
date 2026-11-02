@@ -34,6 +34,7 @@ from api.views.banking import (
 )
 from api.views.billing import BillViewSet
 from api.views.books import BooksView
+from api.views.cheques import ChequeViewSet
 from api.views.classify import (
     ClassificationViewSet,
     LedgerAccountViewSet,
@@ -101,6 +102,7 @@ per_client.register("godowns", GodownViewSet, basename="client-godowns")
 per_client.register("cost-centres", CostCentreViewSet, basename="client-cost-centres")
 per_client.register("cost-centre-tags", CostCentreTagViewSet, basename="client-cost-centre-tags")
 per_client.register("budgets", BudgetViewSet, basename="client-budgets")
+per_client.register("cheques", ChequeViewSet, basename="client-cheques")
 per_client.register("cost-centre-report", CostCentreReportViewSet, basename="client-cost-centre-report")
 per_client.register("employees", EmployeeViewSet, basename="client-employee")
 per_client.register("payroll", PayrollRunViewSet, basename="client-payroll")

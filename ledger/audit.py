@@ -18,6 +18,7 @@ PARTY_FIELDS = ("canonical_name", "role", "rcm_default", "msme", "udyam_no", "td
 TYPE_FIELDS = ("name", "parent")
 CLASS_FIELDS = ("name", "voucher_type", "type_name", "head_ledger", "gst_rate")
 GODOWN_FIELDS = ("name",)
+CHEQUE_FIELDS = ("bank_account", "direction", "number", "cheque_date", "amount_paise", "party", "payee_name", "status", "status_on")
 CENTRE_FIELDS = ("name",)
 ITEM_FIELDS = ("name", "unit", "hsn_sac", "gst_rate", "reorder_level", "purchase_ledger", "sales_ledger", "aliases")
 RULE_FIELDS = ("match_type", "pattern", "direction", "ledger", "party", "rcm", "tds_section", "confidence", "priority", "is_active")

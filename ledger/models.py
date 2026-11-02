@@ -1002,6 +1002,7 @@ class MasterKind(models.TextChoices):
     GODOWN = "GODOWN", "Godown"
     CENTRE = "CENTRE", "Cost centre"
     BUDGET = "BUDGET", "Budget"
+    CHEQUE = "CHEQUE", "Cheque"
 
 
 class MasterAction(models.TextChoices):
@@ -1078,3 +1079,51 @@ class Budget(UUIDModel, FirmScopedModel):
             models.CheckConstraint(condition=models.Q(amount_paise__gte=0), name="ck_budget_not_negative"),
             models.UniqueConstraint(fields=["firm", "client", "ledger", "period"], name="uniq_budget_ledger_month"),
         ]
+
+
+class ChequeDirection(models.TextChoices):
+    ISSUED = "ISSUED", "Issued by the client"
+    RECEIVED = "RECEIVED", "Received by the client"
+
+
+class ChequeStatus(models.TextChoices):
+    PENDING = "PENDING", "Not yet presented"
+    CLEARED = "CLEARED", "Cleared"
+    BOUNCED = "BOUNCED", "Bounced"
+    CANCELLED = "CANCELLED", "Cancelled"
+
+
+class Cheque(UUIDModel, FirmScopedModel):
+    """A cheque the client issued or received, from the day it is written until it clears, bounces or is cancelled.
+
+    A cheque dated after the day it was issued or received is post-dated (a PDC). The register is a record to follow up and print from;
+    it books nothing -- the payment or receipt is an ordinary bank entry when the money moves.
+    """
+
+    client = models.ForeignKey(Client, on_delete=models.PROTECT, related_name="cheques")
+    bank_account = models.ForeignKey("banking.BankAccount", on_delete=models.PROTECT, related_name="cheques")
+    direction = models.CharField(max_length=8, choices=ChequeDirection.choices)
+    number = models.CharField(max_length=12)
+    cheque_date = models.DateField()
+    #: The day it was written out (issued) or handed over (received); a cheque dated later than this is post-dated.
+    issued_on = models.DateField()
+    amount_paise = models.BigIntegerField()
+    party = models.ForeignKey(Party, null=True, blank=True, on_delete=models.PROTECT, related_name="cheques")
+    #: Who the cheque is made out to, as it is to be printed; falls back to the party's name.
+    payee_name = models.CharField(max_length=200, blank=True, default="", db_default="")
+    status = models.CharField(max_length=10, choices=ChequeStatus.choices, default=ChequeStatus.PENDING, db_default=ChequeStatus.PENDING)
+    status_on = models.DateField(null=True, blank=True)
+    note = models.CharField(max_length=300, blank=True, default="", db_default="")
+
+    class Meta:
+        db_table = "ledger_cheque"
+        ordering = ["cheque_date", "number"]
+        constraints = [
+            models.CheckConstraint(condition=models.Q(amount_paise__gt=0), name="ck_cheque_amount_positive"),
+            models.UniqueConstraint(fields=["firm", "client", "bank_account", "direction", "number"], name="uniq_cheque_number_per_account"),
+        ]
+        indexes = [models.Index(fields=["firm", "client", "status", "cheque_date"], name="idx_cheque_status_date")]
+
+    def __str__(self) -> str:
+        return f"Cheque {self.number}"
+

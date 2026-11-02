@@ -4592,11 +4592,13 @@ paths:
   /api/v1/clients/{client_id}/reports/gstr3b/:
     get:
       operationId: clients_reports_gstr3b_retrieve
-      description: 'The figures a GSTR-3B return is filled from for one month, from
-        the booked invoices: outward taxable supplies (3.1(a)), reverse-charge inward
-        supplies (3.1(d)), input tax credit (4(A)(5) and 4(A)(3)) and the tax payable
-        (6.1). Zero-rated, exempt and nil-rated supplies, reversed ITC, interest and
-        credit brought forward are not in the books and are not included.'
+      description: 'The figures a GSTR-3B return is filled from for one month: outward
+        taxable supplies (3.1(a)), the exempt, nil, zero-rated and non-GST supplies
+        entered for the month (3.1(b), (c), (e)), reverse-charge inward supplies (3.1(d)),
+        input credit (4(A)), credit reversed (4(B)), the tax payable (6.1) paid by
+        credit and in cash, interest and late fee, and the credit carried forward.
+        Credit carries from April of the year and is applied in the order section
+        49A sets.'
       summary: GSTR-3B working for a month
       parameters:
       - in: path
@@ -4613,6 +4615,48 @@ paths:
         required: true
       tags:
       - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gstr3b'
+          description: ''
+    put:
+      operationId: clients_reports_gstr3b_update
+      description: Exempt, nil-rated, zero-rated and non-GST supplies, credit reversed,
+        interest, late fee, and an opening credit that puts the carried-forward credit
+        right. Replaces the month's entries; recorded in the audit trail. Requires
+        `ledger.manage`.
+      summary: Enter what the invoices do not hold for a GSTR-3B month
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: month
+        schema:
+          type: string
+        description: YYYY-MM
+        required: true
+      tags:
+      - reports
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/Gstr3bEntriesRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/Gstr3bEntriesRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/Gstr3bEntriesRequest'
       security:
       - cookieAuth: []
       responses:
@@ -12754,10 +12798,38 @@ components:
           type: object
           additionalProperties:
             type: integer
+        zero_rated_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        exempt_nil_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        non_gst_outward_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
         inward_reverse_charge:
           type: object
           additionalProperties:
             type: integer
+        inward_exempt_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
         itc_all_other:
           type: object
           additionalProperties:
@@ -12766,27 +12838,214 @@ components:
           type: object
           additionalProperties:
             type: integer
-        payable:
+        itc_reversed:
           type: object
           additionalProperties:
             type: integer
+        opening_credit:
+          type: object
+          additionalProperties:
+            type: integer
+        liability:
+          type: object
+          additionalProperties:
+            type: integer
+        paid_by_credit:
+          type: object
+          additionalProperties:
+            type: integer
+        paid_in_cash:
+          type: object
+          additionalProperties:
+            type: integer
+        interest:
+          type: object
+          additionalProperties:
+            type: integer
+        late_fee_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        carry_forward:
+          type: object
+          additionalProperties:
+            type: integer
+        untaxed_sales_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        untaxed_unexplained_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
         counts:
           type: object
           additionalProperties:
             type: integer
-        not_covered:
-          type: array
-          items:
-            type: string
+        entries:
+          type: object
+          additionalProperties:
+            type: integer
+            nullable: true
       required:
+      - carry_forward
       - counts
+      - entries
+      - exempt_nil_paise
+      - interest
+      - inward_exempt_paise
       - inward_reverse_charge
       - itc_all_other
       - itc_reverse_charge
+      - itc_reversed
+      - late_fee_paise
+      - liability
       - month
-      - not_covered
+      - non_gst_outward_paise
+      - opening_credit
       - outward_taxable
-      - payable
+      - paid_by_credit
+      - paid_in_cash
+      - untaxed_sales_paise
+      - untaxed_unexplained_paise
+      - zero_rated_paise
+    Gstr3bEntriesRequest:
+      type: object
+      description: What no invoice holds, for one month. Amounts are whole paise,
+        zero or more; an opening credit left out is carried forward.
+      properties:
+        zero_rated_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        exempt_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        non_gst_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        inward_exempt_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        late_fee_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        itc_reversed_igst_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        itc_reversed_cgst_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        itc_reversed_sgst_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        itc_reversed_cess_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        interest_igst_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        interest_cgst_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        interest_sgst_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        interest_cess_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        opening_credit_igst_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        opening_credit_cgst_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        opening_credit_sgst_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
+        opening_credit_cess_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          nullable: true
+          description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
+            a decimal.
     HeadRequest:
       type: object
       properties:

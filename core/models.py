@@ -148,6 +148,11 @@ class Client(UUIDModel, FirmScopedModel):
     #: statements are rounded to. Read and written only through ``ledger.nce`` (``read_settings``); shape described there.
     nce_settings = models.JSONField(default=dict, db_default={}, blank=True)
 
+    #: What a GSTR-3B return needs that no invoice holds, by month ("2025-10"): exempt, nil-rated, zero-rated and non-GST supplies,
+    #: ITC reversed, interest, late fee, and an opening credit where the month's carried-forward credit is to be overridden.
+    #: Read and written only through ``ledger.gstr3b`` (``read_entries``).
+    gst_return_entries = models.JSONField(default=dict, db_default={}, blank=True)
+
     #: How often this client's books are sealed (permanently locked). A senior's approval says "this is good" and locks
     #: nothing; the seal is what locks, and only on the dates this schedule names.
     close_period = models.CharField(

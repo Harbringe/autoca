@@ -5,6 +5,7 @@ import { raw } from '@/api/client'
 import { GstTieOutReport } from './GstTieOutReport'
 
 vi.mock('@/api/client', () => ({ raw: { get: vi.fn() } }))
+vi.mock('./Gstr3bWorking', () => ({ Gstr3bWorking: () => null }))
 
 function show(body: object) {
   vi.mocked(raw.get).mockResolvedValue(body)

@@ -150,16 +150,30 @@ export const gstTieOut = (clientId: string, fy: number) =>
   })
 
 export type Gstr3bRow = { taxable_paise: number; igst_paise: number; cgst_paise: number; sgst_paise: number; cess_paise: number }
+export type Gstr3bTax = Omit<Gstr3bRow, 'taxable_paise'>
 
 export interface Gstr3b {
   month: string
   outward_taxable: Gstr3bRow
+  zero_rated_paise: number
+  exempt_nil_paise: number
+  non_gst_outward_paise: number
   inward_reverse_charge: Gstr3bRow
+  inward_exempt_paise: number
   itc_all_other: Gstr3bRow
   itc_reverse_charge: Gstr3bRow
-  payable: Omit<Gstr3bRow, 'taxable_paise'>
+  itc_reversed: Gstr3bTax
+  opening_credit: Gstr3bTax
+  liability: Gstr3bTax
+  paid_by_credit: Gstr3bTax
+  paid_in_cash: Gstr3bTax
+  interest: Gstr3bTax
+  late_fee_paise: number
+  carry_forward: Gstr3bTax
+  untaxed_sales_paise: number
+  untaxed_unexplained_paise: number
   counts: { sales: number; purchases: number; reverse_charge: number }
-  not_covered: string[]
+  entries: Record<string, number | null>
 }
 
 export const gstr3b = (clientId: string, month: string) =>
@@ -167,6 +181,14 @@ export const gstr3b = (clientId: string, month: string) =>
     queryKey: clientKeys.part(clientId, 'reports', 'gstr3b', month),
     queryFn: () => raw.get<Gstr3b>(`${V1}/clients/${clientId}/reports/gstr3b/`, { month }),
   })
+
+export function useSaveGstr3bEntries(clientId: string, month: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: (entries: Record<string, number | null>) => raw.put<Gstr3b>(`${V1}/clients/${clientId}/reports/gstr3b/?month=${month}`, entries),
+    onSuccess: invalidate,
+  })
+}
 
 export function useUseRegisterStock(clientId: string, fy: number) {
   const invalidate = useInvalidateClient(clientId)

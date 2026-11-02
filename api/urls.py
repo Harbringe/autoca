@@ -252,7 +252,7 @@ urlpatterns = [
     ),
     path(
         "clients/<uuid:client_id>/reports/gstr3b/",
-        ReportView.as_view({"get": "gstr3b"}),
+        ReportView.as_view({"get": "gstr3b", "put": "gstr3b_entries"}),
         name="report-gstr3b",
     ),
     path(

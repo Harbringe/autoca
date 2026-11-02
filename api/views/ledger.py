@@ -18,6 +18,7 @@ from api.pagination import DefaultPagination
 from api.permissions import CanApprove, HasFirmPermission
 from api.serializers.classify import ApproveSerializer
 from api.serializers.inventory import (
+    Gstr3bEntriesSerializer,
     Gstr3bSerializer,
     GstTieOutSerializer,
     InventorySerializer,
@@ -405,7 +406,7 @@ class ReportView(viewsets.GenericViewSet):
     """
 
     permission_classes = [HasFirmPermission]
-    required_permission = {"GET": "report.view", "POST": "ledger.manage"}
+    required_permission = {"GET": "report.view", "POST": "ledger.manage", "PUT": "ledger.manage"}
     serializer_class = TrialBalanceSerializer
 
     def _client_and_year(self, request, client_id):
@@ -507,24 +508,62 @@ class ReportView(viewsets.GenericViewSet):
     @extend_schema(
         summary="GSTR-3B working for a month",
         description=(
-            "The figures a GSTR-3B return is filled from for one month, from the booked invoices: outward taxable supplies (3.1(a)), "
-            "reverse-charge inward supplies (3.1(d)), input tax credit (4(A)(5) and 4(A)(3)) and the tax payable (6.1). Zero-rated, "
-            "exempt and nil-rated supplies, reversed ITC, interest and credit brought forward are not in the books and are not included."
+            "The figures a GSTR-3B return is filled from for one month: outward taxable supplies (3.1(a)), the exempt, nil, zero-rated "
+            "and non-GST supplies entered for the month (3.1(b), (c), (e)), reverse-charge inward supplies (3.1(d)), input credit "
+            "(4(A)), credit reversed (4(B)), the tax payable (6.1) paid by credit and in cash, interest and late fee, and the credit "
+            "carried forward. Credit carries from April of the year and is applied in the order section 49A sets."
         ),
         parameters=[OpenApiParameter("month", OpenApiTypes.STR, description="YYYY-MM", required=True)],
         responses=Gstr3bSerializer,
     )
     @action(detail=False, methods=["get"], url_path="gstr3b")
     def gstr3b(self, request, client_id=None):
-        import re
-
         from ledger import gstr3b
 
         client = get_visible_client(request, client_id)
-        month = request.query_params.get("month", "")
-        if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", month):
-            raise serializers.ValidationError({"month": "A month as YYYY-MM."})
+        month = self._month(request)
         return Response(Gstr3bSerializer(gstr3b.build(client, month)).data)
+
+    @extend_schema(
+        summary="Enter what the invoices do not hold for a GSTR-3B month",
+        description=(
+            "Exempt, nil-rated, zero-rated and non-GST supplies, credit reversed, interest, late fee, and an opening credit that puts "
+            "the carried-forward credit right. Replaces the month's entries; recorded in the audit trail. Requires `ledger.manage`."
+        ),
+        parameters=[OpenApiParameter("month", OpenApiTypes.STR, description="YYYY-MM", required=True)],
+        request=Gstr3bEntriesSerializer,
+        responses=Gstr3bSerializer,
+    )
+    @gstr3b.mapping.put
+    def gstr3b_entries(self, request, client_id=None):
+        import uuid
+
+        from ledger import gstr3b
+        from ledger.audit import record_master_change
+
+        client = get_visible_client(request, client_id)
+        month = self._month(request)
+        body = Gstr3bEntriesSerializer(data=request.data)
+        body.is_valid(raise_exception=True)
+        before = gstr3b.read_entries(client, month)
+        stored = dict(client.gst_return_entries or {})
+        stored[month] = gstr3b.normalise_entries(body.validated_data)
+        client.gst_return_entries = stored
+        client.save(update_fields=["gst_return_entries"])
+        record_master_change(
+            client, "SETTING", uuid.uuid4(), "EDITED", label=f"GSTR-3B entries for {month}",
+            before=before, after=gstr3b.read_entries(client, month), actor=request.user,
+        )
+        return Response(Gstr3bSerializer(gstr3b.build(client, month)).data)
+
+    @staticmethod
+    def _month(request) -> str:
+        from ledger import gstr3b
+
+        month = request.query_params.get("month", "")
+        if not gstr3b.MONTH.match(month):
+            raise serializers.ValidationError({"month": "A month as YYYY-MM."})
+        return month
 
     @extend_schema(
         summary="Use the register's closing stock for the year",

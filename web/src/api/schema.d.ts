@@ -2003,10 +2003,14 @@ export interface paths {
         };
         /**
          * GSTR-3B working for a month
-         * @description The figures a GSTR-3B return is filled from for one month, from the booked invoices: outward taxable supplies (3.1(a)), reverse-charge inward supplies (3.1(d)), input tax credit (4(A)(5) and 4(A)(3)) and the tax payable (6.1). Zero-rated, exempt and nil-rated supplies, reversed ITC, interest and credit brought forward are not in the books and are not included.
+         * @description The figures a GSTR-3B return is filled from for one month: outward taxable supplies (3.1(a)), the exempt, nil, zero-rated and non-GST supplies entered for the month (3.1(b), (c), (e)), reverse-charge inward supplies (3.1(d)), input credit (4(A)), credit reversed (4(B)), the tax payable (6.1) paid by credit and in cash, interest and late fee, and the credit carried forward. Credit carries from April of the year and is applied in the order section 49A sets.
          */
         get: operations["clients_reports_gstr3b_retrieve"];
-        put?: never;
+        /**
+         * Enter what the invoices do not hold for a GSTR-3B month
+         * @description Exempt, nil-rated, zero-rated and non-GST supplies, credit reversed, interest, late fee, and an opening credit that puts the carried-forward credit right. Replaces the month's entries; recorded in the audit trail. Requires `ledger.manage`.
+         */
+        put: operations["clients_reports_gstr3b_update"];
         post?: never;
         delete?: never;
         options?: never;
@@ -5651,22 +5655,165 @@ export interface components {
             outward_taxable: {
                 [key: string]: number;
             };
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            zero_rated_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            exempt_nil_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            non_gst_outward_paise: number;
             inward_reverse_charge: {
                 [key: string]: number;
             };
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            inward_exempt_paise: number;
             itc_all_other: {
                 [key: string]: number;
             };
             itc_reverse_charge: {
                 [key: string]: number;
             };
-            payable: {
+            itc_reversed: {
                 [key: string]: number;
             };
+            opening_credit: {
+                [key: string]: number;
+            };
+            liability: {
+                [key: string]: number;
+            };
+            paid_by_credit: {
+                [key: string]: number;
+            };
+            paid_in_cash: {
+                [key: string]: number;
+            };
+            interest: {
+                [key: string]: number;
+            };
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            late_fee_paise: number;
+            carry_forward: {
+                [key: string]: number;
+            };
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            untaxed_sales_paise: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            untaxed_unexplained_paise: number;
             counts: {
                 [key: string]: number;
             };
-            not_covered: string[];
+            entries: {
+                [key: string]: number | null;
+            };
+        };
+        /** @description What no invoice holds, for one month. Amounts are whole paise, zero or more; an opening credit left out is carried forward. */
+        Gstr3bEntriesRequest: {
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            zero_rated_paise?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            exempt_paise?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            non_gst_paise?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            inward_exempt_paise?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            late_fee_paise?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            itc_reversed_igst_paise?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            itc_reversed_cgst_paise?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            itc_reversed_sgst_paise?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            itc_reversed_cess_paise?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            interest_igst_paise?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            interest_cgst_paise?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            interest_sgst_paise?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            interest_cess_paise?: number;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            opening_credit_igst_paise?: number | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            opening_credit_cgst_paise?: number | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            opening_credit_sgst_paise?: number | null;
+            /**
+             * Format: int64
+             * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
+             */
+            opening_credit_cess_paise?: number | null;
         };
         HeadRequest: {
             /**
@@ -14217,6 +14364,36 @@ export interface operations {
             cookie?: never;
         };
         requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Gstr3b"];
+                };
+            };
+        };
+    };
+    clients_reports_gstr3b_update: {
+        parameters: {
+            query: {
+                /** @description YYYY-MM */
+                month: string;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: {
+            content: {
+                "application/json": components["schemas"]["Gstr3bEntriesRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["Gstr3bEntriesRequest"];
+                "multipart/form-data": components["schemas"]["Gstr3bEntriesRequest"];
+            };
+        };
         responses: {
             200: {
                 headers: {

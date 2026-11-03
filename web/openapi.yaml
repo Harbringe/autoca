@@ -20174,6 +20174,10 @@ components:
         net_display:
           type: string
           readOnly: true
+        pf_wages_paise:
+          type: integer
+          readOnly: true
+          nullable: true
       required:
       - employee
       - employee_name
@@ -20187,6 +20191,7 @@ components:
       - other_deduction_paise
       - pf_employee_paise
       - pf_employer_paise
+      - pf_wages_paise
       - tds_paise
     PayrollRun:
       type: object
@@ -22282,6 +22287,14 @@ components:
           default: 0
           description: Whole paise, as an exact integer. 53000 means ₹530.00. Never
             a decimal.
+        pf_wages_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: 0
+          format: int64
+          nullable: true
+          description: The wages PF is worked on, when the salary sheet gives them;
+            read back from the 12% when left out.
       required:
       - employee
       - gross_paise

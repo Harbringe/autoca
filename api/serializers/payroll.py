@@ -37,6 +37,7 @@ class SalaryLineSerializer(serializers.Serializer):
     esi_employer_paise = PaiseField(min_value=0, default=0)
     tds_paise = PaiseField(min_value=0, default=0, help_text="Tax deducted on salary (section 192).")
     other_deduction_paise = PaiseField(min_value=0, default=0)
+    pf_wages_paise = PaiseField(min_value=0, required=False, allow_null=True, default=None, help_text="The wages PF is worked on, when the salary sheet gives them; read back from the 12% when left out.")
 
 
 class PayrollRunCreateSerializer(serializers.Serializer):
@@ -55,6 +56,7 @@ class PayrollLineSerializer(serializers.ModelSerializer):
         fields = [
             "id", "employee", "employee_name", "gross_paise", "gross_display", "pf_employee_paise", "pf_employer_paise",
             "esi_employee_paise", "esi_employer_paise", "tds_paise", "other_deduction_paise", "net_paise", "net_display",
+            "pf_wages_paise",
         ]
         read_only_fields = fields
 

@@ -100,6 +100,7 @@ class PayrollRunViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.CreateM
                 esi_employer_paise=line["esi_employer_paise"],
                 tds_paise=line["tds_paise"],
                 other_deduction_paise=line["other_deduction_paise"],
+                pf_wages_paise=line.get("pf_wages_paise"),
             )
             for line in data["lines"]
         ]

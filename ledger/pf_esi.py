@@ -70,7 +70,8 @@ def build(client, year: int, month: int, *, today: datetime.date | None = None) 
     }
     for line in run.lines.select_related("employee").order_by("employee__name"):
         e = line.employee
-        wages = round(line.pf_employee_paise * 100 / 12) if line.pf_employee_paise else 0
+        stated = line.pf_wages_paise is not None
+        wages = line.pf_wages_paise if stated else (round(line.pf_employee_paise * 100 / 12) if line.pf_employee_paise else 0)
         eps = _bp(min(wages, PF_WAGE_CEILING), EPS_BP) if line.pf_employer_paise else 0
         epf = line.pf_employer_paise - eps
         esi_applies = line.gross_paise <= ESI_WAGE_LIMIT
@@ -86,6 +87,8 @@ def build(client, year: int, month: int, *, today: datetime.date | None = None) 
         if line.pf_employee_paise or line.pf_employer_paise:
             if not e.uan:
                 warnings.append(f"{e.name}: no UAN on file, so the ECR cannot name them.")
+            if stated and line.pf_employee_paise > _bp(wages, 1200) + 100:
+                warnings.append(f"{e.name}: the employee's PF is more than 12% of the PF wages entered; check the wages.")
             if epf < 0:
                 warnings.append(f"{e.name}: the employer's PF is less than the pension share on the same wages; check the figures.")
         if has_esi and not e.esic_number:

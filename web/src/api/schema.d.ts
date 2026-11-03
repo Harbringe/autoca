@@ -9167,6 +9167,7 @@ export interface components {
             readonly other_deduction_paise: number;
             readonly net_paise: number;
             readonly net_display: string;
+            readonly pf_wages_paise: number | null;
         };
         PayrollRun: {
             /** Format: uuid */
@@ -10252,6 +10253,11 @@ export interface components {
              * @default 0
              */
             other_deduction_paise: number;
+            /**
+             * Format: int64
+             * @description The wages PF is worked on, when the salary sheet gives them; read back from the 12% when left out.
+             */
+            pf_wages_paise?: number | null;
         };
         SalaryReturn: {
             financial_year: number;

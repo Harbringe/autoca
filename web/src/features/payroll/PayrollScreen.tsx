@@ -29,11 +29,12 @@ const FIELDS = [
   ['esiEmployer', 'ESI (employer)'],
   ['tds', 'TDS'],
   ['other', 'Other deduction'],
+  ['pfWages', 'PF wages'],
 ] as const
 type Field = (typeof FIELDS)[number][0]
 type Row = Record<Field, string>
 
-const blank = (): Row => ({ gross: '', pfEmployee: '', pfEmployer: '', esiEmployee: '', esiEmployer: '', tds: '', other: '' })
+const blank = (): Row => ({ gross: '', pfEmployee: '', pfEmployer: '', esiEmployee: '', esiEmployer: '', tds: '', other: '', pfWages: '' })
 const paise = (text: string) => (text.trim() ? parseRupees(text) : 0)
 
 export function PayrollScreen({ clientId }: { clientId: string }) {
@@ -67,6 +68,7 @@ export function PayrollScreen({ clientId }: { clientId: string }) {
       break
     }
     const [gross, pfE, pfR, esiE, esiR, tds, other] = values as number[]
+    const pfWages = r.pfWages.trim() ? (values[7] as number) : null
     if ((gross as number) <= 0) problem = `${p.name}: the gross salary must be more than zero.`
     else if ((pfE as number) + (esiE as number) + (tds as number) + (other as number) > (gross as number)) problem = `${p.name}: the deductions are more than the gross.`
     lines.push({
@@ -78,6 +80,7 @@ export function PayrollScreen({ clientId }: { clientId: string }) {
       esi_employer_paise: esiR as number,
       tds_paise: tds as number,
       other_deduction_paise: other as number,
+      pf_wages_paise: pfWages,
     })
   }
   const net = lines.reduce((sum, l) => sum + l.gross_paise - l.pf_employee_paise - l.esi_employee_paise - l.tds_paise - l.other_deduction_paise, 0)
@@ -170,6 +173,7 @@ export function PayrollScreen({ clientId }: { clientId: string }) {
                 ))}
               </tbody>
             </table>
+            <p className="px-2 pb-1 text-xs text-muted-foreground">PF wages are optional: leave them blank and the PF working reads them back from the employee&apos;s 12%.</p>
           </div>
           <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
             <span>

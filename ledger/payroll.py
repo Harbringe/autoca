@@ -56,6 +56,7 @@ class SalaryInput:
     esi_employer_paise: int = 0
     tds_paise: int = 0
     other_deduction_paise: int = 0
+    pf_wages_paise: int | None = None
 
     @property
     def deductions_paise(self) -> int:
@@ -104,6 +105,8 @@ def _check(item: SalaryInput) -> None:
         raise PayrollError(f"{item.employee.name}: the gross salary must be more than zero.")
     if item.net_paise < 0:
         raise PayrollError(f"{item.employee.name}: the deductions are more than the gross salary.")
+    if item.pf_wages_paise is not None and not 0 <= item.pf_wages_paise <= item.gross_paise:
+        raise PayrollError(f"{item.employee.name}: the PF wages cannot be negative or more than the gross salary.")
 
 
 @transaction.atomic
@@ -188,7 +191,7 @@ def post_run(client, year: int, month: int, items: list[SalaryInput], *, members
                 firm_id=client.firm_id, run=run, employee=i.employee, gross_paise=i.gross_paise,
                 pf_employee_paise=i.pf_employee_paise, pf_employer_paise=i.pf_employer_paise,
                 esi_employee_paise=i.esi_employee_paise, esi_employer_paise=i.esi_employer_paise, tds_paise=i.tds_paise,
-                other_deduction_paise=i.other_deduction_paise, net_paise=i.net_paise,
+                other_deduction_paise=i.other_deduction_paise, net_paise=i.net_paise, pf_wages_paise=i.pf_wages_paise,
             )
             for i in items
         ]

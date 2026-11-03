@@ -944,6 +944,9 @@ class PayrollLine(UUIDModel, FirmScopedModel):
     tds_paise = models.BigIntegerField(default=0)
     other_deduction_paise = models.BigIntegerField(default=0)
     net_paise = models.BigIntegerField()
+    #: The wages PF is worked on (basic and dearness allowance), when the salary sheet gives them. Left empty, the PF working
+    #: reads them back from the employee's 12%, which is wrong where the contribution is not 12% of the wages.
+    pf_wages_paise = models.BigIntegerField(null=True, blank=True)
 
     class Meta:
         db_table = "ledger_payroll_line"

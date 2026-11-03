@@ -435,6 +435,8 @@ export interface SalaryLine {
   esi_employer_paise: number
   tds_paise: number
   other_deduction_paise: number
+  /** The wages PF is worked on, when the salary sheet gives them; read back from the 12% when null. */
+  pf_wages_paise?: number | null
 }
 
 export function useBookSalaries(clientId: string) {

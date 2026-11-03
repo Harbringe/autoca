@@ -70,3 +70,23 @@ def test_a_bad_uan_or_esic_number_and_a_bad_month_are_refused(api, client_record
     assert api.patch(url, {"esic_number": "12345"}, format="json").status_code == 400
     assert api.patch(url, {"name": "Someone else"}, format="json").status_code == 400
     assert api.get(f"{base(client_record)}/payroll/pf-esi/", {"year": 2025, "month": 13}).status_code == 400
+
+
+def test_wages_entered_on_the_salary_line_are_used_instead_of_being_read_back_from_the_12_percent(api, client_record):
+    dev = add(api, client_record, "Dev")
+    # 18,000 wages but the employee's share is on the Rs 15,000 ceiling (1,800): reading it back from 12% would say 15,000 wages.
+    made = run(api, client_record, [line(dev, gross_paise=40_000_00, pf_employee_paise=1_800_00, pf_employer_paise=1_800_00, tds_paise=0, pf_wages_paise=18_000_00)])
+    assert made.status_code == 201, made.content
+    row = working(api, client_record)["rows"][0]
+    assert row["pf_wages_paise"] == 18_000_00
+    assert row["eps_paise"] == 124_950, "pension is on the Rs 15,000 ceiling, not on all the wages"
+
+
+def test_wages_more_than_the_gross_are_refused(api, client_record):
+    eve = add(api, client_record, "Eve")
+    made = run(api, client_record, [line(eve, gross_paise=20_000_00, pf_employee_paise=1_800_00, pf_employer_paise=1_800_00, tds_paise=0, pf_wages_paise=25_000_00)])
+    assert made.status_code in (400, 422) and "PF wages" in made.content.decode()
+
+
+def test_a_line_with_no_wages_entered_still_reads_them_back(api, client_record, booked):
+    assert working(api, client_record)["rows"][0]["pf_wages_paise"] == 12_000_00

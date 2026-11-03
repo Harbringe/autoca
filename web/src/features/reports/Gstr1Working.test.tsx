@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { raw } from '@/api/client'
+import { defaultReturnMonth } from '@/lib/returnMonth'
 import { Gstr1Working } from './Gstr1Working'
 
 vi.mock('@/api/client', () => ({ raw: { get: vi.fn() } }))
@@ -54,7 +55,7 @@ describe('Gstr1Working', () => {
       </QueryClientProvider>,
     )
     await userEvent.click(await screen.findByRole('button', { name: 'Download GSTR-1 JSON' }))
-    await waitFor(() => expect(saveFile).toHaveBeenCalledWith('gstr1-2025-04.json', expect.any(Blob)))
+    await waitFor(() => expect(saveFile).toHaveBeenCalledWith(`gstr1-${defaultReturnMonth(2025)}.json`, expect.any(Blob)))
     expect(await screen.findByLabelText('Missing from the GSTR-1 file')).toHaveTextContent('Aggregate turnover')
   })
 })

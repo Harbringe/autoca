@@ -3,6 +3,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { describe, expect, it, vi } from 'vitest'
 import { raw } from '@/api/client'
+import { defaultReturnMonth } from '@/lib/returnMonth'
 import { Gstr3bWorking } from './Gstr3bWorking'
 
 vi.mock('@/api/client', () => ({ raw: { get: vi.fn(), put: vi.fn() } }))
@@ -60,7 +61,7 @@ describe('Gstr3bWorking', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Save for this month' }))
     await waitFor(() =>
       expect(raw.put).toHaveBeenCalledWith(
-        '/api/v1/clients/c1/reports/gstr3b/?month=2025-04',
+        `/api/v1/clients/c1/reports/gstr3b/?month=${defaultReturnMonth(2025)}`,
         expect.objectContaining({ exempt_paise: 150050, opening_credit_cgst_paise: null }),
       ),
     )

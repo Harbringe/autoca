@@ -98,12 +98,18 @@ def draft(client, bill: Bill, details: dict | None = None) -> dict:
         missing.append("The client's GSTIN: no active GST registration is recorded.")
     if not buyer_gstin:
         missing.append(f"{party.canonical_name} has no GSTIN: e-invoices are for supplies to registered businesses.")
-    if not (details.get("seller_pin") and details.get("seller_address")) and not client.address:
-        missing.append("The client's address and pincode.")
-    elif not details.get("seller_pin"):
+    if not (details.get("seller_address") or client.address):
+        missing.append("The client's address.")
+    if not details.get("seller_pin"):
         missing.append("The client's pincode.")
-    if not (details.get("buyer_address") and details.get("buyer_pin")):
-        missing.append(f"{party.canonical_name}'s address and pincode.")
+    if not details.get("seller_place"):
+        missing.append("The client's place (city or town).")
+    if not details.get("buyer_address"):
+        missing.append(f"{party.canonical_name}'s address.")
+    if not details.get("buyer_pin"):
+        missing.append(f"{party.canonical_name}'s pincode.")
+    if not details.get("buyer_place"):
+        missing.append(f"{party.canonical_name}'s place (city or town).")
     if not from_invoice:
         missing.append("Item lines with HSN codes: the invoice has none read, so the draft has one line.")
     elif any(not i["hsn"] for i in items):
@@ -148,7 +154,7 @@ def draft(client, bill: Bill, details: dict | None = None) -> dict:
         eway_missing.append("The distance in km.")
     if not details.get("vehicle_no") and not details.get("transporter_id"):
         eway_missing.append("A vehicle number, or the transporter's id to give it later.")
-    eway_missing += [m for m in missing if "pincode" in m or "GSTIN" in m]
+    eway_missing += [m for m in missing if any(word in m for word in ("pincode", "GSTIN", "place"))]
     mode = {"ROAD": 1, "RAIL": 2, "AIR": 3, "SHIP": 4}.get(str(details.get("mode", "ROAD")).upper(), 1)
     eway_items = [
         {

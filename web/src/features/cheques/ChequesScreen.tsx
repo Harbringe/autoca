@@ -147,7 +147,7 @@ export function ChequesScreen({ clientId, mayEdit }: { clientId: string; mayEdit
               <th className="py-1 font-medium">Payee or drawer</th>
               <th className="py-1 font-medium">Bank</th>
               <th className="py-1 text-right font-medium">Amount</th>
-              <th className="py-1 font-medium">Status</th>
+              <th className="py-1 pl-4 font-medium">Status</th>
               <th className="py-1" />
             </tr>
           </thead>
@@ -163,7 +163,7 @@ export function ChequesScreen({ clientId, mayEdit }: { clientId: string; mayEdit
                 <td className="py-1">{c.print_name}</td>
                 <td className="py-1">{c.bank_label}</td>
                 <td className="py-1 text-right tabular-nums">{money(c.amount_paise)}</td>
-                <td className="py-1">
+                <td className="py-1 pl-4">
                   {c.status_display}
                   {c.status_on && <span className="ml-1 text-xs text-muted-foreground">{formatDate(c.status_on)}</span>}
                   {c.is_stale && <span className="ml-1 text-xs">· stale</span>}

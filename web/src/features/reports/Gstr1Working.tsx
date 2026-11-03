@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useState } from 'react'
+import { defaultReturnMonth } from '@/lib/returnMonth'
 import { gstr1, gstr1File, type Gstr1Row } from '@/api/queries/books'
 import { messageOf } from '@/api/errors'
 import { Button } from '@/components/ui/button'
@@ -54,7 +55,7 @@ function Invoices({ title, rows }: { title: string; rows: Gstr1Row[] }) {
 }
 
 export function Gstr1Working({ clientId, fy }: { clientId: string; fy: number }) {
-  const [month, setMonth] = useState(`${fy}-04`)
+  const [month, setMonth] = useState(() => defaultReturnMonth(fy))
   const query = useQuery(gstr1(clientId, month))
   const months = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3].map((m) => `${m >= 4 ? fy : fy + 1}-${String(m).padStart(2, '0')}`)
   const file = useQuery(gstr1File(clientId, month))

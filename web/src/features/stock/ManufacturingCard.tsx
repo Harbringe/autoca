@@ -30,7 +30,8 @@ function NewBom({ clientId }: { clientId: string }) {
   }
 
   return (
-    <div className="grid gap-2" role="group" aria-label="New bill of materials">
+    <div className="mt-2 grid gap-2 border-t border-border-strong pt-3" role="group" aria-label="New bill of materials">
+      <h3 className="text-sm font-medium">New bill of materials</h3>
       <div className="flex flex-wrap items-end gap-2">
         <Input aria-label="Finished item" className="w-56" placeholder="Finished item" value={name} onChange={(e) => setName(e.target.value)} />
         <Input aria-label="Finished unit" className="w-20" placeholder="Unit" value={unit} onChange={(e) => setUnit(e.target.value)} />
@@ -90,7 +91,7 @@ function Run({ clientId, bom, mayEdit }: { clientId: string; bom: Bom; mayEdit: 
       </div>
       {mayEdit && (
         <div className="flex flex-wrap items-end gap-2">
-          <Input aria-label={`Quantity of ${bom.name} to make`} inputMode="decimal" className="w-28" placeholder="Make how many" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
+          <Input aria-label={`Quantity of ${bom.name} to make`} inputMode="decimal" className="w-40" placeholder="Make how many" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
           <input aria-label={`Production date for ${bom.name}`} type="date" className="h-9 rounded-md border border-border-strong bg-transparent px-2" value={date} onChange={(e) => setDate(e.target.value)} />
           <Input aria-label={`Extra cost for ${bom.name}`} inputMode="decimal" className="w-32" placeholder="Extra cost (₹)" value={extra} onChange={(e) => setExtra(e.target.value)} />
           <Button size="sm" loading={produce.isPending} disabled={!d || d.short.length > 0} onClick={go}>

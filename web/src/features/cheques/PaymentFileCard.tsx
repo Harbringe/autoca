@@ -14,7 +14,7 @@ import { toast } from '@/lib/toast'
 
 const money = (paise: number) => formatPaise(paise, { symbol: false })
 
-function Details({ clientId, row }: { clientId: string; row: Payable }) {
+function Details({ clientId, row, onSaved }: { clientId: string; row: Payable; onSaved: () => void }) {
   const save = useSavePaymentDetails(clientId)
   const [account, setAccount] = useState('')
   const [ifsc, setIfsc] = useState('')
@@ -28,7 +28,7 @@ function Details({ clientId, row }: { clientId: string; row: Payable }) {
         size="sm"
         variant="outline"
         disabled={save.isPending || !account.trim() || !ifsc.trim() || !name.trim()}
-        onClick={() => save.mutate({ party: row.party, account_number: account, ifsc, account_name: name }, { onSuccess: () => { setAccount(''); toast.success('Saved') }, onError: (e) => toast.error(messageOf(e)) })}
+        onClick={() => save.mutate({ party: row.party, account_number: account, ifsc, account_name: name }, { onSuccess: () => { setAccount(''); toast.success('Saved'); onSaved() }, onError: (e) => toast.error(messageOf(e)) })}
       >
         Save details
       </Button>
@@ -95,7 +95,7 @@ export function PaymentFileCard({ clientId }: { clientId: string }) {
                 {p.ready ? 'Change details' : 'Add details'}
               </Button>
             </div>
-            {open === p.party && <Details clientId={clientId} row={p} />}
+            {open === p.party && <Details clientId={clientId} row={p} onSaved={() => setOpen(null)} />}
           </li>
         ))}
       </ul>

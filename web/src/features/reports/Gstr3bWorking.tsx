@@ -3,6 +3,7 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
+import { defaultReturnMonth } from '@/lib/returnMonth'
 import { toast } from '@/lib/toast'
 import { messageOf } from '@/api/errors'
 import { gstr3b, useSaveGstr3bEntries, type Gstr3bTax } from '@/api/queries/books'
@@ -87,7 +88,7 @@ function EntriesForm({ clientId, month, entries }: { clientId: string; month: st
 
 export function Gstr3bWorking({ clientId, fy }: { clientId: string; fy: number }) {
   const { can } = useSession()
-  const [month, setMonth] = useState(`${fy}-04`)
+  const [month, setMonth] = useState(() => defaultReturnMonth(fy))
   const query = useQuery(gstr3b(clientId, month))
   const months = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3].map((m) => `${m >= 4 ? fy : fy + 1}-${String(m).padStart(2, '0')}`)
   const d = query.data

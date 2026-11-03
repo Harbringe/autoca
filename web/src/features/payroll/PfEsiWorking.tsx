@@ -11,6 +11,7 @@ import { pfEsi, useSetEmployeeNumbers } from '@/api/queries/bills'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { formatDate, formatPaise } from '@/lib/format'
+import { previousMonth } from '@/lib/returnMonth'
 import { toast } from '@/lib/toast'
 
 const money = (paise: number) => (paise === 0 ? '–' : formatPaise(paise, { symbol: false }))
@@ -43,9 +44,9 @@ function Numbers({ clientId, person, mayEdit }: { clientId: string; person: Pers
 }
 
 export function PfEsiWorking({ clientId, mayEdit, people }: { clientId: string; mayEdit: boolean; people: Person[] }) {
-  const today = new Date()
-  const [year, setYear] = useState(today.getFullYear())
-  const [month, setMonth] = useState(today.getMonth() === 0 ? 12 : today.getMonth())
+  const ended = previousMonth()
+  const [year, setYear] = useState(ended.year)
+  const [month, setMonth] = useState(ended.month)
   const query = useQuery(pfEsi(clientId, year, month))
   const d = query.data
   async function ecr() {

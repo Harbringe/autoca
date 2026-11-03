@@ -3,8 +3,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, CheckCircle2 } from 'lucide-react'
 import { useState } from 'react'
-import { gstr1, type Gstr1Row } from '@/api/queries/books'
+import { gstr1, gstr1File, type Gstr1Row } from '@/api/queries/books'
+import { messageOf } from '@/api/errors'
+import { Button } from '@/components/ui/button'
 import { formatDate, formatPaise } from '@/lib/format'
+import { saveFile } from '@/platform/download'
+import { toast } from '@/lib/toast'
 
 const money = (paise: number) => (paise === 0 ? '–' : formatPaise(paise, { symbol: false }))
 
@@ -53,6 +57,14 @@ export function Gstr1Working({ clientId, fy }: { clientId: string; fy: number })
   const [month, setMonth] = useState(`${fy}-04`)
   const query = useQuery(gstr1(clientId, month))
   const months = [4, 5, 6, 7, 8, 9, 10, 11, 12, 1, 2, 3].map((m) => `${m >= 4 ? fy : fy + 1}-${String(m).padStart(2, '0')}`)
+  const file = useQuery(gstr1File(clientId, month))
+  const [missing, setMissing] = useState<string[] | null>(null)
+  async function download() {
+    const got = await file.refetch()
+    if (got.error || !got.data) return void toast.error(messageOf(got.error))
+    setMissing(got.data.missing)
+    await saveFile(`gstr1-${month}.json`, new Blob([JSON.stringify(got.data.json, null, 2)], { type: 'application/json' }))
+  }
   const d = query.data
   const empty = d && d.b2b.rows.length + d.b2cl.rows.length + d.b2cs.rows.length + d.credit_notes_registered.rows.length + d.credit_notes_unregistered.rows.length === 0
 
@@ -161,6 +173,19 @@ export function Gstr1Working({ clientId, fy }: { clientId: string; fy: number })
             <p>
               <strong>13 · Documents issued:</strong> {d.documents.map((x) => `${x.label}: ${x.from} to ${x.to} (${x.count})`).join('; ')}.
             </p>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" variant="outline" loading={file.isFetching} onClick={() => void download()}>
+              Download GSTR-1 JSON
+            </Button>
+            <span className="text-xs text-muted-foreground">For the GST offline tool; check it there before filing.</span>
+          </div>
+          {missing && missing.length > 0 && (
+            <ul className="list-disc pl-5 text-xs" aria-label="Missing from the GSTR-1 file">
+              {missing.map((m) => (
+                <li key={m}>{m}</li>
+              ))}
+            </ul>
           )}
           <p className="text-xs text-muted-foreground">
             Place of supply is not recorded, so B2C is by rate and inter/intra-state, not by state. Exports, SEZ and e-commerce supplies are not told apart from other sales.

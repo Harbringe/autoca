@@ -3,7 +3,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle } from 'lucide-react'
 import { useState } from 'react'
+import { raw } from '@/api/client'
 import { messageOf } from '@/api/errors'
+import { V1 } from '@/api/queries/clients'
+import { saveFile } from '@/platform/download'
 import { pfEsi, useSetEmployeeNumbers } from '@/api/queries/bills'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -45,6 +48,14 @@ export function PfEsiWorking({ clientId, mayEdit, people }: { clientId: string; 
   const [month, setMonth] = useState(today.getMonth() === 0 ? 12 : today.getMonth())
   const query = useQuery(pfEsi(clientId, year, month))
   const d = query.data
+  async function ecr() {
+    try {
+      const { blob, filename } = await raw.blob(`${V1}/clients/${clientId}/payroll/ecr/`, { year, month })
+      await saveFile(filename ?? `ecr-${year}-${String(month).padStart(2, '0')}.txt`, blob)
+    } catch (e) {
+      toast.error(messageOf(e))
+    }
+  }
 
   return (
     <section className="grid gap-3 text-sm" aria-label="PF and ESI working">
@@ -114,6 +125,11 @@ export function PfEsiWorking({ clientId, mayEdit, people }: { clientId: string; 
             {money(d.esi_total_paise ?? 0)}. Due by {formatDate(d.due)}. Deposited on time: PF {money(d.pf_deposit?.deposited_on_time_paise ?? 0)}, ESI{' '}
             {money(d.esi_deposit?.deposited_on_time_paise ?? 0)}; late: PF {money(d.pf_deposit?.deposited_late_paise ?? 0)}, ESI {money(d.esi_deposit?.deposited_late_paise ?? 0)}.
           </p>
+          <div>
+            <Button size="sm" variant="outline" onClick={() => void ecr()}>
+              Download ECR file
+            </Button>
+          </div>
           <p className="text-xs text-muted-foreground">
             PF wages are worked back from the employee&apos;s 12%. Pension is 8.33% of wages up to ₹15,000. Interest and damages on a late deposit are not worked out.
           </p>

@@ -129,6 +129,36 @@ class PayrollRunViewSet(ClientScopedMixin, mixins.ListModelMixin, mixins.CreateM
             raise serializers.ValidationError({"detail": "Give year and month (1 to 12)."}) from None
         return Response(PfEsiSerializer(pf_esi.build(self.client, year, month)).data)
 
+    @extend_schema(
+        summary="The EPFO ECR text file for a month",
+        description=(
+            "One line per member with PF deducted, fields separated by `#~#`, amounts in whole rupees, for upload on the EPFO portal. "
+            "Refused, naming them, when a member has no UAN. Days without pay and refunds are not in the books and go in as zero."
+        ),
+        parameters=[OpenApiParameter("year", int, required=True), OpenApiParameter("month", int, required=True)],
+        responses={200: {"type": "string"}},
+    )
+    @action(detail=False, methods=["get"], url_path="ecr", pagination_class=None)
+    def ecr(self, request, client_id=None):
+        from django.http import HttpResponse
+
+        from ledger import ecr
+
+        try:
+            year, month = int(request.query_params["year"]), int(request.query_params["month"])
+            if not 1 <= month <= 12:
+                raise ValueError
+        except (KeyError, ValueError):
+            raise serializers.ValidationError({"detail": "Give year and month (1 to 12)."}) from None
+        try:
+            text = ecr.build(self.client, year, month)
+        except ecr.EcrError as exc:
+            raise serializers.ValidationError({"detail": str(exc)}) from None
+        response = HttpResponse(text, content_type="text/plain; charset=utf-8")
+        response["Content-Disposition"] = f'attachment; filename="ecr-{year}-{month:02d}.txt"'
+        response["Cache-Control"] = "no-store"
+        return response
+
     @extend_schema(summary="Take a month of salaries out of the books", responses={204: None})
     @action(detail=True, methods=["post"], url_path="remove", permission_classes=[CanApprove])
     def remove(self, request, client_id=None, pk=None):

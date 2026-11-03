@@ -215,6 +215,18 @@ export interface Gstr1 {
   taxable_in_3b_paise: number
 }
 
+export interface Gstr1File {
+  json: unknown
+  missing: string[]
+}
+
+export const gstr1File = (clientId: string, month: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'reports', 'gstr1-file', month),
+    queryFn: () => raw.get<Gstr1File>(`${V1}/clients/${clientId}/reports/gstr1/file/`, { month }),
+    enabled: false,
+  })
+
 export const gstr1 = (clientId: string, month: string) =>
   queryOptions({
     queryKey: clientKeys.part(clientId, 'reports', 'gstr1', month),

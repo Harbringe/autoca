@@ -19,6 +19,7 @@ from api.permissions import CanApprove, HasFirmPermission
 from api.serializers.analysis import GroupSummarySerializer, LedgerMonthlySerializer
 from api.serializers.classify import ApproveSerializer
 from api.serializers.inventory import (
+    Gstr1FileSerializer,
     Gstr1Serializer,
     Gstr3bEntriesSerializer,
     Gstr3bSerializer,
@@ -609,6 +610,23 @@ class ReportView(viewsets.GenericViewSet):
 
             raise NotFound("No such ledger for this client.")
         return Response(LedgerMonthlySerializer(analysis.ledger_monthly(client, year, ledger)).data)
+
+    @extend_schema(
+        summary="GSTR-1 as an offline-tool JSON file",
+        description=(
+            "The month's GSTR-1 working in the shape of the GST portal's offline-tool JSON, with what the books cannot say (place of "
+            "supply of unregistered buyers, aggregate turnover, the split of nil and exempt supplies) listed as missing. Run it through the "
+            "offline tool before filing. Nothing is sent to the portal."
+        ),
+        parameters=[OpenApiParameter("month", OpenApiTypes.STR, description="YYYY-MM", required=True)],
+        responses=Gstr1FileSerializer,
+    )
+    @action(detail=False, methods=["get"], url_path="gstr1/file")
+    def gstr1_file(self, request, client_id=None):
+        from ledger import gstr1_file
+
+        client = get_visible_client(request, client_id)
+        return Response(Gstr1FileSerializer(gstr1_file.build(client, self._month(request))).data)
 
     @staticmethod
     def _month(request) -> str:

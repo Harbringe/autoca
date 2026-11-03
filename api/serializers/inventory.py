@@ -205,3 +205,8 @@ class Gstr1Serializer(serializers.Serializer):
     agrees_with_3b = serializers.BooleanField()
     taxable_in_tables_paise = PaiseField()
     taxable_in_3b_paise = PaiseField()
+
+
+class Gstr1FileSerializer(serializers.Serializer):
+    json = serializers.JSONField(help_text="The GSTR-1 as the GST offline tool reads it, as far as the books can fill it.")
+    missing = serializers.ListField(child=serializers.CharField(), help_text="What a person must supply or check before filing.")

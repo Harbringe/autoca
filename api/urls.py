@@ -272,6 +272,11 @@ urlpatterns = [
         name="report-gstr3b",
     ),
     path(
+        "clients/<uuid:client_id>/reports/gstr1/file/",
+        ReportView.as_view({"get": "gstr1_file"}),
+        name="report-gstr1-file",
+    ),
+    path(
         "clients/<uuid:client_id>/reports/gstr1/",
         ReportView.as_view({"get": "gstr1"}),
         name="report-gstr1",

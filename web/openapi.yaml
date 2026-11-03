@@ -5592,6 +5592,42 @@ paths:
       responses:
         '204':
           description: No response body
+  /api/v1/clients/{client_id}/payroll/ecr/:
+    get:
+      operationId: clients_payroll_ecr_retrieve
+      description: One line per member with PF deducted, fields separated by `#~#`,
+        amounts in whole rupees, for upload on the EPFO portal. Refused, naming them,
+        when a member has no UAN. Days without pay and refunds are not in the books
+        and go in as zero.
+      summary: The EPFO ECR text file for a month
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: month
+        schema:
+          type: integer
+        required: true
+      - in: query
+        name: year
+        schema:
+          type: integer
+        required: true
+      tags:
+      - payroll
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: string
+          description: ''
   /api/v1/clients/{client_id}/payroll/pf-esi/:
     get:
       operationId: clients_payroll_pf_esi_retrieve
@@ -5938,6 +5974,38 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Gstr1'
+          description: ''
+  /api/v1/clients/{client_id}/reports/gstr1/file/:
+    get:
+      operationId: clients_reports_gstr1_file_retrieve
+      description: The month's GSTR-1 working in the shape of the GST portal's offline-tool
+        JSON, with what the books cannot say (place of supply of unregistered buyers,
+        aggregate turnover, the split of nil and exempt supplies) listed as missing.
+        Run it through the offline tool before filing. Nothing is sent to the portal.
+      summary: GSTR-1 as an offline-tool JSON file
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: query
+        name: month
+        schema:
+          type: string
+        description: YYYY-MM
+        required: true
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Gstr1File'
           description: ''
   /api/v1/clients/{client_id}/reports/gstr3b/:
     get:
@@ -14943,6 +15011,20 @@ components:
       - month
       - taxable_in_3b_paise
       - taxable_in_tables_paise
+    Gstr1File:
+      type: object
+      properties:
+        json:
+          description: The GSTR-1 as the GST offline tool reads it, as far as the
+            books can fill it.
+        missing:
+          type: array
+          items:
+            type: string
+          description: What a person must supply or check before filing.
+      required:
+      - json
+      - missing
     Gstr3b:
       type: object
       properties:

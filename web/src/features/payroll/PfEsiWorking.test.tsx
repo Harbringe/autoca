@@ -5,7 +5,9 @@ import { describe, expect, it, vi } from 'vitest'
 import { raw } from '@/api/client'
 import { PfEsiWorking } from './PfEsiWorking'
 
-vi.mock('@/api/client', () => ({ raw: { get: vi.fn(), patch: vi.fn() } }))
+vi.mock('@/api/client', () => ({ raw: { get: vi.fn(), patch: vi.fn(), blob: vi.fn() } }))
+const saveFile = vi.fn()
+vi.mock('@/platform/download', () => ({ saveFile: (...a: unknown[]) => saveFile(...a) }))
 vi.mock('@/lib/toast', () => ({ toast: { success: vi.fn(), error: vi.fn() } }))
 
 const REPORT = {
@@ -40,5 +42,13 @@ describe('PfEsiWorking', () => {
   it('says so when no salary run is booked for the month', async () => {
     show({ year: 2025, month: 5, has_run: false, due: '2025-06-15' })
     expect(await screen.findByText('No salary run is booked for this month.')).toBeInTheDocument()
+  })
+
+  it('downloads the ECR file for the month', async () => {
+    show(REPORT)
+    vi.mocked(raw.blob).mockResolvedValue({ blob: new Blob(['x']), filename: 'ecr-2026-10.txt' })
+    await userEvent.click(await screen.findByRole('button', { name: 'Download ECR file' }))
+    await waitFor(() => expect(raw.blob).toHaveBeenCalledWith('/api/v1/clients/c1/payroll/ecr/', expect.objectContaining({ month: expect.any(Number) })))
+    await waitFor(() => expect(saveFile).toHaveBeenCalledWith('ecr-2026-10.txt', expect.any(Blob)))
   })
 })

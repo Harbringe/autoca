@@ -2248,6 +2248,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/payroll/ecr/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The EPFO ECR text file for a month
+         * @description One line per member with PF deducted, fields separated by `#~#`, amounts in whole rupees, for upload on the EPFO portal. Refused, naming them, when a member has no UAN. Days without pay and refunds are not in the books and go in as zero.
+         */
+        get: operations["clients_payroll_ecr_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/payroll/pf-esi/": {
         parameters: {
             query?: never;
@@ -2432,6 +2452,26 @@ export interface paths {
          * @description The tables a GSTR-1 return is filled from, from the booked sales invoices and credit notes: B2B (4), B2C large (5), B2C other by rate and inter/intra-state (7), credit notes (9B), exempt, nil and non-GST from the month's GSTR-3B entries (8), the HSN summary from invoices with item lines (12) and documents issued (13). Place of supply is not recorded, so B2C is not by state.
          */
         get: operations["clients_reports_gstr1_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/reports/gstr1/file/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * GSTR-1 as an offline-tool JSON file
+         * @description The month's GSTR-1 working in the shape of the GST portal's offline-tool JSON, with what the books cannot say (place of supply of unregistered buyers, aggregate turnover, the split of nil and exempt supplies) listed as missing. Run it through the offline tool before filing. Nothing is sent to the portal.
+         */
+        get: operations["clients_reports_gstr1_file_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -6474,6 +6514,12 @@ export interface components {
              * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
              */
             taxable_in_3b_paise: number;
+        };
+        Gstr1File: {
+            /** @description The GSTR-1 as the GST offline tool reads it, as far as the books can fill it. */
+            json: unknown;
+            /** @description What a person must supply or check before filing. */
+            missing: string[];
         };
         Gstr3b: {
             month: string;
@@ -16368,6 +16414,30 @@ export interface operations {
             };
         };
     };
+    clients_payroll_ecr_retrieve: {
+        parameters: {
+            query: {
+                month: number;
+                year: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string;
+                };
+            };
+        };
+    };
     clients_payroll_pf_esi_retrieve: {
         parameters: {
             query: {
@@ -16628,6 +16698,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["Gstr1"];
+                };
+            };
+        };
+    };
+    clients_reports_gstr1_file_retrieve: {
+        parameters: {
+            query: {
+                /** @description YYYY-MM */
+                month: string;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Gstr1File"];
                 };
             };
         };

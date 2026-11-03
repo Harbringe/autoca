@@ -58,7 +58,7 @@ export function GodownsCard({ clientId, mayEdit }: { clientId: string; mayEdit: 
       )}
       {mayEdit && (
         <div className="flex flex-wrap items-end gap-2">
-          <Input aria-label="Godown name" placeholder="Name, e.g. Shop" className="w-56" value={name} onChange={(e) => setName(e.target.value)} />
+          <Input aria-label="Godown name" placeholder="Name, e.g. Shop" className="w-56" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && !make.isPending) void add() }} />
           <Button loading={make.isPending} disabled={!name.trim()} onClick={() => void add()}>
             Add godown
           </Button>

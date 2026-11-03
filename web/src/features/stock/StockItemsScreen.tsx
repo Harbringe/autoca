@@ -172,7 +172,10 @@ export function StockItemsScreen({ clientId, mayEdit }: { clientId: string; mayE
           </div>
         )}
         {mayEdit && (
-          <div className="flex flex-wrap items-end gap-2">
+          <div
+            className="flex flex-wrap items-end gap-2"
+            onKeyDown={(e) => { if (e.key === 'Enter' && e.target instanceof HTMLInputElement && adding.name.trim() && !make.isPending) void add() }}
+          >
             <FieldsRow f={adding} set={setAdding} idPrefix="add" />
             <Button loading={make.isPending} disabled={!adding.name.trim()} onClick={() => void add()}>
               Add item

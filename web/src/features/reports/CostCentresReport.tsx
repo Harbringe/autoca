@@ -29,7 +29,7 @@ export function CostCentresReport({ clientId, fy }: { clientId: string; fy: numb
     <div className="grid gap-4 text-sm">
       {mayManage && (
         <div className="flex gap-2">
-          <Input aria-label="Cost centre name" className="max-w-xs" placeholder="e.g. Pune site" value={name} onChange={(e) => setName(e.target.value)} />
+          <Input aria-label="Cost centre name" className="max-w-xs" placeholder="e.g. Pune site" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && !make.isPending) make.mutate(name, { onSuccess: () => setName(''), onError: (err) => toast.error(messageOf(err)) }) }} />
           <Button
             variant="outline"
             disabled={!name.trim() || make.isPending}

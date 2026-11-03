@@ -116,7 +116,7 @@ export function PayrollScreen({ clientId }: { clientId: string }) {
         <h2 id="pay-people" className="text-[15px] font-semibold text-heading">Employees</h2>
         {mayEdit && (
           <div className="flex gap-2">
-            <Input aria-label="Employee name" className="max-w-xs" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} />
+            <Input aria-label="Employee name" className="max-w-xs" placeholder="Name" value={name} onChange={(e) => setName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter' && name.trim() && !add.isPending) void addPerson() }} />
             <Button variant="outline" onClick={() => void addPerson()} disabled={!name.trim() || add.isPending}>Add</Button>
           </div>
         )}

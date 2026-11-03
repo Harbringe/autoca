@@ -12,8 +12,9 @@ const BOM = { id: 'b1', name: 'Masala Mix', unit: 'pkt', output_quantity: '10.00
 const OK = { quantity: '20', components: [{ name: 'Chilli', unit: 'kg', needed: '4', available: '100', cost_paise: 80000, enough: true }], cost_paise: 86000, short: [] }
 const SHORT = { quantity: '1000', components: [{ name: 'Chilli', unit: 'kg', needed: '200', available: '100', cost_paise: 4000000, enough: false }], cost_paise: 4000000, short: ['Chilli: needs 200, has 100'] }
 
-function show(plan: object = OK) {
-  vi.mocked(raw.get).mockImplementation(((url: string) => Promise.resolve(url.includes('/plan/') ? plan : { results: [BOM], next: null, count: 1 })) as never)
+function show(plan: object = OK, godowns: object[] = []) {
+  vi.mocked(raw.get).mockImplementation(((url: string) =>
+    Promise.resolve(url.includes('/plan/') ? plan : url.includes('/godowns/') ? { results: godowns, next: null, count: godowns.length } : { results: [BOM], next: null, count: 1 })) as never)
   vi.mocked(raw.post).mockResolvedValue({})
   render(
     <QueryClientProvider client={new QueryClient({ defaultOptions: { queries: { retry: false } } })}>
@@ -34,6 +35,22 @@ describe('ManufacturingCard', () => {
     await waitFor(() =>
       expect(raw.post).toHaveBeenCalledWith('/api/v1/clients/c1/boms/b1/produce/', expect.objectContaining({ quantity: '20', extra_cost_paise: 50000 })),
     )
+  })
+
+  it('offers a godown to make it in when the client has godowns, and plans and runs there', async () => {
+    show(OK, [{ id: 'g1', name: 'QA Shop' }])
+    await userEvent.selectOptions(await screen.findByLabelText('Where to make Masala Mix'), 'g1')
+    await userEvent.type(screen.getByLabelText('Quantity of Masala Mix to make'), '20')
+    await screen.findByText(/Chilli: needs 4 kg, has 100/)
+    expect(raw.get).toHaveBeenCalledWith('/api/v1/clients/c1/boms/b1/plan/', expect.objectContaining({ godown: 'g1' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Run production' }))
+    await waitFor(() => expect(raw.post).toHaveBeenCalledWith('/api/v1/clients/c1/boms/b1/produce/', expect.objectContaining({ godown: 'g1' })))
+  })
+
+  it('shows no godown choice for a client with none', async () => {
+    show()
+    await screen.findByLabelText('Quantity of Masala Mix to make')
+    expect(screen.queryByLabelText('Where to make Masala Mix')).not.toBeInTheDocument()
   })
 
   it('names a short component and will not run', async () => {

@@ -47,17 +47,17 @@ export interface RunPlan {
   short: string[]
 }
 
-export const runPlan = (clientId: string, bom: string, quantity: string, date: string) =>
+export const runPlan = (clientId: string, bom: string, quantity: string, date: string, godown = '') =>
   queryOptions({
-    queryKey: clientKeys.part(clientId, 'boms', bom, 'plan', quantity, date),
-    queryFn: () => raw.get<RunPlan>(`${base(clientId)}${bom}/plan/`, { quantity, date }),
+    queryKey: clientKeys.part(clientId, 'boms', bom, 'plan', quantity, date, godown),
+    queryFn: () => raw.get<RunPlan>(`${base(clientId)}${bom}/plan/`, godown ? { quantity, date, godown } : { quantity, date }),
     enabled: !!quantity && Number(quantity) > 0,
   })
 
 export function useProduce(clientId: string) {
   const invalidate = useInvalidateClient(clientId)
   return useMutation({
-    mutationFn: ({ bom, ...body }: { bom: string; quantity: string; entry_date: string; extra_cost_paise: number; note: string }) =>
+    mutationFn: ({ bom, ...body }: { bom: string; quantity: string; entry_date: string; extra_cost_paise: number; note: string; godown?: string | null }) =>
       raw.post<unknown>(`${base(clientId)}${bom}/produce/`, body),
     onSuccess: invalidate,
   })

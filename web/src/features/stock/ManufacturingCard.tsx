@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { messageOf } from '@/api/errors'
+import { godowns } from '@/api/queries/godowns'
 import { boms, runPlan, useMakeBom, useProduce, useRemoveBom, type Bom, type BomComponent } from '@/api/queries/manufacturing'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -65,14 +66,16 @@ function Run({ clientId, bom, mayEdit }: { clientId: string; bom: Bom; mayEdit: 
   const [quantity, setQuantity] = useState('')
   const [date, setDate] = useState(today())
   const [extra, setExtra] = useState('')
-  const plan = useQuery(runPlan(clientId, bom.id, quantity, date))
+  const [godown, setGodown] = useState('')
+  const places = useQuery(godowns(clientId)).data ?? []
+  const plan = useQuery(runPlan(clientId, bom.id, quantity, date, godown))
   const d = plan.data
 
   function go() {
     const extraPaise = extra.trim() ? parseRupees(extra) : 0
     if (extraPaise === null) return void toast.error('The extra cost is in rupees, like 500 or 500.50.')
     produce.mutate(
-      { bom: bom.id, quantity, entry_date: date, extra_cost_paise: extraPaise, note: '' },
+      { bom: bom.id, quantity, entry_date: date, extra_cost_paise: extraPaise, note: '', godown: godown || null },
       { onSuccess: () => { setQuantity(''); setExtra(''); toast.success(`Made ${bom.name}`) }, onError: (e) => toast.error(messageOf(e)) },
     )
   }
@@ -93,6 +96,16 @@ function Run({ clientId, bom, mayEdit }: { clientId: string; bom: Bom; mayEdit: 
         <div className="flex flex-wrap items-end gap-2">
           <Input aria-label={`Quantity of ${bom.name} to make`} inputMode="decimal" className="w-40" placeholder="Make how many" value={quantity} onChange={(e) => setQuantity(e.target.value)} />
           <input aria-label={`Production date for ${bom.name}`} type="date" className="h-9 rounded-md border border-border-strong bg-transparent px-2" value={date} onChange={(e) => setDate(e.target.value)} />
+          {places.length > 0 && (
+            <select aria-label={`Where to make ${bom.name}`} className="h-9 rounded-md border border-border-strong bg-transparent px-2" value={godown} onChange={(e) => setGodown(e.target.value)}>
+              <option value="">Main location</option>
+              {places.map((g) => (
+                <option key={g.id} value={g.id}>
+                  {g.name}
+                </option>
+              ))}
+            </select>
+          )}
           <Input aria-label={`Extra cost for ${bom.name}`} inputMode="decimal" className="w-32" placeholder="Extra cost (₹)" value={extra} onChange={(e) => setExtra(e.target.value)} />
           <Button size="sm" loading={produce.isPending} disabled={!d || d.short.length > 0} onClick={go}>
             Run production

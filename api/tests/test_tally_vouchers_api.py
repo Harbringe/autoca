@@ -255,6 +255,22 @@ def test_discover_skips_a_file_it_cannot_use_and_says_why_instead_of_failing_the
     assert [f["file"] for f in body["ignored"]] == ["report.xml"] and body["ignored"][0]["reason"]
 
 
+def test_discover_says_what_each_chosen_file_is_in_the_order_given(api, client_record):
+    from ledger.tests.tally_voucher_xml import bank_report_xml, report_row
+
+    files = _files(
+        ("vouchers.xml", vouchers_xml([sale()])),
+        ("bank.xml", bank_report_xml([report_row("4-Apr-25", "Cash", "Rcpt", debit=1.0)])),
+        ("gst.xml", b"<ENVELOPE><X/></ENVELOPE>"),
+    )
+    body = api.post(url(client_record, "discover"), {"files": files}, format="multipart").json()
+    assert body["files"] == [
+        {"file": "vouchers.xml", "kind": "vouchers"},
+        {"file": "bank.xml", "kind": "bank_report"},
+        {"file": "gst.xml", "kind": "ignored"},
+    ]
+
+
 def test_discover_still_refuses_when_no_file_is_usable(api, firm, client_record):
     response = api.post(url(client_record, "discover"), {"files": _files(("report.xml", b"<ENVELOPE><X/></ENVELOPE>"))}, format="multipart")
     assert response.status_code in (400, 422)
@@ -368,3 +384,18 @@ def test_the_trial_balance_check_lists_where_tallys_closing_balances_differ(api,
     assert body["differences"] == [{"name": "Rent", "tally_paise": 90000, "ours_paise": -100000}]
     refused = api.post(url(client_record, "check-trial-balance"), {"file": SimpleUploadedFile("tb.txt", b"x"), "fy": "2025"}, format="multipart")
     assert refused.status_code == 400
+
+
+def test_reading_a_file_again_with_what_its_own_types_count_as_takes_the_old_preview_out_of_the_queue(api, firm, client_record, chart):
+    from ledger.tests.tally_voucher_xml import vouchers_xml
+
+    gst = voucher(
+        guid="g8", vtype="GST SALE", number="8", date="20250401", party="Acme Traders", gstin="27ABCDE1234F1Z5",
+        lines=[line("Acme Traders", 1180.0, party=True), line("Sales", -1000.0), line("Output CGST", -90.0), line("Output SGST", -90.0)],
+    )
+    first = upload(api, client_record, data=vouchers_xml([gst])).json()
+    assert first["counts"]["unknown_types"] == {"GST SALE": 1}
+    again = api.post(url(client_record, first["id"], "refresh-vouchers"), {"voucher_types": {"GST SALE": "sales"}}, format="json").json()
+    assert again["id"] != first["id"] and again["counts"]["will_post"] == 1
+    waiting = [r["id"] for r in api.get(url(client_record, "voucher-runs")).json() if r["status"] == "PREVIEW"]
+    assert waiting == [again["id"]], "the preview that asked about the type is still waiting beside the one that answered it"

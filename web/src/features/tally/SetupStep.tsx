@@ -1,10 +1,28 @@
-// Start from the Tally files themselves: choose the voucher exports and bank reports, and see the ledgers and bank accounts they imply, each
-// with the group the files suggest and why. Change anything that is wrong, untick what you do not want, then create them. Nothing is created
-// until you press the button, and a ledger the client already has is never touched.
+// The one step that brings a client in from Tally: choose every file together (the ledger list, the voucher exports, the bank reports) and see the
+// ledgers and bank accounts they imply, each with the group the files suggest and why. Change anything that is wrong, untick what you do not
+// want, then press the button: the ledgers and accounts are created and the rest is imported straight after (opening balances, then the
+// vouchers). Nothing is created until you press the button, and a ledger the client already has is never touched. The cards below this one
+// import a single kind of file on its own.
 
 import { useRef, useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { CheckCircle2, FileUp } from 'lucide-react'
-import { useDiscover, useSetup, type AccountProposal, type Discovery } from '@/api/queries/tallyImport'
+import { waitForJob } from '@/api/jobs'
+import { bankAccounts, useInvalidateClient } from '@/api/queries/clients'
+import {
+  isReadJob,
+  useConfirmMasters,
+  useConfirmVouchers,
+  useDiscover,
+  usePostAll,
+  useRefreshVoucherRun,
+  useSetup,
+  useStageBankReports,
+  useStageMasters,
+  useStageVouchers,
+  type AccountProposal,
+  type Discovery,
+} from '@/api/queries/tallyImport'
 import { LEDGER_GROUPS } from '@/api/types'
 import { PagedList } from '@/components/ca/Pager'
 import { Button } from '@/components/ui/button'
@@ -12,14 +30,32 @@ import { Card } from '@/components/ui/card'
 import { Checkbox, Select } from '@/components/ui/controls'
 import { plural } from '@/lib/format'
 import { toast } from '@/lib/toast'
+import { importEverything, type ChosenFile } from './importEverything'
 
 const messageOf = (error: unknown) => (error instanceof Error && error.message ? error.message : 'Something went wrong. Try again.')
 
 const inputClass = 'h-9 rounded-md border border-input bg-card px-2 text-sm'
 
+/** The year that starts the Indian financial year the person is probably importing. */
+const defaultYear = () => {
+  const now = new Date()
+  return now.getMonth() >= 3 ? now.getFullYear() : now.getFullYear() - 1
+}
+
 export function SetupStep({ clientId }: { clientId: string }) {
   const discover = useDiscover(clientId)
   const setup = useSetup(clientId)
+  const stageVouchers = useStageVouchers(clientId)
+  const confirmVouchers = useConfirmVouchers(clientId)
+  const refreshVouchers = useRefreshVoucherRun(clientId)
+  const postAll = usePostAll(clientId)
+  const stageMasters = useStageMasters(clientId)
+  const confirmMasters = useConfirmMasters(clientId)
+  const stageBank = useStageBankReports(clientId)
+  const queryClient = useQueryClient()
+  const invalidateClient = useInvalidateClient(clientId)
+  const [working, setWorking] = useState<string | null>(null)
+  const [summary, setSummary] = useState<string[]>([])
   const input = useRef<HTMLInputElement>(null)
   const [files, setFiles] = useState<File[]>([])
   const [found, setFound] = useState<Discovery | null>(null)
@@ -57,20 +93,58 @@ export function SetupStep({ clientId }: { clientId: string }) {
   const chosenAccounts = Object.values(accounts).filter((a) => !skipped.has(a.ledger))
   const unnamed = found?.reports.filter((r) => !r.ledger) ?? []
 
+  const kinds = found?.files ?? []
+  // What is imported after the ledgers and accounts exist: the vouchers, the ledger list's opening balances, bank reports when there are no vouchers.
+  const toImport = kinds.some((k) => k.kind === 'vouchers' || k.kind === 'ledgers' || k.kind === 'bank_report')
+  const hasVouchers = kinds.some((k) => k.kind === 'vouchers')
+
   async function create() {
     setError(null)
+    setSummary([])
     try {
       const result = await setup.mutateAsync({
         ledgers: chosenLedgers.map((p) => ({ name: p.name, group: groups[p.name] ?? p.group })),
         accounts: chosenAccounts,
       })
       const waiting = result.waiting_for_a_number.length
-      setDone(
-        `${plural(result.ledgers, 'ledger')} created, ${plural(result.accounts, 'bank account')} opened.` +
-          (waiting ? ` ${plural(waiting, 'account')} still need${waiting === 1 ? 's' : ''} a number: type it and press the button again.` : ' Now import the vouchers below.'),
-      )
+      const made = `${plural(result.ledgers, 'ledger')} created, ${plural(result.accounts, 'bank account')} opened.`
       toast.success(`${plural(result.ledgers, 'ledger')} created`)
-      if (!waiting) setFound(null)
+      if (waiting) {
+        setDone(`${made} ${plural(waiting, 'account')} still need${waiting === 1 ? 's' : ''} a number: type it and press the button again.`)
+        return
+      }
+      if (!toImport) {
+        setDone(`${made} Now import the vouchers below.`)
+        setFound(null)
+        return
+      }
+      setDone(made)
+      const chosen: ChosenFile[] = files.map((file, i) => ({
+        file,
+        kind: kinds[i]?.file === file.name ? kinds[i].kind : (kinds.find((k) => k.file === file.name)?.kind ?? 'ignored'),
+      }))
+      try {
+        const lines = await importEverything(chosen, found?.reports ?? [], {
+          stageVouchers: (file) => stageVouchers.mutateAsync({ file }),
+          isReadJob,
+          waitForRead: (job) => waitForJob(job, (j) => setWorking(j.message || 'Reading the file…')),
+          confirmVouchers: (runId) => confirmVouchers.mutateAsync({ runId }),
+          refreshVouchers: (runId, voucherTypes) => refreshVouchers.mutateAsync({ runId, voucherTypes }),
+          postAll: () => postAll.mutateAsync({}),
+          stageMasters: (file, financialYear) => stageMasters.mutateAsync({ file, financialYear, includeOpenings: true }),
+          confirmMasters: (runId) => confirmMasters.mutateAsync({ runId, resolutions: [] }),
+          stageBankReports: (reports) => stageBank.mutateAsync({ reports }),
+          bankAccounts: async () => (await queryClient.fetchQuery({ ...bankAccounts(clientId), staleTime: 0 })).results,
+          say: setWorking,
+          defaultYear: defaultYear(),
+        })
+        setSummary(lines)
+      } finally {
+        setWorking(null)
+        void invalidateClient()
+        void queryClient.invalidateQueries({ queryKey: ['tally-voucher-runs', clientId] })
+      }
+      setFound(null)
     } catch (e) {
       setError(messageOf(e))
     }
@@ -78,11 +152,11 @@ export function SetupStep({ clientId }: { clientId: string }) {
 
   return (
     <Card className="grid gap-3 p-4">
-      <h2 className="font-medium">Set up from your Tally files</h2>
+      <h2 className="font-medium">Import everything from your Tally files</h2>
       <p className="text-sm text-muted-foreground">
-        The quickest way to start a new client. Choose the voucher exports, the bank reports and, best of all, Tally&apos;s list of ledgers together: the ledgers,
-        bank accounts and their groups come from them, and the groups are exactly Tally&apos;s when the ledger list is included. You check the list before
-        anything is created.
+        The one step that does it all. Choose every file together: Tally&apos;s list of ledgers, the voucher exports and the bank reports. The ledgers, bank
+        accounts and groups are created from them (exactly Tally&apos;s groups when the ledger list is included), then the opening balances and the vouchers are
+        imported straight after. You check the ledgers before anything is created. The cards further down are for importing one kind of file on its own.
       </p>
       <div>
         <input
@@ -236,17 +310,35 @@ export function SetupStep({ clientId }: { clientId: string }) {
           )}
 
           <div>
-            <Button loading={setup.isPending} disabled={chosenLedgers.length + chosenAccounts.length === 0} onClick={() => void create()}>
+            <Button
+              loading={setup.isPending || working !== null}
+              disabled={chosenLedgers.length + chosenAccounts.length === 0 && !toImport}
+              onClick={() => void create()}
+            >
               Create {plural(chosenLedgers.length, 'ledger')} and {plural(chosenAccounts.length, 'bank account')}
+              {hasVouchers ? ', then import the vouchers' : toImport ? ', then import the rest' : ''}
             </Button>
           </div>
         </div>
       )}
 
+      {working && (
+        <p role="status" aria-label="Importing" className="text-sm text-muted-foreground">
+          {working}
+        </p>
+      )}
       {done && (
         <div className="flex items-center gap-2 text-sm font-medium">
           <CheckCircle2 className="size-4 text-success" aria-hidden /> {done}
         </div>
+      )}
+      {summary.length > 0 && (
+        <ul aria-label="What was imported" className="grid list-disc gap-1 pl-5 text-sm">
+          {summary.map((line) => (
+            <li key={line}>{line}</li>
+          ))}
+          <li className="list-none text-muted-foreground">Follow what is posting under Imports below.</li>
+        </ul>
       )}
     </Card>
   )

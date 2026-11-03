@@ -11142,6 +11142,8 @@ export interface components {
             master_files: number;
             /** @description Files that could not be used, each with why; the rest were read. */
             ignored: components["schemas"]["TallyIgnoredFile"][];
+            /** @description Every file chosen, in the order given, with what it turned out to be. */
+            files: components["schemas"]["TallyFileKind"][];
             reports: components["schemas"]["TallyReportFile"][];
             ledgers: components["schemas"]["TallyLedgerProposal"][];
             accounts: components["schemas"]["TallyAccountProposal"][];
@@ -11152,6 +11154,26 @@ export interface components {
             /** @description A sentence for a person; show it as it is. */
             detail: string;
         };
+        TallyFileKind: {
+            file: string;
+            /**
+             * @description What the file turned out to be.
+             *
+             *     * `vouchers` - vouchers
+             *     * `ledgers` - ledgers
+             *     * `bank_report` - bank_report
+             *     * `ignored` - ignored
+             */
+            kind: components["schemas"]["TallyFileKindKindEnum"];
+        };
+        /**
+         * @description * `vouchers` - vouchers
+         *     * `ledgers` - ledgers
+         *     * `bank_report` - bank_report
+         *     * `ignored` - ignored
+         * @enum {string}
+         */
+        TallyFileKindKindEnum: "vouchers" | "ledgers" | "bank_report" | "ignored";
         TallyIgnoredFile: {
             file: string;
             reason: string;

@@ -25,6 +25,7 @@ from decimal import Decimal
 from django.conf import settings
 from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, transaction
+from django.db.models import Q
 from django.utils import timezone
 
 from banking.models import BankAccount, Statement, StatementTransaction
@@ -407,7 +408,11 @@ def refresh_run(run: LedgerImportRun, membership, user, *, voucher_types=None) -
     types = voucher_types if voucher_types is not None else run.counts.get("type_map")
     fresh, _reused = stage_vouchers(client, membership, user, data=data, filename=document.original_filename, voucher_types=types)
     if fresh.pk != run.pk:  # only if nobody started posting the old one meanwhile
-        LedgerImportRun.objects.filter(pk=run.pk, status=ImportStatus.PREVIEW).exclude(result__posting=True).update(status=ImportStatus.DISCARDED)
+        # A run not yet written has no "posting" in its result (an empty object, or none), and SQL does not call that "not true": a plain
+        # ``exclude(result__posting=True)`` dropped such a row, so the old preview stayed in the queue beside the one that replaced it.
+        LedgerImportRun.objects.filter(pk=run.pk, status=ImportStatus.PREVIEW).filter(
+            Q(result__isnull=True) | ~Q(result__has_key="posting") | Q(result__posting=False)
+        ).update(status=ImportStatus.DISCARDED)
     return fresh
 
 

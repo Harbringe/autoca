@@ -244,6 +244,8 @@ export interface Discovery {
   voucher_files: number
   master_files: number
   ignored: { file: string; reason: string }[]
+  /** Every file chosen, in the order given, with what it turned out to be. */
+  files?: { file: string; kind: 'vouchers' | 'ledgers' | 'bank_report' | 'ignored' }[]
   reports: { file: string; ledger: string; rows: number; left_out: number }[]
   ledgers: LedgerProposal[]
   accounts: AccountProposal[]

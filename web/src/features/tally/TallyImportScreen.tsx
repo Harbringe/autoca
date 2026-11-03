@@ -196,6 +196,13 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
   return (
     <div className="grid gap-4">
       <SetupStep clientId={clientId} />
+      <div className="grid gap-1 px-1 pt-2">
+        <h2 className="font-medium">Or import one thing at a time</h2>
+        <p className="text-sm text-muted-foreground">
+          The cards below each import one kind of file on its own: the ledgers, one vouchers file, the bank reports. Use them to add to a client that is already
+          set up, or to redo one part.
+        </p>
+      </div>
       <ChartStep clientId={clientId} />
       <Card className="grid gap-3 p-4">
         <h2 className="font-medium">2. The vouchers</h2>

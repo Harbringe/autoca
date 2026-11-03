@@ -96,4 +96,39 @@ describe('SetupStep', () => {
     choose()
     expect(await screen.findByRole('alert')).toHaveTextContent('not an .xml file')
   })
+
+  it('creates the ledgers and then imports the vouchers from the same files, in one press', async () => {
+    const urls: string[] = []
+    post.mockImplementation(async (url: string) => {
+      urls.push(url)
+      if (url.endsWith('/discover/')) return found({ accounts: [], files: [{ file: 'v.xml', kind: 'vouchers' }] })
+      if (url.endsWith('/setup/')) return { ledgers: 2, accounts: 0, waiting_for_a_number: [] }
+      if (url.endsWith('/vouchers/')) return { id: 'run1', status: 'PREVIEW', counts: { vouchers: 40, will_post: 38, skipped: 2, date_from: '2025-04-01', date_to: '2025-04-30' }, result: null, posting: false }
+      if (url.endsWith('/confirm-vouchers/')) return { id: 'run1', status: 'CONFIRMED', counts: { vouchers: 40, will_post: 38, skipped: 2 }, result: { posted: 38 }, posting: false }
+      throw new Error(`unexpected ${url}`)
+    })
+    renderStep()
+    choose()
+    await screen.findByTestId('discovery')
+    fireEvent.click(screen.getByRole('button', { name: /Create 2 ledgers and 0 bank accounts, then import the vouchers/ }))
+    expect(await screen.findByLabelText('What was imported')).toHaveTextContent('v.xml: 38 vouchers posted, 2 left out')
+    expect(screen.getByText(/2 ledgers created, 0 bank accounts opened/)).toBeInTheDocument()
+    expect(urls.map((u) => u.split('/tally-imports/')[1])).toEqual(['discover/', 'setup/', 'vouchers/', 'run1/confirm-vouchers/'])
+  })
+
+  it('still stops to ask for an account number before importing anything', async () => {
+    const urls: string[] = []
+    post.mockImplementation(async (url: string) => {
+      urls.push(url)
+      if (url.endsWith('/discover/')) return found({ files: [{ file: 'v.xml', kind: 'vouchers' }], accounts: [{ ledger: 'SBI SB', kind: 'BANK', bank_code: 'SBI', account_number: '' }] })
+      if (url.endsWith('/setup/')) return { ledgers: 2, accounts: 0, waiting_for_a_number: ['SBI SB'] }
+      throw new Error(`unexpected ${url}`)
+    })
+    renderStep()
+    choose()
+    await screen.findByTestId('discovery')
+    fireEvent.click(screen.getByRole('button', { name: /Create 2 ledgers and 1 bank account/ }))
+    expect(await screen.findByText(/still needs a number/)).toBeInTheDocument()
+    expect(urls.some((u) => u.endsWith('/vouchers/'))).toBe(false)
+  })
 })

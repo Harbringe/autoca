@@ -502,11 +502,17 @@ class TallyIgnoredFileSerializer(serializers.Serializer):
     reason = serializers.CharField()
 
 
+class TallyFileKindSerializer(serializers.Serializer):
+    file = serializers.CharField()
+    kind = serializers.ChoiceField(choices=["vouchers", "ledgers", "bank_report", "ignored"], help_text="What the file turned out to be.")
+
+
 class TallyDiscoveryResponseSerializer(serializers.Serializer):
     vouchers = serializers.IntegerField()
     voucher_files = serializers.IntegerField()
     master_files = serializers.IntegerField(help_text="Ledger-list files whose groups were read from Tally itself.")
     ignored = TallyIgnoredFileSerializer(many=True, help_text="Files that could not be used, each with why; the rest were read.")
+    files = TallyFileKindSerializer(many=True, help_text="Every file chosen, in the order given, with what it turned out to be.")
     reports = TallyReportFileSerializer(many=True)
     ledgers = TallyLedgerProposalSerializer(many=True)
     accounts = TallyAccountProposalSerializer(many=True)

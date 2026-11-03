@@ -83,23 +83,29 @@ def discover_files(client, membership, files: list[tuple[str, bytes]], bank_ledg
     vouchers, loaded_reports, voucher_files, masters, master_files = [], [], 0, {}, 0
     #: Files that could not be used (a GST report, a spreadsheet that is not a ledger list), each with why. One of them does not stop the rest.
     ignored: list[dict[str, str]] = []
+    #: What each chosen file turned out to be, in the order given, so a screen can send the vouchers on to the vouchers import.
+    kinds: list[dict[str, str]] = []
     first_refusal: Exception | None = None
     for name, data in files:
         try:
             if looks_like_bank_report(data):
                 loaded_reports.append((name, parse_bank_report(data, name, max_bytes=cap)))
+                kinds.append({"file": name, "kind": "bank_report"})
             elif looks_like_masters(name, data):
                 masters.update(master_groups(parse_masters(data, name, max_bytes=cap)))
                 master_files += 1
+                kinds.append({"file": name, "kind": "ledgers"})
             else:
                 parsed = parse_vouchers(data, name, max_bytes=cap)
                 if len(parsed.companies) > 1:
                     raise TallyImportError(f"{name} has vouchers from more than one company. Export one company at a time.")
                 vouchers.extend(parsed.vouchers)
                 voucher_files += 1
+                kinds.append({"file": name, "kind": "vouchers"})
         except (TallyParseError, TallyTooLargeError) as exc:
             first_refusal = first_refusal or exc
             ignored.append({"file": name, "reason": str(exc)})
+            kinds.append({"file": name, "kind": "ignored"})
     if ignored and not (vouchers or loaded_reports or masters):
         raise first_refusal  # nothing usable at all: say what was wrong with the first file, as before
 
@@ -120,6 +126,7 @@ def discover_files(client, membership, files: list[tuple[str, bytes]], bank_ledg
         "voucher_files": voucher_files,
         "master_files": master_files,
         "ignored": ignored,
+        "files": kinds,
         "reports": reports,
         "ledgers": [asdict(p) for p in found.ledgers],
         # A bank account whose ledger the client already has an account for is not proposed twice.

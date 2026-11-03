@@ -24068,6 +24068,12 @@ components:
             $ref: '#/components/schemas/TallyIgnoredFile'
           description: Files that could not be used, each with why; the rest were
             read.
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/TallyFileKind'
+          description: Every file chosen, in the order given, with what it turned
+            out to be.
         reports:
           type: array
           items:
@@ -24082,6 +24088,7 @@ components:
             $ref: '#/components/schemas/TallyAccountProposal'
       required:
       - accounts
+      - files
       - ignored
       - ledgers
       - master_files
@@ -24103,6 +24110,36 @@ components:
       required:
       - code
       - detail
+    TallyFileKind:
+      type: object
+      properties:
+        file:
+          type: string
+        kind:
+          allOf:
+          - $ref: '#/components/schemas/TallyFileKindKindEnum'
+          description: |-
+            What the file turned out to be.
+
+            * `vouchers` - vouchers
+            * `ledgers` - ledgers
+            * `bank_report` - bank_report
+            * `ignored` - ignored
+      required:
+      - file
+      - kind
+    TallyFileKindKindEnum:
+      enum:
+      - vouchers
+      - ledgers
+      - bank_report
+      - ignored
+      type: string
+      description: |-
+        * `vouchers` - vouchers
+        * `ledgers` - ledgers
+        * `bank_report` - bank_report
+        * `ignored` - ignored
     TallyIgnoredFile:
       type: object
       properties:

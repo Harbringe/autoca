@@ -9683,6 +9683,12 @@ paths:
           type: string
         description: Filter to one client.
       - in: query
+        name: financial_year
+        schema:
+          type: integer
+        description: Only entries of this financial year (the year it starts in, as
+          in 2025 for FY 2025-26).
+      - in: query
         name: live
         schema:
           type: string
@@ -10038,6 +10044,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SettlementContext'
+          description: ''
+  /api/v1/journal-entries/years/:
+    get:
+      operationId: journal_entries_years_retrieve
+      description: 'Each year (the year it starts in) with at least one live voucher,
+        oldest first: enough to offer a year to look at without loading the vouchers.'
+      summary: The financial years a client has vouchers in
+      parameters:
+      - in: query
+        name: client
+        schema:
+          type: string
+        description: The client.
+      tags:
+      - ledger
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+                description: Unspecified response body
           description: ''
   /api/v1/me/:
     get:

@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, useSearch } from '@tanstack/react-router'
 import { useCallback, useEffect } from 'react'
-import { journal } from '@/api/queries/books'
+import { journalYears } from '@/api/queries/books'
 import { statements } from '@/api/queries/clients'
 import { financialYearOf } from '@/lib/format'
 import { parseFy, resolveFy } from '@/lib/fy'
@@ -20,12 +20,12 @@ export function useFy() {
   const { fyByClient, setClientFy } = usePreferences()
 
   const stmts = useQuery({ ...statements(clientId ?? ''), enabled: !!clientId && can('document.view') })
-  const entries = useQuery({ ...journal(clientId ?? ''), enabled: !!clientId && can('report.view') })
+  const entries = useQuery({ ...journalYears(clientId ?? ''), enabled: !!clientId && can('report.view') })
 
   const dataYears = [
     ...new Set([
       ...(stmts.data?.results ?? []).flatMap((s) => [financialYearOf(s.period_start), financialYearOf(s.period_end)]),
-      ...(entries.data ?? []).map((e) => e.financial_year),
+      ...(entries.data ?? []),
     ]),
   ].sort()
 

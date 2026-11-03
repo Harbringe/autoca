@@ -89,6 +89,20 @@ export const journal = (clientId: string) =>
     queryFn: () => allPages<JournalEntry>(`${V1}/journal-entries/`, { client: clientId, live: true }),
   })
 
+/** One financial year's live vouchers, for a screen that shows a single year (the Day Book): a client with many years does not load them all. */
+export const journalYear = (clientId: string, fy: number) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'journal', 'fy', fy),
+    queryFn: () => allPages<JournalEntry>(`${V1}/journal-entries/`, { client: clientId, live: true, financial_year: fy }),
+  })
+
+/** The financial years a client has vouchers in, without the vouchers. */
+export const journalYears = (clientId: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'journal', 'years'),
+    queryFn: () => raw.get<number[]>(`${V1}/journal-entries/years/`, { client: clientId }),
+  })
+
 export const entryChanges = (clientId: string, entryId: string) =>
   queryOptions({
     queryKey: clientKeys.part(clientId, 'journal', entryId, 'changes'),

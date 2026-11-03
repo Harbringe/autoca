@@ -13,7 +13,7 @@ import { Fragment, useMemo, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { raw } from '@/api/client'
 import { messageOf } from '@/api/errors'
-import { entryChanges, journal, ledgers as ledgersQuery } from '@/api/queries/books'
+import { entryChanges, journalYear, ledgers as ledgersQuery } from '@/api/queries/books'
 import { bankAccounts, clientDetail, clientKeys, useInvalidateClient, V1 } from '@/api/queries/clients'
 import type { JournalEntry } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
@@ -60,7 +60,7 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
   const client = useQuery(clientDetail(clientId))
   const unpostMany = useUnpostMany(clientId)
   const [bulk, setBulk] = useState(false)
-  const entries = useQuery(journal(clientId))
+  const entries = useQuery(journalYear(clientId, fy))
   const accounts = useQuery(bankAccounts(clientId))
   const [type, setType] = useState<string>('')
   const [text, setText] = useState('')
@@ -101,7 +101,6 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
 
   if (entries.error) return <ErrorState error={entries.error} retry={() => void entries.refetch()} />
 
-  const otherYears = (entries.data ?? []).length - inYear.length
   const mayUnpost = can('journal.approve') && !!client.data?.can_post
   const mayMark = can('journal.correct') && !!client.data?.can_post
   const assistantEntries = inYear.filter(isAssistantEntry)
@@ -153,7 +152,6 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="text-sm text-muted-foreground">
           FY {fyLabel(fy)} · {plural(inYear.length, 'voucher')}
-          {otherYears > 0 && ` · ${otherYears} in other years (change the year at the top)`}
         </div>
         <div className="flex min-w-0 max-w-full flex-wrap items-center gap-3">
           <div className="relative">
@@ -195,7 +193,7 @@ export function DayBookScreen({ clientId }: { clientId: string }) {
             <Link to="/clients/$clientId/review" params={{ clientId }} search={{ stage: 'unresolved' }} className="underline">
               Review
             </Link>
-            {otherYears > 0 ? `, or pick another financial year at the top (${otherYears} entries are in other years).` : '.'}
+            , or pick another financial year at the top.
           </EmptyState>
         ) : (
           <EmptyState title="No voucher matches">

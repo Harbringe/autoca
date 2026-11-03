@@ -102,6 +102,12 @@ class JournalEntryViewSet(
                 queryset = queryset.filter(client_id=uuid.UUID(client_id))
             except ValueError as exc:
                 raise serializers.ValidationError({"client": "Not a client id."}) from exc
+        year = self.request.query_params.get("financial_year")
+        if year:
+            try:
+                queryset = queryset.filter(financial_year=int(year))
+            except ValueError as exc:
+                raise serializers.ValidationError({"financial_year": "Not a year."}) from exc
         if self.request.query_params.get("live") == "true":
             queryset = queryset.filter(superseded_by_set__isnull=True)
         return queryset
@@ -109,6 +115,7 @@ class JournalEntryViewSet(
     @extend_schema(
         parameters=[
             OpenApiParameter("client", str, description="Filter to one client."),
+            OpenApiParameter("financial_year", int, description="Only entries of this financial year (the year it starts in, as in 2025 for FY 2025-26)."),
             OpenApiParameter(
                 "live",
                 str,
@@ -122,6 +129,23 @@ class JournalEntryViewSet(
     )
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
+
+    @extend_schema(
+        summary="The financial years a client has vouchers in",
+        parameters=[OpenApiParameter("client", str, description="The client.")],
+        responses={200: serializers.ListField(child=serializers.IntegerField())},
+    )
+    @action(detail=False, methods=["get"])
+    def years(self, request):
+        """Each year (the year it starts in) with at least one live voucher, oldest first: enough to offer a year to look at without loading the vouchers."""
+        years = (
+            self.get_queryset()
+            .filter(superseded_by_set__isnull=True)
+            .order_by()
+            .values_list("financial_year", flat=True)
+            .distinct()
+        )
+        return Response(sorted(years))
 
     @extend_schema(
         summary="Correct a posted entry",

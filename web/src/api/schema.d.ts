@@ -4184,6 +4184,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/journal-entries/years/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * The financial years a client has vouchers in
+         * @description Each year (the year it starts in) with at least one live voucher, oldest first: enough to offer a year to look at without loading the vouchers.
+         */
+        get: operations["journal_entries_years_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/me/": {
         parameters: {
             query?: never;
@@ -19736,6 +19756,8 @@ export interface operations {
             query?: {
                 /** @description Filter to one client. */
                 client?: string;
+                /** @description Only entries of this financial year (the year it starts in, as in 2025 for FY 2025-26). */
+                financial_year?: number;
                 /** @description Only entries that have not been corrected. A superseded entry stays in the record permanently, so it is included by default. */
                 live?: "true";
                 /** @description A page number within the paginated result set. */
@@ -20000,6 +20022,30 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SettlementContext"];
+                };
+            };
+        };
+    };
+    journal_entries_years_retrieve: {
+        parameters: {
+            query?: {
+                /** @description The client. */
+                client?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

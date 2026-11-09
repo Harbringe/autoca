@@ -111,3 +111,20 @@ def test_a_statement_whose_entries_were_corrected_after_sign_off_can_still_be_re
 
         assert removed["entries"] == total
         assert JournalEntry.objects.filter(client=client).count() == 0
+
+
+def test_removing_a_statement_costs_a_fixed_number_of_queries_however_many_entries_it_posted(
+    client, staff, statement, django_assert_max_num_queries
+):
+    with firm_context(client.firm_id):
+        ai_places(client, BHIM, income(client, "Cashback Received"))
+        auto_post_client(client)
+        posted = JournalEntry.objects.filter(client=client).count()
+        assert posted >= 9
+
+        # One at a time this was about thirteen queries for every entry; it is now a handful for the whole statement.
+        with django_assert_max_num_queries(45):
+            removed = remove_statement(statement, actor=staff.user)
+
+        assert removed["entries"] == posted
+        assert JournalEntry.objects.filter(client=client).count() == 0

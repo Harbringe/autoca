@@ -675,7 +675,7 @@ def rename_firm(actor: FirmMembership, name: str):
 # ---------------------------------------------------------------------------
 # The platform owner
 #
-# The AutoCA platform owner belongs to no firm, so there is no acting membership
+# The AuditFlow platform owner belongs to no firm, so there is no acting membership
 # to check permissions against. What they may do is decided before these are
 # called (only a platform owner reaches the Django admin). What these keep is
 # every rule that protects the firm itself: it always has an active
@@ -687,7 +687,7 @@ def rename_firm(actor: FirmMembership, name: str):
 # them to another inside a single transaction.
 # ---------------------------------------------------------------------------
 
-PLATFORM_ACTOR = "AutoCA platform"
+PLATFORM_ACTOR = "AuditFlow platform"
 
 
 def _platform_event(firm_id, kind, *, member: FirmMembership, **detail) -> None:

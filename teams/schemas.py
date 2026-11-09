@@ -220,7 +220,7 @@ class TeamEventDetailSerializer(serializers.Serializer):
     | firm.owner_changed | actor, member, from, to |
     | firm.renamed | actor, from, to |
 
-    `actor` is "AutoCA platform" for a change made by the platform owner.
+    `actor` is "AuditFlow platform" for a change made by the platform owner.
     """
 
     actor = serializers.CharField(required=False)

@@ -100,6 +100,10 @@ def require_editable(entry) -> None:
 
 def snapshot(entry) -> dict:
     """The entry as it stands, in a form that can be stored and read back."""
+    return _snapshot_of(entry, entry.lines.select_related("ledger_account").order_by("-signed_paise"))
+
+
+def _snapshot_of(entry, lines) -> dict:
     return {
         "id": str(entry.pk),
         "entry_no": entry.entry_no,
@@ -122,7 +126,7 @@ def snapshot(entry) -> dict:
                     for a in line.allocations.all()
                 ],
             }
-            for line in entry.lines.select_related("ledger_account").order_by("-signed_paise")
+            for line in lines
         ],
     }
 
@@ -271,3 +275,73 @@ def remove_entry(entry, *, actor, note="") -> None:
     BillAllocation.objects.filter(line__entry=entry).delete()
     entry.lines.all().delete()
     entry.delete()
+
+
+@transaction.atomic
+def remove_entries(entries, *, actor, note="") -> int:
+    """Take several unsigned bank entries out of the books at once; what :func:`remove_entry` does, in a fixed number of queries.
+
+    Taking a statement back removes every entry it posted. Done one at a time that was about thirteen queries for each, which on
+    a statement of hundreds of rows is minutes of waiting on the database. Here the entries are locked and read together, the
+    change log rows are written together, and the lines and entries are deleted together. The rules are the same: every entry
+    must be a bank entry and outside signed-off books or none is touched, and the change log gets the complete before of each.
+
+    The entries must not point at one another (a correction and the entry it replaced): the caller removes those in layers.
+    """
+    from django.db.models import Prefetch
+
+    ids = [e.pk for e in entries]
+    if not ids:
+        return 0
+    rows = list(
+        JournalEntry.objects.select_for_update()
+        .filter(pk__in=ids)
+        .prefetch_related(
+            Prefetch(
+                "lines",
+                queryset=JournalLine.objects.select_related("ledger_account")
+                .prefetch_related("allocations")
+                .order_by("-signed_paise"),
+            )
+        )
+    )
+    if len(rows) != len(ids):
+        raise JournalEntry.DoesNotExist("Some of these entries are already gone.")
+    through_by_client: dict = {}
+    for entry in rows:
+        require_bank_entry(entry)
+        if entry.client_id not in through_by_client:
+            through_by_client[entry.client_id] = locked_through(entry.client_id)
+        through = through_by_client[entry.client_id]
+        if through is not None and entry.entry_date <= through:
+            require_editable(entry)  # raises, with the explanation
+
+    EntryChange.objects.bulk_create(
+        [
+            EntryChange(
+                firm_id=entry.firm_id,
+                client_id=entry.client_id,
+                entry_id=entry.pk,
+                voucher_type=entry.voucher_type,
+                entry_no=entry.entry_no,
+                entry_date=entry.entry_date,
+                action=ChangeAction.REMOVED,
+                before=_snapshot_of(entry, entry.lines.all()),
+                after={},
+                note=note[:500],
+                actor=actor,
+            )
+            for entry in rows
+        ]
+    )
+    firm_ids = {e.firm_id for e in rows}
+    TransactionClassification.objects.filter(firm_id__in=firm_ids, mirrored_entry_id__in=ids).update(
+        mirrored_entry_id=None, needs_review=True
+    )
+    TransactionClassification.objects.filter(
+        firm_id__in=firm_ids, transaction_id__in=[e.source_transaction_id for e in rows]
+    ).update(needs_review=True)
+    BillAllocation.objects.filter(line__entry_id__in=ids).delete()
+    JournalLine.objects.filter(entry_id__in=ids).delete()
+    JournalEntry.objects.filter(pk__in=ids).delete()
+    return len(rows)

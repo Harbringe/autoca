@@ -42,7 +42,8 @@ def remove_statement(statement, *, actor, note: str = "") -> dict:
         raise StatementRemovalError("This statement came from a Tally import, so it is taken back with that import. Undo the import instead.")
     entries = entries_from(statement)
 
-    locked = [e for e in entries if editing.is_locked(e)]
+    through = editing.locked_through(entries[0].client_id) if entries else None
+    locked = [e for e in entries if through is not None and e.entry_date <= through]
     if locked:
         latest = max(e.entry_date for e in locked)
         raise editing.EntryLockedError(
@@ -60,8 +61,7 @@ def remove_statement(statement, *, actor, note: str = "") -> dict:
             ready = [e for e in remaining if not any(o.supersedes_id == e.pk for o in remaining)]
             if not ready:
                 raise StatementRemovalError("These entries correct one another in a loop and cannot be removed.")
-            for entry in ready:
-                editing.remove_entry(entry, actor=actor, note=why)
+            editing.remove_entries(ready, actor=actor, note=why)
             done = {e.pk for e in ready}
             remaining = [e for e in remaining if e.pk not in done]
         document = statement.document

@@ -88,10 +88,11 @@ def test_preview_counts_and_writes_only_the_run(firm, client, senior, chart):
     run, reused = stage(client, senior, [sale(), bad, bank])
     assert reused is False
     assert run.kind == "VOUCHERS" and run.status == "PREVIEW" and run.financial_year == FY
-    assert run.counts["vouchers"] == 3 and run.counts["will_post"] == 1 and run.counts["will_make_bill"] == 1
-    assert run.counts["skipped"] == 2 and run.counts["bank_waiting"] == 1
+    # The payment from a bank ledger is written like any other voucher, even with no bank account set up for it.
+    assert run.counts["vouchers"] == 3 and run.counts["will_post"] == 2 and run.counts["will_make_bill"] == 1
+    assert run.counts["skipped"] == 1 and run.counts["bank_rows"] == 0
     reasons = {r["guid"]: r["reason"] for r in run.rows if r["action"] == "skip"}
-    assert "Ghost" in reasons["g2"] and "bank account" in reasons["g3"]
+    assert list(reasons) == ["g2"] and "Ghost" in reasons["g2"]
     posting = next(r for r in run.rows if r["guid"] == "g1")
     assert posting["lines"] and posting["figures"]["total_paise"] == 118000
     assert JournalEntry.objects.filter(client=client).count() == 0
@@ -273,7 +274,7 @@ def test_undo_of_an_unconfirmed_run_is_refused(firm, client, senior, chart):
 
 
 # ---------------------------------------------------------------------------
-# Bank vouchers: statement rows, placements, and the bills a payment settles
+# Bank vouchers: plain entries with no statement row, and the bills a payment settles
 # ---------------------------------------------------------------------------
 
 
@@ -299,21 +300,21 @@ def payment(guid="p1", number="10", date="20250405", amount=10.0):
     )
 
 
-def test_a_bank_payment_becomes_a_statement_row_a_placement_and_an_entry(firm, client, senior, banks):
+def no_statement_made(client):
+    assert StatementTransaction.objects.filter(bank_account__client=client).count() == 0
+    assert Statement.objects.filter(bank_account__client=client).count() == 0
+    assert TransactionClassification.objects.filter(transaction__bank_account__client=client).count() == 0
+    assert Document.objects.filter(client=client, kind="TALLY_EXPORT").exclude(storage_key="").count() >= 0  # the file kept is not a statement
+
+
+def test_a_bank_payment_is_a_plain_entry_and_makes_no_statement_row(firm, client, senior, banks):
     run, _ = stage(client, senior, [payment()])
-    assert run.counts["bank_rows"] == 1
+    assert run.counts["bank_rows"] == 0 and run.counts["will_post"] == 1
     done = confirm_vouchers(run, senior, senior.user)
-    assert done.result["posted"] == 1 and done.result["bank_rows"] == 1
-    txn = StatementTransaction.objects.get(bank_account=banks["Bank One"])
-    assert (txn.debit_paise, txn.credit_paise, txn.narration) == (1000, 0, "Office rent")
-    assert txn.balance_paise == 499000
-    statement = txn.statement
-    assert (statement.opening_balance_paise, statement.closing_balance_paise, statement.transaction_count) == (500000, 499000, 1)
-    assert statement.document.kind == "TALLY_EXPORT"
-    placement = TransactionClassification.objects.get(transaction=txn)
-    assert (placement.ledger.name, placement.method, placement.needs_review) == ("Rent", "REVIEWED", False)
+    assert done.result["posted"] == 1 and done.result["bank_rows"] == 0
+    no_statement_made(client)
     entry = JournalEntry.objects.get(client=client)
-    assert (entry.entry_kind, entry.voucher_type, entry.source_transaction_id) == ("BANK", "Payment", txn.pk)
+    assert (entry.entry_kind, entry.voucher_type, entry.source_transaction_id) == ("JOURNAL", "Payment", None)
     assert sorted((ln.ledger_account.name, ln.signed_paise) for ln in entry.lines.select_related("ledger_account")) == [
         ("Bank One", -1000), ("Rent", 1000),
     ]
@@ -331,8 +332,7 @@ def test_a_receipt_settles_the_bill_tally_names(firm, client, senior, banks):
     assert open_amount(bill) == 0
     allocation = BillAllocation.objects.get(bill=bill)
     assert (allocation.kind, allocation.amount_paise) == ("AGAINST_BILL", 118000)
-    txn = StatementTransaction.objects.get(bank_account=banks["Bank One"])
-    assert (txn.credit_paise, txn.balance_paise) == (118000, 618000)
+    no_statement_made(client)
 
 
 def test_a_receipt_naming_a_bill_that_is_not_here_is_left_on_account(firm, client, senior, banks):
@@ -346,25 +346,18 @@ def test_a_receipt_naming_a_bill_that_is_not_here_is_left_on_account(firm, clien
     assert BillAllocation.objects.get(client=client).kind == "ON_ACCOUNT"
 
 
-def test_a_contra_between_two_accounts_is_one_entry_with_a_row_on_each(firm, client, senior, banks):
+def test_a_contra_between_two_accounts_is_one_entry_and_no_rows(firm, client, senior, banks):
     contra = voucher(
         guid="c1", vtype="Contra", number="3", date="20250406",
         lines=[line("Bank Two", 5000.0), line("Bank One", -5000.0)],
     )
     run, _ = stage(client, senior, [contra])
-    assert run.counts["bank_rows"] == 2
+    assert run.counts["bank_rows"] == 0
     confirm_vouchers(run, senior, senior.user)
     assert JournalEntry.objects.filter(client=client).count() == 1
     entry = JournalEntry.objects.get(client=client)
-    out = TransactionClassification.objects.get(transaction__bank_account=banks["Bank One"])
-    into = TransactionClassification.objects.get(transaction__bank_account=banks["Bank Two"])
-    assert (out.ledger.name, into.ledger.name) == ("Bank Two", "Bank One")
-    assert out.is_self_transfer and into.is_self_transfer
-    # One of the two rows is the entry's own source and the other is its mirror; which is which does not matter.
-    mirrored = [c for c in (out, into) if c.mirrored_entry_id]
-    assert len(mirrored) == 1 and mirrored[0].mirrored_entry_id == entry.pk
-    source = into if mirrored[0] is out else out
-    assert entry.source_transaction_id == source.transaction_id
+    assert (entry.entry_kind, entry.source_transaction_id) == ("JOURNAL", None)
+    no_statement_made(client)
 
 
 def test_undo_takes_the_statements_and_settlements_back_with_the_entries(firm, client, senior, banks):
@@ -383,12 +376,24 @@ def test_undo_takes_the_statements_and_settlements_back_with_the_entries(firm, c
     assert TransactionClassification.objects.filter(transaction__bank_account__client=client).count() == 0
 
 
-def test_a_bank_ledger_with_no_account_is_left_out_and_counted(firm, client, senior, chart):
+def test_a_bank_ledger_with_no_account_is_written_like_any_other(firm, client, senior, chart):
     make_ledger(client, "Bank Orphan", G.BANK)
     v = voucher(guid="o1", vtype="Payment", number="1", date="20250405", lines=[line("Rent", 10.0), line("Bank Orphan", -10.0)])
     run, _ = stage(client, senior, [v])
-    assert run.counts["will_post"] == 0 and run.counts["bank_waiting"] == 1
-    assert "bank account" in run.rows[0]["reason"]
+    assert run.counts["will_post"] == 1 and run.counts["skipped"] == 0
+    assert confirm_vouchers(run, senior, senior.user).result["posted"] == 1
+
+
+def test_a_run_staged_before_bank_vouchers_stopped_making_rows_writes_none(firm, client, senior, banks):
+    run, _ = stage(client, senior, [payment()])
+    row = run.rows[0]
+    # The shape an earlier release staged: the bank kind, and the legs to write a statement row from.
+    row["entry_kind"] = "BANK"
+    row["bank"] = {"legs": [["Bank One", str(banks["Bank One"].pk), -1000]], "counter": "Rent"}
+    run.save(update_fields=["rows"])
+    confirm_vouchers(run, senior, senior.user)
+    no_statement_made(client)
+    assert JournalEntry.objects.get(client=client).entry_kind == "JOURNAL"
 
 
 # ---------------------------------------------------------------------------
@@ -417,16 +422,6 @@ def test_a_statement_for_dates_the_import_filled_is_refused(firm, client, senior
     _refuse_over_tally_history(account, SimpleNamespace(period_start=datetime.date(2025, 5, 1), period_end=datetime.date(2025, 5, 31)))
 
 
-def test_an_imported_statement_cannot_be_removed_on_its_own(firm, client, senior, banks):
-    from banking.removal import StatementRemovalError, remove_statement
-
-    run, _ = stage(client, senior, [payment()])
-    confirm_vouchers(run, senior, senior.user)
-    statement = Statement.objects.get(bank_account=banks["Bank One"])
-    with pytest.raises(StatementRemovalError):
-        remove_statement(statement, actor=senior.user)
-
-
 def test_a_creditor_ledger_becomes_a_party_even_without_a_bill(firm, client, senior, banks):
     make_ledger(client, "Zed Supplies", G.CREDITOR)
     v = voucher(
@@ -438,7 +433,6 @@ def test_a_creditor_ledger_becomes_a_party_even_without_a_bill(firm, client, sen
     party = Party.objects.get(client=client, canonical_name="Zed Supplies")
     assert party.role == "VENDOR" and party.ledger.name == "Zed Supplies"
     assert JournalEntry.objects.get(client=client).lines.get(ledger_account__name="Zed Supplies").party_id == party.pk
-    assert TransactionClassification.objects.get(transaction__bank_account=banks["Bank One"]).party_id == party.pk
 
 
 def neft(guid, date, payee, ledger, amount=100.0):
@@ -484,7 +478,7 @@ def test_undo_takes_the_rules_it_learned_back_unless_they_were_used(firm, client
 # ---------------------------------------------------------------------------
 
 
-def test_a_payment_with_tds_is_one_bank_row_and_keeps_every_line(firm, client, senior, banks):
+def test_a_payment_with_tds_is_one_entry_and_keeps_every_line(firm, client, senior, banks):
     make_ledger(client, "Zed Supplies", G.CREDITOR)
     make_ledger(client, "TDS Payable", G.DUTIES_AND_TAXES)
     v = voucher(
@@ -495,18 +489,11 @@ def test_a_payment_with_tds_is_one_bank_row_and_keeps_every_line(firm, client, s
     confirm_vouchers(run, senior, senior.user)
     entry = JournalEntry.objects.get(client=client)
     assert entry.lines.count() == 3
-    txn = StatementTransaction.objects.get(bank_account=banks["Bank One"])
-    assert (txn.debit_paise, txn.credit_paise) == (9800, 0)
-    placement = TransactionClassification.objects.get(transaction=txn)
-    assert placement.ledger.name == "Zed Supplies" and placement.party.canonical_name == "Zed Supplies"
-    # Editing it as a two-line bank row would drop the TDS line, so that is refused.
-    from ledger.editing import WrongEntryKindError, require_standard_shape
-
-    with pytest.raises(WrongEntryKindError):
-        require_standard_shape(entry)
+    assert sorted(ln.signed_paise for ln in entry.lines.all()) == [-9800, -200, 10000]
+    no_statement_made(client)
 
 
-def test_a_loan_account_statement_counts_what_is_owed(firm, client, senior, chart):
+def test_a_payment_on_a_loan_account_is_a_plain_entry(firm, client, senior, chart):
     loan = BankAccount(firm_id=client.firm_id, client=client, bank_code="SBI", kind="LOAN", ledger_name="SBI Loan")
     loan.set_account_number("5259000000")
     loan.opening_balance_paise, loan.opening_as_of = 100000, START
@@ -516,11 +503,10 @@ def test_a_loan_account_statement_counts_what_is_owed(firm, client, senior, char
     v = voucher(guid="l1", vtype="Journal", number="9", date="20250430", lines=[line("Bank Interest", 5.0), line("SBI Loan", -5.0)])
     v["vtype"] = "Payment"  # entered as a payment voucher in Tally
     run, _ = stage(client, senior, [v])
-    assert run.counts["bank_rows"] == 1
+    assert run.counts["bank_rows"] == 0 and run.counts["will_post"] == 1
     confirm_vouchers(run, senior, senior.user)
-    txn = StatementTransaction.objects.get(bank_account=loan)
-    assert (txn.debit_paise, txn.credit_paise, txn.balance_paise) == (500, 0, 100500)
-    assert txn.statement.closing_balance_paise == 100500
+    assert JournalEntry.objects.get(client=client).lines.count() == 2
+    no_statement_made(client)
 
 
 def test_tds_and_tcs_on_a_purchase_are_kept_on_the_bill(firm, client, senior, chart):
@@ -657,7 +643,7 @@ def _two_accounts(client, senior):
     return {a.ledger_name: a for a in BankAccount.objects.filter(client=client)}
 
 
-def test_a_bank_report_becomes_statement_rows_with_the_banks_own_narration(firm, client, senior, in_context):
+def test_a_bank_report_becomes_entries_with_the_banks_own_narration_and_no_statement_rows(firm, client, senior, in_context):
     from ledger.tally_voucher_import import stage_bank_reports
     from ledger.tests.tally_voucher_xml import bank_report_xml, report_row
 
@@ -669,19 +655,16 @@ def test_a_bank_report_becomes_statement_rows_with_the_banks_own_narration(firm,
     ])
     account = accounts["SBI SB A/C 62139251173"]
     run, _ = stage_bank_reports(client, senior, senior.user, reports=[("sbi.xml", data, account.pk)])
-    assert run.counts["will_post"] == 2 and run.counts["skipped"] == 1 and run.counts["bank_rows"] == 2
+    assert run.counts["will_post"] == 2 and run.counts["skipped"] == 1 and run.counts["bank_rows"] == 0
     assert any("several ledgers" in r["reason"] for r in run.rows if r["action"] == "skip")
     done = confirm_vouchers(run, senior, senior.user)
-    assert done.result["posted"] == 2 and done.result["bank_rows"] == 2
-    rows = list(StatementTransaction.objects.filter(bank_account=account).order_by("value_date"))
-    assert [(t.narration, t.credit_paise, t.debit_paise, t.balance_paise) for t in rows] == [
-        ("CASH DEPOSIT SELF", 150100, 0, 150100), ("NEFT RENT", 0, 50000, 100100),
-    ]
-    placed = {t.narration: TransactionClassification.objects.get(transaction=t).ledger.name for t in rows}
-    assert placed == {"CASH DEPOSIT SELF": "Cash", "NEFT RENT": "Rent Paid"}
+    assert done.result["posted"] == 2 and done.result["bank_rows"] == 0
+    assert StatementTransaction.objects.filter(bank_account=account).count() == 0
+    narrations = sorted(JournalEntry.objects.filter(client=client).values_list("narration", flat=True))
+    assert narrations == ["CASH DEPOSIT SELF", "NEFT RENT"]
 
 
-def test_a_transfer_in_two_banks_reports_is_written_once_with_a_row_on_each(firm, client, senior, in_context):
+def test_a_transfer_in_two_banks_reports_is_written_once(firm, client, senior, in_context):
     from ledger.tally_voucher_import import stage_bank_reports
     from ledger.tests.tally_voucher_xml import bank_report_xml, report_row
 
@@ -691,12 +674,10 @@ def test_a_transfer_in_two_banks_reports_is_written_once_with_a_row_on_each(firm
     into = bank_report_xml([report_row("7-Apr-25", "SBI SB A/C 62139251173", "Pymt", debit=5000.0, number="9")])
     # The second report prints the same voucher from the other side (money in), so it carries the same identity.
     run, _ = stage_bank_reports(client, senior, senior.user, reports=[("a.xml", out, first.pk), ("b.xml", into, second.pk)])
-    assert run.counts["will_post"] == 1 and run.counts["bank_rows"] == 2
+    assert run.counts["will_post"] == 1 and run.counts["bank_rows"] == 0
     confirm_vouchers(run, senior, senior.user)
     assert JournalEntry.objects.filter(client=client).count() == 1
-    assert StatementTransaction.objects.filter(bank_account=first).count() == 1
-    assert StatementTransaction.objects.filter(bank_account=second).count() == 1
-    assert TransactionClassification.objects.filter(transaction__bank_account__client=client, is_self_transfer=True).count() == 2
+    assert StatementTransaction.objects.filter(bank_account__client=client).count() == 0
 
 
 def test_two_reports_for_one_account_are_refused(firm, client, senior, in_context):

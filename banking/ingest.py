@@ -335,6 +335,31 @@ def _refuse_over_tally_history(account: BankAccount, parsed: ParsedStatement) ->
             f"would count those rows twice. Upload a statement that starts after {imported.period_end:%d-%m-%Y}, or undo the "
             f"Tally import first."
         )
+    # A Tally import no longer makes statement rows; its bank vouchers are entries on the account's ledger. The same money
+    # on a real statement would be posted a second time, so those entries are what a statement is checked against.
+    from ledger.models import JournalEntry
+
+    voucher_dates = list(
+        JournalEntry.objects.filter(
+            firm_id=account.firm_id,
+            client_id=account.client_id,
+            tally_voucher__isnull=False,
+            superseded_by_set__isnull=True,
+            lines__ledger_account__name__iexact=account.ledger_name,
+            entry_date__gte=parsed.period_start,
+            entry_date__lte=parsed.period_end,
+        )
+        .order_by("entry_date")
+        .values_list("entry_date", flat=True)
+        .distinct()
+    )
+    if voucher_dates:
+        raise StatementOverlapsTallyError(
+            f"This statement covers {parsed.period_start:%d-%m-%Y} to {parsed.period_end:%d-%m-%Y}, but {account} already has "
+            f"entries from the Tally import between {voucher_dates[0]:%d-%m-%Y} and {voucher_dates[-1]:%d-%m-%Y}. Uploading it as "
+            f"well would count that money twice. Upload a statement that starts after {voucher_dates[-1]:%d-%m-%Y}, or undo the "
+            f"Tally import first."
+        )
 
 
 def _check_continuity(account: BankAccount, parsed: ParsedStatement, *, allow_gap: bool) -> None:

@@ -69,43 +69,51 @@ def test_a_missing_ledger_is_skipped_and_named():
     assert isinstance(out, Skip) and "Mystery" in out.reason
 
 
-def test_a_payment_from_a_bank_account_is_a_bank_entry():
+def test_a_payment_from_a_bank_account_is_a_plain_entry_that_names_the_account():
     v = voucher("Payment", [("Rent", 1000, False), ("Bank One", -1000, False)])
     plan = plan_voucher(v, FACTS)
-    assert (plan.voucher_type, plan.entry_kind, plan.bill) == (VoucherType.PAYMENT, EntryKind.BANK, None)
-    assert plan.bank.counter == "Rent" and [(g.ledger, g.account_id, g.signed_paise) for g in plan.bank.legs] == [("Bank One", "acct-1", -1000)]
+    assert (plan.voucher_type, plan.entry_kind, plan.bill) == (VoucherType.PAYMENT, EntryKind.JOURNAL, None)
+    assert plan.bank_accounts == ("acct-1",)
 
 
-def test_a_contra_between_two_accounts_has_two_legs_and_no_counter():
+def test_a_contra_between_two_accounts_names_both_and_is_a_plain_entry():
     v = voucher("Contra", [("Bank Two", 5000, False), ("Bank One", -5000, False)])
     plan = plan_voucher(v, FACTS)
-    assert plan.entry_kind == EntryKind.BANK and plan.bank.counter is None
-    assert [g.account_id for g in plan.bank.legs] == ["acct-2", "acct-1"]
+    assert plan.entry_kind == EntryKind.JOURNAL
+    assert plan.bank_accounts == ("acct-2", "acct-1")
 
 
-def test_a_bank_ledger_with_no_account_is_skipped_and_named():
+def test_a_bank_ledger_with_no_account_is_written_not_skipped():
     v = voucher("Payment", [("Rent", 1000, False), ("Bank Orphan", -1000, False)])
-    out = plan_voucher(v, FACTS)
-    assert isinstance(out, Skip) and "Bank Orphan" in out.reason and "bank account" in out.reason
+    plan = plan_voucher(v, FACTS)
+    assert isinstance(plan, Planned) and plan.entry_kind == EntryKind.JOURNAL and plan.bank_accounts == ()
 
 
-def test_a_loan_or_card_account_is_a_bank_entry_like_any_other():
+def test_a_loan_or_card_account_is_a_plain_entry_like_any_other():
     facts = Facts(FACTS.groups, FACTS.bank_ledgers, {normal_name("Bank One"): ("acct-1", True)})
     plan = plan_voucher(voucher("Payment", [("Rent", 1000, False), ("Bank One", -1000, False)]), facts)
-    assert plan.entry_kind == EntryKind.BANK and plan.bank.legs[0].account_id == "acct-1"
+    assert plan.entry_kind == EntryKind.JOURNAL and plan.bank_accounts == ("acct-1",)
 
 
-def test_a_payment_with_tds_is_one_bank_row_placed_in_the_largest_other_line():
+def test_a_payment_with_tds_is_one_plain_entry_with_all_its_lines():
     v = voucher("Payment", [("Zed Supplies", 10000, True), ("Output CGST", -200, False), ("Bank One", -9800, False)], party="Zed Supplies")
     plan = plan_voucher(v, FACTS)
-    assert plan.entry_kind == EntryKind.BANK
-    assert plan.bank.counter == "Zed Supplies" and [(g.ledger, g.signed_paise) for g in plan.bank.legs] == [("Bank One", -9800)]
+    assert isinstance(plan, Planned) and plan.entry_kind == EntryKind.JOURNAL
+    assert plan.bank_accounts == ("acct-1",) and len(plan.voucher.lines) == 3
 
 
-def test_a_transfer_between_two_accounts_with_other_lines_waits_for_a_later_release():
+def test_a_transfer_between_two_accounts_with_other_lines_is_written_too():
     v = voucher("Contra", [("Bank Two", 5000, False), ("Bank One", -5100, False), ("Rent", 100, False)])
-    out = plan_voucher(v, FACTS)
-    assert isinstance(out, Skip) and "later release" in out.reason
+    plan = plan_voucher(v, FACTS)
+    assert isinstance(plan, Planned) and plan.bank_accounts == ("acct-2", "acct-1")
+
+
+def test_a_voucher_across_three_accounts_or_the_same_account_twice_is_written_too():
+    facts = Facts(FACTS.groups, FACTS.bank_ledgers, {**FACTS.accounts, normal_name("Bank Orphan"): ("acct-3", False)})
+    three = voucher("Contra", [("Bank Two", 3000, False), ("Bank Orphan", 2000, False), ("Bank One", -5000, False)])
+    twice = voucher("Payment", [("Rent", 2000, False), ("Bank One", -1000, False), ("Bank One", -1000, False)])
+    assert plan_voucher(three, facts).bank_accounts == ("acct-2", "acct-3", "acct-1")
+    assert plan_voucher(twice, facts).bank_accounts == ("acct-1",)
 
 
 def test_a_cash_payment_is_a_journal_entry():

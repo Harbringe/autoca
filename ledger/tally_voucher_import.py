@@ -8,9 +8,8 @@ counts and who.
 The lines of a voucher are never rebuilt (see ``ledger.tally_plan``): the books must equal Tally's. No file is kept, so a
 staged row carries everything its confirm needs.
 
-A bank voucher also becomes a row on that bank account's statement. The statement is a placeholder (a ``Document`` of kind
-Tally export) whose balances are worked out from the rows, so it proves by construction; each row is placed by a person's
-decision -- the accountant's, in Tally -- which is what the assistant later learns from.
+A bank voucher is an entry like any other. It does not become a bank statement row: a real statement is uploaded on its own,
+and an import over dates one already covers is warned about (see ``_overlap`` and ``_recheck_period``).
 """
 
 from __future__ import annotations
@@ -23,22 +22,18 @@ import os
 from decimal import Decimal
 
 from django.conf import settings
-from django.core.exceptions import ObjectDoesNotExist
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from banking.models import BankAccount, Statement, StatementTransaction
+from banking.models import BankAccount, StatementTransaction
 from classify.models import (
     CRYPTO_PURPOSE,
-    ClassificationMethod,
     ClassificationRule,
     LedgerAccount,
     LedgerGroup,
     Party,
     PartyRole,
-    TransactionClassification,
 )
-from classify.treatment import ReviewBand
 from core.crypto import blind_index
 from core.fy import financial_year
 from core.identity import invoice_key, normalise_gstin, supplier_identity
@@ -55,6 +50,7 @@ from ledger.models import (
     BillKind,
     ChangeAction,
     Direction,
+    EntryKind,
     EntryMarker,
     ImportKind,
     ImportStatus,
@@ -168,7 +164,7 @@ def stage_bank_reports(client, membership, user, *, reports: list[tuple[str, byt
 
     Each row becomes a two-line voucher between its account's ledger and the row's other ledger, and goes through the same plan, preview,
     confirm and undo as a vouchers export. A transfer between two of the client's own accounts is printed in both accounts' reports with the
-    same identity, so reports staged together write it once, with a row on each account.
+    same identity, so reports staged together write it once. Like any bank voucher it is an entry only: no statement row is made.
     """
     _require_rights(membership, client)
     if not reports:
@@ -284,20 +280,13 @@ def _stage(client, user, all_vouchers, skipped, digest, date_from, date_to, type
                 items=(
                     [[i.name, i.unit, i.quantity, i.value_paise] for i in v.items] if plan.voucher_type in _STOCK_DIRECTION else []
                 ),
-                bank=(
-                    {"legs": [[g.ledger, g.account_id, g.signed_paise] for g in plan.bank.legs], "counter": plan.bank.counter}
-                    if plan.bank
-                    else None
-                ),
+                bank_accounts=list(plan.bank_accounts),
             )
             counts["stock_lines"] += len(v.items) if plan.voucher_type in _STOCK_DIRECTION else 0
-            if plan.bank:
-                counts["bank_rows"] += len(plan.bank.legs)
-                accounts_used.update(g.account_id for g in plan.bank.legs)
+            accounts_used.update(plan.bank_accounts)
         else:
             row["action"], row["reason"] = "skip", plan.reason
             counts["skipped"] += 1
-            counts["bank_waiting"] += 1 if ("later release" in plan.reason or "bank account" in plan.reason) else 0
         rows.append(row)
     for s in skipped:
         counts["skipped"] += 1
@@ -406,34 +395,31 @@ def confirm_vouchers(run: LedgerImportRun, membership, user, *, allow_overlap: b
     done = set(TallyVoucher.objects.filter(firm_id=client.firm_id, client=client).values_list("guid", flat=True))
     result = {"posted": 0, "bills": 0, "skipped": 0, "failed": [], "bank_rows": 0, "unmatched_bills": 0, "stock_entries": 0}
     todo = sorted((r for r in run.rows if r["action"] == "post"), key=lambda r: (r["date"], r["ordinal"]))
-    try:
-        for count, row in enumerate(todo, start=1):
-            if on_progress is not None and (count % 10 == 0 or count == len(todo)):
-                on_progress(count - 1, len(todo))
-            if row["guid"] in done:
-                result["skipped"] += 1
-                continue
-            try:
-                with transaction.atomic():
-                    outcome = _write(client, user, run, row, ledgers)
-            except _Refused as exc:
-                result["failed"].append({"guid": row["guid"], "reason": str(exc)})
-                continue
-            except Exception as exc:  # one voucher must not stop the rest; its own savepoint has rolled back
-                logger.warning("A Tally voucher could not be written (%s)", type(exc).__name__)
-                result["failed"].append({"guid": row["guid"], "reason": "The voucher could not be written."})
-                continue
-            done.add(row["guid"])
-            result["posted"] += 1
-            result["bank_rows"] += outcome["bank_rows"]
-            result["unmatched_bills"] += outcome["unmatched"]
-            result["stock_entries"] += outcome["stock"]
-            if outcome["bill"]:
-                result["bills"] += 1
-            elif outcome["bill"] is None:
-                result["failed"].append({"guid": row["guid"], "reason": "Posted, but no bill was made: a duplicate invoice number."})
-    finally:
-        _finalize_statements(client, run)
+    for count, row in enumerate(todo, start=1):
+        if on_progress is not None and (count % 10 == 0 or count == len(todo)):
+            on_progress(count - 1, len(todo))
+        if row["guid"] in done:
+            result["skipped"] += 1
+            continue
+        try:
+            with transaction.atomic():
+                outcome = _write(client, user, run, row, ledgers)
+        except _Refused as exc:
+            result["failed"].append({"guid": row["guid"], "reason": str(exc)})
+            continue
+        except Exception as exc:  # one voucher must not stop the rest; its own savepoint has rolled back
+            logger.warning("A Tally voucher could not be written (%s)", type(exc).__name__)
+            result["failed"].append({"guid": row["guid"], "reason": "The voucher could not be written."})
+            continue
+        done.add(row["guid"])
+        result["posted"] += 1
+        result["bank_rows"] += outcome["bank_rows"]
+        result["unmatched_bills"] += outcome["unmatched"]
+        result["stock_entries"] += outcome["stock"]
+        if outcome["bill"]:
+            result["bills"] += 1
+        elif outcome["bill"] is None:
+            result["failed"].append({"guid": row["guid"], "reason": "Posted, but no bill was made: a duplicate invoice number."})
     try:
         with transaction.atomic():
             rule_ids = learn_rules(client, run, user)
@@ -454,7 +440,7 @@ def _recheck_period(client, run, allow_overlap: bool = False) -> None:
     first = datetime.date.fromisoformat(run.counts["date_from"])
     last = datetime.date.fromisoformat(run.counts["date_to"])
     entries = _overlap(client, first, last)["entries"]
-    accounts = {leg[1] for r in run.rows if r.get("bank") for leg in r["bank"]["legs"]}
+    accounts = {a for r in run.rows for a in _row_bank_accounts(r)}
     statement_rows = (
         StatementTransaction.objects.filter(firm_id=client.firm_id, bank_account_id__in=accounts, value_date__gte=first, value_date__lte=last).count()
         if accounts
@@ -473,6 +459,15 @@ def _recheck_period(client, run, allow_overlap: bool = False) -> None:
     )
 
 
+def _row_bank_accounts(row) -> set[str]:
+    """The bank accounts a staged voucher moves money in. A run staged before bank vouchers stopped becoming statement rows keeps
+    them under ``bank``; it is read here only to warn about an overlap, and never to write a row."""
+    accounts = set(row.get("bank_accounts") or [])
+    if row.get("bank"):
+        accounts.update(leg[1] for leg in row["bank"]["legs"])
+    return accounts
+
+
 def _write(client, user, run, row, ledgers) -> dict:
     """Write one voucher. ``bill`` in the answer is True when a bill was made, False when none was meant, None when it clashed."""
     date = datetime.date.fromisoformat(row["date"])
@@ -480,7 +475,6 @@ def _write(client, user, run, row, ledgers) -> dict:
     if through is not None and date <= through:
         raise _Refused(f"The books are signed off through {through:%d-%m-%Y}.")
     figures = row.get("figures")
-    bank = row.get("bank")
     year = financial_year(date)
 
     bill_party = _party_for(client, figures, row, ledgers) if figures else None
@@ -495,7 +489,9 @@ def _write(client, user, run, row, ledgers) -> dict:
         parties[bill_party.ledger_id] = bill_party
 
     narration = row["narration"] or f"{row['type']} {row['number']} (from Tally)".strip()
-    txns = _bank_rows(client, user, run, row, bank, date, narration) if bank else []
+    # A bank voucher is a plain entry like any other: no statement row is made for it. A run staged before that was so may still
+    # name the bank kind, which needs a statement row behind it, so it is written as the plain kind it now is.
+    entry_kind = EntryKind.JOURNAL if row["entry_kind"] == EntryKind.BANK else row["entry_kind"]
     entry = JournalEntry.objects.create(
         firm_id=client.firm_id,
         client=client,
@@ -503,9 +499,8 @@ def _write(client, user, run, row, ledgers) -> dict:
         financial_year=year,
         entry_date=date,
         voucher_type=row["voucher_type"],
-        entry_kind=row["entry_kind"],
+        entry_kind=entry_kind,
         narration=narration,
-        source_transaction=txns[0] if txns else None,
         approved_by=user,
         approved_at=timezone.now(),
         marker=EntryMarker.NONE,
@@ -525,12 +520,10 @@ def _write(client, user, run, row, ledgers) -> dict:
         firm_id=client.firm_id, client=client, run=run, guid=row["guid"], tally_type=row["type"],
         tally_number=row["number"], entry=entry,
     )
-    if bank:
-        _classify_bank(user, bank, txns, entry, ledgers, parties)
     unmatched = _settle(client, lines, row["lines"])
     made = _bill(client, bill_party, entry, row, figures, date, year) if figures else False
     stock = _stock(client, user, run, row, date)
-    return {"bill": made, "unmatched": unmatched, "bank_rows": len(txns), "stock": stock}
+    return {"bill": made, "unmatched": unmatched, "bank_rows": 0, "stock": stock}
 
 
 def _party_for(client, figures, row, ledgers) -> Party:
@@ -657,122 +650,6 @@ def _settle(client, line_objects, row_lines) -> int:
             except BillingError:
                 unmatched += 1
     return unmatched
-
-
-# ---------------------------------------------------------------------------
-# Bank rows
-# ---------------------------------------------------------------------------
-
-
-def _bank_rows(client, user, run, row, bank, date, narration) -> list[StatementTransaction]:
-    rows = []
-    for index, (_ledger, account_id, signed) in enumerate(bank["legs"]):
-        account = BankAccount.objects.get(pk=account_id, firm_id=client.firm_id, client=client)
-        statement = _statement_for(client, user, run, account, date)
-        if StatementTransaction.objects.filter(bank_account=account, value_date=date).exclude(statement=statement).exists():
-            raise _Refused(f"{account} already has statement rows on {date:%d-%m-%Y}.")
-        rows.append(
-            StatementTransaction.objects.create(
-                firm_id=client.firm_id,
-                statement=statement,
-                bank_account=account,
-                row_number=statement.transactions.count() + 1,
-                value_date=date,
-                narration=narration,
-                # Statement columns are the bank's: money out is a debit. The books' sign is the other way round.
-                debit_paise=-signed if signed < 0 else 0,
-                credit_paise=signed if signed > 0 else 0,
-                balance_paise=0,  # worked out when the run ends, from the rows that were written
-                dedupe_hash=hashlib.sha256(f"tally:{row['guid']}:{index}:{account_id}".encode()).hexdigest(),
-            )
-        )
-    return rows
-
-
-def _statement_for(client, user, run, account, date) -> Statement:
-    digest = hashlib.sha256(f"tally-import:{run.pk}:{account.pk}".encode()).hexdigest()
-    document = Document.objects.filter(firm_id=client.firm_id, client=client, sha256=digest).first()
-    if document is not None:
-        return document.statement
-    document = Document.objects.create(
-        firm_id=client.firm_id,
-        client=client,
-        kind=DocumentKind.TALLY_EXPORT,
-        original_filename=_doc_name(run),
-        sha256=digest,
-        pipeline_tier=PipelineTier.MANUAL,
-        status=DocumentStatus.PARSED,
-        uploaded_by=user,
-    )
-    return Statement.objects.create(
-        firm_id=client.firm_id,
-        document=document,
-        bank_account=account,
-        period_start=date,
-        period_end=date,
-        opening_balance_paise=account.opening_balance_paise or 0,
-        closing_balance_paise=0,
-        total_debit_paise=0,
-        total_credit_paise=0,
-        transaction_count=0,
-        parser="tally-import",
-    )
-
-
-def _classify_bank(user, bank, txns, entry, ledgers, parties) -> None:
-    """Place each row where Tally put it, as a person's decision, so the assistant can learn from it and nothing is re-asked."""
-    now = timezone.now()
-    legs = bank["legs"]
-    if len(legs) == 2:  # between two of the client's own accounts: each row points at the other account's ledger
-        placed = [ledgers[normal_name(legs[1][0])], ledgers[normal_name(legs[0][0])]]
-    else:
-        placed = [ledgers[normal_name(bank["counter"])]]
-    for index, (txn, ledger) in enumerate(zip(txns, placed, strict=True)):
-        party = parties.get(ledger.pk)
-        TransactionClassification.objects.create(
-            firm_id=txn.firm_id,
-            transaction=txn,
-            ledger=ledger,
-            party=party,
-            method=ClassificationMethod.REVIEWED,
-            confidence=1.0,
-            review_band=ReviewBand.HIGH,
-            needs_review=False,
-            reviewed_by=user,
-            reviewed_at=now,
-            counterparty=party.canonical_name if party else "",
-            is_self_transfer=len(legs) == 2,
-            book_narration=entry.narration,
-            rationale="Imported from Tally.",
-            mirrored_entry_id=entry.pk if index == 1 else None,
-        )
-
-
-def _finalize_statements(client, run) -> None:
-    """Work each placeholder statement's running balance, period and totals out from the rows that were actually written."""
-    documents = Document.objects.filter(
-        firm_id=client.firm_id, client=client, kind=DocumentKind.TALLY_EXPORT, original_filename=_doc_name(run)
-    )
-    for document in documents:
-        try:
-            statement = document.statement
-        except ObjectDoesNotExist:
-            continue
-        rows = list(statement.transactions.order_by("value_date", "row_number"))
-        if not rows:
-            continue
-        balance = statement.opening_balance_paise
-        owed = statement.bank_account.is_liability  # a loan or card statement prints what is owed, which a debit raises
-        for txn in rows:
-            balance += (txn.debit_paise - txn.credit_paise) if owed else (txn.credit_paise - txn.debit_paise)
-            txn.balance_paise = balance
-        StatementTransaction.objects.bulk_update(rows, ["balance_paise"])
-        statement.period_start, statement.period_end = rows[0].value_date, rows[-1].value_date
-        statement.closing_balance_paise = balance
-        statement.total_debit_paise = sum(t.debit_paise for t in rows)
-        statement.total_credit_paise = sum(t.credit_paise for t in rows)
-        statement.transaction_count = len(rows)
-        statement.save()
 
 
 # ---------------------------------------------------------------------------

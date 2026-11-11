@@ -67,30 +67,15 @@ class BillFigures:
 
 
 @dataclass(frozen=True)
-class BankLeg:
-    """One line of a bank voucher that sits on one of the client's bank accounts."""
-
-    ledger: str
-    account_id: str
-    #: Debit positive (the books' sign): positive is money into the account.
-    signed_paise: int
-
-
-@dataclass(frozen=True)
-class BankPlan:
-    legs: tuple[BankLeg, ...]
-    #: The other ledger of a one-sided bank voucher (a payment to Rent), or None when both lines are bank accounts (a Contra).
-    counter: str | None
-
-
-@dataclass(frozen=True)
 class Planned:
     voucher: ParsedVoucher
     voucher_type: str
     entry_kind: str
     bill: BillFigures | None
     note: str = ""
-    bank: BankPlan | None = None
+    #: Ids of the client's bank accounts the voucher moves money in. Nothing is written to them: a Tally voucher never becomes a
+    #: bank statement row. It is kept so that an import over dates a real statement already covers can be warned about.
+    bank_accounts: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -126,30 +111,17 @@ def plan_voucher(v: ParsedVoucher, facts: Facts, type_map: dict[str, str] | None
 
 
 def _bank_voucher(v: ParsedVoucher, vtype: str, facts: Facts) -> Planned | Skip:
-    bank_lines = [
-        line for line in v.lines if normal_name(line.ledger) in facts.bank_ledgers or normal_name(line.ledger) in facts.accounts
-    ]
-    if not bank_lines:
-        return Planned(v, vtype, EntryKind.JOURNAL, None)  # cash, or an account that is not a bank
-    legs = []
-    for line in bank_lines:
-        known = facts.accounts.get(normal_name(line.ledger))
-        if known is None:
-            return Skip(v, f"The bank ledger {line.ledger!r} has no bank account in AutoCA. Add the bank account first.")
-        legs.append(BankLeg(line.ledger, known[0], line.signed_paise))
-    if len({leg.account_id for leg in legs}) != len(legs):
-        return Skip(v, "A voucher that uses the same bank account twice is imported in a later release.")
-    others = [line for line in v.lines if line not in bank_lines]
-    if len(legs) == 2:
-        if others:
-            return Skip(v, "A transfer between two bank accounts with other lines is imported in a later release.")
-        return Planned(v, vtype, EntryKind.BANK, None, bank=BankPlan(tuple(legs), None))
-    if len(legs) > 2:
-        return Skip(v, "A voucher across more than two bank accounts is imported in a later release.")
-    # One bank account and one or more other lines (a payment with TDS, a receipt with charges): the statement row is the bank
-    # line, and the row is placed in the largest of the others.
-    counter = max(others, key=lambda line: abs(line.signed_paise)).ledger
-    return Planned(v, vtype, EntryKind.BANK, None, bank=BankPlan(tuple(legs), counter))
+    """A payment, receipt or contra is written exactly as Tally had it, whether or not it touches a bank.
+
+    It is a plain entry on its ledgers, the same as a cash voucher. It does not become a bank statement row, so the bank
+    ledger carries it and nothing else does; a real statement is uploaded on its own, for dates this import does not cover.
+    """
+    accounts = tuple(
+        dict.fromkeys(
+            known[0] for line in v.lines if (known := facts.accounts.get(normal_name(line.ledger))) is not None
+        )
+    )
+    return Planned(v, vtype, EntryKind.JOURNAL, None, bank_accounts=accounts)
 
 
 def _party_line(v: ParsedVoucher, facts: Facts, side: str):

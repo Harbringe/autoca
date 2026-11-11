@@ -214,7 +214,7 @@ def test_discover_refuses_a_file_that_is_not_xml(api, client_record):
     assert response.status_code == 400
 
 
-def test_bank_reports_preview_and_confirm(api, firm, client_record):
+def test_bank_reports_preview_and_confirm_as_entries_only(api, firm, client_record):
     from banking.models import BankAccount
     from ledger.tests.tally_voucher_xml import bank_report_xml, report_row
 
@@ -232,9 +232,9 @@ def test_bank_reports_preview_and_confirm(api, firm, client_record):
     )
     assert response.status_code == 201
     run = response.json()
-    assert run["counts"]["bank_rows"] == 1
+    assert run["counts"]["bank_rows"] == 0
     done = post_run(api, client_record, run["id"])[1]
-    assert done["result"]["posted"] == 1 and done["result"]["bank_rows"] == 1
+    assert done["result"]["posted"] == 1 and done["result"]["bank_rows"] == 0
 
 
 def test_a_bank_report_needs_an_account_for_each_file(api, client_record):

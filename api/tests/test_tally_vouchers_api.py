@@ -130,8 +130,8 @@ def test_a_file_over_the_limit_is_413(api, client_record, chart, settings):
     assert response.status_code == 413 and response.json()["code"] == "tally_file_too_large"
 
 
-def test_only_xml_is_accepted(api, client_record, chart):
-    response = upload(api, client_record, name="vouchers.csv")
+def test_only_tally_file_types_are_accepted(api, client_record, chart):
+    response = upload(api, client_record, name="vouchers.txt")
     assert response.status_code == 400
 
 
@@ -209,8 +209,8 @@ def test_setup_refuses_a_group_that_is_not_ours(api, client_record):
     assert response.status_code == 400
 
 
-def test_discover_refuses_a_file_that_is_not_xml(api, client_record):
-    response = api.post(url(client_record, "discover"), {"files": _files(("masters.csv", b"a,b"))}, format="multipart")
+def test_discover_refuses_a_file_that_is_not_a_tally_export(api, client_record):
+    response = api.post(url(client_record, "discover"), {"files": _files(("masters.txt", b"a,b"))}, format="multipart")
     assert response.status_code == 400
 
 

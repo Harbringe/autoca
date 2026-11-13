@@ -21,6 +21,7 @@ import logging
 import os
 from decimal import Decimal
 
+from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -72,7 +73,7 @@ from ledger.tally_import import (
 from ledger.tally_learning import learn_rules
 from ledger.tally_parse import normal_name
 from ledger.tally_plan import MAPPABLE_TYPES, Facts, Planned, is_known_type, plan_voucher
-from ledger.tally_vouchers import ParsedVoucher, VoucherLine, parse_vouchers, voucher_file_limit
+from ledger.tally_vouchers import ParsedVoucher, VoucherLine, parse_vouchers
 
 logger = logging.getLogger("autoca.tally")
 
@@ -129,7 +130,7 @@ def stage_vouchers(client, membership, user, *, data: bytes, filename: str, date
     _require_rights(membership, client)
     type_map = normalise_type_map(voucher_types)
     digest = hashlib.sha256(data + repr(sorted(type_map.items())).encode()).hexdigest() if type_map else hashlib.sha256(data).hexdigest()
-    parsed = parse_vouchers(data, filename, max_bytes=voucher_file_limit(filename))
+    parsed = parse_vouchers(data, filename, max_bytes=settings.MAX_TALLY_IMPORT_BYTES)
     if len(parsed.companies) > 1:
         raise TallyImportError("This file has vouchers from more than one company. Export one company at a time.")
     document = _keep_file(client, user, data, filename)
@@ -191,7 +192,7 @@ def stage_bank_reports(client, membership, user, *, reports: list[tuple[str, byt
         if str(account.pk) in used:
             raise TallyImportError(f"Two reports are for {account}. Choose a different account for each report.")
         used.add(str(account.pk))
-        report = parse_bank_report(data, filename, max_bytes=voucher_file_limit(filename))
+        report = parse_bank_report(data, filename, max_bytes=settings.MAX_TALLY_IMPORT_BYTES)
         digest.update(hashlib.sha256(data).digest() + str(account.pk).encode())
         for voucher in _vouchers_from_report(report, account.ledger_name):
             merged.setdefault(voucher.guid, voucher)  # the other side of a transfer is the same voucher

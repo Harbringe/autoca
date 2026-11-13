@@ -19,6 +19,7 @@ from core.jobs import JobResult, enqueue_job, mark_staged
 from core.models import FirmMembership, Job
 from core.rbac import has_permission
 from ledger.models import ImportKind, ImportStatus, LedgerImportRun
+from ledger.tally_import import TallyImportError
 from ledger.tally_voucher_import import check_postable, confirm_vouchers
 
 logger = logging.getLogger(__name__)
@@ -31,8 +32,12 @@ def enqueue_post(run: LedgerImportRun, membership, user, *, allow_overlap: bool)
     """Check the import can be posted now, mark it as being posted, and queue the work. Returns at once."""
     check_postable(run, membership, allow_overlap=allow_overlap)
     total = int(run.counts.get("will_post", 0))
-    run.result = {"posting": True, "progress": {"done": 0, "total": total}}
-    run.save(update_fields=["result"])
+    # Only a run still waiting may be marked as being posted; a discard that got there first wins.
+    marked = LedgerImportRun.objects.filter(pk=run.pk, status=ImportStatus.PREVIEW).update(
+        result={"posting": True, "progress": {"done": 0, "total": total}}
+    )
+    if not marked:
+        raise TallyImportError("This import is no longer waiting to be posted.")
     outcome = enqueue_job(
         firm_id=run.firm_id,
         kind=KIND,
@@ -44,6 +49,27 @@ def enqueue_post(run: LedgerImportRun, membership, user, *, allow_overlap: bool)
     if not outcome.reused:
         mark_staged(outcome.job)
     return outcome
+
+
+def enqueue_post_all(client, membership, user, *, allow_overlap: bool) -> list[LedgerImportRun]:
+    """Queue every waiting month of the client's imports for posting, oldest first (the books are written in date order).
+
+    Months with nothing to post are left alone. Every month is checked before any is queued, so one that needs the accountant's
+    say-so (entries already in its dates) stops the lot and nothing is half-queued.
+    """
+    waiting = [
+        run
+        for run in LedgerImportRun.objects.filter(
+            firm_id=client.firm_id, client=client, kind=ImportKind.VOUCHERS, status=ImportStatus.PREVIEW
+        ).select_related("client", "document")
+        if int(run.counts.get("will_post", 0)) > 0 and not (run.result or {}).get("posting")
+    ]
+    waiting.sort(key=lambda run: run.counts["date_from"])
+    for run in waiting:
+        check_postable(run, membership, allow_overlap=allow_overlap)
+    for run in waiting:
+        enqueue_post(run, membership, user, allow_overlap=allow_overlap)
+    return waiting
 
 
 def _note(run_id, **result) -> None:

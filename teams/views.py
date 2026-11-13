@@ -8,13 +8,15 @@ import logging
 
 from django.conf import settings
 from django.contrib.auth import authenticate, login
-from django.core.exceptions import ValidationError
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 from django.db.models import Count
 from django.http import Http404, JsonResponse
 from django.utils import timezone
 from django.views.decorators.http import require_http_methods
+from drf_spectacular.utils import extend_schema
 from rest_framework import serializers
+from rest_framework.exceptions import Throttled as ApiThrottled
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -22,8 +24,9 @@ from api.permissions import HasFirmPermission
 from core import throttle
 from core.access import visible_clients
 from core.db.session import TenantContextError, firm_context
+from core.http import client_ip
 from core.models import Client, ClientAssignment, Firm, FirmMembership, Role, User
-from teams import activity, schemas, service
+from teams import activity, mail, schemas, service
 from teams.models import Invite, TeamEventKind, hash_token
 
 security_log = logging.getLogger("autoca.security")
@@ -152,6 +155,24 @@ class InviteSerializer(serializers.Serializer):
     manager = serializers.UUIDField(required=False, allow_null=True)
 
 
+class BulkInviteSerializer(serializers.Serializer):
+    rows = serializers.ListField(child=InviteSerializer(), min_length=1, max_length=50, help_text="Up to 50 people.")
+
+
+class BulkInviteRowSerializer(serializers.Serializer):
+    email = serializers.CharField()
+    ok = serializers.BooleanField()
+    error = serializers.CharField(required=False, help_text="Why this row was not invited.")
+    link = serializers.CharField(required=False)
+    emailed = serializers.BooleanField(required=False)
+    role_display = serializers.CharField(required=False)
+    expires_at = serializers.DateTimeField(required=False)
+
+
+class BulkInviteResultSerializer(serializers.Serializer):
+    results = BulkInviteRowSerializer(many=True)
+
+
 class MemberUpdateSerializer(serializers.Serializer):
     role = serializers.ChoiceField(choices=Role.choices, required=False)
     manager = serializers.UUIDField(required=False, allow_null=True)
@@ -200,22 +221,11 @@ class MembersView(TeamView):
 
     @schemas.members_post(InviteSerializer)
     def post(self, request):
-        actor = request.membership
         payload = InviteSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         data = payload.validated_data
-        manager = _any_member(actor, data["manager"]) if data.get("manager") else None
-        record, link = service.invite(
-            actor,
-            email=data["email"],
-            full_name=data.get("full_name", ""),
-            role=data["role"],
-            manager=manager,
-        )
-        return Response(
-            {**_invite(record), "link": f"{settings.FRONTEND_URL}/invite/{link}"},
-            status=201,
-        )
+        record, url, emailed = _issue_invite(request, data)
+        return Response({**_invite(record), "link": url, "emailed": emailed}, status=201)
 
 
 class MemberView(TeamView):
@@ -385,6 +395,55 @@ class ClientTeamView(TeamView):
 # ---------------------------------------------------------------------------
 
 
+def _issue_invite(request, data) -> tuple[Invite, str, bool]:
+    """One invitation, with the limits on making them. Returns the record, the link, and whether it was also emailed.
+
+    The link goes to the person who sends it (there is no email unless the platform has been set up for it), so an invitation is a way
+    to try an address and a password against the whole platform. Making them is limited per sender and per address, and a bulk
+    request counts every row.
+    """
+    actor = request.membership
+    manager = _any_member(actor, data["manager"]) if data.get("manager") else None
+    issuer, target = str(request.user.pk), data["email"].strip().lower()
+    try:
+        throttle.check("invite_create", issuer)
+        throttle.check("invite_target", target)
+    except throttle.Throttled as exc:
+        raise ApiThrottled(wait=exc.retry_after) from exc
+    record, link = service.invite(
+        actor,
+        email=data["email"],
+        full_name=data.get("full_name", ""),
+        role=data["role"],
+        manager=manager,
+    )
+    throttle.record_failure("invite_create", issuer)
+    throttle.record_failure("invite_target", target)
+    return record, *_deliver(request, record, link)
+
+
+def _deliver(request, record: Invite, link: str) -> tuple[str, bool]:
+    """The link as a URL, and an attempt to email it (which does nothing unless emailing has been switched on)."""
+    url = f"{settings.FRONTEND_URL}/invite/{link}"
+    actor = request.membership
+    emailed = mail.send_invite(
+        to=record.email,
+        firm_name=Firm.objects.get(pk=actor.firm_id).name,
+        inviter=service.label(actor),
+        role="Firm owner" if record.make_owner else Role(record.role).label,
+        url=url,
+        expires_days=max((record.expires_at - timezone.now()).days, 1),
+    )
+    return url, emailed
+
+
+def _status(record: Invite) -> str:
+    left = record.expires_at - timezone.now()
+    if left <= datetime.timedelta(0):
+        return "expired"
+    return "expiring_soon" if left < datetime.timedelta(hours=48) else "pending"
+
+
 def _invite(record: Invite) -> dict:
     return {
         "id": str(record.pk),
@@ -394,6 +453,7 @@ def _invite(record: Invite) -> dict:
         "role_display": Role(record.role).label,
         "manager": _person(record.manager),
         "expires_at": record.expires_at,
+        "status": _status(record),
         "created_at": record.created_at,
         "created_by": getattr(record.created_by, "email", None),
     }
@@ -404,7 +464,8 @@ class InvitesView(TeamView):
 
     @schemas.invites_get
     def get(self, request):
-        invites = service.visible_invites(request.membership).filter(expires_at__gt=timezone.now())
+        # Expired ones stay listed for a month, so they can be replaced with a new link instead of being forgotten.
+        invites = service.visible_invites(request.membership).filter(expires_at__gt=timezone.now() - datetime.timedelta(days=30))
         return Response({"results": [_invite(i) for i in invites]})
 
 
@@ -418,6 +479,85 @@ class InviteView(TeamView):
             raise Http404("No such invite.")
         service.revoke_invite(request.membership, record)
         return Response(status=204)
+
+
+class MembersBulkView(TeamView):
+    required_permission = "member.invite"
+
+    @extend_schema(
+        tags=["team"],
+        summary="Invite several people at once",
+        description=(
+            "Up to 50 rows. Each is checked and limited like a single invitation; one that cannot be made says why and the others "
+            "still go. Every link is shown only in this response."
+        ),
+        request=BulkInviteSerializer,
+        responses={200: BulkInviteResultSerializer},
+    )
+    def post(self, request):
+        payload = BulkInviteSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        results = []
+        for row in payload.validated_data["rows"]:
+            try:
+                with transaction.atomic():
+                    record, url, emailed = _issue_invite(request, row)
+            except ApiThrottled:
+                results.append({"email": row["email"], "ok": False, "error": "Too many invitations just now. Try again in a while."})
+            except service.TeamError as exc:
+                results.append({"email": row["email"], "ok": False, "error": "; ".join(exc.messages)})
+            except (PermissionDenied, Http404) as exc:
+                results.append({"email": row["email"], "ok": False, "error": str(exc) or "Not allowed."})
+            except (ValidationError, serializers.ValidationError) as exc:
+                results.append({"email": row["email"], "ok": False, "error": "; ".join(getattr(exc, "messages", None) or [str(exc)])})
+            else:
+                results.append(
+                    {
+                        "email": record.email,
+                        "ok": True,
+                        "link": url,
+                        "emailed": emailed,
+                        "role_display": Role(record.role).label,
+                        "expires_at": record.expires_at,
+                    }
+                )
+        return Response({"results": results})
+
+
+class InviteRegenerateView(TeamView):
+    required_permission = "member.invite"
+
+    @extend_schema(
+        tags=["team"],
+        summary="Replace an invitation's link",
+        description="The secret in a link is never stored, so a lost link cannot be shown again: this makes a new one and the old one stops working.",
+        request=None,
+        responses={201: schemas.InviteCreatedSerializer},
+    )
+    def post(self, request, pk):
+        record = service.visible_invites(request.membership).filter(pk=pk).first()
+        if record is None:
+            raise Http404("No such invite.")
+        fresh, link = service.regenerate_invite(request.membership, record)
+        url, emailed = _deliver(request, fresh, link)
+        return Response({**_invite(fresh), "link": url, "emailed": emailed}, status=201)
+
+
+class InviteExtendView(TeamView):
+    required_permission = "member.invite"
+
+    @extend_schema(
+        tags=["team"],
+        summary="Give an invitation another week",
+        description="Adds seven days, never going past thirty days after the invitation was made.",
+        request=None,
+        responses={200: schemas.InviteRecordSerializer},
+    )
+    def post(self, request, pk):
+        record = service.visible_invites(request.membership).filter(pk=pk).first()
+        if record is None:
+            raise Http404("No such invite.")
+        return Response(_invite(service.extend_invite(request.membership, record)))
 
 
 class EventsView(TeamView):
@@ -524,31 +664,83 @@ def _body(request) -> dict:
         return {}
 
 
+def _throttled_response(exc: throttle.Throttled) -> JsonResponse:
+    response = _json_error(
+        "too_many_attempts", f"Too many attempts. Try again in {max(exc.retry_after // 60, 1)} minutes.", 429
+    )
+    response["Retry-After"] = str(exc.retry_after)
+    return response
+
+
+_INVALID = "This invite link isn't valid. Ask for a new one."
+
+
+def _describe(token: str) -> JsonResponse:
+    """What an invite is for. It says nothing about whether the address already has an account: whoever holds the link may be the one
+    who made it, and could otherwise use it to learn who has an account on the platform."""
+    parts = service.split_link(token)
+    if parts is None:
+        return _json_error("invalid_invite", _INVALID, 404)
+    firm_id, secret = parts
+    throttle_key = hash_token(secret)
+    try:
+        throttle.check("invite", throttle_key)
+    except throttle.Throttled as exc:
+        return _throttled_response(exc)
+    try:
+        with transaction.atomic(), firm_context(firm_id):
+            record = service.find_invite(secret)
+            problem = service.invite_problem(record)
+            if problem:
+                throttle.record_failure("invite", throttle_key)
+                return _json_error("invalid_invite", problem, 410 if record else 404)
+            firm = Firm.objects.get(pk=record.firm_id)
+            return JsonResponse(
+                {
+                    "email": record.email,
+                    "full_name": record.full_name,
+                    "firm": firm.name,
+                    "role_display": "Firm owner" if record.make_owner else Role(record.role).label,
+                    "team": service.label(record.manager) if record.manager else "",
+                }
+            )
+    except TenantContextError:
+        return _json_error("invalid_invite", _INVALID, 404)
+
+
+@require_http_methods(["POST"])
+def describe_invite(request):
+    """POST {token} describes the invite. The token travels in the body, not the URL: a URL is written to access logs, browser history
+    and Referer headers, and the token is a credential."""
+    return _describe(str(_body(request).get("token", ""))[:200])
+
+
 @require_http_methods(["GET", "POST"])
 def accept_invite(request):
-    """GET ?token= describes the invite; POST {token, full_name, password} redeems it.
+    """POST {token, full_name, password} redeems an invite; GET ?token= describes it (kept for links already in use).
 
     The token carries the firm id so the lookup can run under that firm's
-    tenant context before anyone is signed in. Throttled on the token itself.
+    tenant context before anyone is signed in. Throttled on the token itself,
+    and, when the address already has an account, on the sign-in counters too.
     Redeeming signs the person in with a password only; the MFA middleware then
     sends them to enrol an authenticator before anything else.
     """
-    data = request.GET if request.method == "GET" else _body(request)
+    if request.method == "GET":
+        return _describe(str(request.GET.get("token", ""))[:200])
+
+    data = _body(request)
     token = str(data.get("token", ""))[:200]
     parts = service.split_link(token)
     if parts is None:
-        return _json_error("invalid_invite", "This invite link isn't valid. Ask for a new one.", 404)
+        return _json_error("invalid_invite", _INVALID, 404)
     firm_id, secret = parts
     throttle_key = hash_token(secret)
+    address = client_ip(request) or ""
 
     try:
         throttle.check("invite", throttle_key)
     except throttle.Throttled as exc:
-        response = _json_error(
-            "too_many_attempts", f"Too many attempts. Try again in {max(exc.retry_after // 60, 1)} minutes.", 429
-        )
-        response["Retry-After"] = str(exc.retry_after)
-        return response
+        return _throttled_response(exc)
 
     try:
         with transaction.atomic(), firm_context(firm_id):
@@ -559,26 +751,20 @@ def accept_invite(request):
                 return _json_error("invalid_invite", problem, 410 if record else 404)
 
             existing = User.objects.filter(email=record.email).first()
-            if request.method == "GET":
-                firm = Firm.objects.get(pk=record.firm_id)
-                return JsonResponse(
-                    {
-                        "email": record.email,
-                        "full_name": record.full_name,
-                        "firm": firm.name,
-                        "role_display": "Firm owner" if record.make_owner else Role(record.role).label,
-                        "team": service.label(record.manager) if record.manager else "",
-                        "has_account": existing is not None,
-                    }
-                )
-
             password = str(data.get("password", ""))
             if existing is not None:
-                if authenticate(request, username=existing.email, password=password) is None:
+                # A password is being tried against an account anywhere on the platform, so it counts against that account and that
+                # address like any sign-in, not only against this one invite (which a sender can replace at will).
+                try:
+                    throttle.sign_in_check(address, existing.email)
+                except throttle.Throttled as exc:
+                    security_log.warning("invite sign-in refused (locked out) ip=%s", address)
+                    return _throttled_response(exc)
+                # A platform owner or staff account is never attached to a firm by an invite; it answers as a wrong password does.
+                if existing.is_superuser or existing.is_staff or authenticate(request, username=existing.email, password=password) is None:
                     throttle.record_failure("invite", throttle_key)
-                    return _json_error(
-                        "invalid_credentials", "That isn't the password for this account.", 401
-                    )
+                    throttle.sign_in_failed(address, existing.email)
+                    return _json_error("invalid_credentials", "That isn't the password for this account.", 401)
             try:
                 membership = service.accept(
                     record,
@@ -599,7 +785,7 @@ def accept_invite(request):
                 )
             user = membership.user
     except TenantContextError:
-        return _json_error("invalid_invite", "This invite link isn't valid. Ask for a new one.", 404)
+        return _json_error("invalid_invite", _INVALID, 404)
 
     user.backend = settings.AUTHENTICATION_BACKENDS[0]
     login(request, user)

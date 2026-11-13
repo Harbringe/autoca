@@ -560,9 +560,10 @@ class ClassificationRule(UUIDModel, FirmScopedModel):
         if self.match_type == MatchType.CHANNEL_IS:
             return facts.channel == self.pattern
         if self.match_type == MatchType.REGEX:
-            from classify.regex_guard import MAX_TEXT_LENGTH
+            from classify.regex_guard import MAX_TEXT_LENGTH, is_safe
 
-            return bool(re.search(self.pattern, facts.raw[:MAX_TEXT_LENGTH], re.IGNORECASE))
+            # Checked here as well as when the rule is saved: a rule stored before the guard was tightened is not run if it fails it.
+            return is_safe(self.pattern) and bool(re.search(self.pattern, facts.raw[:MAX_TEXT_LENGTH], re.IGNORECASE))
 
         from classify.narration import normalise
 

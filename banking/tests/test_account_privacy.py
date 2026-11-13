@@ -88,3 +88,20 @@ def test_a_ciphertext_cannot_be_read_under_another_firms_context(client):
     smuggled = BankAccount(firm_id=other.pk, account_number_enc=blob)
     with firm_context(other.pk), pytest.raises(EnvelopeError):
         assert smuggled.account_number
+
+
+def test_two_accounts_ending_in_the_same_digits_are_numbered_not_named_by_their_full_number(client):
+    """The ledger name is plaintext, so the full account number must never be put into it, even to tell two accounts apart."""
+    numbers = ["900000000007214", "800000000007214", "700000000007214"]
+    with firm_context(client.firm_id):
+        made = []
+        for number in numbers:
+            account = BankAccount(firm_id=client.firm_id, client=client, bank_code="AXIS")
+            account.set_account_number(number)
+            account.save()
+            made.append(account)
+
+        names = [a.ledger_name for a in made]
+        assert names == ["Axis Bank A/c 7214", "Axis Bank A/c 7214 (2)", "Axis Bank A/c 7214 (3)"]
+        for number in numbers:
+            assert all(number not in name for name in names)

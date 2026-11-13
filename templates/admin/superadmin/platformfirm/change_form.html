@@ -1,0 +1,69 @@
+{% extends "admin/change_form.html" %}
+{% comment %}
+The firm page doubles as the onboarding page: the owner's invitation link (shown once, straight after it is made), a checklist
+of what has happened since, and the buttons to replace or cancel the invitation. Nothing of the firm's books is shown here.
+{% endcomment %}
+{% block content %}
+{% if onboarding_error %}<div class="alert alert-danger">The onboarding panel could not be read. Check the server log.</div>{% endif %}
+{% if original and onboarding %}
+<div class="pf-card pf-card--pad mb-3">
+  <h2>Onboarding</h2>
+  <div>
+    {% if owner_link %}
+    <div class="alert alert-warning">
+      <strong>The owner's invitation link</strong> (shown now and not again; to get another, make a new one below):
+      <div class="mt-2"><input type="text" class="form-control" readonly value="{{ owner_link }}" onclick="this.select()"></div>
+      <small>Send it to {{ onboarding.owner_invite_email }}. It works once and lasts 14 days. They choose their own password and set up their own authenticator.</small>
+    </div>
+    {% endif %}
+    <ol class="pf-steps mb-3">
+      <li class="{% if onboarding.owner_invite != 'none' %}pf-done{% endif %}"><span class="pf-step__bar"></span>
+        <span class="pf-step__title"><span class="pf-mark">{% if onboarding.owner_invite != "none" %}Done{% else %}Next{% endif %}</span> Owner invited</span>
+        <span class="pf-faint">{% if onboarding.owner_invite_email %}{{ onboarding.owner_invite_email }}{% endif %}{% if onboarding.owner_invite == "pending" %}, waiting, expires {{ onboarding.owner_invite_expires|date:"j M Y" }}{% elif onboarding.owner_invite == "expired" %}, expired{% elif onboarding.owner_invite == "revoked" %}, cancelled{% endif %}</span></li>
+      <li class="{% if onboarding.owner_joined %}pf-done{% endif %}"><span class="pf-step__bar"></span>
+        <span class="pf-step__title"><span class="pf-mark">{% if onboarding.owner_joined %}Done{% else %}Next{% endif %}</span> Owner joined</span>
+        <span class="pf-faint">{{ onboarding.owner_email }}</span></li>
+      <li class="{% if onboarding.owner_has_authenticator %}pf-done{% endif %}"><span class="pf-step__bar"></span>
+        <span class="pf-step__title"><span class="pf-mark">{% if onboarding.owner_has_authenticator %}Done{% else %}Next{% endif %}</span> Authenticator set up</span>
+        <span class="pf-faint">&nbsp;</span></li>
+      <li class="{% if onboarding.clients %}pf-done{% endif %}"><span class="pf-step__bar"></span>
+        <span class="pf-step__title"><span class="pf-mark">{% if onboarding.clients %}Done{% else %}Next{% endif %}</span> First client added</span>
+        <span class="pf-faint">{{ onboarding.clients }} so far</span></li>
+      <li class="{% if onboarding.statements %}pf-done{% endif %}"><span class="pf-step__bar"></span>
+        <span class="pf-step__title"><span class="pf-mark">{% if onboarding.statements %}Done{% else %}Next{% endif %}</span> First statement uploaded</span>
+        <span class="pf-faint">{{ onboarding.statements }} so far</span></li>
+    </ol>
+    {% if not onboarding.owner_joined %}
+    <form method="post" action="{% url 'admin:superadmin_platformfirm_owner_link' original.pk %}" class="form-inline mb-2">
+      {% csrf_token %}
+      {% if onboarding.owner_invite == "none" or onboarding.owner_invite == "expired" or onboarding.owner_invite == "revoked" %}
+      <input type="email" name="owner_email" class="form-control mr-2" placeholder="Owner's email" value="{{ onboarding.owner_invite_email }}" required>
+      {% endif %}
+      <button type="submit" class="btn btn-primary">{% if onboarding.owner_invite == "pending" %}Make a new link{% else %}Invite the owner{% endif %}</button>
+    </form>
+    {% if onboarding.owner_invite == "pending" %}
+    <form method="post" action="{% url 'admin:superadmin_platformfirm_owner_revoke' original.pk %}">
+      {% csrf_token %}
+      <button type="submit" class="btn btn-outline-danger btn-sm">Cancel the invitation</button>
+    </form>
+    {% endif %}
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+{% if original and limits %}
+<section class="pf-card pf-card--pad mb-3" aria-labelledby="lim">
+  <h2 id="lim">Plan and limits</h2>
+  <div class="pf-row">
+    {% for l in limits %}
+    <div class="pf-rail">
+      <div class="pf-split"><span class="pf-sub">{{ l.label }}</span><span class="pf-strong">{{ l.text }}</span></div>
+      {% if l.pct is not None %}<span class="pf-bar pf-bar--wide{% if l.state %} pf-bar--{{ l.state }}{% endif %}"><span class="pf-w-{{ l.pct }}"></span></span>{% endif %}
+      <span class="pf-faint">{{ l.note }}</span>
+    </div>
+    {% endfor %}
+  </div>
+</section>
+{% endif %}
+{{ block.super }}
+{% endblock %}

@@ -18,7 +18,9 @@ rounds, and the firm itself stays as a clearly-labelled synthetic tenant.
 The dev database is shared, so this leaves a marker file (web/qa/.qa-firm) naming
 the firm it made, and `--teardown` only ever removes that firm.
 
-The password below is for these throwaway accounts only. Never reuse it.
+The password is made fresh each time the script runs and printed once (set QA_PASSWORD to choose it); it is never kept in the
+repository, which is public. The script refuses to run against a database that is not on this machine, because these accounts
+must never exist where a deployed app can reach them; QA_SEED_ALLOW_REMOTE=1 overrides that for a throwaway remote database.
 """
 
 from __future__ import annotations
@@ -27,6 +29,7 @@ import argparse
 import datetime
 import json
 import os
+import secrets
 import sys
 from pathlib import Path
 
@@ -46,7 +49,8 @@ from core.provisioning import create_client, create_firm, create_user  # noqa: E
 from teams import service  # noqa: E402
 
 MARKER = ROOT / "web" / "qa" / ".qa-firm"
-PASSWORD = "qa-synthetic-Passw0rd-2026"  # noqa: S105
+#: Made fresh unless QA_PASSWORD says otherwise. Mixed classes so the password validators accept it.
+PASSWORD = os.environ.get("QA_PASSWORD") or (secrets.token_urlsafe(18) + "-Qa1")
 FIRM_NAME = "QA Associates (synthetic)"
 
 PEOPLE = [
@@ -61,7 +65,21 @@ PEOPLE = [
 ]
 
 
+def _refuse_a_remote_database() -> None:
+    """These accounts have a password that is printed on a screen: they belong on a database nothing deployed can reach."""
+    from django.conf import settings
+
+    host = str(settings.DATABASES["default"].get("HOST") or "")
+    if host in ("", "localhost", "127.0.0.1", "::1") or host.endswith(".localhost") or os.environ.get("QA_SEED_ALLOW_REMOTE") == "1":
+        return
+    raise SystemExit(
+        f"Refusing to seed the QA accounts into a database on {host!r}. They are for a database on this machine. If this one is "
+        "truly throwaway and nothing deployed uses it, set QA_SEED_ALLOW_REMOTE=1."
+    )
+
+
 def seed() -> dict:
+    _refuse_a_remote_database()
     firm_id = json.loads(MARKER.read_text())["firm"] if MARKER.exists() else None
     firm = create_firm(FIRM_NAME, firm_id=firm_id) if not firm_id else _existing(firm_id)
     MARKER.parent.mkdir(parents=True, exist_ok=True)

@@ -123,3 +123,12 @@ def test_a_party_without_a_gstin_says_so(api, client_record):
 def test_another_firms_party_is_not_found(api, client_record):
     other_api = sign_in(member(create_firm("Other Firm"), Role.FIRM_ADMIN, email="x@other.example").user)
     assert other_api.post(URL.format(client_record.pk), {"gstin": ACTIVE}, format="json").status_code == 404
+
+
+def test_a_read_only_member_cannot_trigger_a_billable_check(api, client_record, firm):
+    """The check is a live paid call that spends the firm's allowance and writes the cache, so it is a preparer's act, not a viewer's."""
+    viewer = sign_in(member(firm, Role.READ_ONLY, email="viewer@example.com").user)
+    response = viewer.post(URL.format(client_record.pk), {"gstin": ACTIVE}, format="json")
+    assert response.status_code == 403
+    assert GstinCheck.objects.count() == 0
+    assert api.post(URL.format(client_record.pk), {"gstin": ACTIVE}, format="json").status_code == 200

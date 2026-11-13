@@ -83,7 +83,7 @@ def discover_files(client, membership, files: list[tuple[str, bytes]], bank_ledg
     if len(files) > MAX_FILES:
         raise TallyImportError(f"Choose at most {MAX_FILES} files at a time.")
     bank_ledgers = bank_ledgers or {}
-    cap = settings.MAX_TALLY_VOUCHER_BYTES
+    cap = max(settings.MAX_TALLY_VOUCHERS_XML_BYTES, settings.MAX_TALLY_VOUCHERS_JSON_BYTES)
     masters_cap = settings.MAX_TALLY_IMPORT_BYTES
     vouchers, loaded_reports, voucher_files, masters, master_files = [], [], 0, {}, 0
     #: Files that could not be used (a GST report, a spreadsheet that is not a ledger list), each with why. One of them does not stop the rest.

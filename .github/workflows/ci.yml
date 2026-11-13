@@ -79,6 +79,13 @@ jobs:
           -- here first is what lets us grant membership before the run.
           CREATE ROLE autoca_app NOLOGIN NOSUPERUSER NOBYPASSRLS;
           GRANT autoca_app TO autoca_ci WITH INHERIT TRUE;
+
+          -- The platform owner's cross-firm views (superadmin/sql.py) are installed by a migration only if this role exists and
+          -- the migrating role is a member of it. The role is made here; the membership is granted later, after the system checks,
+          -- because a check (superadmin.W002) rightly warns when the application's own role is a member.
+          CREATE ROLE autoca_platform_reader NOLOGIN BYPASSRLS NOSUPERUSER NOCREATEDB NOCREATEROLE;
+          -- The retention function is granted to the owner role by name; the tests that install it need the name to exist.
+          CREATE ROLE autoca_owner NOLOGIN;
           SQL
 
       - name: Lint
@@ -94,6 +101,11 @@ jobs:
         run: |
           python manage.py spectacular --file web/openapi.yaml
           git diff --exit-code web/openapi.yaml
+
+      - name: Let the test suite install the platform admin's views
+        env:
+          PGPASSWORD: postgres
+        run: psql -h localhost -U postgres -d autoca -v ON_ERROR_STOP=1 -c "GRANT autoca_platform_reader TO autoca_ci WITH INHERIT TRUE;"
 
       - name: Tenant isolation suite
         run: pytest core/tests/test_rls_isolation.py -v

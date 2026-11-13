@@ -20,8 +20,9 @@ umask 077
 fetched="$(mktemp)"
 trap 'rm -f "$fetched" "$fetched.err" .env.prod.new' EXIT
 
-# A one-off container: the server's IAM role signs the request, and the app image already has the client library.
-if ! sudo docker compose --env-file .env.prod -f compose.prod.yaml run --rm --no-deps -T web \
+# A one-off container: the server's IAM role signs the request, and the app image already has the client library. It runs as the
+# `tools` service, whose output is not sent to the log group: what it prints is every setting, secrets included.
+if ! sudo docker compose --env-file .env.prod -f compose.prod.yaml run --rm --no-deps -T tools \
         python -m integrations.paramstore > "$fetched" 2> "$fetched.err"; then
     sed 's/^/pull-secrets: /' "$fetched.err" >&2
     rm -f "$fetched.err"

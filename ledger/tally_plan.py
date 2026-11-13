@@ -24,6 +24,8 @@ _TYPES = {
     "payment": VoucherType.PAYMENT,
     "receipt": VoucherType.RECEIPT,
     "contra": VoucherType.CONTRA,
+    # A payroll voucher is an accounting entry (salary expense against what is payable), read like a journal.
+    "payroll": VoucherType.JOURNAL,
 }
 # kind of bill, the group of the party's ledger, and the side the party line is on (+1 debit, -1 credit): a sale debits the
 # customer, a purchase credits the supplier, a credit note credits the customer, a debit note debits the supplier.
@@ -85,13 +87,46 @@ class Skip:
 
 
 STANDARD_TYPES = tuple(_TYPES)
+#: Tally's own voucher types that leave no entries in the books: orders, delivery and receipt notes, stock movements, memos, attendance.
+NO_ACCOUNTING_TYPES = (
+    "purchase order",
+    "sales order",
+    "delivery note",
+    "receipt note",
+    "job work in order",
+    "job work out order",
+    "material in",
+    "material out",
+    "rejections in",
+    "rejections out",
+    "stock journal",
+    "physical stock",
+    "memorandum",
+    "attendance",
+)
+#: What a person may say a firm's own voucher type counts as: a standard type, or "none" (it leaves nothing in the books).
+MAPPABLE_TYPES = (*STANDARD_TYPES, "none")
+#: Types that do change the books but are not imported yet, with the reason a person can act on.
+_HELD_BACK = {
+    "reversing journal": "A reversing journal reverses itself on a later date, which the import cannot follow yet. Enter it by hand.",
+}
+
+
+def is_known_type(name: str, type_map: dict[str, str] | None = None) -> bool:
+    """Is this voucher type one the importer has a decision for (``name`` normalised)? The rest are asked about."""
+    return name in _TYPES or name in NO_ACCOUNTING_TYPES or name in _HELD_BACK or name in (type_map or {})
 
 
 def plan_voucher(v: ParsedVoucher, facts: Facts, type_map: dict[str, str] | None = None) -> Planned | Skip:
     """``type_map`` says which standard type a firm's own voucher type counts as: ``{"gst sale": "sales"}`` (names normalised)."""
     name = normal_name(v.tally_type)
-    vtype = _TYPES.get(name) or _TYPES.get((type_map or {}).get(name, ""))
+    mapped = (type_map or {}).get(name, "")
+    vtype = _TYPES.get(name) or _TYPES.get(mapped)
     if vtype is None:
+        if mapped == "none" or name in NO_ACCOUNTING_TYPES:
+            return Skip(v, f"A {v.tally_type} leaves no entries in the books in Tally, so there is nothing to post.")
+        if name in _HELD_BACK:
+            return Skip(v, _HELD_BACK[name])
         return Skip(v, "This voucher type is not imported.")
     for line in v.lines:
         if normal_name(line.ledger) not in facts.groups:

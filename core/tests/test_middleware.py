@@ -158,6 +158,17 @@ def test_user_without_a_membership_is_refused():
     assert json.loads(response.content)["code"] == "no_firm"
 
 
+def test_the_token_request_is_answered_even_for_an_account_with_no_active_firm():
+    """The sign-in page asks for a token first; refusing it hid the real reason behind a vague message."""
+    from core.middleware.tenancy import TenantContextMiddleware
+
+    user = create_user("orphan2@example.com", PASSWORD)
+    middleware = TenantContextMiddleware(lambda r: _response(200))
+    request = RequestFactory().get("/auth/csrf/")
+    request.user = user
+    assert middleware(request).status_code == 200
+
+
 def _response(status):
     from django.http import HttpResponse
 

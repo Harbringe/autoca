@@ -195,3 +195,57 @@ class PlatformJob(ReadOnlyView):
         ordering = ["-created_at"]
         verbose_name = "job"
         verbose_name_plural = "jobs"
+
+
+class PlatformInvite(ReadOnlyView):
+    """One invitation of any firm, and where it stands. The link itself is not here: only a hash of it is ever stored."""
+
+    id = models.UUIDField(primary_key=True)
+    firm_id = models.UUIDField()
+    firm_name = models.CharField("firm", max_length=255)
+    email = models.EmailField()
+    full_name = models.CharField("name", max_length=255)
+    role = models.CharField(max_length=16, choices=Role.choices)
+    make_owner = models.BooleanField("owner")
+    created_at = models.DateTimeField()
+    expires_at = models.DateTimeField()
+    used_at = models.DateTimeField(null=True)
+    revoked_at = models.DateTimeField(null=True)
+    created_by_email = models.EmailField("invited by", null=True)
+    state = models.CharField(max_length=16)
+
+    class Meta(ReadOnlyView.Meta):
+        db_table = _view("platform_invites")
+        ordering = ["-created_at"]
+        verbose_name = "invitation"
+        verbose_name_plural = "invitations"
+
+    def __str__(self) -> str:
+        return f"{self.email} ({self.firm_name})"
+
+
+class PlatformFirmStats(ReadOnlyView):
+    """A firm at a glance: size, liveliness and what has been agreed with it. Counts and dates only."""
+
+    id = models.UUIDField(primary_key=True)
+    name = models.CharField(max_length=255)
+    is_active = models.BooleanField("in service")
+    created_at = models.DateTimeField()
+    max_members = models.PositiveIntegerField("people limit", null=True)
+    max_clients = models.PositiveIntegerField("client limit", null=True)
+    trial_ends_at = models.DateTimeField("trial ends", null=True)
+    active_members = models.IntegerField("people")
+    pending_invites = models.IntegerField("invites waiting")
+    clients = models.IntegerField()
+    statements_this_month = models.IntegerField("statements this month")
+    last_activity = models.DateTimeField("last activity", null=True)
+    failed_jobs_30d = models.IntegerField("failed jobs (30 days)")
+
+    class Meta(ReadOnlyView.Meta):
+        db_table = _view("platform_firm_stats")
+        ordering = ["name"]
+        verbose_name = "firm at a glance"
+        verbose_name_plural = "platform dashboard"
+
+    def __str__(self) -> str:
+        return self.name

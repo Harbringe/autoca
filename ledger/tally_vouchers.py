@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import datetime
 import io
+import itertools
 import json
 import re
 import xml.etree.ElementTree as ET
@@ -33,6 +34,8 @@ from ledger.tally_parse import (
 )
 
 MAX_VOUCHERS = 200_000
+#: A Day Book CSV has a row for each ledger line, several to a voucher.
+MAX_CSV_ROWS = 1_000_000
 MAX_LINES_PER_VOUCHER = 500
 MAX_NARRATION = 2_000
 MAX_INVENTORY_ALLOCATIONS = 5_000
@@ -88,6 +91,15 @@ class ParsedVouchers:
     date_to: datetime.date | None = None
 
 
+def voucher_file_limit(filename: str) -> int:
+    """The most bytes a vouchers export may be, by its extension (JSON is read whole, so its limit is the lower)."""
+    from django.conf import settings
+
+    if (filename or "").lower().endswith(".json"):
+        return settings.MAX_TALLY_VOUCHERS_JSON_BYTES
+    return settings.MAX_TALLY_VOUCHERS_XML_BYTES
+
+
 def parse_vouchers(data: bytes, filename: str, *, max_bytes: int) -> ParsedVouchers:
     if len(data) > max_bytes:
         raise TallyTooLargeError(f"This file is larger than {max_bytes // (1024 * 1024)} MB, which is more than an import takes.")
@@ -95,6 +107,12 @@ def parse_vouchers(data: bytes, filename: str, *, max_bytes: int) -> ParsedVouch
     if not name.endswith((".xml", ".json", ".csv")):
         raise TallyParseError("A vouchers export must be a Tally XML (.xml), JSON (.json) or CSV (.csv) file.")
     if name.endswith(".csv"):
+        from django.conf import settings
+
+        if len(data) > settings.MAX_TALLY_IMPORT_BYTES:
+            raise TallyTooLargeError(
+                f"This CSV is larger than {settings.MAX_TALLY_IMPORT_BYTES // (1024 * 1024)} MB. Export the Day Book in parts, or as Tally XML."
+            )
         csv_parsed = _read_csv(_decode(data))
         if not csv_parsed.vouchers and not csv_parsed.skipped:
             raise TallyParseError("No vouchers were found in this file. Export the Day Book with each voucher's ledgers (not a summary) from Tally.")
@@ -228,12 +246,15 @@ def _without_declaration(text: str) -> str:
     return text
 
 
-_QUANTITY = re.compile(r"^\s*([\d,]*\.?\d+)\s*(.*)$")
+# A number, then whatever follows it. One way to split, and DOTALL, so a text that no longer fits cannot make the matcher try them all.
+_QUANTITY = re.compile(r"^(\d[\d,]*(?:\.\d+)?|\.\d+)\s*(.*)$", re.DOTALL)
+#: A quantity is a few characters ("1,200.500 Kgs = 1 Nos"); anything longer is cut before matching, whatever the file says.
+MAX_QUANTITY_TEXT = 64
 
 
 def _quantity(text: str) -> tuple[str, str] | None:
     """``600 BOX`` -> ("600", "BOX"); ``1,200.500 Kgs = 1 Nos`` -> ("1200.500", "Kgs"). None when there is no usable number."""
-    match = _QUANTITY.match(text or "")
+    match = _QUANTITY.match(" ".join((text or "").split())[:MAX_QUANTITY_TEXT])
     if not match:
         return None
     number = match.group(1).replace(",", "")
@@ -397,9 +418,16 @@ def _read_csv(text: str) -> ParsedVouchers:
 
     sample = text[:4096]
     delimiter = max(",;\t|", key=sample.count)
-    rows = [list(r) for r in csv.reader(io.StringIO(text), delimiter=delimiter)]
+    reader = csv.reader(io.StringIO(text), delimiter=delimiter)
+    # Read one row at a time and stop at the limits, so a hostile file never becomes a huge list: the first rows find the headings, the
+    # rest are grouped into vouchers as they come.
+    head: list[list[str]] = []
+    for row in reader:
+        head.append(row)
+        if len(head) >= 30:
+            break
     header, columns = None, {}
-    for index, row in enumerate(rows[:30]):
+    for index, row in enumerate(head):
         heads = [c.strip().casefold() for c in row]
         found = {key: next((i for i, h in enumerate(heads) if h in names), None) for key, names in _CSV_HEADS.items()}
         if all(found[k] is not None for k in ("date", "ledger", "debit", "credit", "type")):
@@ -418,15 +446,21 @@ def _read_csv(text: str) -> ParsedVouchers:
     parsed = ParsedVouchers()
     groups: list[dict] = []
     current = None
-    for offset, row in enumerate(rows[header + 1 :], start=header + 2):
+    after_heading = head[header + 1 :]
+    total_rows = 0
+    for offset, row in enumerate(itertools.chain(after_heading, reader), start=header + 2):
         if not any(c.strip() for c in row):
             continue
+        total_rows += 1
+        if total_rows > MAX_CSV_ROWS:
+            raise TallyParseError(f"This file has more than {MAX_CSV_ROWS:,} rows. Export a shorter period.")
         d, vtype, number = cell(row, "date"), cell(row, "type"), cell(row, "number")
         if d or vtype or number or current is None:
             # A new voucher starts wherever a date, type or number is given; a row with none of them continues the one above.
             current = {"ordinal": offset, "date_text": d, "type": vtype, "number": number, "narration": "", "lines": []}
             groups.append(current)
-        current["lines"].append((offset, cell(row, "ledger"), cell(row, "debit"), cell(row, "credit")))
+        if len(current["lines"]) <= MAX_LINES_PER_VOUCHER:  # one past the limit is kept, so the voucher is skipped for it; no more
+            current["lines"].append((offset, cell(row, "ledger"), cell(row, "debit"), cell(row, "credit")))
         current["narration"] = current["narration"] or cell(row, "narration")
         if len(groups) > MAX_VOUCHERS:
             raise TallyParseError(f"This file has more than {MAX_VOUCHERS:,} vouchers. Export a shorter period.")

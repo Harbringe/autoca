@@ -5,7 +5,8 @@
 // are not imported yet, so a run is partial books until they are; the notice says so in plain words.
 
 import { useEffect, useRef, useState } from 'react'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { waitForJob, waitingNote } from '@/api/jobs'
 import { AlertTriangle, CheckCircle2, FileUp } from 'lucide-react'
 import {
   useConfirmVouchers,
@@ -13,7 +14,10 @@ import {
   useRefreshVoucherRun,
   useStageVouchers,
   useUndoVouchers,
+  isReadJob,
+  useVoucherTypesFile,
   voucherRun,
+  voucherRuns,
   type VoucherRun,
 } from '@/api/queries/tallyImport'
 import { useInvalidateClient } from '@/api/queries/clients'
@@ -28,6 +32,8 @@ import { toast } from '@/lib/toast'
 import { BankReportStep } from './BankReportStep'
 import { ChartStep } from './ChartStep'
 import { ImportQueue } from './ImportQueue'
+import { MoveProgress } from './MoveProgress'
+import { TrialBalanceCheck } from './TrialBalanceCheck'
 import { SetupStep } from './SetupStep'
 import { messageOf } from './errors'
 
@@ -49,6 +55,8 @@ export function TallyImportScreen({ clientId, fy }: { clientId: string; fy?: num
   const undo = useUndoVouchers(clientId)
   const refresh = useRefreshVoucherRun(clientId)
   const discard = useDiscardVoucherRun(clientId)
+  const typesFile = useVoucherTypesFile(clientId)
+  const typesInput = useRef<HTMLInputElement>(null)
   const queryClient = useQueryClient()
   const invalidateClient = useInvalidateClient(clientId)
   const input = useRef<HTMLInputElement>(null)
@@ -56,6 +64,10 @@ export function TallyImportScreen({ clientId, fy }: { clientId: string; fy?: num
   const [error, setError] = useState<string | null>(null)
   const [undoing, setUndoing] = useState(false)
   const [agree, setAgree] = useState(false)
+  // A large file is read by a worker: what it is doing now, and what it made once it has finished.
+  const [reading, setReading] = useState<string | null>(null)
+  const [readNote, setReadNote] = useState<string | null>(null)
+  const queue = useQuery(voucherRuns(clientId))
   // What the person says each of the firm's own voucher types counts as (Tally's name -> standard type).
   const [counts, setCounts] = useState<Record<string, string>>({})
 
@@ -65,9 +77,23 @@ export function TallyImportScreen({ clientId, fy }: { clientId: string; fy?: num
     setRun(null)
     setCounts({})
     setAgree(false)
+    setReadNote(null)
     try {
-      setRun(await stage.mutateAsync({ file: chosen }))
+      const answer = await stage.mutateAsync({ file: chosen })
+      if (!isReadJob(answer)) return setRun(answer)
+      setReading(waitingNote(answer) ?? 'Reading the file…')
+      const done = await waitForJob(answer, (job) => setReading(waitingNote(job) ?? job.message ?? 'Reading the file…'))
+      setReading(null)
+      void queryClient.invalidateQueries({ queryKey: ['tally-voucher-runs', clientId] })
+      if (done.status !== 'SUCCEEDED') return setError(done.error || 'The file could not be read.')
+      const result = (done.result ?? {}) as { months?: number; failed?: { month: string; reason: string }[] }
+      const failed = result.failed ?? []
+      setReadNote(
+        `Read ${plural(result.months ?? 0, 'month')}, listed below oldest first. Post them one at a time, or all together.` +
+          (failed.length ? ` ${failed.map((f) => `${f.month}: ${f.reason}`).join(' ')}` : ''),
+      )
     } catch (e) {
+      setReading(null)
       setError(messageOf(e))
     }
   }
@@ -88,6 +114,21 @@ export function TallyImportScreen({ clientId, fy }: { clientId: string; fy?: num
     setError(null)
     try {
       setRun(await refresh.mutateAsync({ runId: run.id, voucherTypes }))
+    } catch (e) {
+      setError(messageOf(e))
+    }
+  }
+
+  // Tally's voucher-type master says what each of the firm's own types was made from; it fills in the choices below for the person to check.
+  async function readTypesFile(chosen: File | undefined) {
+    if (!chosen || !run) return
+    setError(null)
+    try {
+      const { voucher_types: suggested } = await typesFile.mutateAsync({ file: chosen })
+      const asked = Object.keys(run.counts.unknown_types ?? {})
+      const fill = Object.fromEntries(Object.entries(suggested).filter(([name]) => asked.includes(name)))
+      if (Object.keys(fill).length === 0) toast.info('That file says nothing about the voucher types asked about here.')
+      setCounts((c) => ({ ...c, ...fill }))
     } catch (e) {
       setError(messageOf(e))
     }
@@ -167,7 +208,16 @@ export function TallyImportScreen({ clientId, fy }: { clientId: string; fy?: num
         </div>
       </Card>
 
+      {reading && (
+        <Card role="status" aria-label="Reading the file" className="p-4 text-sm">
+          {reading}
+        </Card>
+      )}
+      {readNote && <Card tone="success" className="p-4 text-sm">{readNote}</Card>}
+      <MoveProgress runs={queue.data ?? []} />
       <ImportQueue clientId={clientId} onOpen={(id) => void open(id)} openId={run?.id} />
+
+      <TrialBalanceCheck clientId={clientId} />
 
       <BankReportStep
         clientId={clientId}
@@ -210,6 +260,7 @@ export function TallyImportScreen({ clientId, fy }: { clientId: string; fy?: num
                     onChange={(e) => setCounts((c) => ({ ...c, [type]: e.target.value }))}
                   >
                     <option value="">Leave these out</option>
+                    <option value="none">Leaves nothing in the books</option>
                     {STANDARD_TYPE_CHOICES.map(([value, label]) => (
                       <option key={value} value={value}>
                         {label}
@@ -218,7 +269,21 @@ export function TallyImportScreen({ clientId, fy }: { clientId: string; fy?: num
                   </Select>
                 </label>
               ))}
-              <div>
+              <div className="flex flex-wrap gap-2">
+                <input
+                  ref={typesInput}
+                  type="file"
+                  accept=".xml,.json,text/xml,application/json"
+                  aria-label="Voucher types file"
+                  className="sr-only"
+                  onChange={(e) => {
+                    void readTypesFile(e.target.files?.[0])
+                    e.target.value = ''
+                  }}
+                />
+                <Button variant="ghost" loading={typesFile.isPending} onClick={() => typesInput.current?.click()}>
+                  Fill in from Tally's voucher types file
+                </Button>
                 <Button
                   variant="outline"
                   loading={refresh.isPending}

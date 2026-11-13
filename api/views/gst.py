@@ -627,7 +627,8 @@ class GstinCheckView(viewsets.GenericViewSet):
     serializer_class = GstinCheckSerializer
     permission_classes = [HasFirmPermission]
     pagination_class = None
-    required_permission = "gst.view"
+    # A check is a live, paid call to the provider that spends the firm's monthly allowance and writes the cache: preparing, not viewing.
+    required_permission = {"GET": "gst.view", "POST": "gst.prepare"}
 
     @extend_schema(
         request=GstinCheckRequestSerializer,
@@ -635,7 +636,7 @@ class GstinCheckView(viewsets.GenericViewSet):
         description=(
             "Returns what the portal says (names, status, address) beside the party's name in the books. An answer under 30 days old "
             "is reused unless `refresh`; a firm has a monthly allowance of live checks. Nothing in the books changes. When the portal "
-            "cannot be reached the last answer is returned with `from_cache` and a `message`. Requires `gst.view`." + _ERRORS + _RULE
+            "cannot be reached the last answer is returned with `from_cache` and a `message`. Requires `gst.prepare`: a check is a live, paid call." + _ERRORS + _RULE
             + " (not a valid GSTIN, or the month's allowance is used up)."
         ),
         responses=_responses(GstinCheckSerializer, rule=True),

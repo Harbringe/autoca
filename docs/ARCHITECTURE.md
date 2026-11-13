@@ -494,8 +494,7 @@ Two more Tally behaviours worth knowing before touching that exporter:
 ## Importing a client's history from Tally
 
 `ledger/tally_vouchers.py` (parse, pure), `ledger/tally_plan.py` (decide, pure), `ledger/tally_voucher_import.py` (stage, confirm, undo).
-Same staging rule as the masters import: a preview is a `LedgerImportRun` (kind `VOUCHERS`) holding only what its confirm needs, and no
-file is kept. Three things differ from posting a bill by hand:
+Same staging rule as the masters import: a preview is a `LedgerImportRun` (kind `VOUCHERS`) holding only what its confirm needs; the file itself is kept as a document (see below). Three things differ from posting a bill by hand:
 
 - **The lines are never rebuilt.** The books must equal Tally's, so a voucher is written with the lines it had and the bill's figures are
   derived from them. A voucher whose lines do not tie to a taxable value, tax and round-off still posts; it just makes no bill, with a note.
@@ -525,6 +524,22 @@ drop the rest. Real statement uploads for dates a Tally import already filled ar
 statement is removed only by undoing the import. Rules are learned afterwards by proportion (`ledger/tally_learning.py`), capped under the
 auto-post line. Still not imported: a transfer between two bank accounts with other lines, a voucher across more than two bank accounts,
 firm-specific voucher types.
+
+
+### Large files, the queue and the check (added 2026-10-31)
+
+An uploaded vouchers file is stored as one of the client's documents (`Document` kind Tally export), so it can be downloaded years later
+and re-read when the ledgers change. Up to 10 MB it is read inside the request as before; above that (limits: 150 MB XML, 100 MB JSON; the
+proxy lets that one path through) `ledger/tally_read.py` queues a `tally.read` job and a worker (`manage.py run_uploads`) cuts the file
+by calendar month (`ledger/tally_split.py`) and stages one `LedgerImportRun` per month through `_stage`, so each month is reviewed, posted
+and undone on its own. A staged import does not expire; it waits for a person to post, read again (`refresh_run`, from the stored file) or
+discard it. Posting is the `tally.post` job (`ledger/tally_jobs.py`) with progress on the run; "Post all" (`enqueue_post_all`) queues the
+waiting months oldest first and queues none if any month needs the accountant's say-so. Entries already in a month's dates are a warning
+(`existing_entries`, `existing_statement_rows`) the accountant ticks past, not a refusal. A firm's own voucher types are said to count as a
+standard type (or to leave nothing in the books), by a person or from Tally's voucher-type master (`ledger/tally_vtypes.py`);
+types with no accounting effect are named as such, and a reversing journal is held back with its reason. `ledger/tally_trialbalance.py`
+reads Tally's trial balance and `compare` lists each ledger whose closing balance differs from the books; it shows, it never fixes. The
+readers for the ledger list (JSON too), voucher types and trial balance were written without a real file and are marked UNVERIFIED.
 
 ## On OCR — read before wiring a vendor
 

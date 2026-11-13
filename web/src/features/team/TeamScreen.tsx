@@ -6,10 +6,11 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Plus } from 'lucide-react'
+import { Plus, Users } from 'lucide-react'
 import { useState } from 'react'
 import { toast } from '@/lib/toast'
-import { teamEvents, teamInvites, teamMembers, useRevokeInvite, useUpdateMember } from '@/api/queries/team'
+import { messageOf } from '@/api/errors'
+import { teamEvents, teamInvites, teamMembers, useExtendInvite, useRegenerateInvite, useRevokeInvite, useUpdateMember, type InviteCreated } from '@/api/queries/team'
 import type { Invite, Member } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
 import { EmptyState, ErrorState, PageHeader } from '@/components/ca/Page'
@@ -22,13 +23,17 @@ import { useHotkey } from '@/lib/hotkeys'
 import { describeEvent } from '@/lib/team'
 import { usePageTitle } from '@/lib/title'
 import { useSession } from '@/session/session'
+import { BulkInviteDialog } from './BulkInviteDialog'
+import { LinkBox } from './LinkBox'
 import { EditMemberDialog, InviteDialog } from './PeopleDialogs'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 
 export function TeamScreen() {
   usePageTitle('Team & roles')
   const { can } = useSession()
   const members = useQuery({ ...teamMembers(), enabled: can('team.view') })
   const [inviting, setInviting] = useState(false)
+  const [invitingMany, setInvitingMany] = useState(false)
   const [editing, setEditing] = useState<Member | null>(null)
   const [switching, setSwitching] = useState<Member | null>(null)
   const canInvite = members.data?.can.invite ?? false
@@ -54,9 +59,14 @@ export function TeamScreen() {
           }
           actions={
             canInvite && (
-              <Button onClick={() => setInviting(true)}>
-                <Plus /> Invite a person
-              </Button>
+              <div className="flex flex-wrap gap-2">
+                <Button variant="outline" onClick={() => setInvitingMany(true)}>
+                  <Users /> Invite several
+                </Button>
+                <Button onClick={() => setInviting(true)}>
+                  <Plus /> Invite a person
+                </Button>
+              </div>
             )
           }
         />
@@ -78,6 +88,7 @@ export function TeamScreen() {
       <History />
 
       <InviteDialog open={inviting} onOpenChange={setInviting} info={info} />
+      <BulkInviteDialog open={invitingMany} onOpenChange={setInvitingMany} info={info} />
       <EditMemberDialog member={editing} info={info} onClose={() => setEditing(null)} />
       <SwitchAccess member={switching} onClose={() => setSwitching(null)} />
     </div>
@@ -201,7 +212,27 @@ function SwitchAccess({ member, onClose }: { member: Member | null; onClose: () 
 function Invites() {
   const invites = useQuery(teamInvites())
   const revoke = useRevokeInvite()
+  const regenerate = useRegenerateInvite()
+  const extend = useExtendInvite()
   const [target, setTarget] = useState<Invite | null>(null)
+  const [fresh, setFresh] = useState<InviteCreated | null>(null)
+
+  async function newLink(i: Invite) {
+    try {
+      setFresh(await regenerate.mutateAsync(i.id))
+    } catch (e) {
+      toast.error(messageOf(e))
+    }
+  }
+  async function moreTime(i: Invite) {
+    try {
+      const updated = await extend.mutateAsync(i.id)
+      toast.success(`${i.email} has until ${formatDate(updated.expires_at)}`)
+    } catch (e) {
+      toast.error(messageOf(e))
+    }
+  }
+
   return (
     <section aria-labelledby="pending-invites">
       <h3 id="pending-invites" className="mb-2 text-[15px] font-semibold text-heading">
@@ -212,11 +243,11 @@ function Invites() {
       ) : invites.error ? (
         <ErrorState error={invites.error} retry={() => void invites.refetch()} />
       ) : invites.data.results.length === 0 ? (
-        <p className="text-sm text-muted-foreground">No invitations waiting. People who have not yet accepted appear here for seven days.</p>
+        <p className="text-sm text-muted-foreground">No invitations waiting. People who have not yet accepted appear here, and an expired invitation stays for a month so it can be sent again.</p>
       ) : (
         <DataTable
           caption="Pending invitations"
-          columns={inviteColumns(setTarget)}
+          columns={inviteColumns({ onRevoke: setTarget, onNewLink: (i) => void newLink(i), onExtend: (i) => void moreTime(i), busy: regenerate.isPending || extend.isPending })}
           rows={invites.data.results}
           rowKey={(i) => i.id}
         />
@@ -234,11 +265,43 @@ function Invites() {
       >
         <p>The link stops working at once. You can invite the same address again later.</p>
       </Confirm>
+      <Dialog open={!!fresh} onOpenChange={(o) => !o && setFresh(null)}>
+        <DialogContent aria-describedby={undefined}>
+          <DialogHeader>
+            <DialogTitle>A new link for {fresh?.email}</DialogTitle>
+            <DialogDescription>
+              The old link no longer works. Send this one; it works once and expires on {fresh ? formatDate(fresh.expires_at) : ''}. It is shown only now.
+            </DialogDescription>
+          </DialogHeader>
+          {fresh && <LinkBox link={fresh.link} />}
+          <DialogFooter>
+            <Button autoFocus onClick={() => setFresh(null)}>
+              Done
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   )
 }
 
-function inviteColumns(onRevoke: (i: Invite) => void): Column<Invite>[] {
+const STATUS: Record<string, { label: string; tone: 'success' | 'warning' | 'danger' | 'info' }> = {
+  pending: { label: 'Waiting', tone: 'info' },
+  expiring_soon: { label: 'Expires soon', tone: 'warning' },
+  expired: { label: 'Expired', tone: 'danger' },
+}
+
+function inviteColumns({
+  onRevoke,
+  onNewLink,
+  onExtend,
+  busy,
+}: {
+  onRevoke: (i: Invite) => void
+  onNewLink: (i: Invite) => void
+  onExtend: (i: Invite) => void
+  busy: boolean
+}): Column<Invite>[] {
   return [
     {
       key: 'email',
@@ -253,15 +316,31 @@ function inviteColumns(onRevoke: (i: Invite) => void): Column<Invite>[] {
     { key: 'role', header: 'Role', cell: (i) => i.role_display },
     { key: 'manager', header: 'Team of', priority: 2, cell: (i) => i.manager?.name ?? <span className="text-muted-foreground">—</span> },
     { key: 'by', header: 'Invited by', priority: 3, cell: (i) => <span className="text-muted-foreground">{i.created_by ?? '—'}</span> },
+    {
+      key: 'status',
+      header: 'Status',
+      cell: (i) => {
+        const s = STATUS[i.status] ?? STATUS.pending!
+        return <Badge tone={s.tone}>{s.label}</Badge>
+      },
+    },
     { key: 'expires', header: 'Expires', priority: 2, cell: (i) => <span className="num">{formatDate(i.expires_at)}</span> },
     {
       key: 'actions',
       header: <span className="sr-only">Actions</span>,
       align: 'right',
       cell: (i) => (
-        <Button variant="ghost" size="sm" onClick={() => onRevoke(i)} aria-label={`Revoke the invitation to ${i.email}`}>
-          Revoke
-        </Button>
+        <div className="flex justify-end gap-1">
+          <Button variant="ghost" size="sm" disabled={busy} onClick={() => onNewLink(i)} aria-label={`Make a new link for ${i.email}`}>
+            New link
+          </Button>
+          <Button variant="ghost" size="sm" disabled={busy} onClick={() => onExtend(i)} aria-label={`Give ${i.email} another week`}>
+            +7 days
+          </Button>
+          <Button variant="ghost" size="sm" onClick={() => onRevoke(i)} aria-label={`Revoke the invitation to ${i.email}`}>
+            Revoke
+          </Button>
+        </div>
       ),
     },
   ]

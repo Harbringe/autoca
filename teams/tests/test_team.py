@@ -69,10 +69,13 @@ def test_a_senior_ca_invites_staff_onto_their_own_team(lead):
     assert response.status_code == 201, response.content
     token = response.json()["link"].rsplit("/invite/", 1)[1]
 
-    described = HttpClient().get("/auth/invite/", {"token": token}).json()
+    described = HttpClient().post("/auth/invite/describe/", {"token": token}, content_type="application/json").json()
     assert described["email"] == "new.person@example.test"
     assert described["team"] == "asha@example.test"
-    assert described["has_account"] is False
+    assert "has_account" not in described  # the page must not say whether an address has an account
+
+    # Links already in use describe themselves the old way, with the same answer.
+    assert HttpClient().get("/auth/invite/", {"token": token}).json() == described
 
     http, accepted = _accept(token, full_name="New Person", password=PASSWORD)
     assert accepted.status_code == 200, accepted.content
@@ -143,6 +146,106 @@ def test_expired_revoked_and_forged_invites_are_refused(firm, admin, lead):
     forged = f"{uuid.uuid4()}.{token.split('.', 1)[1]}"
     assert _accept(forged, password=PASSWORD)[1].status_code == 404
     assert _accept("not-a-token", password=PASSWORD)[1].status_code == 404
+
+
+def _invite_made_by(person, email="leaver@example.test"):
+    """A pending Staff invite issued by ``person`` (a Senior CA), as its link token."""
+    response = sign_in(person.user).post(f"{TEAM}/members/", {"email": email, "role": Role.STAFF}, format="json")
+    assert response.status_code == 201
+    return response.json()["link"].rsplit("/invite/", 1)[1]
+
+
+def test_an_invite_stops_working_when_the_member_who_issued_it_is_deactivated(firm, admin, lead):
+    token = _invite_made_by(lead)
+    assert sign_in(admin.user).patch(f"{TEAM}/members/{lead.pk}/", {"is_active": False}, format="json").status_code == 200
+
+    assert _accept(token, password=PASSWORD, full_name="Someone")[1].status_code == 410
+    assert not User.objects.filter(email="leaver@example.test").exists()
+
+
+def test_an_invite_stops_working_when_the_member_who_issued_it_is_demoted(firm, admin, lead):
+    token = _invite_made_by(lead)
+    assert sign_in(admin.user).patch(f"{TEAM}/members/{lead.pk}/", {"role": Role.READ_ONLY}, format="json").status_code == 200
+
+    assert _accept(token, password=PASSWORD, full_name="Someone")[1].status_code == 410
+
+
+def test_an_invite_is_refused_if_its_issuer_is_no_longer_active_even_without_the_cleanup(firm, admin, lead):
+    """The redemption check does not rely on the cleanup having run: it asks whether the issuer may still hand out the seat."""
+    token = _invite_made_by(lead)
+    with firm_context(firm.pk):
+        FirmMembership.objects.filter(pk=lead.pk).update(is_active=False)
+    assert _accept(token, password=PASSWORD, full_name="Someone")[1].status_code == 410
+
+
+def test_an_invite_from_a_member_who_is_still_in_good_standing_still_works(firm, admin, lead):
+    token = _invite_made_by(lead)
+    assert _accept(token, password=PASSWORD, full_name="Newcomer")[1].status_code == 200
+
+
+def _describe(token):
+    return HttpClient().post("/auth/invite/describe/", {"token": token}, content_type="application/json")
+
+
+def _invite_for(person, email):
+    response = sign_in(person.user).post(f"{TEAM}/members/", {"email": email, "role": Role.STAFF}, format="json")
+    assert response.status_code == 201, response.content
+    return response.json()["link"].rsplit("/invite/", 1)[1]
+
+
+def test_describing_an_invite_does_not_reveal_whether_the_address_has_an_account(firm, lead):
+    User.objects.create_user(email="known@example.test", password="the-real-password-1")
+    for_known = _describe(_invite_for(lead, "known@example.test")).json()
+    for_new = _describe(_invite_for(lead, "brand.new@example.test")).json()
+    assert set(for_known) == set(for_new) and "has_account" not in for_known
+
+
+def test_a_forged_or_missing_token_is_refused_by_the_describe_endpoint(firm):
+    assert _describe("not-a-token").status_code == 404
+    assert _describe("").status_code == 404
+    assert HttpClient().get("/auth/invite/describe/").status_code == 405
+
+
+def test_guessing_an_accounts_password_through_invites_is_stopped_even_when_the_invite_is_replaced(firm, lead):
+    """The per-invite counter is reset by making a new invite. The sign-in counters are on the account and the address, so they are not."""
+    User.objects.create_user(email="target@example.test", password="the-real-password-1")
+    codes = []
+    for _ in range(3):  # a fresh invite each round, which is all a sender needs to start the invite counter again
+        token = _invite_for(lead, "target@example.test")
+        for _ in range(8):
+            code = _accept(token, password="a-wrong-guess-at-it-1")[1].status_code
+            codes.append(code)
+            if code == 429:
+                break
+        if codes[-1] == 429:
+            break
+    assert codes.count(401) <= 10  # the login line (ten failures from one address against one account) holds, however many invites
+    assert 429 in codes
+    # And even the right password is refused while the lockout lasts, so the guesses cannot simply be continued on a new invite.
+    assert _accept(_invite_for(lead, "target@example.test"), password="the-real-password-1")[1].status_code == 429
+
+
+def test_an_invite_never_attaches_a_platform_account_to_a_firm(firm, lead):
+    owner = User.objects.create_superuser(email="platform@example.test", password="the-platform-password-1")
+    token = _invite_for(lead, "platform@example.test")
+    response = _accept(token, password="the-platform-password-1")[1]
+    assert response.status_code == 401  # answers as a wrong password does, so it does not say what the account is
+    with firm_context(firm.pk):
+        assert not FirmMembership.objects.filter(user=owner).exists()
+
+
+def test_making_invites_is_limited_per_address(firm, lead):
+    for _ in range(3):
+        _invite_for(lead, "same.address@example.test")
+    refused = sign_in(lead.user).post(f"{TEAM}/members/", {"email": "same.address@example.test", "role": Role.STAFF}, format="json")
+    assert refused.status_code == 429
+
+
+def test_making_invites_is_limited_per_sender(firm, lead, settings):
+    settings.THROTTLE_LIMITS = {**settings.THROTTLE_LIMITS, "invite_create": {"attempts": 2, "window_seconds": 3600, "lockout_seconds": 3600}}
+    _invite_for(lead, "one@example.test")
+    _invite_for(lead, "two@example.test")
+    assert sign_in(lead.user).post(f"{TEAM}/members/", {"email": "three@example.test", "role": Role.STAFF}, format="json").status_code == 429
 
 
 def test_another_firms_member_cannot_be_named_as_manager(admin):

@@ -143,6 +143,8 @@ JAZZMIN_SETTINGS = {
     "site_logo": None,
     "login_logo": None,
     "show_ui_builder": DEBUG,
+    # Jazzmin links a stylesheet from fonts.googleapis.com by default; the fonts are shipped with the panel instead.
+    "use_google_fonts_cdn": False,
     # One scrolling page, not tabs. A profile is meant to answer "everything
     # about this person" at a glance, and tabs hide most of the answer.
     "changeform_format": "single",
@@ -159,6 +161,8 @@ JAZZMIN_SETTINGS = {
         "superadmin.PlatformClient": "fas fa-briefcase",
         "superadmin.PlatformAuditLog": "fas fa-clipboard-list",
         "superadmin.PlatformJob": "fas fa-gears",
+        "superadmin.PlatformInvite": "fas fa-envelope-open-text",
+        "superadmin.PlatformFirmStats": "fas fa-chart-line",
         "otp_totp.TOTPDevice": "fas fa-mobile-screen",
         "otp_static.StaticDevice": "fas fa-key",
     },
@@ -417,7 +421,17 @@ THROTTLE_LIMITS = {
     # Keyed on the invite token, not the address: a wrong password against an
     # existing account's invite should not lock out an office behind one IP.
     "invite": {"attempts": 8, "window_seconds": 15 * 60, "lockout_seconds": 15 * 60},
+    # Making invites: the sender holds the link, so each one is a chance to probe an address. Per sender per hour, and per address per day.
+    "invite_create": {"attempts": 60, "window_seconds": 60 * 60, "lockout_seconds": 60 * 60},
+    "invite_target": {"attempts": 3, "window_seconds": 24 * 60 * 60, "lockout_seconds": 24 * 60 * 60},
 }
+
+# Sending an invitation by email. Off: nothing is sent unless INVITE_EMAIL_ENABLED is true AND EMAIL_BACKEND names a real mail
+# backend (for example Amazon SES through django-anymail). The default backend discards mail. It is deliberately NOT the console
+# backend: that would print every invitation link into the container log, and a link is a credential.
+INVITE_EMAIL_ENABLED = env("INVITE_EMAIL_ENABLED", "") in ("1", "true", "True")
+EMAIL_BACKEND = env("EMAIL_BACKEND", "django.core.mail.backends.dummy.EmailBackend")
+DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", "AutoCA <no-reply@localhost>")
 
 # How many reverse proxies stand between the internet and this process. Zero
 # means X-Forwarded-For is a header anyone could have sent and is ignored.
@@ -432,8 +446,11 @@ MAX_STATEMENT_UPLOAD_BYTES = 25 * 1024 * 1024
 GSTIN_CHECKS_PER_MONTH = int(env("GSTIN_CHECKS_PER_MONTH", "500"))
 # A Tally masters file is names and numbers: ten megabytes is far past a real company's chart.
 MAX_TALLY_IMPORT_BYTES = 10 * 1024 * 1024
-# A year of vouchers is far bigger than the chart: one real shop's Day Book for a year is 45 MB of Tally's UTF-16 XML (30 MB as JSON).
-MAX_TALLY_VOUCHER_BYTES = int(env("MAX_TALLY_VOUCHER_BYTES", str(80 * 1024 * 1024)))
+# A firm's years of vouchers come as one large export. XML is read as a stream, JSON whole, so JSON has the lower limit.
+MAX_TALLY_VOUCHERS_XML_BYTES = 150 * 1024 * 1024
+MAX_TALLY_VOUCHERS_JSON_BYTES = 100 * 1024 * 1024
+# A vouchers file up to this size is read inside the request; a larger one is stored and read by the worker.
+TALLY_SYNC_READ_BYTES = MAX_TALLY_IMPORT_BYTES
 # Extraction cost grows with pages, not bytes: a 300 KB file with two thousand
 # blank pages held a request for over two minutes. Checked before any extraction.
 MAX_STATEMENT_PAGES = int(env("MAX_STATEMENT_PAGES", "300"))

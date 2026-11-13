@@ -34,7 +34,9 @@ from .base import (
 )
 
 _DATES = re.compile(r"^(\d{2}/\d{2}/\d{4})\s+(\d{2}/\d{2}/\d{4})\s*(.*)$")
-_MONEY = r"\d[\d,]*\.\d{2}"
+# A figure is at most about twenty characters before its decimals, and only starts where a run of digits starts: a cell of
+# a hundred thousand digits with no decimal point is then passed over once, not re-read from every position in it.
+_MONEY = r"(?<![\d,])\d[\d,]{0,19}\.\d{2}"
 _BALANCE = re.compile(rf"({_MONEY})\s*(Dr|Cr)\b")
 _AMOUNT_ONLY = re.compile(rf"^{_MONEY}$")
 _HEADER = re.compile(r"TRAN\s+DATE\s+VALUE\s+DATE\s+NARRATION", re.IGNORECASE)

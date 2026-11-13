@@ -1,0 +1,29 @@
+{% extends "admin/base_site.html" %}
+{% comment %}
+New invitation links, shown once. The secret in a link is never stored, so this page is the only place it exists; reloading it
+shows nothing. Send each link to the person named.
+{% endcomment %}
+{% block content %}
+<div class="card">
+  <div class="card-body">
+    {% if links %}
+    <p>These links are shown now and not again. Each works once. Send each to the person named; the old links no longer work.</p>
+    <table class="table table-sm">
+      <thead><tr><th>Firm</th><th>Email</th><th>Link</th></tr></thead>
+      <tbody>
+      {% for item in links %}
+        <tr>
+          <td>{{ item.firm }}</td>
+          <td>{{ item.email }}</td>
+          <td><input type="text" class="form-control form-control-sm" readonly value="{{ item.link }}" onclick="this.select()"></td>
+        </tr>
+      {% endfor %}
+      </tbody>
+    </table>
+    {% else %}
+    <p>There are no links to show. They are shown once, straight after they are made.</p>
+    {% endif %}
+    <a href="{% url 'admin:superadmin_platforminvite_changelist' %}">Back to the invitations</a>
+  </div>
+</div>
+{% endblock %}

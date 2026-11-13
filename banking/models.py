@@ -162,7 +162,18 @@ class BankAccount(UUIDModel, FirmScopedModel):
             .exclude(pk=self.pk)
             .exists()
         )
-        return f"{bank} {self.account_number}" if clash else short
+        if not clash:
+            return short
+        # Told apart by a number, never by the account number itself: this column is plaintext, the account number is encrypted.
+        taken = set(
+            BankAccount.objects.filter(client_id=self.client_id, ledger_name__startswith=short)
+            .exclude(pk=self.pk)
+            .values_list("ledger_name", flat=True)
+        )
+        ordinal = 2
+        while f"{short} ({ordinal})" in taken:
+            ordinal += 1
+        return f"{short} ({ordinal})"
 
     @property
     def is_liability(self) -> bool:

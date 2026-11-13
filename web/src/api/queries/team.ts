@@ -74,7 +74,27 @@ export interface InviteBody {
   manager?: string | null
 }
 
-export type InviteCreated = Invite & { link: string }
+/** What making (or replacing) an invitation returns. The link is shown only in this answer; the server keeps only a hash of it. */
+export type InviteCreated = Invite & { link: string; emailed?: boolean }
+
+export interface BulkRowResult {
+  email: string
+  ok: boolean
+  error?: string
+  link?: string
+  emailed?: boolean
+  role_display?: string
+  expires_at?: string
+}
+
+export const useInviteMany = () =>
+  useTeamMutation((rows: InviteBody[]) => raw.post<{ results: BulkRowResult[] }>(`${V1}/team/members/bulk/`, { rows }))
+
+/** A new link for a waiting (or expired) invitation. The old link stops working. */
+export const useRegenerateInvite = () => useTeamMutation((id: string) => raw.post<InviteCreated>(`${V1}/team/invites/${id}/regenerate/`, {}))
+
+/** Another week for a waiting invitation, up to thirty days after it was made. */
+export const useExtendInvite = () => useTeamMutation((id: string) => raw.post<Invite>(`${V1}/team/invites/${id}/extend/`, {}))
 
 export const useInvitePerson = () => useTeamMutation((body: InviteBody) => raw.post<InviteCreated>(`${V1}/team/members/`, body))
 

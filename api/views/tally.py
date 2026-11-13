@@ -21,6 +21,7 @@ from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.response import Response
 
 from api.permissions import HasFirmPermission
+from api.serializers.core import JobSerializer
 from api.serializers.tally import (
     TallyBankReportUploadSerializer,
     TallyConfirmSerializer,
@@ -30,19 +31,26 @@ from api.serializers.tally import (
     TallyImportDetailSerializer,
     TallyImportSummarySerializer,
     TallyImportUploadSerializer,
+    TallyPostAllResultSerializer,
     TallyPostSerializer,
     TallyRefreshSerializer,
     TallySetupResultSerializer,
     TallySetupSerializer,
+    TallyTrialBalanceCheckSerializer,
+    TallyTrialBalanceUploadSerializer,
     TallyVoucherRunSerializer,
     TallyVoucherRunSummarySerializer,
     TallyVouchersUploadSerializer,
+    TallyVoucherTypesSuggestionSerializer,
+    TallyVoucherTypesUploadSerializer,
 )
 from core.access import get_visible_client
 from ledger.models import ImportKind, ImportStatus, LedgerImportRun
 from ledger.tally_import import confirm_run, stage_upload
-from ledger.tally_jobs import enqueue_post
+from ledger.tally_jobs import enqueue_post, enqueue_post_all
+from ledger.tally_read import enqueue_read
 from ledger.tally_setup import apply_setup, discover_files
+from ledger.tally_trialbalance import compare, read_trial_balance
 from ledger.tally_voucher_import import (
     discard_run,
     refresh_run,
@@ -50,6 +58,8 @@ from ledger.tally_voucher_import import (
     stage_vouchers,
     undo_run,
 )
+from ledger.tally_vouchers import voucher_file_limit
+from ledger.tally_vtypes import read_voucher_types, suggest_mapping
 
 _ERRORS = {
     400: TallyErrorSerializer,
@@ -166,12 +176,14 @@ class TallyImportViewSet(viewsets.GenericViewSet):
             "first.\n\n"
             "Refused with `409 tally_rule` when the period already has entries for the client, `409 entry_locked` when "
             "it reaches a signed-off date, and `409 tally_rule` for a file with more than one company. The same file "
-            "with the chart unchanged returns the existing preview with **200**. Same roles as the masters import."
+            "with the chart unchanged returns the existing preview with **200**. A file larger than the request can read (over 10 MB) is stored "
+            "and read by a worker: the answer is **202** with a `tally.read` job, whose result lists one queued import per month. Same roles as the masters import."
         ),
         request=TallyVouchersUploadSerializer,
         responses={
             200: TallyVoucherRunSerializer,
             201: TallyVoucherRunSerializer,
+            202: JobSerializer,
             **_ERRORS,
             409: TallyErrorSerializer,
             413: TallyErrorSerializer,
@@ -184,7 +196,18 @@ class TallyImportViewSet(viewsets.GenericViewSet):
         payload = TallyVouchersUploadSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         upload = payload.validated_data["file"]
-        data = upload.read(settings.MAX_TALLY_VOUCHER_BYTES + 1)
+        if upload.size > settings.TALLY_SYNC_READ_BYTES:
+            # Too much to read inside a request: store it and let the worker cut it into months. The screen follows the job.
+            outcome = enqueue_read(
+                client,
+                request.membership,
+                request.user,
+                data=upload.read(),
+                filename=os.path.basename(upload.name),
+                voucher_types=payload.validated_data.get("voucher_types"),
+            )
+            return Response(JobSerializer(outcome.job).data, status=status.HTTP_202_ACCEPTED)
+        data = upload.read(settings.MAX_TALLY_IMPORT_BYTES + 1)
         run, reused = stage_vouchers(
             client,
             request.membership,
@@ -222,6 +245,60 @@ class TallyImportViewSet(viewsets.GenericViewSet):
         enqueue_post(run, request.membership, request.user, allow_overlap=payload.validated_data["allow_overlap"])
         run.refresh_from_db()
         return Response(TallyVoucherRunSerializer(run).data, status=status.HTTP_202_ACCEPTED)
+
+    @extend_schema(
+        summary="Read Tally's voucher-type master and say what the firm's own voucher types count as",
+        description="Writes nothing. The answer fills in the choices the person is asked for when a vouchers file has types of the firm's own.",
+        request=TallyVoucherTypesUploadSerializer,
+        responses={200: TallyVoucherTypesSuggestionSerializer, **_ERRORS, 413: TallyErrorSerializer, 422: TallyErrorSerializer},
+    )
+    @action(detail=False, methods=["post"], url_path="voucher-types")
+    def voucher_types(self, request, client_id=None):
+        get_visible_client(request, client_id)
+        payload = TallyVoucherTypesUploadSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        upload = payload.validated_data["file"]
+        found = read_voucher_types(
+            upload.read(settings.MAX_TALLY_IMPORT_BYTES + 1), os.path.basename(upload.name), max_bytes=settings.MAX_TALLY_IMPORT_BYTES
+        )
+        return Response({"found": len(found), "voucher_types": suggest_mapping(found)})
+
+    @extend_schema(
+        summary="Compare the posted books with Tally's trial balance",
+        description="Writes nothing. Lists each ledger whose closing balance differs between Tally's export and the client's books for the year.",
+        request=TallyTrialBalanceUploadSerializer,
+        responses={200: TallyTrialBalanceCheckSerializer, **_ERRORS, 413: TallyErrorSerializer, 422: TallyErrorSerializer},
+    )
+    @action(detail=False, methods=["post"], url_path="check-trial-balance")
+    def check_trial_balance(self, request, client_id=None):
+        client = get_visible_client(request, client_id)
+        payload = TallyTrialBalanceUploadSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        upload = payload.validated_data["file"]
+        tally = read_trial_balance(
+            upload.read(settings.MAX_TALLY_IMPORT_BYTES + 1), os.path.basename(upload.name), max_bytes=settings.MAX_TALLY_IMPORT_BYTES
+        )
+        differences, matched = compare(client, payload.validated_data["fy"], tally)
+        return Response(
+            {"matched": matched, "differences": [{"name": d.name, "tally_paise": d.tally_paise, "ours_paise": d.ours_paise} for d in differences]}
+        )
+
+    @extend_schema(
+        summary="Post every waiting month of the client's Tally imports, oldest first",
+        description=(
+            "Queues each import still waiting (with something to post) for the worker, in date order. Every month is checked first: "
+            "if one has entries already in its dates and `allow_overlap` is not true, `409 tally_overlap` and **nothing** is queued."
+        ),
+        request=TallyPostSerializer,
+        responses={202: TallyPostAllResultSerializer, **_ERRORS, 409: TallyErrorSerializer},
+    )
+    @action(detail=False, methods=["post"], url_path="post-all")
+    def post_all(self, request, client_id=None):
+        client = get_visible_client(request, client_id)
+        payload = TallyPostSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        queued = enqueue_post_all(client, request.membership, request.user, allow_overlap=payload.validated_data["allow_overlap"])
+        return Response({"queued": len(queued)}, status=status.HTTP_202_ACCEPTED)
 
     @extend_schema(
         summary="The imports waiting to be posted, being posted, or done, newest first",
@@ -313,7 +390,7 @@ class TallyImportViewSet(viewsets.GenericViewSet):
                 given = json.loads(given) if given else {}
             except ValueError:
                 given = {}
-        files = [(os.path.basename(u.name), u.read(settings.MAX_TALLY_VOUCHER_BYTES + 1)) for u in payload.validated_data["files"]]
+        files = [(os.path.basename(u.name), u.read(voucher_file_limit(u.name) + 1)) for u in payload.validated_data["files"]]
         return Response(discover_files(client, request.membership, files, given if isinstance(given, dict) else {}))
 
     @extend_schema(
@@ -355,7 +432,7 @@ class TallyImportViewSet(viewsets.GenericViewSet):
         payload.is_valid(raise_exception=True)
         data = payload.validated_data
         reports = [
-            (os.path.basename(u.name), u.read(settings.MAX_TALLY_VOUCHER_BYTES + 1), account)
+            (os.path.basename(u.name), u.read(settings.MAX_TALLY_IMPORT_BYTES + 1), account)
             for u, account in zip(data["files"], data["accounts"], strict=True)
         ]
         run, reused = stage_bank_reports(

@@ -37,6 +37,9 @@ from core.models import FirmMembership
 logger = logging.getLogger("autoca.tenancy")
 
 
+CSRF_PATH = "/auth/csrf/"
+
+
 def resolve_membership(user):
     """The active membership for ``user``, or None.
 
@@ -85,6 +88,13 @@ class TenantContextMiddleware:
             request.membership = None
             return self.get_response(request)
 
+        if request.path == CSRF_PATH:
+            # Hands out a token and reads no data. Refusing it for an account with no active firm would show that person
+            # "Could not start a secure session" instead of the real reason, which the next request tells them.
+            request.firm = None
+            request.membership = None
+            return self.get_response(request)
+
         # Two-stage context. The membership lookup cannot run under a firm
         # context, because reading it is how the firm is discovered. Instead of
         # bypassing RLS for that one query, we set the *user* context first;
@@ -118,7 +128,8 @@ class TenantContextMiddleware:
             # policy guarantees it is that firm's row and no other.
             firm = membership.firm
             if not firm.is_active:
-                return _refuse(request, "firm_inactive", "This firm has been deactivated.")
+                # The platform owner can leave a message for the firm's people (why, and who to ask).
+                return _refuse(request, "firm_inactive", firm.suspended_message or "This firm has been deactivated.")
 
             request.firm = firm
             request.membership = membership

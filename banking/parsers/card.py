@@ -55,7 +55,8 @@ BANKS = (
     ("BOB", r"bank\s+of\s+baroda"),
 )
 
-MONEY_TOKEN = re.compile(r"-?\(?\d[\d,]*\.\d{2}\)?\s*(?:cr|dr)?\.?", re.IGNORECASE)
+# Bounded, and starting only where a run of digits starts, so a very long digit run is not rescanned from every position in it.
+MONEY_TOKEN = re.compile(r"-?\(?(?<![\d,])\d[\d,]{0,19}\.\d{2}\)?\s*(?:cr|dr)?\.?", re.IGNORECASE)
 
 
 def _owed(token: str) -> int | None:

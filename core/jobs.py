@@ -49,6 +49,12 @@ ERROR_CODES = {
     "NoStatementError": "no_statement_for_date",
     "MoneyError": "bad_amount",
     "PermissionDenied": "forbidden",
+    "TallyParseError": "tally_file_unreadable",
+    "TallyTooLargeError": "tally_file_too_large",
+    "TallyImportError": "tally_rule",
+    "TallyOverlapError": "tally_overlap",
+    "TallyRunStaleError": "tally_run_stale",
+    "EntryLockedError": "entry_locked",
 }
 
 class JobFailed(RuntimeError):
@@ -234,7 +240,10 @@ def expected_exceptions() -> tuple[type[Exception], ...]:
     from core.money import MoneyError
     from integrations.pdf.base import PdfExtractionError
     from ledger.approval import AlreadyPostedError, NotApprovableError
+    from ledger.editing import EntryLockedError
     from ledger.reconciliation import NoStatementError
+    from ledger.tally_import import TallyImportError, TallyOverlapError, TallyRunStaleError
+    from ledger.tally_parse import TallyParseError, TallyTooLargeError
 
     return (
         StatementParseError,  # covers the parse family by inheritance
@@ -253,4 +262,11 @@ def expected_exceptions() -> tuple[type[Exception], ...]:
         NoStatementError,
         MoneyError,
         PermissionDenied,
+        # A Tally file that cannot be read or posted says why, in words written for the person.
+        TallyParseError,
+        TallyTooLargeError,
+        TallyImportError,
+        TallyOverlapError,
+        TallyRunStaleError,
+        EntryLockedError,
     )

@@ -17,7 +17,8 @@ from classify.models import LedgerGroup
 from ledger.models import ImportKind, ImportStatus, LedgerImportRun
 from ledger.tally_import import ALL_CHOICES, BANK_CHOICES
 from ledger.tally_parse import ALLOWED_EXTENSIONS
-from ledger.tally_plan import STANDARD_TYPES
+from ledger.tally_plan import MAPPABLE_TYPES
+from ledger.tally_vouchers import voucher_file_limit
 
 ROW_ACTIONS = ["create", "match", "conflict", "needs_group", "skipped"]
 CONFLICT_KINDS = ["group_differs", "name_variant", "duplicate_in_file", "needs_group"]
@@ -237,7 +238,7 @@ class TallyVouchersUploadSerializer(serializers.Serializer):
         required=False,
         help_text=(
             "What the firm's own voucher types count as: {Tally's name: a standard type}, for example "
-            '{"GST SALE": "sales"}. The standard types are sales, purchase, credit note, debit note, journal, payment, receipt and contra.'
+            '{"GST SALE": "sales"}. The standard types are sales, purchase, credit note, debit note, journal, payment, receipt, contra and payroll; "none" says the type leaves nothing in the books.'
         ),
     )
 
@@ -245,15 +246,19 @@ class TallyVouchersUploadSerializer(serializers.Serializer):
         if not isinstance(value, dict) or len(value) > 50:
             raise serializers.ValidationError("Send an object of voucher type names, at most 50.")
         for name, standard in value.items():
-            if not isinstance(name, str) or not isinstance(standard, str) or standard not in STANDARD_TYPES:
-                raise serializers.ValidationError(f"{name!r} must count as one of: {', '.join(STANDARD_TYPES)}.")
+            if not isinstance(name, str) or not isinstance(standard, str) or standard not in MAPPABLE_TYPES:
+                raise serializers.ValidationError(f"{name!r} must count as one of: {', '.join(MAPPABLE_TYPES)}.")
         return value
 
     def validate_file(self, upload):
         if upload.size == 0:
             raise serializers.ValidationError("The file is empty.")
-        if upload.size > settings.MAX_TALLY_VOUCHER_BYTES:
-            raise serializers.ValidationError("The file is far too large to be a vouchers export.")
+        # A CSV is read inside the request, like a small file; the big-file worker reads Tally XML and JSON only.
+        limit = settings.MAX_TALLY_IMPORT_BYTES if upload.name.lower().endswith(".csv") else voucher_file_limit(upload.name)
+        if upload.size > limit:
+            raise serializers.ValidationError(
+                f"This file is larger than {limit // (1024 * 1024)} MB, which is more than an import takes. Export it from Tally in parts (a year at a time)."
+            )
         if not upload.name.lower().endswith((".xml", ".json", ".csv")):
             raise serializers.ValidationError("Upload the .xml, .json or .csv file exported from Tally.")
         return upload
@@ -320,10 +325,60 @@ class TallyVoucherCountsSerializer(serializers.Serializer):
     date_to = serializers.CharField()
 
 
+class TallyVoucherTypesUploadSerializer(serializers.Serializer):
+    file = serializers.FileField(help_text="Tally's voucher-type master (Masters > Voucher Types), as .xml or .json.")
+
+    def validate_file(self, upload):
+        if upload.size == 0:
+            raise serializers.ValidationError("The file is empty.")
+        if upload.size > 5 * 1024 * 1024:
+            raise serializers.ValidationError("The file is far too large to be a list of voucher types.")
+        if not upload.name.lower().endswith((".xml", ".json")):
+            raise serializers.ValidationError("Upload the .xml or .json file exported from Tally.")
+        return upload
+
+
+class TallyVoucherTypesSuggestionSerializer(serializers.Serializer):
+    found = serializers.IntegerField(help_text="Voucher types in the file.")
+    voucher_types = serializers.DictField(
+        child=serializers.CharField(),
+        help_text="What each of the firm's own voucher types counts as, as {name: standard type or none}; a suggestion for the person to check.",
+    )
+
+
 class TallyPostSerializer(serializers.Serializer):
     allow_overlap = serializers.BooleanField(
         required=False, default=False, help_text="The person has seen that entries or bank rows already stand in these dates and wants the import posted anyway."
     )
+
+
+class TallyTrialBalanceUploadSerializer(serializers.Serializer):
+    file = serializers.FileField(help_text="Tally's trial balance for the same company and period, as .xml or .json.")
+    fy = serializers.IntegerField(min_value=2000, max_value=2100, help_text="The financial year to compare, by its starting year (2025 is FY 2025-26).")
+
+    def validate_file(self, upload):
+        if upload.size == 0:
+            raise serializers.ValidationError("The file is empty.")
+        if upload.size > 20 * 1024 * 1024:
+            raise serializers.ValidationError("The file is far too large to be a trial balance.")
+        if not upload.name.lower().endswith((".xml", ".json")):
+            raise serializers.ValidationError("Upload the .xml or .json file exported from Tally.")
+        return upload
+
+
+class TallyTrialBalanceDifferenceSerializer(serializers.Serializer):
+    name = serializers.CharField()
+    tally_paise = PaiseField(help_text="Tally's closing balance, debit positive.")
+    ours_paise = PaiseField(help_text="Our closing balance, debit positive.")
+
+
+class TallyTrialBalanceCheckSerializer(serializers.Serializer):
+    matched = serializers.IntegerField(help_text="Ledgers whose closing balance is the same in both.")
+    differences = TallyTrialBalanceDifferenceSerializer(many=True, help_text="Biggest difference first. Shown, never fixed.")
+
+
+class TallyPostAllResultSerializer(serializers.Serializer):
+    queued = serializers.IntegerField(help_text="How many waiting months were queued for posting.")
 
 
 class TallyRefreshSerializer(serializers.Serializer):
@@ -414,7 +469,9 @@ class TallyDiscoverSerializer(serializers.Serializer):
         for upload in files:
             if upload.size == 0:
                 raise serializers.ValidationError(f"{upload.name} is empty.")
-            if upload.size > settings.MAX_TALLY_VOUCHER_BYTES:
+            # Vouchers come as large XML or JSON; a list of ledgers (.xlsx, .csv) is small.
+            big = upload.name.lower().endswith((".xml", ".json"))
+            if upload.size > (voucher_file_limit(upload.name) if big else settings.MAX_TALLY_IMPORT_BYTES):
                 raise serializers.ValidationError(f"{upload.name} is far too large to be a Tally export.")
             if not upload.name.lower().endswith((".xml", ".json", ".xlsx", ".csv")):
                 raise serializers.ValidationError(f"{upload.name} is not an .xml, .json, .xlsx or .csv file exported from Tally.")
@@ -499,7 +556,7 @@ class TallyBankReportUploadSerializer(serializers.Serializer):
         for upload in attrs["files"]:
             if upload.size == 0:
                 raise serializers.ValidationError(f"{upload.name} is empty.")
-            if upload.size > settings.MAX_TALLY_VOUCHER_BYTES:
+            if upload.size > settings.MAX_TALLY_IMPORT_BYTES * 2:
                 raise serializers.ValidationError(f"{upload.name} is far too large to be a bank report.")
             if not upload.name.lower().endswith(".xml"):
                 raise serializers.ValidationError(f"{upload.name} is not an .xml file exported from Tally.")

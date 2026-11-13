@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime
+import json
 
 import pytest
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -257,3 +258,113 @@ def test_discover_skips_a_file_it_cannot_use_and_says_why_instead_of_failing_the
 def test_discover_still_refuses_when_no_file_is_usable(api, firm, client_record):
     response = api.post(url(client_record, "discover"), {"files": _files(("report.xml", b"<ENVELOPE><X/></ENVELOPE>"))}, format="multipart")
     assert response.status_code in (400, 422)
+
+
+def test_the_voucher_type_master_says_what_the_firms_own_types_count_as(api, client_record):
+    data = json.dumps(
+        {"tallymessage": [{"metadata": {"type": "Voucher Type", "name": "GST SALE"}, "parent": "Sales"}, {"metadata": {"type": "Voucher Type", "name": "Quote"}, "parent": "Sales Order"}]}
+    ).encode()
+    response = api.post(
+        url(client_record, "voucher-types"), {"file": SimpleUploadedFile("types.json", data, content_type="application/json")}, format="multipart"
+    )
+    assert response.status_code == 200
+    assert response.json() == {"found": 2, "voucher_types": {"GST SALE": "sales", "Quote": "none"}}
+    refused = api.post(url(client_record, "voucher-types"), {"file": SimpleUploadedFile("types.txt", b"x")}, format="multipart")
+    assert refused.status_code == 400
+
+
+def test_a_firms_own_type_said_to_be_sales_posts_as_sales(api, firm, client_record, chart):
+    from ledger.tests.tally_voucher_xml import vouchers_xml
+
+    gst = voucher(
+        guid="g7", vtype="GST SALE", number="7", date="20250401", party="Acme Traders", gstin="27ABCDE1234F1Z5",
+        lines=[line("Acme Traders", 1180.0, party=True), line("Sales", -1000.0), line("Output CGST", -90.0), line("Output SGST", -90.0)],
+    )
+    asked = api.post(
+        url(client_record, "vouchers"),
+        {"file": SimpleUploadedFile("v.xml", vouchers_xml([gst]), content_type="text/xml"), "voucher_types": json.dumps({"GST SALE": "sales"})},
+        format="multipart",
+    )
+    assert asked.status_code == 201 and asked.json()["counts"]["will_post"] == 1 and asked.json()["counts"]["unknown_types"] == {}
+
+
+def test_a_vouchers_file_over_its_limit_is_refused_naming_the_limit(api, client_record, chart, settings):
+    settings.MAX_TALLY_VOUCHERS_XML_BYTES = 1000
+    big = b"<ENVELOPE>" + b"x" * 2000 + b"</ENVELOPE>"
+    response = api.post(
+        url(client_record, "vouchers"), {"file": SimpleUploadedFile("big.xml", big, content_type="text/xml")}, format="multipart"
+    )
+    assert response.status_code == 400
+    assert "larger than" in json.dumps(response.json())
+
+
+def test_the_limit_for_a_vouchers_file_is_by_extension(settings):
+    from ledger.tally_vouchers import voucher_file_limit
+
+    settings.MAX_TALLY_VOUCHERS_XML_BYTES, settings.MAX_TALLY_VOUCHERS_JSON_BYTES = 150, 100
+    assert voucher_file_limit("a.xml") == 150
+    assert voucher_file_limit("A.JSON") == 100
+
+
+def test_a_large_upload_answers_202_with_a_job_and_the_worker_stages_the_months(api, firm, client_record, chart, settings):
+    from api.tests.test_background_upload import QuietBeat
+    from core import jobqueue
+
+    settings.TALLY_SYNC_READ_BYTES = 100
+    response = api.post(
+        url(client_record, "vouchers"),
+        {"file": SimpleUploadedFile("year.xml", vouchers_xml([sale("g1", "1", "20250401"), sale("g2", "2", "20250505")]), content_type="text/xml")},
+        format="multipart",
+    )
+    assert response.status_code == 202
+    assert response.json()["kind"] == "tally.read" and response.json()["status"] == "PENDING"
+    assert jobqueue.run_once("test-reader", heartbeat_factory=QuietBeat) == "succeeded"
+    listed = api.get(url(client_record, "voucher-runs")).json()
+    assert sorted(r["counts"]["date_from"] for r in listed) == ["2025-04-01", "2025-05-05"]
+    job = api.get(f"{V1}/jobs/{response.json()['id']}/").json()
+    assert job["status"] == "SUCCEEDED" and job["result"]["months"] == 2
+
+
+def test_post_all_queues_the_waiting_months_and_the_worker_posts_them_oldest_first(api, firm, client_record, chart, settings):
+    from api.tests.test_background_upload import QuietBeat
+    from core import jobqueue
+
+    settings.TALLY_SYNC_READ_BYTES = 100
+    api.post(
+        url(client_record, "vouchers"),
+        {"file": SimpleUploadedFile("year.xml", vouchers_xml([sale("g1", "1", "20250401"), sale("g2", "2", "20250505")]), content_type="text/xml")},
+        format="multipart",
+    )
+    jobqueue.run_once("test-reader", heartbeat_factory=QuietBeat)
+    queued = api.post(url(client_record, "post-all"), {}, format="json")
+    assert queued.status_code == 202 and queued.json() == {"queued": 2}
+    assert jobqueue.run_once("test-poster", heartbeat_factory=QuietBeat) == "succeeded"
+    assert jobqueue.run_once("test-poster", heartbeat_factory=QuietBeat) == "succeeded"
+    statuses = sorted(r["status"] for r in api.get(url(client_record, "voucher-runs")).json())
+    assert statuses == ["CONFIRMED", "CONFIRMED"]
+    with firm_context(firm.pk):
+        assert JournalEntry.objects.filter(client=client_record).count() == 2
+
+
+def test_the_trial_balance_check_lists_where_tallys_closing_balances_differ(api, firm, client_record, chart):
+    with firm_context(firm.pk):
+        from ledger.tests.support import post
+
+        post(client_record, datetime.date(2025, 4, 5), make_ledger(client_record, "Cash", G.CASH), make_ledger(client_record, "Rent", G.INDIRECT_EXPENSE), 100000)
+    tb = json.dumps(
+        {"envelope": {"dspaccname": [{"dspdispname": "Cash"}, {"dspdispname": "Rent"}], "dspaccinfo": [
+            {"dspcldramt": {"dspcldramta": "1000.00"}, "dspclcramt": {"dspclcramta": ""}},
+            {"dspcldramt": {"dspcldramta": "900.00"}, "dspclcramt": {"dspclcramta": ""}},
+        ]}}
+    ).encode()
+    response = api.post(
+        url(client_record, "check-trial-balance"),
+        {"file": SimpleUploadedFile("tb.json", tb, content_type="application/json"), "fy": "2025"},
+        format="multipart",
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["matched"] == 1
+    assert body["differences"] == [{"name": "Rent", "tally_paise": 90000, "ours_paise": -100000}]
+    refused = api.post(url(client_record, "check-trial-balance"), {"file": SimpleUploadedFile("tb.txt", b"x"), "fy": "2025"}, format="multipart")
+    assert refused.status_code == 400

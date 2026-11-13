@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import datetime
+import re
 
 import pytest
 from django.db import DatabaseError, connection, transaction
@@ -252,7 +253,8 @@ def test_the_firms_page_lists_every_firm(views, operator, firm_a, firm_b):
 def test_a_firm_is_created_and_renamed_from_the_admin(views, operator):
     http = sign_in(operator)
     created = http.post(
-        "/admin/superadmin/platformfirm/add/", {"name": "Made In Admin", "is_active": "on", "_save": "Save"}
+        "/admin/superadmin/platformfirm/add/",
+        {"name": "Made In Admin", "owner_email": "owner@made-in-admin.test", "is_active": "on", "_save": "Save"},
     )
     assert created.status_code == 302, created.content[:500]
 
@@ -273,6 +275,76 @@ def test_a_firm_is_created_and_renamed_from_the_admin(views, operator):
     assert renamed.status_code == 302, renamed.content[:800]
     with reading_as(operator):
         assert PlatformFirm.objects.get(pk=firm.pk).name == "Renamed In Admin"
+
+
+def _shown_link(page: str):
+    import re
+
+    found = re.search(r'value="([^"]*/invite/[^"]+)"', page)
+    return found.group(1) if found else None
+
+
+def _what_the_page_says(page: str) -> str:
+    """For a failing assertion: whether the onboarding panel rendered at all, and the start of it."""
+    at = page.find("Onboarding")
+    return f"panel={'Onboarding' in page} could_not_read={'could not be read' in page} invite_in_page={'/invite/' in page} excerpt={page[max(at, 0): max(at, 0) + 700]!r}"
+
+
+def test_a_new_firms_owner_is_invited_and_the_link_is_shown_once(views, operator):
+    from django.test import Client as HttpClient
+
+    from api.tests.conftest import PASSWORD
+
+    http = sign_in(operator)
+    created = http.post(
+        "/admin/superadmin/platformfirm/add/",
+        {"name": "Onboarded Co", "owner_name": "Olive Owner", "owner_email": "Olive@Onboarded.test", "max_members": "5", "is_active": "on", "_save": "Save"},
+    )
+    assert created.status_code == 302, created.content[:500]
+    page = http.get(created["Location"]).content.decode()
+    link = _shown_link(page)
+    assert link, _what_the_page_says(page)
+    assert "olive@onboarded.test" in page and "Owner invited" in page
+    assert _shown_link(http.get(created["Location"]).content.decode()) is None  # shown once, never stored
+
+    token = link.rsplit("/invite/", 1)[1]
+    accepted = HttpClient().post("/auth/invite/", {"token": token, "full_name": "Olive Owner", "password": PASSWORD}, content_type="application/json")
+    assert accepted.status_code == 200, accepted.content
+
+    with reading_as(operator):
+        firm = PlatformFirm.objects.get(name="Onboarded Co")
+    with firm_context(firm.pk):
+        owner = FirmMembership.objects.get(firm_id=firm.pk, user__email="olive@onboarded.test")
+        assert owner.is_owner and owner.role == Role.FIRM_ADMIN
+    done = http.get(created["Location"]).content.decode()
+    assert "Owner joined" in done and "olive@onboarded.test" in done
+
+
+def test_the_owners_link_can_be_replaced_and_cancelled_from_the_firm_page(views, operator):
+    http = sign_in(operator)
+    created = http.post(
+        "/admin/superadmin/platformfirm/add/", {"name": "Relink Co", "owner_email": "o@relink.test", "is_active": "on", "_save": "Save"}
+    )
+    page_url = created["Location"]
+    first_page = http.get(page_url).content.decode()
+    first = _shown_link(first_page)
+    assert first, _what_the_page_says(first_page)
+
+    firm_id = page_url.rstrip("/").split("/")[-2]
+    assert http.post(f"/admin/superadmin/platformfirm/{firm_id}/owner-link/").status_code == 302
+    second = _shown_link(http.get(page_url).content.decode())
+    assert second and second != first  # a new link; the first no longer works (see the service tests)
+
+    assert http.post(f"/admin/superadmin/platformfirm/{firm_id}/owner-revoke/").status_code == 302
+    assert "Make a new link" not in http.get(page_url).content.decode()
+
+
+def test_only_the_platform_owner_can_use_the_owner_link_buttons(views, firm_a):
+    person = member(firm_a, Role.FIRM_ADMIN, "admin@a.test")
+    http = sign_in(person.user)
+    response = http.post(f"/admin/superadmin/platformfirm/{firm_a.pk}/owner-link/", follow=True)
+    assert _shown_link(response.content.decode()) is None
+    assert response.status_code in (200, 403, 404)
 
 
 def test_clients_are_visible_and_never_editable(views, operator, firm_a):
@@ -460,3 +532,28 @@ def test_the_memberships_list_opens_the_persons_profile(views, operator, firm_a)
     response = sign_in(operator).get(f"/admin/superadmin/platformmembership/{person.pk}/change/")
     assert response.status_code == 302
     assert response["Location"] == f"/admin/core/profile/{profile.pk}/change/"
+
+
+def test_the_firm_page_shows_five_steps_and_the_limits(views, operator):
+    http = sign_in(operator)
+    created = http.post(
+        "/admin/superadmin/platformfirm/add/",
+        {"name": "Steps Co", "owner_email": "o@steps.test", "max_members": "5", "max_clients": "20", "is_active": "on", "_save": "Save"},
+    )
+    page = http.get(created["Location"]).content.decode()
+    for step in ("Owner invited", "Owner joined", "Authenticator set up", "First client added", "First statement uploaded"):
+        assert step in page
+    assert page.count('class="pf-mark">Done<') == 1  # only the invitation is done
+    assert "Plan and limits" in page and "1 of 5" in page and "0 of 20" in page
+
+
+def test_the_add_page_has_three_sections_and_still_creates_the_firm(views, operator):
+    http = sign_in(operator)
+    page = http.get("/admin/superadmin/platformfirm/add/").content.decode()
+    for heading in ("The firm", "Who owns it", "Agreed plan", "What happens next"):
+        assert heading in page
+    for field in ("name", "owner_name", "owner_email", "max_members", "max_clients", "trial_ends_on"):
+        assert f'name="{field}"' in page
+    assert re.search(r'name="is_active"[^>]*checked', page), "a new firm starts in service"
+    created = http.post("/admin/superadmin/platformfirm/add/", {"name": "Added Co", "owner_email": "o@added.test", "is_active": "on", "_save": "Save"})
+    assert created.status_code == 302

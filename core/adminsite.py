@@ -40,6 +40,21 @@ class PlatformAdminSite(admin.AdminSite):
     site_header = "AutoCA platform"
     site_title = "AutoCA platform"
     index_title = "Platform administration"
+    index_template = "admin/superadmin/home.html"
+
+    def index(self, request, extra_context=None):
+        """The owner's home page: every firm at a glance and what needs doing (superadmin/home.py)."""
+        from django.utils import timezone
+
+        from superadmin.home import build_home
+
+        now = timezone.now()
+        home = build_home(now, tab=request.GET.get("tab", "all"))
+        hour = timezone.localtime(now).hour
+        greeting = "Good morning" if hour < 12 else "Good afternoon" if hour < 18 else "Good evening"
+        n = len(home.attention)
+        summary = f"{home.total_firms} firm{'s' if home.total_firms != 1 else ''}, {n} thing{'s' if n != 1 else ''} need{'' if n != 1 else 's'} you today."
+        return super().index(request, {**(extra_context or {}), "home": home, "greeting": greeting, "summary": summary})
 
     def has_permission(self, request):
         if not super().has_permission(request):

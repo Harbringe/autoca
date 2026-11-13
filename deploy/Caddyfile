@@ -11,8 +11,10 @@
 	encode zstd gzip
 
 	# A statement is a few megabytes and the app refuses above 25 MB anyway; stop anything larger here.
+	# The one exception is a Tally vouchers export, which can be a year of books; the app refuses above 150 MB.
+	# Kept to the one plain setting so the file cannot fail to load: the app enforces each endpoint's own limit.
 	request_body {
-		max_size 26MB
+		max_size 160MB
 	}
 
 	# The paths the dev server also forwards (web/vite.config.ts): the API, sign-in and MFA, the platform

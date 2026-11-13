@@ -4,7 +4,6 @@
 // sentence ("Sen still leads 2 clients. Move them to someone else first.") is shown as it is.
 
 import { useState, type FormEvent } from 'react'
-import { Copy } from 'lucide-react'
 import { toast } from '@/lib/toast'
 import { messageOf } from '@/api/errors'
 import { useInvitePerson, useUpdateMember, type InviteCreated, type MemberPatch } from '@/api/queries/team'
@@ -17,6 +16,7 @@ import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { formatDate } from '@/lib/format'
 import { managerChoices as choicesFor, managerHint } from '@/lib/team'
+import { LinkBox } from './LinkBox'
 
 const ROLE_HINT: Record<Role, string> = {
   FIRM_ADMIN: 'Sees the firm, manages its teams and reports to the owner.',
@@ -128,22 +128,9 @@ export function InviteDialog({
         </DialogHeader>
         {done ? (
           <div className="grid gap-3">
-            <div className="flex gap-2">
-              <Input readOnly value={done.link} aria-label="Invitation link" onFocus={(e) => e.currentTarget.select()} />
-              <Button
-                variant="outline"
-                onClick={() =>
-                  navigator.clipboard
-                    .writeText(done.link)
-                    .then(() => toast.success('Link copied'))
-                    .catch(() => toast.error('Could not copy. Select the link and copy it.'))
-                }
-              >
-                <Copy /> Copy
-              </Button>
-            </div>
+            <LinkBox link={done.link} />
             <p className="text-[13px] text-muted-foreground">
-              It is shown only now. If you lose it, invite the same address again: that replaces the old link.
+              It is shown only now. If you lose it, ask for a new link from the pending invitations: that replaces this one.
             </p>
             <DialogFooter>
               <Button autoFocus onClick={() => close(false)}>

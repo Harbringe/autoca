@@ -850,19 +850,19 @@ function Decision({
   const unchanged = !ownActive && ledger === row.ledger && (party || null) === (row.party ?? null) && tds === (row.tds_section ?? '') && rcm === row.rcm
   const alreadyPlacedByPerson = row.method === 'REVIEWED' && unchanged
 
-  function place() {
   // Moving a row away from where the system placed it is a decision worth one more look: say what it thought, and how sure.
   const [overriding, setOverriding] = useState(false)
   const hasSuggestion = !!row.ledger && row.method !== 'REVIEWED' && row.method !== 'UNRESOLVED'
   const movesAway = hasSuggestion && (ownActive || (!!ledger && ledger !== row.ledger))
 
-    if (ownActive) return placeOwn()
+  function place() {
     if (!ownActive && !ledger) return ledgerInput.current?.focus()
     if (movesAway) return setOverriding(true)
     return placeNow()
   }
 
   function placeNow() {
+    if (ownActive) return placeOwn()
     return placeIn(ledger!)
   }
 
@@ -1044,7 +1044,6 @@ function Decision({
         </div>
       )}
 
-      {row.ledger && row.method !== 'REVIEWED' && (
       <Confirm
         open={overriding}
         onOpenChange={setOverriding}
@@ -1063,6 +1062,7 @@ function Decision({
         </p>
       </Confirm>
 
+      {row.ledger && row.method !== 'REVIEWED' && (
         <div className="grid gap-1 rounded-md border border-info/30 bg-info-bg px-3 py-2 text-[13px]">
           <div className="flex items-center gap-1.5 font-medium text-foreground">
             {row.memory ? <MemoryIcon kind={row.memory.kind} className="size-4 text-info" /> : null}

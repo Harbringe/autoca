@@ -410,6 +410,15 @@ def _chain_breaks(rows, mapping: ColumnMap, liability: bool = False):
     return breaks, expected, found
 
 
+#: A bank statement has a handful of money columns (amount or debit and credit, a balance, maybe a few more). A headerless table with
+#: dozens of them is not one, and trying every ordered pair of them is cubic: so the search looks at the rightmost few and gives up
+#: after a fixed number of layouts, however the table is shaped.
+MAX_MONEY_COLUMNS = 8
+MAX_LAYOUTS_TRIED = 500
+#: Only to explain a failure ("the closest reading breaks at row N"), so the first rows are enough.
+CLOSEST_ROWS = 300
+
+
 def _best_mapping(rows, named, date_index, money_indices, profiles, liability=False, closest=None) -> ColumnMap | None:
     """Try every plausible layout; return the first the arithmetic endorses.
 
@@ -417,6 +426,10 @@ def _best_mapping(rows, named, date_index, money_indices, profiles, liability=Fa
     a balance column named in the header, then separate debit/credit columns,
     then a single amount column with a direction flag.
     """
+    if "balance" not in named and len(money_indices) > MAX_MONEY_COLUMNS:
+        money_indices = sorted(money_indices)[-MAX_MONEY_COLUMNS:]
+    tried = 0
+
     balance_options = (
         [named["balance"]]
         if "balance" in named
@@ -429,15 +442,21 @@ def _best_mapping(rows, named, date_index, money_indices, profiles, liability=Fa
         others = [i for i in money_indices if i != balance_index]
 
         for debit_index, credit_index in _amount_pairs(named, others):
+            tried += 1
+            if tried > MAX_LAYOUTS_TRIED:
+                return None
             mapping = _assemble(
                 named, profiles, date_index, balance_index,
                 debit=debit_index, credit=credit_index,
             )
             if _reproduces_balances(rows, mapping, liability):
                 return mapping
-            _note_closest(closest, rows, mapping, liability)
+            _note_closest(closest, rows[:CLOSEST_ROWS], mapping, liability)
 
         for amount_index in _single_amounts(named, others):
+            tried += 1
+            if tried > MAX_LAYOUTS_TRIED:
+                return None
             direction_index = _direction_column(named, profiles, exclude={amount_index})
             mapping = _assemble(
                 named, profiles, date_index, balance_index,
@@ -445,7 +464,7 @@ def _best_mapping(rows, named, date_index, money_indices, profiles, liability=Fa
             )
             if _reproduces_balances(rows, mapping, liability):
                 return mapping
-            _note_closest(closest, rows, mapping, liability)
+            _note_closest(closest, rows[:CLOSEST_ROWS], mapping, liability)
     return None
 
 

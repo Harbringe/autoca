@@ -11,7 +11,10 @@ import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 export const WEB = process.env.QA_WEB ?? 'http://127.0.0.1:5173'
-export const PASSWORD = process.env.QA_PASSWORD ?? 'qa-synthetic-Passw0rd-2026'
+// The QA accounts' password is never kept in the repository (it is public): `python scripts/qa_seed.py` makes one and prints it,
+// and it is passed in here as QA_PASSWORD.
+export const PASSWORD = process.env.QA_PASSWORD
+if (!PASSWORD) throw new Error('Set QA_PASSWORD to the password printed by scripts/qa_seed.py before running a QA journey.')
 export const PEOPLE = {
   admin: 'qa.admin@autoca.test',
   senior: 'qa.senior@autoca.test',

@@ -285,6 +285,21 @@ urlpatterns = [
         name="tally-import-undo",
     ),
     path(
+        "clients/<uuid:client_id>/tally-imports/check-trial-balance/",
+        TallyImportViewSet.as_view({"post": "check_trial_balance"}),
+        name="tally-import-check-trial-balance",
+    ),
+    path(
+        "clients/<uuid:client_id>/tally-imports/post-all/",
+        TallyImportViewSet.as_view({"post": "post_all"}),
+        name="tally-import-post-all",
+    ),
+    path(
+        "clients/<uuid:client_id>/tally-imports/voucher-types/",
+        TallyImportViewSet.as_view({"post": "voucher_types"}),
+        name="tally-import-voucher-types",
+    ),
+    path(
         "clients/<uuid:client_id>/tally-imports/voucher-runs/",
         TallyImportViewSet.as_view({"get": "voucher_runs"}),
         name="tally-import-voucher-runs",

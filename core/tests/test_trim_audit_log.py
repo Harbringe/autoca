@@ -19,7 +19,8 @@ from core.db.session import firm_context
 from core.models import AuditLog
 from core.provisioning import create_firm
 
-pytestmark = pytest.mark.django_db(databases=["default", "owner"])
+# transaction=True: the function runs on the owner connection, which cannot see rows an open test transaction has not committed.
+pytestmark = pytest.mark.django_db(databases=["default", "owner"], transaction=True)
 
 
 @pytest.fixture

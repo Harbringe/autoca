@@ -28,6 +28,8 @@ logger = logging.getLogger("autoca.audit")
 MUTATING_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 #: HEAD runs the same view as GET (the number is decrypted, the file fetched) and only drops the body.
 READ_METHODS = {"GET", "HEAD"}
+#: POSTs that change nothing (the token is in the body so that it stays out of URLs and logs): describing an invite.
+READ_ONLY_POSTS = {"/auth/invite/describe/"}
 
 #: Reads that hand over something sensitive and so are recorded like a write: a stored statement being downloaded, a
 #: bank account being opened (its number is decrypted for the response), and a stored file shown page by page in the
@@ -52,7 +54,7 @@ class AuditMiddleware:
 
         response = self.get_response(request)
 
-        if request.method in MUTATING_METHODS or (
+        if (request.method in MUTATING_METHODS and request.path_info not in READ_ONLY_POSTS) or (
             request.method in READ_METHODS and any(p.fullmatch(request.path_info) for p in SENSITIVE_READS)
         ):
             self._record(request, response, time.monotonic() - started)
@@ -68,7 +70,8 @@ class AuditMiddleware:
             # No tenant context: nothing to attach the row to. Log it instead --
             # a mutating request with no firm is unusual enough to want visible.
             logger.warning(
-                "unattributed mutating request %s %s -> %s (request_id=%s)",
+                # %r, not %s: the path is whatever the caller sent, decoded, and may hold a newline that would start a forged log line.
+                "unattributed mutating request %s %r -> %s (request_id=%s)",
                 request.method,
                 request.path,
                 response.status_code,
@@ -102,7 +105,7 @@ class AuditMiddleware:
             # so a persistent failure surfaces rather than silently disabling
             # the trail.
             logger.exception(
-                "failed to write audit row for %s %s (request_id=%s)",
+                "failed to write audit row for %s %r (request_id=%s)",
                 request.method,
                 request.path,
                 request.request_id,

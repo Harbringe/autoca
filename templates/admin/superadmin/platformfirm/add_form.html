@@ -1,0 +1,53 @@
+{% extends "admin/change_form.html" %}
+{% comment %}
+Adding a firm: three short sections and what happens next. The fields and the POST are the ordinary admin form's, so nothing about
+saving changes; only the layout does. After saving, the firm page shows the owner's link once.
+{% endcomment %}
+{% block content_title %}Add a firm{% endblock %}
+{% block content %}
+<div class="pf-page">
+  <p class="pf-sub">Three short sections. You never set or see a password: the owner chooses their own from a link you send.</p>
+  <div class="pf-row pf-row--top">
+    <form method="post" id="firm_form" class="pf-grow" novalidate>
+      {% csrf_token %}
+      {% if adminform.form.errors %}<div class="alert alert-danger">Please correct the problems below.</div>{% endif %}
+
+      <section class="pf-card pf-card--pad pf-section" aria-labelledby="s1">
+        <h2 id="s1"><span class="pf-section__num">1</span> The firm</h2>
+        {% include "admin/superadmin/platformfirm/_field.html" with field=adminform.form.name %}
+        {% include "admin/superadmin/platformfirm/_field.html" with field=adminform.form.is_active %}
+      </section>
+
+      <section class="pf-card pf-card--pad pf-section" aria-labelledby="s2">
+        <h2 id="s2"><span class="pf-section__num">2</span> Who owns it</h2>
+        {% include "admin/superadmin/platformfirm/_field.html" with field=adminform.form.owner_name %}
+        {% include "admin/superadmin/platformfirm/_field.html" with field=adminform.form.owner_email %}
+      </section>
+
+      <section class="pf-card pf-card--pad pf-section" aria-labelledby="s3">
+        <h2 id="s3"><span class="pf-section__num">3</span> Agreed plan (optional)</h2>
+        {% include "admin/superadmin/platformfirm/_field.html" with field=adminform.form.max_members %}
+        {% include "admin/superadmin/platformfirm/_field.html" with field=adminform.form.max_clients %}
+        {% include "admin/superadmin/platformfirm/_field.html" with field=adminform.form.trial_ends_on %}
+      </section>
+
+      <div class="pf-row">
+        <button type="submit" name="_save" class="pf-btn pf-btn--primary">Add the firm and make the link</button>
+        <a class="pf-btn" href="{% url 'admin:superadmin_platformfirm_changelist' %}">Cancel</a>
+      </div>
+    </form>
+
+    <aside class="pf-rail">
+      <section class="pf-card pf-card--pad" aria-labelledby="next">
+        <h2 id="next">What happens next</h2>
+        <ol class="pf-next">
+          <li><span class="pf-strong">The firm is created</span><span class="pf-faint">Empty, with the limits and trial date above.</span></li>
+          <li><span class="pf-strong">You get a one-time link</span><span class="pf-faint">Send it to the owner by message or email. It works once and lasts 14 days.</span></li>
+          <li><span class="pf-strong">The owner joins</span><span class="pf-faint">They choose a password and set up an authenticator.</span></li>
+          <li><span class="pf-strong">You watch it on the firm page</span><span class="pf-faint">A checklist shows invited, joined, first client and first statement.</span></li>
+        </ol>
+      </section>
+    </aside>
+  </div>
+</div>
+{% endblock %}

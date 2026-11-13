@@ -21,7 +21,6 @@ import logging
 import os
 from decimal import Decimal
 
-from django.conf import settings
 from django.db import IntegrityError, transaction
 from django.utils import timezone
 
@@ -72,8 +71,8 @@ from ledger.tally_import import (
 )
 from ledger.tally_learning import learn_rules
 from ledger.tally_parse import normal_name
-from ledger.tally_plan import STANDARD_TYPES, Facts, Planned, plan_voucher
-from ledger.tally_vouchers import ParsedVoucher, VoucherLine, parse_vouchers
+from ledger.tally_plan import MAPPABLE_TYPES, Facts, Planned, is_known_type, plan_voucher
+from ledger.tally_vouchers import ParsedVoucher, VoucherLine, parse_vouchers, voucher_file_limit
 
 logger = logging.getLogger("autoca.tally")
 
@@ -110,15 +109,27 @@ def _doc_name(run) -> str:
 # ---------------------------------------------------------------------------
 
 
+def normalise_type_map(voucher_types: dict | None) -> dict[str, str]:
+    """What the person said the firm's own voucher types count as, with the names normalised and only known answers kept."""
+    return {normal_name(k): v for k, v in (voucher_types or {}).items() if v in MAPPABLE_TYPES}
+
+
+def stage_month(client, user, vouchers, skipped, month: str, seed: str, type_map, document):
+    """Stage one calendar month of a large file as an import of its own. Returns ``(run, reused)``; the same file, month and
+    choices give the same run again."""
+    digest = hashlib.sha256(f"{seed}|{month}".encode()).hexdigest()
+    return _stage(client, user, vouchers, skipped, digest, None, None, type_map, document)
+
+
 def stage_vouchers(client, membership, user, *, data: bytes, filename: str, date_from=None, date_to=None, voucher_types=None):
     """Read ``data`` and stage a preview. Returns ``(run, reused)``.
 
     ``voucher_types`` says which standard type each of the firm's own voucher types counts as (``{"GST SALE": "sales"}``).
     """
     _require_rights(membership, client)
-    type_map = {normal_name(k): v for k, v in (voucher_types or {}).items() if v in STANDARD_TYPES}
+    type_map = normalise_type_map(voucher_types)
     digest = hashlib.sha256(data + repr(sorted(type_map.items())).encode()).hexdigest() if type_map else hashlib.sha256(data).hexdigest()
-    parsed = parse_vouchers(data, filename, max_bytes=settings.MAX_TALLY_VOUCHER_BYTES)
+    parsed = parse_vouchers(data, filename, max_bytes=voucher_file_limit(filename))
     if len(parsed.companies) > 1:
         raise TallyImportError("This file has vouchers from more than one company. Export one company at a time.")
     document = _keep_file(client, user, data, filename)
@@ -180,7 +191,7 @@ def stage_bank_reports(client, membership, user, *, reports: list[tuple[str, byt
         if str(account.pk) in used:
             raise TallyImportError(f"Two reports are for {account}. Choose a different account for each report.")
         used.add(str(account.pk))
-        report = parse_bank_report(data, filename, max_bytes=settings.MAX_TALLY_VOUCHER_BYTES)
+        report = parse_bank_report(data, filename, max_bytes=voucher_file_limit(filename))
         digest.update(hashlib.sha256(data).digest() + str(account.pk).encode())
         for voucher in _vouchers_from_report(report, account.ledger_name):
             merged.setdefault(voucher.guid, voucher)  # the other side of a transfer is the same voucher
@@ -253,8 +264,7 @@ def _stage(client, user, all_vouchers, skipped, digest, date_from, date_to, type
     counts = {"vouchers": 0, "will_post": 0, "will_make_bill": 0, "skipped": 0, "bank_waiting": 0, "bank_rows": 0, "stock_lines": 0, "by_type": {}, "unknown_types": {}, "type_map": dict(type_map or {})}
     for v in vouchers:
         plan = plan_voucher(v, facts, type_map)
-        known = normal_name(v.tally_type) in STANDARD_TYPES or normal_name(v.tally_type) in (type_map or {})
-        if not known:  # a type the firm made up: the person is asked what it counts as
+        if not is_known_type(normal_name(v.tally_type), type_map):  # a type the firm made up: the person is asked what it counts as
             counts["unknown_types"][v.tally_type] = counts["unknown_types"].get(v.tally_type, 0) + 1
         counts["vouchers"] += 1
         counts["by_type"][v.tally_type] = counts["by_type"].get(v.tally_type, 0) + 1
@@ -349,11 +359,16 @@ def check_postable(run: LedgerImportRun, membership, *, allow_overlap: bool = Fa
 def discard_run(run: LedgerImportRun, membership) -> LedgerImportRun:
     """Take a queued import out of the queue. The stored file stays with the client's documents."""
     _require_rights(membership, run.client)
-    if run.kind != ImportKind.VOUCHERS or run.status != ImportStatus.PREVIEW:
-        raise TallyImportError("Only an import still waiting to be posted can be discarded.")
-    run.status = ImportStatus.DISCARDED
-    run.save(update_fields=["status"])
-    return run
+    with transaction.atomic():
+        # Read again under a lock: a worker may have started posting since this request read the run.
+        fresh = LedgerImportRun.objects.select_for_update().get(pk=run.pk)
+        if fresh.kind != ImportKind.VOUCHERS or fresh.status != ImportStatus.PREVIEW:
+            raise TallyImportError("Only an import still waiting to be posted can be discarded.")
+        if (fresh.result or {}).get("posting"):
+            raise TallyImportError("This import is being posted now. It can be discarded once that has finished.")
+        fresh.status = ImportStatus.DISCARDED
+        fresh.save(update_fields=["status"])
+    return fresh
 
 
 def refresh_run(run: LedgerImportRun, membership, user, *, voucher_types=None) -> LedgerImportRun:
@@ -365,6 +380,8 @@ def refresh_run(run: LedgerImportRun, membership, user, *, voucher_types=None) -
     _require_rights(membership, client)
     if run.kind != ImportKind.VOUCHERS or run.status != ImportStatus.PREVIEW:
         raise TallyImportError("Only an import still waiting to be posted can be read again.")
+    if (LedgerImportRun.objects.filter(pk=run.pk).values_list("result", flat=True).first() or {}).get("posting"):
+        raise TallyImportError("This import is being posted now. It can be read again once that has finished.")
     document = run.document
     if document is None or not document.storage_key:
         raise TallyImportError("The file for this import is no longer stored, so it cannot be read again. Upload it again.")
@@ -375,9 +392,8 @@ def refresh_run(run: LedgerImportRun, membership, user, *, voucher_types=None) -
         raise TallyImportError("The file for this import is no longer stored, so it cannot be read again. Upload it again.") from None
     types = voucher_types if voucher_types is not None else run.counts.get("type_map")
     fresh, _reused = stage_vouchers(client, membership, user, data=data, filename=document.original_filename, voucher_types=types)
-    if fresh.pk != run.pk:
-        run.status = ImportStatus.DISCARDED
-        run.save(update_fields=["status"])
+    if fresh.pk != run.pk:  # only if nobody started posting the old one meanwhile
+        LedgerImportRun.objects.filter(pk=run.pk, status=ImportStatus.PREVIEW).exclude(result__posting=True).update(status=ImportStatus.DISCARDED)
     return fresh
 
 
@@ -428,10 +444,14 @@ def confirm_vouchers(run: LedgerImportRun, membership, user, *, allow_overlap: b
         rule_ids = []
     result["rules_learned"] = len(rule_ids)
     result["rule_ids"] = rule_ids
-    run.status = ImportStatus.CONFIRMED
-    run.result = result
-    run.confirmed_by, run.confirmed_at = user, timezone.now()
-    run.save(update_fields=["status", "result", "confirmed_by", "confirmed_at"])
+    # Conditional: a run that is no longer waiting (discarded by someone meanwhile) is never turned back into a posted one.
+    stamp = timezone.now()
+    changed = LedgerImportRun.objects.filter(pk=run.pk, status=ImportStatus.PREVIEW).update(
+        status=ImportStatus.CONFIRMED, result=result, confirmed_by=user, confirmed_at=stamp
+    )
+    if not changed:
+        logger.warning("A Tally import changed state while it was being posted; its vouchers were written and are kept")
+    run.refresh_from_db()
     return run
 
 

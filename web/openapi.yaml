@@ -3836,6 +3836,34 @@ paths:
               schema:
                 $ref: '#/components/schemas/PartyStatement'
           description: ''
+  /api/v1/clients/{client_id}/parties/auto-open/:
+    post:
+      operationId: clients_parties_auto_open_create
+      description: 'For each payee the statements name at least twice whose name looks
+        like a person or a business, and that resembles no party or ledger the client
+        already has, makes the party and opens its own account: Sundry Creditors if
+        the money went out, Sundry Debtors if it came in. Done automatically after
+        every statement upload; this runs it on existing statements. Needs `party.manage`.'
+      summary: Open the accounts of the payees that are clearly someone
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - review
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/v1/clients/{client_id}/parties/found/:
     get:
       operationId: clients_parties_found_retrieve
@@ -4091,6 +4119,33 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BalanceSheet'
+          description: ''
+  /api/v1/clients/{client_id}/reports/client-export/:
+    get:
+      operationId: clients_reports_client_export_retrieve
+      description: One workbook with a sheet each for the ledgers, trial balance of
+        every year, bank accounts, statements and bank rows, vouchers and their lines,
+        invoices and how they were settled, parties, GST, assets, stock, TDS and the
+        rows not yet posted. All years. Read-only.
+      summary: Download everything held for this client as an Excel workbook
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      tags:
+      - reports
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+              schema:
+                type: string
+                format: binary
           description: ''
   /api/v1/clients/{client_id}/reports/financial-statements/:
     get:
@@ -19991,7 +20046,7 @@ components:
         | firm.owner_changed | actor, member, from, to |
         | firm.renamed | actor, from, to |
 
-        `actor` is "AutoCA platform" for a change made by the platform owner.
+        `actor` is "AuditFlow platform" for a change made by the platform owner.
       properties:
         actor:
           type: string

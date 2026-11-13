@@ -316,6 +316,30 @@ class PartyViewSet(MasterAuditMixin, ClientScopedMixin, FirmScopedViewSet):
         return Response(FoundPartiesSerializer(candidates_payload(items)).data)
 
     @extend_schema(
+        summary="Open the accounts of the payees that are clearly someone",
+        description=(
+            "For each payee the statements name at least twice whose name looks like a person or a business, and that resembles no "
+            "party or ledger the client already has, makes the party and opens its own account: Sundry Creditors if the money went "
+            "out, Sundry Debtors if it came in. Done automatically after every statement upload; this runs it on existing statements. "
+            "Needs `party.manage`."
+        ),
+        request=None,
+        responses={200: OpenApiTypes.OBJECT},
+    )
+    @action(detail=False, methods=["post"], url_path="auto-open")
+    def auto_open(self, request, client_id=None):
+        if not has_permission(request.membership, "party.manage"):
+            raise PermissionDenied("Your role does not permit party.manage.")
+        opened = party_discovery.auto_open_parties(self.client)
+        matching.rematch(self.client)
+        return Response(
+            {
+                "opened": len(opened),
+                "parties": [{"name": o.party.canonical_name, "ledger": o.ledger.name, "group": o.ledger.group, "reason": o.reason} for o in opened],
+            }
+        )
+
+    @extend_schema(
         summary="Create the parties a person ticked",
         description=(
             "Makes a party for each name (or reuses one that exists) and attaches every row of theirs that has no party "

@@ -13,6 +13,8 @@ export function namedPayee(row: Classification, canManageParties: boolean): stri
   // Something is already sure of the row (a rule, a person, a confident assistant): leave it be.
   if (row.method === 'REVIEWED' || row.method === 'RULE') return null
   if (row.ledger && row.confidence >= 0.75) return null
+  // A name the bank masked (XXXXXXXXXX3 300) or a payment handle is not someone to open an account for.
+  if (/x{4,}/i.test(name) || /\d{6,}/.test(name) || /@/.test(name)) return null
   return name
 }
 

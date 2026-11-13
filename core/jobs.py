@@ -43,6 +43,7 @@ ERROR_CODES = {
     "StatementParseError": "statement_unreadable",
     "StatementContinuityError": "statement_period_missing",
     "StatementElsewhereError": "statement_elsewhere",
+    "StatementOverlapsTallyError": "statement_overlaps_tally_import",
     "AlreadyPostedError": "already_posted",
     "NotApprovableError": "not_approvable",
     "NoStatementError": "no_statement_for_date",
@@ -224,7 +225,11 @@ def expected_exceptions() -> tuple[type[Exception], ...]:
     """
     from django.core.exceptions import PermissionDenied
 
-    from banking.ingest import StatementContinuityError, StatementElsewhereError
+    from banking.ingest import (
+        StatementContinuityError,
+        StatementElsewhereError,
+        StatementOverlapsTallyError,
+    )
     from banking.parsers.base import (
         BalanceChainError,
         NoTextLayerError,
@@ -251,6 +256,7 @@ def expected_exceptions() -> tuple[type[Exception], ...]:
         PdfExtractionError,
         StatementContinuityError,
         StatementElsewhereError,
+        StatementOverlapsTallyError,
         NotApprovableError,
         AlreadyPostedError,
         NoStatementError,

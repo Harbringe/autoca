@@ -227,6 +227,11 @@ urlpatterns = [
         name="report-trial-balance",
     ),
     path(
+        "clients/<uuid:client_id>/reports/client-export/",
+        ReportView.as_view({"get": "client_export"}),
+        name="report-client-export",
+    ),
+    path(
         "clients/<uuid:client_id>/reports/financial-statements/export/",
         ReportView.as_view({"get": "financial_statements_export"}),
         name="report-financial-statements-export",

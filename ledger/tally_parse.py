@@ -612,11 +612,61 @@ def _parse_xlsx(data: bytes) -> ParsedMasters:
                     raise TallyParseError(f"This sheet has more than {MAX_SHEET_ROWS:,} rows.")
             if _find_header(rows) is not None:
                 return _read_table(rows, "xlsx")
+            if _is_grouped_report(rows):
+                return _read_grouped_report(sheet)
     finally:
         workbook.close()
     raise TallyParseError(
         "No sheet in this workbook has a Ledger (or Name) column. Export the List of Accounts from Tally."
     )
+
+
+# Tally's own "List of Ledgers" report (Display > List of Accounts > Excel): a title block (company, place, "List of Ledgers", the period),
+# then one column in which a group's name is in bold and the ledgers under it are plain, then "31 Group(s) and 310 Ledger(s)".
+_REPORT_FOOTER = re.compile(r"^\d+\s+group\(s\)", re.IGNORECASE)
+
+
+def _report_text(value) -> str:
+    # Excel stores a carriage return typed into a cell as the literal "_x000D_"; Tally leaves some in a name.
+    return " ".join(str(value if value is not None else "").replace("_x000D_", " ").split())
+
+
+def _is_grouped_report(rows) -> bool:
+    return any(_report_text(r[0] if r else None).casefold() == "list of ledgers" for r in rows[:12])
+
+
+def _read_grouped_report(sheet) -> ParsedMasters:
+    parsed = ParsedMasters(source_format="xlsx")
+    started = False
+    group = ""
+    for ordinal, row in enumerate(sheet.iter_rows(max_col=1), start=1):
+        cell = row[0] if row else None
+        text = _report_text(cell.value if cell is not None else None)
+        if not text:
+            continue
+        if not started:
+            # The block above the data ends with the period line ("1-Apr-25 to 31-Mar-26").
+            started = bool(re.match(r"^\d{1,2}-[A-Za-z]{3}-\d{2,4}\s+to\s+", text))
+            continue
+        if _REPORT_FOOTER.match(text):
+            break
+        if len(parsed.ledgers) + len(parsed.skipped) >= MAX_LEDGERS:
+            raise TallyParseError(f"This file has more than {MAX_LEDGERS:,} ledgers.")
+        try:
+            name = clean_text(text, what="group name" if cell.font.b else "ledger name")
+        except _BadText as exc:
+            parsed.skipped.append(SkippedLine(ordinal, _shown(text), str(exc)))
+            continue
+        if cell.font.b:
+            group = name
+            parsed.groups.setdefault(normal_name(name), MasterGroup(name=name, parent=""))
+        elif group:
+            parsed.ledgers.append(MasterLedger(ordinal, name, group, 0, None))
+        else:
+            parsed.skipped.append(SkippedLine(ordinal, name, "A ledger with no group above it."))
+    if not parsed.ledgers:
+        raise TallyParseError("This List of Ledgers has no ledgers in it.")
+    return parsed
 
 
 def _cell_text(value) -> str:

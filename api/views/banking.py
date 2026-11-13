@@ -206,6 +206,16 @@ def _ingest(*, client, data, filename, user, allow_gap, layout=None, password=No
     except Exception:  # noqa: BLE001
         logging.getLogger(__name__).exception("Pairing own-account transfers failed after a statement upload")
     lap("pair_transfers")
+
+    # Clear names (a person or a business named more than once, resembling nothing the client has) get their own account under
+    # Sundry Creditors or Sundry Debtors now, so the next step can place rows on them. Never loses an upload either.
+    try:
+        from classify.party_discovery import auto_open_parties
+
+        auto_open_parties(client)
+    except Exception:  # noqa: BLE001
+        logging.getLogger(__name__).exception("Opening party accounts failed after a statement upload")
+    lap("open_parties")
     stage("Matching payments to invoices")
 
     # A row that is plainly the payment of an invoice already on the books is settled against it here, before it is

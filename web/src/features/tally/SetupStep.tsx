@@ -10,10 +10,11 @@ import { PagedList } from '@/components/ca/Pager'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Checkbox, Select } from '@/components/ui/controls'
+import { Confirm } from '@/components/ca/Confirm'
 import { plural } from '@/lib/format'
 import { toast } from '@/lib/toast'
+import { messageOf } from './errors'
 
-const messageOf = (error: unknown) => (error instanceof Error && error.message ? error.message : 'Something went wrong. Try again.')
 
 const inputClass = 'h-9 rounded-md border border-input bg-card px-2 text-sm'
 
@@ -27,6 +28,8 @@ export function SetupStep({ clientId }: { clientId: string }) {
   const [skipped, setSkipped] = useState<Set<string>>(new Set())
   const [accounts, setAccounts] = useState<Record<string, AccountProposal>>({})
   const [named, setNamed] = useState<Record<string, string>>({})
+  // A change away from the group the files suggested is confirmed first, with the reason the suggestion was made. The setup has no score to show.
+  const [changing, setChanging] = useState<{ name: string; to: string; from: string; reason: string } | null>(null)
   const [done, setDone] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
@@ -215,7 +218,11 @@ export function SetupStep({ clientId }: { clientId: string }) {
                           aria-label={`Group for ${p.name}`}
                           className="w-56"
                           value={groups[p.name] ?? p.group}
-                          onChange={(e) => setGroups((cur) => ({ ...cur, [p.name]: e.target.value }))}
+                          onChange={(e) => {
+                            const to = e.target.value
+                            if (to !== p.group) setChanging({ name: p.name, to, from: p.group, reason: p.reason })
+                            else setGroups((cur) => ({ ...cur, [p.name]: to }))
+                          }}
                         >
                           {LEDGER_GROUPS.map(([g, l]) => (
                             <option key={g} value={g}>
@@ -248,6 +255,23 @@ export function SetupStep({ clientId }: { clientId: string }) {
           <CheckCircle2 className="size-4 text-success" aria-hidden /> {done}
         </div>
       )}
+      <Confirm
+        open={!!changing}
+        onOpenChange={(open) => !open && setChanging(null)}
+        title="Change the suggested group?"
+        confirmLabel="Yes, change it"
+        onConfirm={async () => {
+          if (changing) setGroups((cur) => ({ ...cur, [changing.name]: changing.to }))
+          setChanging(null)
+        }}
+      >
+        <p>
+          AutoCA thinks <strong>{changing?.name}</strong> belongs in <strong>{LEDGER_GROUPS.find(([g]) => g === changing?.from)?.[1]}</strong>: {changing?.reason}.
+        </p>
+        <p className="mt-2">
+          You are moving it to <strong>{LEDGER_GROUPS.find(([g]) => g === changing?.to)?.[1]}</strong>. Are you sure?
+        </p>
+      </Confirm>
     </Card>
   )
 }

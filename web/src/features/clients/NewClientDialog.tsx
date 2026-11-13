@@ -66,8 +66,9 @@ export function NewClientDialog({ open, onOpenChange }: { open: boolean; onOpenC
       toast.success(`${client.name} added`)
       close()
       // An administrator is taken to the team page to name the client's Senior CA, who signs off its books.
-      if (can('member.manage')) await navigate({ to: '/clients/$clientId/team', params: { clientId: client.id }, search: { new: true } })
-      else await navigate({ to: '/clients/$clientId', params: { clientId: client.id } })
+      // Not awaited: the client exists now, and a slow or failing page behind the link must not leave this dialog stuck on "Adding…".
+      if (can('member.manage')) void navigate({ to: '/clients/$clientId/team', params: { clientId: client.id }, search: { new: true } })
+      else void navigate({ to: '/clients/$clientId', params: { clientId: client.id } })
     } catch (error) {
       if (isApiError(error) && Object.keys(error.fields).length) {
         for (const [name, messages] of Object.entries(error.fields)) {

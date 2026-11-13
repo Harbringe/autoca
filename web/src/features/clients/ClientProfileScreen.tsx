@@ -5,11 +5,11 @@
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link } from '@tanstack/react-router'
-import { Users } from 'lucide-react'
+import { Download, Users } from 'lucide-react'
 import { invoiceReadings, openItems } from '@/api/queries/bills'
 import { gstRegistrations } from '@/api/queries/gst'
 import { AddGstinDialog } from '@/features/gst/ClientGst'
-import { bankAccounts, clientDetail, reviewSummary } from '@/api/queries/clients'
+import { bankAccounts, clientDetail, reviewSummary, V1 } from '@/api/queries/clients'
 import { ErrorState } from '@/components/ca/Page'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -133,11 +133,20 @@ export function ClientProfileScreen({ clientId }: { clientId: string }) {
               </div>
             )}
           </dl>
-          <Button asChild variant="outline" size="lg" className="rounded-lg font-semibold text-heading dark:border-border-strong dark:bg-background dark:hover:bg-hover">
-            <Link to="/clients/$clientId/team" params={{ clientId }}>
-              <Users /> Open client profile
-            </Link>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            {can('report.view') && (
+              <Button asChild variant="outline" size="lg" className="rounded-lg font-semibold text-heading dark:border-border-strong dark:bg-background dark:hover:bg-hover">
+                <a href={`${V1}/clients/${clientId}/reports/client-export/`} download>
+                  <Download /> Export all data to Excel
+                </a>
+              </Button>
+            )}
+            <Button asChild variant="outline" size="lg" className="rounded-lg font-semibold text-heading dark:border-border-strong dark:bg-background dark:hover:bg-hover">
+              <Link to="/clients/$clientId/team" params={{ clientId }}>
+                <Users /> Open client profile
+              </Link>
+            </Button>
+          </div>
         </Card>
         {addingGstin && <AddGstinDialog clientId={clientId} onClose={() => setAddingGstin(false)} />}
         {accounts.error && <ErrorState error={accounts.error} retry={() => void accounts.refetch()} />}

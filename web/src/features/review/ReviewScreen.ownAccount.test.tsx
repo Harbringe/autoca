@@ -113,6 +113,8 @@ describe("offering the payee's own account when the narration names a person", (
     expect(vi.mocked(raw.post)).not.toHaveBeenCalled()
 
     fireEvent.click(await screen.findByRole('button', { name: /Place in ledger/ }))
+    // The row had a suggestion and the own account replaces it, so the person is asked first.
+    fireEvent.click(await screen.findByRole('button', { name: /^Yes, place it in/ }))
     await waitFor(() => expect(vi.mocked(raw.post).mock.calls.some(([url]) => String(url).includes('/review/'))).toBe(true))
     const made = vi.mocked(raw.post).mock.calls.find(([url]) => String(url).endsWith('/parties/'))
     expect(made![1]).toEqual({ canonical_name: 'Sample Person', role: 'CUSTOMER' })

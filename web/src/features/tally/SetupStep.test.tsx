@@ -68,6 +68,8 @@ describe('SetupStep', () => {
     choose()
     await screen.findByTestId('discovery')
     fireEvent.change(screen.getByLabelText('Group for Acme Traders'), { target: { value: 'CREDITOR' } })
+    // Moving a ledger off the group AutoCA suggested asks first.
+    fireEvent.click(await screen.findByRole('button', { name: 'Yes, change it' }))
     fireEvent.click(screen.getByLabelText('Rent Paid'))
     fireEvent.click(screen.getByRole('button', { name: /Create 1 ledger and 1 bank account/ }))
     expect(await screen.findByText(/1 ledger created, 1 bank account opened/)).toBeInTheDocument()

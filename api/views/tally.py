@@ -184,7 +184,7 @@ class TallyImportViewSet(viewsets.GenericViewSet):
         payload = TallyVouchersUploadSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         upload = payload.validated_data["file"]
-        data = upload.read(settings.MAX_TALLY_IMPORT_BYTES + 1)
+        data = upload.read(settings.MAX_TALLY_VOUCHER_BYTES + 1)
         run, reused = stage_vouchers(
             client,
             request.membership,
@@ -313,7 +313,7 @@ class TallyImportViewSet(viewsets.GenericViewSet):
                 given = json.loads(given) if given else {}
             except ValueError:
                 given = {}
-        files = [(os.path.basename(u.name), u.read(settings.MAX_TALLY_IMPORT_BYTES + 1)) for u in payload.validated_data["files"]]
+        files = [(os.path.basename(u.name), u.read(settings.MAX_TALLY_VOUCHER_BYTES + 1)) for u in payload.validated_data["files"]]
         return Response(discover_files(client, request.membership, files, given if isinstance(given, dict) else {}))
 
     @extend_schema(
@@ -355,7 +355,7 @@ class TallyImportViewSet(viewsets.GenericViewSet):
         payload.is_valid(raise_exception=True)
         data = payload.validated_data
         reports = [
-            (os.path.basename(u.name), u.read(settings.MAX_TALLY_IMPORT_BYTES + 1), account)
+            (os.path.basename(u.name), u.read(settings.MAX_TALLY_VOUCHER_BYTES + 1), account)
             for u, account in zip(data["files"], data["accounts"], strict=True)
         ]
         run, reused = stage_bank_reports(

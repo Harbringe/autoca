@@ -252,10 +252,10 @@ class TallyVouchersUploadSerializer(serializers.Serializer):
     def validate_file(self, upload):
         if upload.size == 0:
             raise serializers.ValidationError("The file is empty.")
-        if upload.size > settings.MAX_TALLY_IMPORT_BYTES * 2:
+        if upload.size > settings.MAX_TALLY_VOUCHER_BYTES:
             raise serializers.ValidationError("The file is far too large to be a vouchers export.")
-        if not upload.name.lower().endswith((".xml", ".json")):
-            raise serializers.ValidationError("Upload the .xml or .json file exported from Tally.")
+        if not upload.name.lower().endswith((".xml", ".json", ".csv")):
+            raise serializers.ValidationError("Upload the .xml, .json or .csv file exported from Tally.")
         return upload
 
 
@@ -414,10 +414,10 @@ class TallyDiscoverSerializer(serializers.Serializer):
         for upload in files:
             if upload.size == 0:
                 raise serializers.ValidationError(f"{upload.name} is empty.")
-            if upload.size > settings.MAX_TALLY_IMPORT_BYTES * 2:
+            if upload.size > settings.MAX_TALLY_VOUCHER_BYTES:
                 raise serializers.ValidationError(f"{upload.name} is far too large to be a Tally export.")
-            if not upload.name.lower().endswith((".xml", ".json")):
-                raise serializers.ValidationError(f"{upload.name} is not an .xml or .json file exported from Tally.")
+            if not upload.name.lower().endswith((".xml", ".json", ".xlsx", ".csv")):
+                raise serializers.ValidationError(f"{upload.name} is not an .xml, .json, .xlsx or .csv file exported from Tally.")
         return files
 
 
@@ -499,7 +499,7 @@ class TallyBankReportUploadSerializer(serializers.Serializer):
         for upload in attrs["files"]:
             if upload.size == 0:
                 raise serializers.ValidationError(f"{upload.name} is empty.")
-            if upload.size > settings.MAX_TALLY_IMPORT_BYTES * 2:
+            if upload.size > settings.MAX_TALLY_VOUCHER_BYTES:
                 raise serializers.ValidationError(f"{upload.name} is far too large to be a bank report.")
             if not upload.name.lower().endswith(".xml"):
                 raise serializers.ValidationError(f"{upload.name} is not an .xml file exported from Tally.")

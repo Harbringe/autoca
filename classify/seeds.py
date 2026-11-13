@@ -220,6 +220,7 @@ def rename_account_ledger(account, name: str) -> int:
     Returns how many journal lines already name the ledger, so a caller can say
     how many entries moved with it.
     """
+    from banking.models import BankAccount
     from ledger.models import JournalLine
 
     name = " ".join(name.split())
@@ -235,6 +236,22 @@ def rename_account_ledger(account, name: str) -> int:
         firm_id=account.firm_id, client_id=account.client_id, name=name
     ).exclude(pk=current.pk if current else None)
     if clash.exists():
+        # The name is a bank, overdraft or loan ledger the client already has (typically one set up from Tally) that no account uses yet:
+        # point this account at it, and let go of its own ledger if nothing was ever posted to it. Anything else is a real clash.
+        target = clash.first()
+        in_use = BankAccount.objects.filter(firm_id=account.firm_id, client_id=account.client_id, ledger_name=name).exclude(pk=account.pk).exists()
+        bankish = target.group in (LedgerGroup.BANK, LedgerGroup.BANK_OD, LedgerGroup.LOAN)
+        empty = current is None or not JournalLine.objects.filter(firm_id=account.firm_id, ledger_account=current).exists()
+        if clash.count() == 1 and bankish and not in_use and empty:
+            if current is not None:
+                try:
+                    with transaction.atomic():
+                        current.delete()
+                except Exception as exc:  # noqa: BLE001 - a rule or row still points at it: leave it, and say so
+                    raise LedgerRenameError(f"This client already has a ledger named {name!r}.") from exc
+            account.ledger_name = name
+            account.save(update_fields=["ledger_name"])
+            return 0
         raise LedgerRenameError(f"This client already has a ledger named {name!r}.")
 
     posted = 0

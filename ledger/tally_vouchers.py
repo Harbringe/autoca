@@ -92,8 +92,16 @@ def parse_vouchers(data: bytes, filename: str, *, max_bytes: int) -> ParsedVouch
     if len(data) > max_bytes:
         raise TallyTooLargeError(f"This file is larger than {max_bytes // (1024 * 1024)} MB, which is more than an import takes.")
     name = filename.lower()
-    if not name.endswith((".xml", ".json")):
-        raise TallyParseError("A vouchers export must be a Tally XML file (.xml) or a Tally JSON file (.json).")
+    if not name.endswith((".xml", ".json", ".csv")):
+        raise TallyParseError("A vouchers export must be a Tally XML (.xml), JSON (.json) or CSV (.csv) file.")
+    if name.endswith(".csv"):
+        csv_parsed = _read_csv(_decode(data))
+        if not csv_parsed.vouchers and not csv_parsed.skipped:
+            raise TallyParseError("No vouchers were found in this file. Export the Day Book with each voucher's ledgers (not a summary) from Tally.")
+        csv_dates = [v.date for v in csv_parsed.vouchers]
+        if csv_dates:
+            csv_parsed.date_from, csv_parsed.date_to = min(csv_dates), max(csv_dates)
+        return csv_parsed
     text = _strip_illegal_xml(_decode(data))
     parsed = ParsedVouchers()
     ordinal = 0
@@ -339,3 +347,140 @@ def _read_voucher(element, ordinal: int, parsed: ParsedVouchers) -> None:
             items=items,
         )
     )
+
+
+# ---------------------------------------------------------------------------
+# CSV: a Day Book with one row per ledger line
+# ---------------------------------------------------------------------------
+
+_CSV_HEADS = {
+    "date": {"date", "voucher date", "vch date"},
+    "type": {"voucher type", "vch type", "type", "voucher"},
+    "number": {"voucher no.", "voucher no", "vch no.", "vch no", "voucher number", "number", "no."},
+    "ledger": {"ledger", "ledger name", "particulars", "account"},
+    "debit": {"debit", "debit amount", "dr", "dr amount", "withdrawal"},
+    "credit": {"credit", "credit amount", "cr", "cr amount", "deposit"},
+    "narration": {"narration", "remarks", "description"},
+}
+_DATE_FORMATS = ("%d-%m-%Y", "%d/%m/%Y", "%Y-%m-%d", "%d-%b-%y", "%d-%b-%Y", "%d/%m/%y", "%d-%m-%y")
+
+
+def _csv_date(text: str) -> datetime.date | None:
+    text = text.strip()
+    for fmt in _DATE_FORMATS:
+        try:
+            return datetime.datetime.strptime(text, fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def _csv_paise(text: str) -> int:
+    """A positive amount as paise from ``1,23,456.78`` (Indian grouping) or ``1234.5``; blank is zero. More than two decimals is refused."""
+    cleaned = (text or "").replace(",", "").replace("\u20b9", "").strip()
+    if not cleaned:
+        return 0
+    try:
+        amount = Decimal(cleaned)
+    except InvalidOperation as exc:
+        raise ValueError(f"{text.strip()[:20]!r} is not an amount.") from exc
+    if amount != amount.quantize(Decimal("0.01")):
+        raise ValueError("The amount has more than two decimals.")
+    if amount < 0:
+        raise ValueError("A debit or credit amount is not negative.")
+    return int(amount * 100)
+
+
+def _read_csv(text: str) -> ParsedVouchers:
+    import csv
+    import hashlib
+
+    sample = text[:4096]
+    delimiter = max(",;\t|", key=sample.count)
+    rows = [list(r) for r in csv.reader(io.StringIO(text), delimiter=delimiter)]
+    header, columns = None, {}
+    for index, row in enumerate(rows[:30]):
+        heads = [c.strip().casefold() for c in row]
+        found = {key: next((i for i, h in enumerate(heads) if h in names), None) for key, names in _CSV_HEADS.items()}
+        if all(found[k] is not None for k in ("date", "ledger", "debit", "credit", "type")):
+            header, columns = index, found
+            break
+    if header is None:
+        raise TallyParseError(
+            "This CSV has no vouchers table. The first row should be headings: Date, Voucher Type, Voucher No., Ledger, Debit, Credit "
+            "(and optionally Narration), with one row for each ledger line of a voucher."
+        )
+
+    def cell(row, key):
+        i = columns.get(key)
+        return row[i].strip() if i is not None and i < len(row) else ""
+
+    parsed = ParsedVouchers()
+    groups: list[dict] = []
+    current = None
+    for offset, row in enumerate(rows[header + 1 :], start=header + 2):
+        if not any(c.strip() for c in row):
+            continue
+        d, vtype, number = cell(row, "date"), cell(row, "type"), cell(row, "number")
+        if d or vtype or number or current is None:
+            # A new voucher starts wherever a date, type or number is given; a row with none of them continues the one above.
+            current = {"ordinal": offset, "date_text": d, "type": vtype, "number": number, "narration": "", "lines": []}
+            groups.append(current)
+        current["lines"].append((offset, cell(row, "ledger"), cell(row, "debit"), cell(row, "credit")))
+        current["narration"] = current["narration"] or cell(row, "narration")
+        if len(groups) > MAX_VOUCHERS:
+            raise TallyParseError(f"This file has more than {MAX_VOUCHERS:,} vouchers. Export a shorter period.")
+
+    for g in groups:
+        label = g["number"]
+
+        def skip(reason: str, g=g, label=label) -> None:
+            parsed.skipped.append(SkippedLine(ordinal=g["ordinal"], name=label, reason=reason))
+
+        day = _csv_date(g["date_text"])
+        if day is None:
+            skip(f"The date {g['date_text'][:20]!r} could not be read (use DD-MM-YYYY).")
+            continue
+        if not g["type"]:
+            skip("The voucher has no type.")
+            continue
+        if len(g["lines"]) > MAX_LINES_PER_VOUCHER:
+            skip(f"More than {MAX_LINES_PER_VOUCHER} lines.")
+            continue
+        lines, failure = [], None
+        for offset, ledger, debit, credit in g["lines"]:
+            try:
+                name = clean_text(ledger, what="ledger name")
+                dr, cr = _csv_paise(debit), _csv_paise(credit)
+            except (_BadText, ValueError) as exc:
+                failure = f"Row {offset}: {exc}"
+                break
+            if bool(dr) == bool(cr):
+                failure = f"Row {offset}: give either a debit or a credit, not both or neither."
+                break
+            lines.append(VoucherLine(ledger=name, signed_paise=dr - cr, is_party=False))
+        if failure:
+            skip(failure)
+            continue
+        if sum(line.signed_paise for line in lines) != 0:
+            skip("The debits and credits of this voucher are not equal.")
+            continue
+        number = " ".join(g["number"].split())[:64]
+        # No Tally id in a CSV, so the identity is what the voucher is: the same file read twice is the same vouchers.
+        identity = f"{g['type'].casefold()}|{number}|{day.isoformat()}|{[(line.ledger, line.signed_paise) for line in lines]}"
+        parsed.vouchers.append(
+            ParsedVoucher(
+                ordinal=g["ordinal"],
+                guid="csv:" + hashlib.sha256(identity.encode()).hexdigest()[:40],
+                tally_type=" ".join(g["type"].split())[:64],
+                number=number,
+                date=day,
+                party="",
+                narration=g["narration"][:MAX_NARRATION],
+                reference="",
+                party_gstin="",
+                own_gstin="",
+                lines=tuple(lines),
+            )
+        )
+    return parsed

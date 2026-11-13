@@ -392,6 +392,34 @@ def _check_continuity(account: BankAccount, parsed: ParsedStatement, *, allow_ga
     )
 
 
+def _tally_ledger_for(client: Client, account_number: str, kind: str) -> str:
+    """The name of the client's existing bank, overdraft or loan ledger that carries this account number, or "" when there is not exactly one.
+
+    Tally names a bank ledger after the account ("Bank Of Baroda CC 691", "HDFC OD A/c 50200104940014"). Matched on the digits: the number
+    in full, or, when the statement masks it, its last digits at the end of the ledger's name. A ledger an account already uses is not
+    offered again.
+    """
+    import re
+
+    from classify.models import LedgerAccount, LedgerGroup
+
+    digits = re.sub(r"\D", "", account_number or "")
+    if len(digits) < 3:
+        return ""
+    tail = digits[-4:]
+    taken = set(BankAccount.objects.filter(firm_id=client.firm_id, client=client).values_list("ledger_name", flat=True))
+    matches = []
+    for ledger in LedgerAccount.objects.filter(
+        firm_id=client.firm_id, client=client, group__in=[LedgerGroup.BANK, LedgerGroup.BANK_OD, LedgerGroup.LOAN]
+    ):
+        if ledger.name in taken:
+            continue
+        runs = re.findall(r"\d{3,}", ledger.name)
+        if any(run == digits or (len(digits) > len(tail) and digits in run) or run.endswith(tail) for run in runs):
+            matches.append(ledger.name)
+    return matches[0] if len(matches) == 1 else ""
+
+
 def _account_for(client: Client, parsed: ParsedStatement) -> BankAccount:
     """Find or open the account this statement belongs to.
 
@@ -425,6 +453,11 @@ def _account_for(client: Client, parsed: ParsedStatement) -> BankAccount:
         )
         account.set_account_number(parsed.account_number)
         account.set_account_holder(parsed.account_holder)
+        # A client set up from Tally already has this account's ledger under Tally's own name. Use it, so the statement and the
+        # imported vouchers are one account, and the overlap check below can see the vouchers.
+        adopted = _tally_ledger_for(client, parsed.account_number, parsed.kind)
+        if adopted:
+            account.ledger_name = adopted
         account.save()
         return account
 

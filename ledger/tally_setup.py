@@ -47,7 +47,11 @@ def looks_like_masters(filename: str, data: bytes) -> bool:
     A spreadsheet or csv is only ever masters here, since vouchers and bank reports come as XML. In XML a masters export has LEDGER
     elements and no VOUCHER elements. Tally writes UTF-16 as often as UTF-8, so the text is decoded the way the readers do.
     """
-    if (filename or "").lower().endswith((".xlsx", ".csv")):
+    if (filename or "").lower().endswith(".csv"):
+        # A voucher table (one row per ledger line, with a voucher type column) is vouchers; any other csv is a list of ledgers.
+        head = data[:4000].decode("utf-8", "ignore").casefold()
+        return not ("voucher type" in head or "vch type" in head)
+    if (filename or "").lower().endswith(".xlsx"):
         return True
     if (filename or "").lower().endswith(".json"):
         head = data[:200_000].decode("utf-8", "ignore")
@@ -79,7 +83,8 @@ def discover_files(client, membership, files: list[tuple[str, bytes]], bank_ledg
     if len(files) > MAX_FILES:
         raise TallyImportError(f"Choose at most {MAX_FILES} files at a time.")
     bank_ledgers = bank_ledgers or {}
-    cap = settings.MAX_TALLY_IMPORT_BYTES
+    cap = settings.MAX_TALLY_VOUCHER_BYTES
+    masters_cap = settings.MAX_TALLY_IMPORT_BYTES
     vouchers, loaded_reports, voucher_files, masters, master_files = [], [], 0, {}, 0
     #: Files that could not be used (a GST report, a spreadsheet that is not a ledger list), each with why. One of them does not stop the rest.
     ignored: list[dict[str, str]] = []
@@ -89,7 +94,7 @@ def discover_files(client, membership, files: list[tuple[str, bytes]], bank_ledg
             if looks_like_bank_report(data):
                 loaded_reports.append((name, parse_bank_report(data, name, max_bytes=cap)))
             elif looks_like_masters(name, data):
-                masters.update(master_groups(parse_masters(data, name, max_bytes=cap)))
+                masters.update(master_groups(parse_masters(data, name, max_bytes=masters_cap)))
                 master_files += 1
             else:
                 parsed = parse_vouchers(data, name, max_bytes=cap)

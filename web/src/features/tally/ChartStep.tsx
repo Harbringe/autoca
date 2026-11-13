@@ -11,8 +11,8 @@ import { Card } from '@/components/ui/card'
 import { Checkbox, Select } from '@/components/ui/controls'
 import { plural } from '@/lib/format'
 import { toast } from '@/lib/toast'
+import { messageOf } from './errors'
 
-const messageOf = (error: unknown) => (error instanceof Error && error.message ? error.message : 'Something went wrong. Try again.')
 
 const CHOICE_LABEL: Record<string, string> = {
   keep_ours: 'Keep ours as it is',
@@ -54,11 +54,13 @@ function startingPicks(run: MastersRun): Record<number, Pick> {
 const isSettled = (r: MastersRow, pick: Pick | undefined) =>
   (!needsChoice(r) || (!!pick?.choice && (pick.choice !== 'group' || !!pick.group))) && (!needsBank(r) || !!pick?.bank)
 
-export function ChartStep({ clientId }: { clientId: string }) {
+export function ChartStep({ clientId, fy }: { clientId: string; fy?: number }) {
   const stage = useStageMasters(clientId)
   const confirm = useConfirmMasters(clientId)
   const input = useRef<HTMLInputElement>(null)
-  const [year, setYear] = useState(defaultYear())
+  // The balances are as at the start of the year on screen, unless the person says otherwise.
+  const [chosenYear, setYear] = useState<number | null>(null)
+  const year = chosenYear ?? fy ?? defaultYear()
   const [openings, setOpenings] = useState(true)
   const [run, setRun] = useState<MastersRun | null>(null)
   const [picks, setPicks] = useState<Record<number, Pick>>({})

@@ -485,6 +485,27 @@ class ReportView(viewsets.GenericViewSet):
         return Response(StatementsSerializer(nce.build(client, year)).data)
 
     @extend_schema(
+        summary="Download everything held for this client as an Excel workbook",
+        description=(
+            "One workbook with a sheet each for the ledgers, trial balance of every year, bank accounts, statements and bank rows, "
+            "vouchers and their lines, invoices and how they were settled, parties, GST, assets, stock, TDS and the rows not yet posted. "
+            "All years. Read-only."
+        ),
+        responses={(200, "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"): OpenApiTypes.BINARY},
+    )
+    def client_export(self, request, client_id=None):
+        from ledger import client_export
+
+        client = get_visible_client(request, client_id)
+        response = HttpResponse(
+            client_export.workbook(client),
+            content_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+        stem = "".join(c if c.isalnum() else "-" for c in client.name).strip("-")[:60] or "client"
+        response["Content-Disposition"] = f'attachment; filename="{stem}-all-data.xlsx"'
+        return response
+
+    @extend_schema(
         summary="Download the financial statements as an Excel workbook",
         description=(
             "The Balance Sheet, Statement of Profit and Loss and the notes of the ICAI non-corporate format as an .xlsx, "

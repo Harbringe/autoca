@@ -10,8 +10,8 @@ import { useStageBankReports, type VoucherRun } from '@/api/queries/tallyImport'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { Select } from '@/components/ui/controls'
+import { messageOf } from './errors'
 
-const messageOf = (error: unknown) => (error instanceof Error && error.message ? error.message : 'Something went wrong. Try again.')
 
 export function BankReportStep({ clientId, onStaged, onError }: { clientId: string; onStaged: (run: VoucherRun) => void; onError: (message: string) => void }) {
   const accounts = useQuery(bankAccounts(clientId))

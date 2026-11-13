@@ -29,6 +29,7 @@ import { BankReportStep } from './BankReportStep'
 import { ChartStep } from './ChartStep'
 import { ImportQueue } from './ImportQueue'
 import { SetupStep } from './SetupStep'
+import { messageOf } from './errors'
 
 const STANDARD_TYPE_CHOICES: [string, string][] = [
   ['sales', 'Sales'],
@@ -41,9 +42,8 @@ const STANDARD_TYPE_CHOICES: [string, string][] = [
   ['contra', 'Contra'],
 ]
 
-const messageOf = (error: unknown) => (error instanceof Error && error.message ? error.message : 'Something went wrong. Try again.')
 
-export function TallyImportScreen({ clientId }: { clientId: string }) {
+export function TallyImportScreen({ clientId, fy }: { clientId: string; fy?: number }) {
   const stage = useStageVouchers(clientId)
   const confirm = useConfirmVouchers(clientId)
   const undo = useUndoVouchers(clientId)
@@ -142,18 +142,18 @@ export function TallyImportScreen({ clientId }: { clientId: string }) {
   return (
     <div className="grid gap-4">
       <SetupStep clientId={clientId} />
-      <ChartStep clientId={clientId} />
+      <ChartStep clientId={clientId} fy={fy} />
       <Card className="grid gap-3 p-4">
         <h2 className="font-medium">2. The vouchers</h2>
         <p className="text-sm text-muted-foreground">
-          Choose the vouchers exported from Tally, as XML or JSON. Each voucher is posted to the books exactly as Tally had it, and invoices become bills. Import the
+          Choose the vouchers exported from Tally, as XML, JSON or CSV (a Day Book with one row for each ledger line: Date, Voucher Type, Voucher No., Ledger, Debit, Credit). Each voucher is posted to the books exactly as Tally had it, and invoices become bills. Import the
           client's ledgers first: a voucher that names a ledger AutoCA does not have is left out, and the preview says which.
         </p>
         <div>
           <input
             ref={input}
             type="file"
-            accept=".xml,.json,text/xml,application/json"
+            accept=".xml,.json,.csv,text/xml,application/json,text/csv"
             aria-label="Vouchers file"
             className="sr-only"
             onChange={(e) => {

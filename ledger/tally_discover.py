@@ -81,12 +81,16 @@ def name_group(name: str) -> tuple[str, str] | None:
 
 
 def _account_for(name: str, group: str) -> AccountProposal | None:
-    if group not in (G.BANK, G.LOAN):
+    if group not in (G.BANK, G.LOAN, G.BANK_OD):
         return None
     number = max(_ACCOUNT_NUMBER.findall(name), key=len, default="")
+    key = normal_name(name)
+    # A person's unsecured loan sits in a loan group too, but is not an account at a bank: it needs a bank word or an account number.
+    if group == G.LOAN and not number and not (_BANK_WORDS.search(key) or _LOAN_WORDS.search(key)):
+        return None
     words = re.findall(r"[A-Za-z]+", name)
     code = (words[0] if words else "BANK").upper()[:16]
-    return AccountProposal(ledger=name, kind="LOAN" if group == G.LOAN else "BANK", bank_code=code, account_number=number)
+    return AccountProposal(ledger=name, kind="LOAN" if group in (G.LOAN, G.BANK_OD) else "BANK", bank_code=code, account_number=number)
 
 
 #: Tally's own books-wide ledgers, which a masters export lists but no client of ours needs created.
@@ -175,6 +179,13 @@ def discover(
         spelled.setdefault(key, written)
         votes.setdefault(key, Counter())
 
+    # A group of the firm's own that we cannot place ("WholeSale Party") is placed by what most of its members turned out to be: if the
+    # vouchers show most of them as suppliers, the rest are suppliers too, though only a bank payment or a journal mentions them.
+    group_votes: dict[str, Counter] = defaultdict(Counter)
+    for key, (_written, parent, settled_group) in masters.items():
+        if settled_group is None and parent and votes.get(key) and not unsure_only.get(key, False):
+            group_votes[normal_name(parent)][votes[key].most_common(1)[0][0][0]] += 1
+
     out = Discovery()
     for key, counts in sorted(votes.items(), key=lambda kv: spelled[kv[0]].lower()):
         if key in existing:
@@ -184,8 +195,17 @@ def discover(
             if settled_group is not None:
                 group, reason, unsure = settled_group, f"Its group in Tally: {parent or 'none given'}", False
             else:  # the file puts it under a group of the firm's own that we cannot place
-                guess = counts.most_common(1)[0][0] if counts else (G.SUSPENSE, "")
-                group, reason, unsure = guess[0], f"Tally puts it under {parent!r}, which is not a standard group; check it", True
+                own = counts.most_common(1)[0][0] if counts else (G.SUSPENSE, "")
+                siblings = group_votes.get(normal_name(parent))
+                group, reason, unsure = own[0], f"Tally puts it under {parent!r}, which is not a standard group; check it", True
+                if siblings:
+                    sibling_group, agreeing = siblings.most_common(1)[0]
+                    total = sum(siblings.values())
+                    where = f"Tally puts it under {parent!r}; {agreeing} of {total} ledgers there are {G(sibling_group).label}"
+                    if own[0] == sibling_group:
+                        group, reason, unsure = sibling_group, where + ", and the vouchers agree", False
+                    elif sibling_group in (G.CREDITOR, G.DEBTOR) and own[0] not in (G.CREDITOR, G.DEBTOR):
+                        group, reason, unsure = sibling_group, where, agreeing / total < 0.8
             out.ledgers.append(Proposal(name=spelled[key], group=group, reason=reason, uses=uses.get(key, 0), unsure=unsure))
             account = _account_for(spelled[key], group)
             if account is not None:

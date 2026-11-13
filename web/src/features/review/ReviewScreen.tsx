@@ -851,9 +851,19 @@ function Decision({
   const alreadyPlacedByPerson = row.method === 'REVIEWED' && unchanged
 
   function place() {
+  // Moving a row away from where the system placed it is a decision worth one more look: say what it thought, and how sure.
+  const [overriding, setOverriding] = useState(false)
+  const hasSuggestion = !!row.ledger && row.method !== 'REVIEWED' && row.method !== 'UNRESOLVED'
+  const movesAway = hasSuggestion && (ownActive || (!!ledger && ledger !== row.ledger))
+
     if (ownActive) return placeOwn()
-    if (!ledger) return ledgerInput.current?.focus()
-    return placeIn(ledger)
+    if (!ownActive && !ledger) return ledgerInput.current?.focus()
+    if (movesAway) return setOverriding(true)
+    return placeNow()
+  }
+
+  function placeNow() {
+    return placeIn(ledger!)
   }
 
   /** Open the payee's own account (a customer's for a receipt, a supplier's for a payment) and place the row in it. */
@@ -1035,6 +1045,24 @@ function Decision({
       )}
 
       {row.ledger && row.method !== 'REVIEWED' && (
+      <Confirm
+        open={overriding}
+        onOpenChange={setOverriding}
+        title="Change where the assistant placed this?"
+        confirmLabel={`Yes, place it in ${ownActive ? payeeName : (chosenLedger?.name ?? 'the chosen ledger')}`}
+        onConfirm={async () => {
+          await placeNow()
+        }}
+      >
+        <p>
+          The assistant thinks this belongs in <strong>{row.ledger_name ?? 'its suggested ledger'}</strong>
+          {row.confidence ? ` with ${Math.round(row.confidence * 100)}% confidence` : ''} ({row.memory?.label ?? row.method_display}).
+        </p>
+        <p className="mt-2">
+          You are placing it in <strong>{ownActive ? payeeName : (chosenLedger?.name ?? 'another ledger')}</strong> instead. Are you sure?
+        </p>
+      </Confirm>
+
         <div className="grid gap-1 rounded-md border border-info/30 bg-info-bg px-3 py-2 text-[13px]">
           <div className="flex items-center gap-1.5 font-medium text-foreground">
             {row.memory ? <MemoryIcon kind={row.memory.kind} className="size-4 text-info" /> : null}

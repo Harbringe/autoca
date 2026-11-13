@@ -432,6 +432,8 @@ MAX_STATEMENT_UPLOAD_BYTES = 25 * 1024 * 1024
 GSTIN_CHECKS_PER_MONTH = int(env("GSTIN_CHECKS_PER_MONTH", "500"))
 # A Tally masters file is names and numbers: ten megabytes is far past a real company's chart.
 MAX_TALLY_IMPORT_BYTES = 10 * 1024 * 1024
+# A year of vouchers is far bigger than the chart: one real shop's Day Book for a year is 45 MB of Tally's UTF-16 XML (30 MB as JSON).
+MAX_TALLY_VOUCHER_BYTES = int(env("MAX_TALLY_VOUCHER_BYTES", str(80 * 1024 * 1024)))
 # Extraction cost grows with pages, not bytes: a 300 KB file with two thousand
 # blank pages held a request for over two minutes. Checked before any extraction.
 MAX_STATEMENT_PAGES = int(env("MAX_STATEMENT_PAGES", "300"))
@@ -440,7 +442,7 @@ MAX_STATEMENT_PAGES = int(env("MAX_STATEMENT_PAGES", "300"))
 STATEMENT_UPLOAD_MODE = env("STATEMENT_UPLOAD_MODE", "inline")
 DATA_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
 FILE_UPLOAD_MAX_MEMORY_SIZE = 2 * 1024 * 1024
-DATA_UPLOAD_MAX_NUMBER_FILES = 5
+DATA_UPLOAD_MAX_NUMBER_FILES = 12  # the Tally setup picker takes up to 12 files at once
 
 # ---------------------------------------------------------------------------
 # Browser-enforced policy

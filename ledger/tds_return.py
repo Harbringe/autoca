@@ -86,10 +86,10 @@ def months_late(deducted: datetime.date, deposited: datetime.date) -> int:
     return months + (1 if deposited.day > deducted.day else 0)
 
 
-def _deposit_amount(challan, ledger) -> int:
+def _deposit_amount(challan, ledgers) -> int:
     return sum(
         line.amount_paise
-        for line in JournalLine.objects.filter(entry=challan.entry, ledger_account=ledger, direction=Direction.DEBIT)
+        for line in JournalLine.objects.filter(entry=challan.entry, ledger_account__in=ledgers, direction=Direction.DEBIT)
     )
 
 
@@ -98,16 +98,17 @@ def build(client, year: int, quarter: int, *, today: datetime.date | None = None
         raise TdsReturnError("The quarter is 1 to 4 (April to June is 1).")
     today = today or datetime.date.today()
     pack = Pack(financial_year=year, quarter=quarter, due=return_due(year, quarter))
-    ledger = tds.payable_ledger(client)
-    if ledger is None:
+    ledgers = tds.payable_ledgers(client)
+    if not ledgers:
         return pack
 
     def in_quarter(day: datetime.date) -> bool:
         return (day.year if day.month >= 4 else day.year - 1) == year and tds.quarter_of(day.month) == quarter
 
     credits = (
-        JournalLine.objects.filter(firm_id=client.firm_id, ledger_account=ledger, direction=Direction.CREDIT)
-        .select_related("entry", "entry__bill", "entry__bill__party")
+        JournalLine.objects.filter(firm_id=client.firm_id, ledger_account__in=ledgers, direction=Direction.CREDIT)
+        .select_related("entry", "entry__bill", "entry__bill__party", "ledger_account")
+        .prefetch_related("entry__lines__party")
         .order_by("entry__entry_date")
     )
     for line in credits:
@@ -115,14 +116,19 @@ def build(client, year: int, quarter: int, *, today: datetime.date | None = None
         if not in_quarter(entry.entry_date):
             continue
         bill = getattr(entry, "bill", None)
-        party = bill.party if bill is not None else None
+        party = tds.party_of(entry)
+        paid = (bill.taxable_paise if bill is not None else 0) or 0
+        if bill is None and party is not None:
+            # A journal that deducted tax: what was credited to the party, before the tax came off it.
+            paid = sum(ln.amount_paise for ln in entry.lines.all() if ln.party_id == party.pk and ln.direction == Direction.CREDIT)
+            paid += line.amount_paise
         pack.deductees.append(
             Deductee(
                 date=entry.entry_date,
                 party=party.canonical_name if party is not None else "(no party on the entry)",
                 pan=pan_of(party),
-                section=line.tds_section or tds.UNSPECIFIED,
-                paid_paise=(bill.taxable_paise if bill is not None else 0) or 0,
+                section=tds.section_of(line),
+                paid_paise=paid,
                 deducted_paise=line.amount_paise,
                 voucher=f"{entry.get_voucher_type_display()} {entry.entry_no}",
             )
@@ -130,7 +136,7 @@ def build(client, year: int, quarter: int, *, today: datetime.date | None = None
 
     challans = list(TdsChallan.objects.filter(firm_id=client.firm_id, client=client).select_related("entry").order_by("paid_on"))
     sections = {d.section for d in pack.deductees}
-    amounts = {c.pk: _deposit_amount(c, ledger) for c in challans}
+    amounts = {c.pk: _deposit_amount(c, ledgers) for c in challans}
     for challan in challans:
         if in_quarter(challan.paid_on) or challan.section in sections:
             pack.challans.append(

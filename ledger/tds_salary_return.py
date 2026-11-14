@@ -65,14 +65,14 @@ def build(client, year: int, quarter: int, *, today: datetime.date | None = None
         monthly[key] = monthly.get(key, 0) + line.tds_paise
     pack.rows = sorted(by_employee.values(), key=lambda r: r.employee.lower())
 
-    ledger = tds.payable_ledger(client)
+    ledgers = tds.payable_ledgers(client)
     deposits: list[list] = []
     for challan in TdsChallan.objects.filter(firm_id=client.firm_id, client=client, section=SECTION).select_related("entry"):
         amount = 0
-        if ledger is not None:
+        if ledgers:
             amount = sum(
                 line.amount_paise
-                for line in JournalLine.objects.filter(entry=challan.entry, ledger_account=ledger, direction=Direction.DEBIT)
+                for line in JournalLine.objects.filter(entry=challan.entry, ledger_account__in=ledgers, direction=Direction.DEBIT)
             )
         pack.challans.append(
             {"section": SECTION, "bsr_code": challan.bsr_code, "serial": challan.serial, "paid_on": challan.paid_on, "amount_paise": amount}

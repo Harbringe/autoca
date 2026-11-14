@@ -13,7 +13,7 @@ from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema
 from rest_framework import mixins, status, viewsets
 from rest_framework.decorators import action
-from rest_framework.exceptions import MethodNotAllowed
+from rest_framework.exceptions import MethodNotAllowed, NotFound
 from rest_framework.parsers import FormParser, MultiPartParser
 from rest_framework.response import Response
 
@@ -23,6 +23,7 @@ from api.serializers.banking import (
     BankAccountDetailSerializer,
     BankAccountSerializer,
     LayoutPreviewSerializer,
+    MergeAccountSerializer,
     OpeningBalanceSerializer,
     StatementSerializer,
     StatementTransactionSerializer,
@@ -31,6 +32,7 @@ from api.serializers.banking import (
 from api.serializers.core import JobSerializer
 from api.throttles import enforce
 from api.views.base import ClientScopedMixin, FirmScopedViewSet
+from banking.accounts import merge_account, remove_account
 from banking.ingest import confirm_opening_balance, ingest_statement
 from banking.models import BankAccount, Statement, StatementTransaction
 from banking.preview import preview as layout_preview
@@ -326,6 +328,40 @@ class BankAccountViewSet(ClientScopedMixin, FirmScopedViewSet):
             posted_lines = rename_account_ledger(account, payload.validated_data["ledger_name"])
         account.refresh_from_db()
         return Response({**self.get_serializer(account).data, "posted_lines": posted_lines})
+
+    @extend_schema(
+        summary="Remove an account that holds nothing",
+        description=(
+            "For an account opened by mistake: refused (409 `account_in_use`) while it has a statement or anything is posted to its "
+            "ledger. Its ledger goes with it when nothing else uses it. Logged in the masters' audit trail. Needs `ledger.manage`."
+        ),
+        request=None,
+        responses={200: OpenApiTypes.OBJECT, 409: OpenApiTypes.OBJECT},
+    )
+    @action(detail=True, methods=["post"], url_path="remove")
+    def remove(self, request, client_id=None, pk=None):
+        return Response(remove_account(self.get_object(), actor=request.user))
+
+    @extend_schema(
+        summary="Merge a duplicate account into the account it should be",
+        description=(
+            "Moves this account's statements and rows onto `into` (another account of the same client and kind) and removes this one. "
+            "Refused (409 `account_in_use`) while anything is posted to this account's ledger, while the two accounts' statements cover "
+            "the same days, while a row is already on `into`, or while their confirmed opening balances differ. Posted entries are never "
+            "moved. Logged in the masters' audit trail. Needs `ledger.manage`."
+        ),
+        request=MergeAccountSerializer,
+        responses={200: OpenApiTypes.OBJECT, 409: OpenApiTypes.OBJECT},
+    )
+    @action(detail=True, methods=["post"], url_path="merge")
+    def merge(self, request, client_id=None, pk=None):
+        payload = MergeAccountSerializer(data=request.data)
+        payload.is_valid(raise_exception=True)
+        source = self.get_object()
+        target = self.get_queryset().filter(pk=payload.validated_data["into"]).first()
+        if target is None:
+            raise NotFound("That account is not one of this client's.")
+        return Response(merge_account(source, target, actor=request.user))
 
     @extend_schema(
         summary="Confirm the opening balance",

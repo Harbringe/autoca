@@ -81,6 +81,7 @@ DOMAIN_ERRORS = {
     "WrongEntryKindError": (status.HTTP_409_CONFLICT, "wrong_entry_kind"),
     "MachineEditRefusedError": (status.HTTP_409_CONFLICT, "machine_edit_refused"),
     "StatementRemovalError": (status.HTTP_409_CONFLICT, "statement_in_use"),
+    "AccountChangeError": (status.HTTP_409_CONFLICT, "account_in_use"),
     # A form saving a record someone else changed after it was opened (api/concurrency.py).
     "StaleEditError": (status.HTTP_409_CONFLICT, "stale_edit"),
     "OpeningDiffersError": (status.HTTP_409_CONFLICT, "opening_differs"),

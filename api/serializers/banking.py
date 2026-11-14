@@ -74,6 +74,10 @@ class BankAccountDetailSerializer(BankAccountSerializer):
         fields = [*BankAccountSerializer.Meta.fields, "account_number", "account_holder"]
 
 
+class MergeAccountSerializer(serializers.Serializer):
+    into = serializers.UUIDField(help_text="The account to merge this one into: another of the same client's accounts, of the same kind.")
+
+
 class OpeningBalanceSerializer(serializers.Serializer):
     """Confirming what the client's books actually started from.
 

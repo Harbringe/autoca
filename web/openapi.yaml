@@ -983,6 +983,60 @@ paths:
               schema:
                 $ref: '#/components/schemas/BankAccount'
           description: ''
+  /api/v1/clients/{client_id}/bank-accounts/{id}/merge/:
+    post:
+      operationId: clients_bank_accounts_merge_create
+      description: Moves this account's statements and rows onto `into` (another account
+        of the same client and kind) and removes this one. Refused (409 `account_in_use`)
+        while anything is posted to this account's ledger, while the two accounts'
+        statements cover the same days, while a row is already on `into`, or while
+        their confirmed opening balances differ. Posted entries are never moved. Logged
+        in the masters' audit trail. Needs `ledger.manage`.
+      summary: Merge a duplicate account into the account it should be
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - statements
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/MergeAccountRequest'
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/MergeAccountRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/MergeAccountRequest'
+        required: true
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
   /api/v1/clients/{client_id}/bank-accounts/{id}/opening-balance/:
     post:
       operationId: clients_bank_accounts_opening_balance_create
@@ -1028,6 +1082,46 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/BankAccountDetail'
+          description: ''
+  /api/v1/clients/{client_id}/bank-accounts/{id}/remove/:
+    post:
+      operationId: clients_bank_accounts_remove_create
+      description: 'For an account opened by mistake: refused (409 `account_in_use`)
+        while it has a statement or anything is posted to its ledger. Its ledger goes
+        with it when nothing else uses it. Logged in the masters'' audit trail. Needs
+        `ledger.manage`.'
+      summary: Remove an account that holds nothing
+      parameters:
+      - in: path
+        name: client_id
+        schema:
+          type: string
+          format: uuid
+        required: true
+      - in: path
+        name: id
+        schema:
+          type: string
+          pattern: ^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$
+        required: true
+      tags:
+      - statements
+      security:
+      - cookieAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: {}
           description: ''
   /api/v1/clients/{client_id}/bills/:
     get:
@@ -17235,6 +17329,16 @@ components:
       - metrics
       - period
       - results
+    MergeAccountRequest:
+      type: object
+      properties:
+        into:
+          type: string
+          format: uuid
+          description: 'The account to merge this one into: another of the same client''s
+            accounts, of the same kind.'
+      required:
+      - into
     MergeProposalRequest:
       type: object
       properties:

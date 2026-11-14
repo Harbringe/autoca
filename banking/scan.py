@@ -27,6 +27,7 @@ from banking.parsers.base import (
     BalanceChainError,
     ParsedStatement,
     ParsedTransaction,
+    ScanServiceError,
     StatementParseError,
 )
 from banking.parsers.columns import as_date, as_paise
@@ -119,17 +120,21 @@ def _ask(llm, group: list[bytes], *, continued: bool, client=None) -> dict:
     try:
         reply = llm.complete_json_with_images(SYSTEM, prompt, group, max_tokens=8192)
     except LLMUnavailable as exc:
-        raise StatementParseError(
+        raise ScanServiceError(
             "This PDF is a scan and the model that reads scans is not set up. Set the model in the server settings."
         ) from exc
     except LLMRateLimited as exc:
         _record(client, "RATE_LIMITED", None, started, len(group))
-        raise StatementParseError(
+        raise ScanServiceError(
             "The reading service is busy or its allowance is used up. Try this scan again in a few minutes."
         ) from exc
     except LLMError as exc:
         _record(client, "ERROR", None, started, len(group))
-        raise StatementParseError(f"The scan could not be read: {exc}") from exc
+        # The service failed, not the file: a refused or expired key, a provider outage. Say so, so nobody re-downloads a good file.
+        raise ScanServiceError(
+            f"The service that reads scans did not answer properly ({exc}). Nothing is wrong with the file: whoever runs "
+            "AutoCA needs to check the reading model's key and settings. Nothing was imported."
+        ) from exc
     _record(client, "OK", reply, started, len(group))
     try:
         parsed = json.loads(reply.text)

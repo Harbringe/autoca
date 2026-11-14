@@ -721,6 +721,8 @@ class FixedAsset(UUIDModel, FirmScopedModel):
     name = models.CharField(max_length=200)
     ledger = models.ForeignKey(LedgerAccount, on_delete=models.PROTECT, related_name="assets")
     bill = models.ForeignKey(Bill, null=True, blank=True, on_delete=models.PROTECT, related_name="assets")
+    #: The entry that put the cost on the ledger when no invoice did: a journal or payment brought from Tally, say.
+    entry = models.ForeignKey(JournalEntry, null=True, blank=True, on_delete=models.PROTECT, related_name="registered_assets")
     cost_paise = models.BigIntegerField()
     residual_paise = models.BigIntegerField(default=0)
     put_to_use = models.DateField()

@@ -41,7 +41,7 @@ def test_credit_is_applied_to_the_liability_and_the_rest_is_paid_in_cash(api, cl
     assert body["outward_taxable"]["taxable_paise"] == 15_000_000 and body["itc_all_other"]["cgst_paise"] == 900_000
     assert body["liability"]["cgst_paise"] == 1_350_000 and body["paid_by_credit"]["cgst_paise"] == 900_000
     assert body["paid_in_cash"]["cgst_paise"] == 450_000 and body["paid_in_cash"]["sgst_paise"] == 450_000
-    assert body["counts"] == {"sales": 1, "purchases": 1, "reverse_charge": 0}
+    assert body["counts"] == {"sales": 1, "purchases": 1, "reverse_charge": 0, "sales_without_invoice": 0}
 
 
 def test_unused_credit_carries_to_the_next_month_and_can_be_put_right_by_hand(api, client_record):
@@ -97,3 +97,37 @@ def test_entering_figures_is_in_the_audit_trail(api, client_record):
     enter(api, client_record, exempt_paise=100)
     audit = api.get(f"{base(client_record)}/audit-trail/", {"kind": "SETTING"}).json()
     assert any("GSTR-3B entries for 2025-10" in row["label"] for row in audit["results"])
+
+
+def test_cash_sales_booked_with_no_invoice_are_outward_supplies_too(api, client_record):
+    """A month's cash sales as Tally keeps them: one sales voucher, Cash against Sales and the output tax, with no party and no bill."""
+    import datetime
+
+    from django.utils import timezone
+
+    from classify.models import LedgerAccount, LedgerGroup
+    from core.db.session import firm_context
+    from ledger.models import Direction, JournalEntry, JournalLine, VoucherType
+
+    with firm_context(client_record.firm_id):
+        def ledger(name, group):
+            return LedgerAccount.objects.get_or_create(firm_id=client_record.firm_id, client=client_record, name=name, defaults={"group": group})[0]
+
+        cash, sales = ledger("Cash", LedgerGroup.CASH), ledger("Sales Gst 5%", LedgerGroup.SALES)
+        cgst, sgst = ledger("OUTPUT CGST", LedgerGroup.DUTIES_AND_TAXES), ledger("OUTPUT SGST", LedgerGroup.DUTIES_AND_TAXES)
+        entry = JournalEntry.objects.create(
+            firm_id=client_record.firm_id, client=client_record, entry_no=1, financial_year=2025, entry_date=datetime.date(2025, 10, 31),
+            voucher_type=VoucherType.SALES, approved_at=timezone.now(), narration="Cash sales for October",
+        )
+        JournalLine.objects.bulk_create([
+            JournalLine.build(entry=entry, ledger_account=cash, direction=Direction.DEBIT, amount_paise=10_500_000),
+            JournalLine.build(entry=entry, ledger_account=sales, direction=Direction.CREDIT, amount_paise=10_000_000),
+            JournalLine.build(entry=entry, ledger_account=cgst, direction=Direction.CREDIT, amount_paise=250_000),
+            JournalLine.build(entry=entry, ledger_account=sgst, direction=Direction.CREDIT, amount_paise=250_000),
+        ])
+
+    body = month(api, client_record)
+    assert body["outward_taxable"]["taxable_paise"] == 10_000_000
+    assert body["outward_taxable"]["cgst_paise"] == 250_000 and body["outward_taxable"]["sgst_paise"] == 250_000
+    assert body["liability"]["cgst_paise"] == 250_000
+    assert body["counts"]["sales_without_invoice"] == 1

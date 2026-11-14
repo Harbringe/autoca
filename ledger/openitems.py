@@ -270,6 +270,21 @@ def purchases_not_in_the_register(client):
                 since=bill.bill_date,
                 link={"type": "bill", "id": str(bill.pk)},
             )
+    # Books brought from Tally put assets on their ledgers by journal, and carry an opening value: those count too.
+    for cost in assets.from_books(client):
+        if cost.source == "bill":
+            continue
+        yield OpenItem(
+            kind="fixed_asset_unregistered",
+            client_id=client.pk,
+            summary=(
+                f"{format_inr(cost.cost_paise)} on {cost.ledger.name} ({cost.label}) is not in the asset register, so it is "
+                "not being depreciated."
+            ),
+            amount_paise=cost.cost_paise,
+            since=cost.date,
+            link={"type": "entry", "id": str(cost.entry.pk)} if cost.entry else None,
+        )
 
 
 @detector("party_opening_unbilled", "An opening balance not yet broken into bills")

@@ -97,7 +97,51 @@ def _figures(client, month: str) -> dict:
         else:
             _add(itc, bill, 1 if bill.kind == BillKind.PURCHASE else -1)
             counts["purchases"] += 1
+    # A sale booked with no invoice behind it (a day's or a month's cash sales, as Tally keeps them) is still an outward supply: it is
+    # read from its own lines, the sales ledgers giving the value and the GST ledgers the tax, so the return holds what the books hold.
+    counts["sales_without_invoice"] = 0
+    for factor, value, tax in _sales_without_invoice(client, start, end):
+        row = outward if any(tax.values()) else None
+        if row is None:
+            untaxed += factor * value
+        else:
+            row["taxable_paise"] += factor * value
+            for head in HEADS:
+                row[f"{head}_paise"] += factor * tax[head]
+        counts["sales_without_invoice"] += 1
     return {"outward": outward, "reverse": reverse, "itc": itc, "itc_reverse": itc_reverse, "untaxed": untaxed, "counts": counts}
+
+
+_HEAD_IN_NAME = (("igst", re.compile(r"\bigst\b", re.I)), ("cgst", re.compile(r"\bcgst\b", re.I)), ("sgst", re.compile(r"\b(sgst|utgst)\b", re.I)), ("cess", re.compile(r"\bcess\b", re.I)))
+
+
+def _sales_without_invoice(client, start: datetime.date, end: datetime.date):
+    """``(factor, taxable paise, {head: tax paise})`` for each sales voucher and credit note in the period that has no invoice (bill)."""
+    from classify.models import LedgerGroup
+    from ledger.models import JournalEntry, VoucherType
+
+    entries = (
+        JournalEntry.objects.filter(
+            firm_id=client.firm_id, client=client, entry_date__range=(start, end),
+            voucher_type__in=(VoucherType.SALES, VoucherType.CREDIT_NOTE), bill__isnull=True,
+        )
+        .prefetch_related("lines__ledger_account")
+    )
+    for entry in entries:
+        factor = 1 if entry.voucher_type == VoucherType.SALES else -1
+        value, tax = 0, dict.fromkeys(HEADS, 0)
+        for line in entry.lines.all():
+            ledger = line.ledger_account
+            # A sale credits its sales and tax ledgers; a credit note debits them. Either way, read in the voucher's own direction.
+            amount = -line.signed_paise * factor
+            if ledger.group == LedgerGroup.SALES:
+                value += amount
+            elif ledger.group == LedgerGroup.DUTIES_AND_TAXES:
+                head = next((h for h, pattern in _HEAD_IN_NAME if pattern.search(ledger.name)), None)
+                if head:
+                    tax[head] += amount
+        if value or any(tax.values()):
+            yield factor, value, tax
 
 
 def _apply_credit(liability: dict, credit: dict) -> tuple[dict, dict, dict]:

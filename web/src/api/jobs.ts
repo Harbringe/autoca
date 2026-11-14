@@ -76,6 +76,10 @@ export const UPLOAD_PROBLEMS: Record<string, { title: string; help: string }> = 
     title: 'The file could not be read',
     help: 'It may be damaged, password-protected or not really a PDF. Download it again from the bank and retry.',
   },
+  scan_service_unavailable: {
+    title: 'The scan reader is not working',
+    help: 'Nothing is wrong with the file. The service that reads scans did not answer; whoever runs AutoCA needs to check its key and settings, then upload the file again.',
+  },
   statement_unreadable: {
     title: 'The statement could not be read',
     help: 'Download it again from net banking as a PDF and retry.',

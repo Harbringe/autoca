@@ -345,6 +345,46 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/assets/from-books/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * What the books hold on fixed-asset ledgers that the register does not
+         * @description Opening balances, invoices and other entries (a journal brought from Tally) that put money on a fixed-asset ledger with no asset in the register for it. Tally keeps no asset register, so this is how books brought from it get one.
+         */
+        get: operations["clients_assets_from_books_list"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/assets/from-books/register/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Register everything the books hold, on suggested terms
+         * @description Needs `journal.approve`. Each cost from `from-books` becomes an asset on the Income-tax WDV method at the rate its ledger's name points to (land is left for a person). Check the terms afterwards; an asset can be removed and registered again.
+         */
+        post: operations["clients_assets_from_books_register_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/assets/schedule/": {
         parameters: {
             query?: never;
@@ -487,6 +527,26 @@ export interface paths {
         patch: operations["clients_bank_accounts_partial_update"];
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/bank-accounts/{id}/merge/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Merge a duplicate account into the account it should be
+         * @description Moves this account's statements and rows onto `into` (another account of the same client and kind) and removes this one. Refused (409 `account_in_use`) while anything is posted to this account's ledger, while the two accounts' statements cover the same days, while a row is already on `into`, or while their confirmed opening balances differ. Posted entries are never moved. Logged in the masters' audit trail. Needs `ledger.manage`.
+         */
+        post: operations["clients_bank_accounts_merge_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/bank-accounts/{id}/opening-balance/": {
         parameters: {
             query?: never;
@@ -505,6 +565,26 @@ export interface paths {
          *     Once the client's books are signed off on or after the opening date, a change is refused with 409 `entry_locked`; the client's senior CA or a firm administrator must reopen the books first.
          */
         post: operations["clients_bank_accounts_opening_balance_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/bank-accounts/{id}/remove/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Remove an account that holds nothing
+         * @description For an account opened by mistake: refused (409 `account_in_use`) while it has a statement or anything is posted to its ledger. Its ledger goes with it when nothing else uses it. Logged in the masters' audit trail. Needs `ledger.manage`.
+         */
+        post: operations["clients_bank_accounts_remove_create"];
         delete?: never;
         options?: never;
         head?: never;
@@ -2159,6 +2239,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/clients/{client_id}/parties/auto-open/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Open the accounts of the payees that are clearly someone
+         * @description For each payee the statements name at least twice whose name looks like a person or a business, and that resembles no party or ledger the client already has, makes the party and opens its own account: Sundry Creditors if the money went out, Sundry Debtors if it came in. Done automatically after every statement upload; this runs it on existing statements. Needs `party.manage`.
+         */
+        post: operations["clients_parties_auto_open_create"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/clients/{client_id}/parties/found/": {
         parameters: {
             query?: never;
@@ -2328,6 +2428,26 @@ export interface paths {
          *     but handing one to a client without knowing that is.
          */
         get: operations["clients_reports_balance_sheet_retrieve"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/clients/{client_id}/reports/client-export/": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Download everything held for this client as an Excel workbook
+         * @description One workbook with a sheet each for the ledgers, trial balance of every year, bank accounts, statements and bank rows, vouchers and their lines, invoices and how they were settled, parties, GST, assets, stock, TDS and the rows not yet posted. All years. Read-only.
+         */
+        get: operations["clients_reports_client_export_retrieve"];
         put?: never;
         post?: never;
         delete?: never;
@@ -4639,6 +4759,8 @@ export interface components {
             ledger_name: string;
             /** Format: uuid */
             bill: string | null;
+            /** Format: uuid */
+            entry: string | null;
             /**
              * Format: int64
              * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
@@ -4684,6 +4806,11 @@ export interface components {
              */
             bill?: string | null;
             /**
+             * Format: uuid
+             * @description The entry that put the cost on the ledger when it is not an invoice (a journal brought from Tally). Not with `bill`.
+             */
+            entry?: string | null;
+            /**
              * Format: int64
              * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
              */
@@ -4717,6 +4844,8 @@ export interface components {
             ledger_name: string;
             /** Format: uuid */
             bill: string | null;
+            /** Format: uuid */
+            entry: string | null;
             /**
              * Format: int64
              * @description Whole paise, as an exact integer. 53000 means ₹530.00. Never a decimal.
@@ -5327,6 +5456,44 @@ export interface components {
             output_quantity: string;
             components: components["schemas"]["ComponentRequest"][];
         };
+        BookCost: {
+            /** Format: uuid */
+            ledger: string;
+            ledger_name: string;
+            /**
+             * @description An opening balance, an invoice, or another entry.
+             *
+             *     * `opening` - opening
+             *     * `bill` - bill
+             *     * `entry` - entry
+             */
+            source: components["schemas"]["BookCostSourceEnum"];
+            label: string;
+            /**
+             * Format: date
+             * @description The day it went on the ledger; an opening is the first day of its year.
+             */
+            date: string;
+            /**
+             * Format: int64
+             * @description What is on the ledger from it and not yet in the register.
+             */
+            cost_paise: number;
+            cost_display: string;
+            /** Format: uuid */
+            bill: string | null;
+            /** Format: uuid */
+            entry: string | null;
+            /** @description The Income-tax WDV rate the ledger's name points to; 0 for land. */
+            suggested_rate_bp: number;
+        };
+        /**
+         * @description * `opening` - opening
+         *     * `bill` - bill
+         *     * `entry` - entry
+         * @enum {string}
+         */
+        BookCostSourceEnum: "opening" | "bill" | "entry";
         BooksEvent: {
             /** Format: uuid */
             readonly id: string;
@@ -5706,7 +5873,7 @@ export interface components {
             priority?: number;
             /** Format: double */
             confidence?: number;
-            readonly source: components["schemas"]["SourceEnum"];
+            readonly source: components["schemas"]["ClassificationRuleSourceEnum"];
             is_active?: boolean;
             readonly hit_count: number;
             /** Format: date-time */
@@ -5736,6 +5903,13 @@ export interface components {
             confidence?: number;
             is_active?: boolean;
         };
+        /**
+         * @description * `SEED` - Built in
+         *     * `LEARNED` - Learned from a review
+         *     * `MANUAL` - Written by hand
+         * @enum {string}
+         */
+        ClassificationRuleSourceEnum: "SEED" | "LEARNED" | "MANUAL";
         Client: {
             /** Format: uuid */
             readonly id: string;
@@ -7547,6 +7721,13 @@ export interface components {
             /** @description Active Senior CAs and administrators who can be named as a client's lead or a manager. */
             leads: components["schemas"]["Person"][];
             results: components["schemas"]["MemberWithWork"][];
+        };
+        MergeAccountRequest: {
+            /**
+             * Format: uuid
+             * @description The account to merge this one into: another of the same client's accounts, of the same kind.
+             */
+            into: string;
         };
         MergeProposalRequest: {
             /**
@@ -10465,13 +10646,6 @@ export interface components {
             next_seal_date: string | null;
         };
         /**
-         * @description * `SEED` - Built in
-         *     * `LEARNED` - Learned from a review
-         *     * `MANUAL` - Written by hand
-         * @enum {string}
-         */
-        SourceEnum: "SEED" | "LEARNED" | "MANUAL";
-        /**
          * @description * `no_statements` - no_statements
          *     * `needs_ledger` - needs_ledger
          *     * `ready_to_post` - ready_to_post
@@ -12757,6 +12931,53 @@ export interface operations {
             };
         };
     };
+    clients_assets_from_books_list: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["BookCost"][];
+                };
+            };
+        };
+    };
+    clients_assets_from_books_register_create: {
+        parameters: {
+            query?: {
+                /** @description A page number within the paginated result set. */
+                page?: number;
+                /** @description Number of results to return per page. */
+                page_size?: number;
+            };
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PaginatedAssetList"];
+                };
+            };
+        };
+    };
     clients_assets_schedule_retrieve: {
         parameters: {
             query?: {
@@ -12984,6 +13205,46 @@ export interface operations {
             };
         };
     };
+    clients_bank_accounts_merge_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["MergeAccountRequest"];
+                "application/x-www-form-urlencoded": components["schemas"]["MergeAccountRequest"];
+                "multipart/form-data": components["schemas"]["MergeAccountRequest"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     clients_bank_accounts_opening_balance_create: {
         parameters: {
             query?: never;
@@ -13008,6 +13269,40 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BankAccountDetail"];
+                };
+            };
+        };
+    };
+    clients_bank_accounts_remove_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            409: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };
@@ -16284,6 +16579,29 @@ export interface operations {
             };
         };
     };
+    clients_parties_auto_open_create: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
     clients_parties_found_retrieve: {
         parameters: {
             query?: {
@@ -16578,6 +16896,27 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BalanceSheet"];
+                };
+            };
+        };
+    };
+    clients_reports_client_export_retrieve: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                client_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet": string;
                 };
             };
         };

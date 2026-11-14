@@ -7,7 +7,7 @@
 
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { FileUp, Pencil } from 'lucide-react'
+import { FileUp, GitMerge, Pencil, Trash2 } from 'lucide-react'
 import { useMemo, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { raw } from '@/api/client'
@@ -27,6 +27,7 @@ import { AssistantStrip } from '@/features/assistant/AssistantStrip'
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
+import { Select } from '@/components/ui/controls'
 import { Spinner } from '@/components/ui/spinner'
 import { formatDate, plural } from '@/lib/format'
 import { useSession } from '@/session/session'
@@ -46,6 +47,7 @@ export function StatementsScreen({ clientId }: { clientId: string }) {
   const stmts = useQuery(statements(clientId))
   const [opening, setOpening] = useState<BankAccount | null>(null)
   const [renaming, setRenaming] = useState<BankAccount | null>(null)
+  const [tidying, setTidying] = useState<{ account: BankAccount; mode: 'remove' | 'merge' } | null>(null)
   const [viewing, setViewing] = useState<Statement | null>(null)
   const [removing, setRemoving] = useState<Statement | null>(null)
   const invalidate = useInvalidateClient(clientId)
@@ -201,6 +203,16 @@ export function StatementsScreen({ clientId }: { clientId: string }) {
                       <Button size="sm" variant="ghost" onClick={() => setRenaming(a)} aria-label={`Rename ledger for ${a.label}`}>
                         <Pencil />
                       </Button>
+                      {(accounts.data?.results.length ?? 0) > 1 && (
+                        <Button size="sm" variant="ghost" onClick={() => setTidying({ account: a, mode: 'merge' })} aria-label={`Merge ${a.label} into another account`} title="Merge into another account">
+                          <GitMerge />
+                        </Button>
+                      )}
+                      {list.length === 0 && (
+                        <Button size="sm" variant="ghost" onClick={() => setTidying({ account: a, mode: 'remove' })} aria-label={`Remove ${a.label}`} title="Remove this account">
+                          <Trash2 />
+                        </Button>
+                      )}
                     </span>
                   )}
                 </div>
@@ -256,6 +268,15 @@ export function StatementsScreen({ clientId }: { clientId: string }) {
       </Dialog>
 
       {renaming && <RenameLedger clientId={clientId} account={renaming} onClose={() => setRenaming(null)} />}
+      {tidying && (
+        <TidyAccount
+          clientId={clientId}
+          account={tidying.account}
+          mode={tidying.mode}
+          others={accounts.data?.results ?? []}
+          onClose={() => setTidying(null)}
+        />
+      )}
       {viewing && <StatementRows clientId={clientId} statement={viewing} onClose={() => setViewing(null)} />}
 
       <Confirm
@@ -386,5 +407,87 @@ function StatementRows({ clientId, statement, onClose }: { clientId: string; sta
         )}
       </DialogContent>
     </Dialog>
+  )
+}
+
+
+/** Remove an account opened by mistake, or merge a duplicate into the account it should be. The server refuses anything that would
+ *  lose or double money (posted entries, statements on the same days, different openings) and says why; nothing posted is moved. */
+function TidyAccount({
+  clientId,
+  account,
+  mode,
+  others,
+  onClose,
+}: {
+  clientId: string
+  account: BankAccount
+  mode: 'remove' | 'merge'
+  others: BankAccount[]
+  onClose: () => void
+}) {
+  const invalidate = useInvalidateClient(clientId)
+  const choices = others.filter((o) => o.id !== account.id && o.kind === account.kind)
+  const [into, setInto] = useState<string>(choices[0]?.id ?? '')
+  const target = choices.find((c) => c.id === into)
+
+  async function go() {
+    if (mode === 'remove') {
+      await raw.post(`${V1}/clients/${clientId}/bank-accounts/${account.id}/remove/`, {})
+      await invalidate()
+      toast.success(`${account.label} removed`)
+    } else {
+      const r = await raw.post<{ statements: number; rows: number }>(`${V1}/clients/${clientId}/bank-accounts/${account.id}/merge/`, { into })
+      await invalidate()
+      toast.success(`${account.label} merged into ${target?.label ?? 'the account'}`, {
+        description: `${plural(r.statements, 'statement')} and ${plural(r.rows, 'row')} moved.`,
+      })
+    }
+    onClose()
+  }
+
+  if (mode === 'merge' && choices.length === 0) {
+    return (
+      <Confirm open onOpenChange={(o) => !o && onClose()} title="Nothing to merge into" confirmLabel="Close" onConfirm={async () => onClose()}>
+        <p>This client has no other {account.kind === 'BANK' ? 'bank' : account.kind.toLowerCase()} account to merge {account.label} into.</p>
+      </Confirm>
+    )
+  }
+
+  return (
+    <Confirm
+      open
+      onOpenChange={(o) => !o && onClose()}
+      title={mode === 'remove' ? `Remove ${account.label}?` : `Merge ${account.label} into another account?`}
+      confirmLabel={mode === 'remove' ? 'Remove account' : `Merge into ${target?.label ?? '…'}`}
+      destructive={mode === 'remove'}
+      onConfirm={go}
+    >
+      {mode === 'remove' ? (
+        <p>
+          The account has no statements and nothing posted to its ledger, so nothing in the books changes. Its ledger,
+          <b> {account.ledger_name}</b>, goes with it unless something else still uses it. The removal is kept in the audit trail.
+        </p>
+      ) : (
+        <div className="grid gap-3">
+          <p>
+            Its statements and their rows move to the account you choose, and <b>{account.label}</b> is removed. Nothing posted is moved: if
+            anything is posted to {account.ledger_name}, remove that statement first and upload it to the right account. It is refused if the two
+            accounts have statements for the same days.
+          </p>
+          <Field label="Merge into">
+            {(props) => (
+              <Select {...props} value={into} onChange={(e) => setInto(e.target.value)}>
+                {choices.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.label}
+                  </option>
+                ))}
+              </Select>
+            )}
+          </Field>
+        </div>
+      )}
+    </Confirm>
   )
 }

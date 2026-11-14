@@ -40,6 +40,7 @@ logger = logging.getLogger("autoca.api")
 DOMAIN_ERRORS = {
     # The document could not be read, or is not a statement.
     "NoTextLayerError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "no_text_layer"),
+    "ScanServiceError": (status.HTTP_503_SERVICE_UNAVAILABLE, "scan_service_unavailable"),
     "UnsupportedBankError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "unsupported_bank"),
     "ColumnInferenceError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "columns_not_inferred"),
     "BalanceChainError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "balance_chain_broken"),
@@ -81,6 +82,7 @@ DOMAIN_ERRORS = {
     "WrongEntryKindError": (status.HTTP_409_CONFLICT, "wrong_entry_kind"),
     "MachineEditRefusedError": (status.HTTP_409_CONFLICT, "machine_edit_refused"),
     "StatementRemovalError": (status.HTTP_409_CONFLICT, "statement_in_use"),
+    "AccountChangeError": (status.HTTP_409_CONFLICT, "account_in_use"),
     # A form saving a record someone else changed after it was opened (api/concurrency.py).
     "StaleEditError": (status.HTTP_409_CONFLICT, "stale_edit"),
     "OpeningDiffersError": (status.HTTP_409_CONFLICT, "opening_differs"),

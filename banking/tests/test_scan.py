@@ -8,8 +8,8 @@ import json
 import pytest
 
 from banking import scan
-from banking.parsers.base import BalanceChainError, StatementParseError
-from integrations.llm.base import LLMResponse, LLMUnavailable
+from banking.parsers.base import BalanceChainError, ScanServiceError, StatementParseError
+from integrations.llm.base import LLMError, LLMResponse, LLMUnavailable
 from integrations.pdf.base import PdfDocument, PdfPage
 
 HEADER = {
@@ -152,6 +152,16 @@ def test_a_provider_that_cannot_read_images_says_so_in_plain_words():
 
     with pytest.raises(StatementParseError, match="not set up"):
         scan.read_statement(b"pdf", document(), Blind())
+
+
+def test_a_refused_key_is_the_service_failing_not_the_file():
+    class Expired:
+        def complete_json_with_images(self, *args, **kwargs):
+            raise LLMError("OpenAI answered HTTP 401 (expired_secret_key)")
+
+    with pytest.raises(ScanServiceError, match="Nothing is wrong with the file") as caught:
+        scan.read_statement(b"pdf", document(), Expired())
+    assert "401" in str(caught.value)
 
 
 def test_a_reply_that_is_not_json_is_refused():

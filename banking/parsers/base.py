@@ -57,6 +57,13 @@ class NoTextLayerError(StatementParseError):
     """A scanned statement. OCR is the fallback path and is not wired yet."""
 
 
+class ScanServiceError(StatementParseError):
+    """The model that reads scans could not be used: not set up, its key refused, or its allowance spent.
+
+    Nothing is wrong with the file, so the person is not sent to download it again; the message says who has to act.
+    """
+
+
 def parse_amount(raw: str | None) -> int | None:
     """Parse an Indian-format money cell to whole paise. ``None`` if empty.
 

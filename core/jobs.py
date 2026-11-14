@@ -37,6 +37,7 @@ ERROR_CODES = {
     "PdfPasswordRequired": "password_required",
     "PdfPasswordIncorrect": "password_incorrect",
     "NoTextLayerError": "no_text_layer",
+    "ScanServiceError": "scan_service_unavailable",
     "UnsupportedBankError": "unsupported_bank",
     "BalanceChainError": "balance_chain_broken",
     "ColumnInferenceError": "columns_not_inferred",

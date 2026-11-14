@@ -20,15 +20,15 @@ def _fy_of(day) -> int:
 
 
 def build(client, fy: int) -> dict:
-    ledger = tds.payable_ledger(client)
+    ledgers = tds.payable_ledgers(client)
     rows = {q: {"quarter": q, "bills_paise": 0, "credited_from_bills_paise": 0, "credited_other_paise": 0, "deposited_paise": 0, "with_challan_paise": 0} for q in QUARTERS}
     unsectioned = 0
 
     for bill in Bill.objects.filter(firm_id=client.firm_id, client=client, financial_year=fy, tds_paise__gt=0):
         rows[tds.quarter_of(bill.bill_date.month)]["bills_paise"] += bill.tds_paise
 
-    if ledger is not None:
-        lines = JournalLine.objects.filter(firm_id=client.firm_id, ledger_account=ledger).select_related("entry")
+    if ledgers:
+        lines = JournalLine.objects.filter(firm_id=client.firm_id, ledger_account__in=ledgers).select_related("entry", "ledger_account")
         for line in lines:
             entry = line.entry
             if _fy_of(entry.entry_date) != fy:
@@ -37,7 +37,7 @@ def build(client, fy: int) -> dict:
             if line.direction == Direction.CREDIT:
                 if getattr(entry, "bill", None) is not None:
                     row["credited_from_bills_paise"] += line.amount_paise
-                    if not line.tds_section:
+                    if tds.section_of(line) == tds.UNSPECIFIED:
                         unsectioned += line.amount_paise
                 else:
                     row["credited_other_paise"] += line.amount_paise
@@ -46,7 +46,7 @@ def build(client, fy: int) -> dict:
         # A challan is counted in the quarter of the bank entry it explains, the same as the deposit it covers.
         for challan in TdsChallan.objects.filter(firm_id=client.firm_id, client=client).select_related("entry"):
             if _fy_of(challan.entry.entry_date) == fy:
-                rows[tds.quarter_of(challan.entry.entry_date.month)]["with_challan_paise"] += _deposit_amount(challan, ledger)
+                rows[tds.quarter_of(challan.entry.entry_date.month)]["with_challan_paise"] += _deposit_amount(challan, ledgers)
 
     quarters = []
     for q in QUARTERS:
@@ -65,5 +65,5 @@ def build(client, fy: int) -> dict:
         "still_to_deposit_paise": deducted - deposited,
         "without_section_paise": unsectioned,
         "agrees": all(r["bills_difference_paise"] == 0 and r["without_challan_paise"] == 0 for r in quarters) and not unsectioned,
-        "has_ledger": ledger is not None,
+        "has_ledger": bool(ledgers),
     }

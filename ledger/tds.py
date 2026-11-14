@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from django.db import transaction
 from django.db.models import Sum
 
-from classify.models import LedgerAccount
+from classify.models import LedgerAccount, LedgerGroup
 from core.access import require_posting_rights
 from core.rbac import require_permission
 from ledger.billing import TDS_PAYABLE
@@ -34,8 +34,68 @@ class TdsError(ValueError):
     """The challan cannot be recorded. The message says what to change."""
 
 
+_TDS_NAME = re.compile(r"\btds\b", re.I)
+_SECTION_IN_NAME = re.compile(r"(?<!\d)(19[2-6])(?!\d)\s*[-(/]?\s*([a-z]{1,2}(?![a-z]))?", re.I)
+#: What a TDS ledger's name says when it carries no section number ("TDS on Contract"), as Tally users name them.
+_SECTION_WORDS = (
+    (re.compile(r"salar", re.I), "192"),
+    (re.compile(r"interest", re.I), "194A"),
+    (re.compile(r"contract", re.I), "194C"),
+    (re.compile(r"commission|brokerage", re.I), "194H"),
+    (re.compile(r"\brent", re.I), "194I"),
+    (re.compile(r"professional|technical|consultan", re.I), "194J"),
+    (re.compile(r"purchase of goods|on purchase", re.I), "194Q"),
+)
+
+
+def payable_ledgers(client) -> list[LedgerAccount]:
+    """Every ledger that holds tax the client deducted and owes the department.
+
+    ``TDS Payable`` is the app's own. Books brought from Tally usually keep one per section ("TDS on Contract 194C", "TDS Payable
+    194J"), all under Duties & Taxes, and they are the same liability: the TDS pages read them all. TDS *receivable* (deducted by
+    the client's own customers) is an asset and is not one of them.
+    """
+    found = []
+    for ledger in LedgerAccount.objects.filter(firm_id=client.firm_id, client=client).order_by("name"):
+        if ledger.name == TDS_PAYABLE:
+            found.append(ledger)
+        elif (
+            _TDS_NAME.search(ledger.name)
+            and ledger.group in (LedgerGroup.DUTIES_AND_TAXES, LedgerGroup.CURRENT_LIABILITY)
+            and not re.search(r"receivable|recoverable|advance", ledger.name, re.I)
+        ):
+            found.append(ledger)
+    return found
+
+
 def payable_ledger(client) -> LedgerAccount | None:
+    """The app's own ``TDS Payable``, where it posts; reading goes through :func:`payable_ledgers`."""
     return LedgerAccount.objects.filter(firm_id=client.firm_id, client=client, name=TDS_PAYABLE).first()
+
+
+def section_from_name(name: str) -> str:
+    """The section a TDS ledger's name gives ("TDS 194-C" is 194C, "TDS on Professional Fees" 194J); "" when it gives none."""
+    match = _SECTION_IN_NAME.search(name or "")
+    if match:
+        return (match.group(1) + (match.group(2) or "")).upper()
+    for pattern, section in _SECTION_WORDS:
+        if pattern.search(name or ""):
+            return section
+    return ""
+
+
+def section_of(line) -> str:
+    """A deduction's section: as the line was booked, else as its ledger is named, else unspecified."""
+    return line.tds_section or section_from_name(line.ledger_account.name) or UNSPECIFIED
+
+
+def party_of(entry):
+    """Who the tax was deducted from: the bill's party, or for a journal (Dr expense, Cr party, Cr TDS) the party on its lines."""
+    bill = getattr(entry, "bill", None)
+    if bill is not None and bill.party_id:
+        return bill.party
+    line = next((ln for ln in entry.lines.all() if ln.party_id), None)
+    return line.party if line is not None else None
 
 
 def due_date(year: int, month: int) -> datetime.date:
@@ -78,13 +138,13 @@ class Month:
 
 def position(client) -> list[Month]:
     """Each section's deductions by month, with the deposits for that section matched oldest first."""
-    ledger = payable_ledger(client)
-    if ledger is None:
+    ledgers = payable_ledgers(client)
+    if not ledgers:
         return []
-    lines = JournalLine.objects.filter(firm_id=client.firm_id, ledger_account=ledger).select_related("entry")
+    lines = JournalLine.objects.filter(firm_id=client.firm_id, ledger_account__in=ledgers).select_related("entry", "ledger_account")
     by_key: dict[tuple, Month] = {}
     for line in lines.filter(direction=Direction.CREDIT):
-        section = line.tds_section or UNSPECIFIED
+        section = section_of(line)
         day = line.entry.entry_date
         month = by_key.setdefault((section, day.year, day.month), Month(section, day.year, day.month))
         month.deducted_paise += line.amount_paise
@@ -92,7 +152,7 @@ def position(client) -> list[Month]:
     paid: dict[str, int] = {}
     for challan in TdsChallan.objects.filter(firm_id=client.firm_id, client=client).select_related("entry"):
         amount = (
-            JournalLine.objects.filter(entry=challan.entry, ledger_account=ledger, direction=Direction.DEBIT).aggregate(
+            JournalLine.objects.filter(entry=challan.entry, ledger_account__in=ledgers, direction=Direction.DEBIT).aggregate(
                 total=Sum("amount_paise")
             )["total"]
             or 0
@@ -110,13 +170,13 @@ def position(client) -> list[Month]:
 
 
 def payments_without_challan(client) -> list[tuple[JournalEntry, int]]:
-    """Bank payments debited to TDS Payable that have no challan recorded: money paid in that cannot be reported yet."""
-    ledger = payable_ledger(client)
-    if ledger is None:
+    """Bank payments debited to a TDS ledger that have no challan recorded: money paid in that cannot be reported yet."""
+    ledgers = payable_ledgers(client)
+    if not ledgers:
         return []
     out = []
     lines = (
-        JournalLine.objects.filter(firm_id=client.firm_id, ledger_account=ledger, direction=Direction.DEBIT)
+        JournalLine.objects.filter(firm_id=client.firm_id, ledger_account__in=ledgers, direction=Direction.DEBIT)
         .select_related("entry")
         .order_by("entry__entry_date")
     )
@@ -144,9 +204,9 @@ def record_challan(
         raise TdsError("That payment belongs to a different client.")
     if entry.entry_kind != EntryKind.BANK:
         raise TdsError("A challan is recorded against a bank payment.")
-    ledger = payable_ledger(client)
+    ledgers = payable_ledgers(client)
     debit = (
-        JournalLine.objects.filter(entry=entry, ledger_account=ledger, direction=Direction.DEBIT).first() if ledger else None
+        JournalLine.objects.filter(entry=entry, ledger_account__in=ledgers, direction=Direction.DEBIT).first() if ledgers else None
     )
     if debit is None:
         raise TdsError("That payment is not booked to TDS Payable, so it is not a TDS deposit.")

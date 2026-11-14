@@ -9,6 +9,7 @@ Depreciation is computed from the terms (``ledger.depreciation``) each time it i
 from __future__ import annotations
 
 import datetime
+import re
 from dataclasses import dataclass
 
 from django.db import transaction
@@ -19,11 +20,146 @@ from classify.models import LedgerAccount, LedgerGroup, LedgerStatus
 from core.access import require_posting_rights
 from core.rbac import require_permission
 from ledger import depreciation
-from ledger.models import Bill, BillKind, DepreciationPosting, Direction, FixedAsset, JournalLine
+from ledger.models import (
+    Bill,
+    BillKind,
+    DepreciationPosting,
+    Direction,
+    FixedAsset,
+    JournalEntry,
+    JournalLine,
+    LedgerOpening,
+)
 
 
 class AssetError(ValueError):
     """The register cannot take this. The message says what to change."""
+
+
+# ---------------------------------------------------------------------------
+# What the books hold on fixed-asset ledgers that the register does not
+# ---------------------------------------------------------------------------
+
+#: The Income-tax block rates (WDV) a ledger's name points to, as a starting suggestion the accountant confirms. Land has none.
+_RATE_BY_NAME = (
+    (re.compile(r"\bland\b", re.I), 0),
+    (re.compile(r"computer|laptop|printer|software|server|\bit\b", re.I), 4000),
+    (re.compile(r"building|premises|office|shop|godown|warehouse", re.I), 1000),
+    (re.compile(r"furniture|fixture|fitting", re.I), 1000),
+    (re.compile(r"vehicle|car\b|motor|scooter|bike|truck|tempo", re.I), 1500),
+)
+_DEFAULT_RATE_BP = 1500  # plant and machinery, the general block
+
+
+def suggested_rate_bp(ledger_name: str) -> int:
+    for pattern, rate in _RATE_BY_NAME:
+        if pattern.search(ledger_name or ""):
+            return rate
+    return _DEFAULT_RATE_BP
+
+
+@dataclass(frozen=True)
+class BookCost:
+    """Money on a fixed-asset ledger with no asset in the register for it: an opening balance, an invoice, or another entry."""
+
+    ledger: LedgerAccount
+    source: str  # "opening", "bill" or "entry"
+    date: datetime.date
+    cost_paise: int
+    bill: Bill | None = None
+    entry: JournalEntry | None = None
+    label: str = ""
+
+    @property
+    def rate_bp(self) -> int:
+        return suggested_rate_bp(self.ledger.name)
+
+
+def _opening_date(financial_year: int) -> datetime.date:
+    return datetime.date(financial_year, 4, 1)
+
+
+def from_books(client) -> list[BookCost]:
+    """Everything on the client's fixed-asset ledgers that is not yet in the register, oldest first.
+
+    Books brought from Tally have no asset register (Tally keeps none): what they have is an opening balance on each
+    fixed-asset ledger and the entries that added to it. Each becomes a cost the accountant can register in one step, with
+    the terms (method, rate, life) they decide; nothing is registered on its own.
+    """
+    out: list[BookCost] = []
+    ledgers = {
+        ledger.pk: ledger
+        for ledger in LedgerAccount.objects.filter(firm_id=client.firm_id, client=client, group=LedgerGroup.FIXED_ASSET)
+    }
+    if not ledgers:
+        return out
+    registered_assets = list(FixedAsset.objects.filter(firm_id=client.firm_id, client=client, ledger_id__in=ledgers))
+
+    # Openings: the value brought forward. Only the earliest year's is a cost of its own; a later year's opening is the
+    # earlier years carried on, already in the register through those years' assets.
+    first: dict = {}
+    for opening in LedgerOpening.objects.filter(firm_id=client.firm_id, client=client, ledger_id__in=ledgers).order_by("financial_year"):
+        first.setdefault(opening.ledger_id, opening)
+    for ledger_id, opening in first.items():
+        if opening.signed_paise <= 0:
+            continue
+        day = _opening_date(opening.financial_year)
+        done = sum(
+            a.cost_paise for a in registered_assets
+            if a.ledger_id == ledger_id and a.bill_id is None and a.entry_id is None and a.put_to_use == day
+        )
+        left = opening.signed_paise - done
+        if left > 0:
+            out.append(BookCost(ledgers[ledger_id], "opening", day, left, label=f"Brought forward on {day:%d-%m-%Y}"))
+
+    # Entries that debited a fixed-asset ledger: invoices through the register's own bill link, anything else by its entry.
+    debits = (
+        JournalLine.objects.filter(firm_id=client.firm_id, ledger_account_id__in=ledgers, direction=Direction.DEBIT)
+        .exclude(entry__depreciation_posting__isnull=False)
+        .select_related("entry")
+        .order_by("entry__entry_date", "entry__entry_no")
+    )
+    per_entry: dict = {}
+    for line in debits:
+        key = (line.entry_id, line.ledger_account_id)
+        per_entry.setdefault(key, [line.entry, 0])[1] += line.amount_paise
+    bills = {b.entry_id: b for b in Bill.objects.filter(firm_id=client.firm_id, client=client, entry_id__in={k[0] for k in per_entry})}
+    for (entry_id, ledger_id), (entry, total) in per_entry.items():
+        bill = bills.get(entry_id)
+        if bill is not None:
+            done = sum(a.cost_paise for a in registered_assets if a.bill_id == bill.pk and a.ledger_id == ledger_id)
+            label = f"Invoice {bill.reference}"
+        else:
+            done = sum(a.cost_paise for a in registered_assets if a.entry_id == entry_id and a.ledger_id == ledger_id)
+            label = f"{entry.get_voucher_type_display()} {entry.entry_no}"
+        left = total - done
+        if left > 0:
+            out.append(
+                BookCost(ledgers[ledger_id], "bill" if bill else "entry", entry.entry_date, left, bill=bill,
+                         entry=None if bill else entry, label=label)
+            )
+    out.sort(key=lambda c: (c.date, c.ledger.name))
+    return out
+
+
+@transaction.atomic
+def register_from_books(client, *, membership) -> list[FixedAsset]:
+    """Register every cost :func:`from_books` lists, on the Income-tax WDV method at the rate its ledger suggests.
+
+    A ledger with no rate (land) is left for a person. The terms are a start: each asset can be removed and registered again.
+    """
+    made = []
+    for cost in from_books(client):
+        if not cost.rate_bp:
+            continue
+        made.append(
+            register_asset(
+                client, name=f"{cost.ledger.name} ({cost.label})"[:200], ledger=cost.ledger, cost_paise=cost.cost_paise,
+                put_to_use=cost.date, method=depreciation.WDV_IT, rate_bp=cost.rate_bp, bill=cost.bill, entry=cost.entry,
+                membership=membership,
+            )
+        )
+    return made
 
 
 def asset_lines(bill: Bill) -> dict:
@@ -75,6 +211,7 @@ def register_asset(
     method: str,
     membership,
     bill: Bill | None = None,
+    entry: JournalEntry | None = None,
     life_years: int = 0,
     rate_bp: int = 0,
     residual_paise: int = 0,
@@ -106,6 +243,26 @@ def register_asset(
                 f"registered, so at most {room} paise can be added."
             )
 
+    if entry is not None:
+        if bill is not None:
+            raise AssetError("An asset comes from an invoice or from an entry, not both.")
+        if entry.client_id != client.pk or entry.firm_id != client.firm_id:
+            raise AssetError("That entry belongs to a different client.")
+        if Bill.objects.filter(entry=entry).exists():
+            raise AssetError("That entry is an invoice: register the asset from the invoice.")
+        put = (
+            JournalLine.objects.filter(entry=entry, ledger_account=ledger, direction=Direction.DEBIT).aggregate(t=Sum("amount_paise"))["t"]
+            or 0
+        )
+        if not put:
+            raise AssetError(f"That entry put nothing on {ledger.name!r}.")
+        done = FixedAsset.objects.filter(entry=entry, ledger=ledger).aggregate(t=Sum("cost_paise"))["t"] or 0
+        if cost_paise > put - done:
+            raise AssetError(
+                f"That entry put {put} paise on {ledger.name!r} and {done} is already registered, so at most {put - done} "
+                "paise can be added."
+            )
+
     terms = depreciation.AssetTerms(
         cost_paise=cost_paise, put_to_use=put_to_use, method=method, life_years=life_years, rate_bp=rate_bp,
         residual_paise=residual_paise,
@@ -114,7 +271,7 @@ def register_asset(
     if problem:
         raise AssetError(problem)
     return FixedAsset.objects.create(
-        firm_id=client.firm_id, client=client, name=name[:200], ledger=ledger, bill=bill, cost_paise=cost_paise,
+        firm_id=client.firm_id, client=client, name=name[:200], ledger=ledger, bill=bill, entry=entry, cost_paise=cost_paise,
         residual_paise=residual_paise, put_to_use=put_to_use, method=method, life_years=life_years, rate_bp=rate_bp,
     )
 

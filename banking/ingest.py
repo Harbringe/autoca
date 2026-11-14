@@ -66,6 +66,9 @@ class IngestResult:
     #: True when the statement printed an opening balance of nothing that its rows contradict, so the opening shown was worked
     #: back from the first row. The person is told to check it against the client's books.
     opening_inferred: bool = False
+    #: What the books said this account held the day before the statement starts, when that differs from the statement's own
+    #: opening and everything before it is posted (typically history imported from Tally). None when they agree or cannot be told.
+    books_balance_before_paise: int | None = None
 
     @property
     def bank_account(self) -> BankAccount:
@@ -242,7 +245,28 @@ def ingest_statement(
         is_new=True,
         needs_opening_confirmation=not account.has_opening_balance,
         opening_inferred=parsed.opening_inferred,
+        books_balance_before_paise=_books_disagree(account, parsed),
     )
+
+
+def _books_disagree(account: BankAccount, parsed: ParsedStatement) -> int | None:
+    """The books' balance for this account on the day before the statement, when it is not what the statement opens at.
+
+    Said only when the books can answer: the opening balance is confirmed on or before that day and nothing up to it waits to be
+    posted. A difference then is a real break between the client's history (a Tally import, an earlier statement) and the bank, which
+    month-end reconciliation would show only when someone asks for that exact day.
+    """
+    import datetime
+
+    from ledger.reconciliation import _unapproved_up_to, ledger_balance
+
+    day_before = parsed.period_start - datetime.timedelta(days=1)
+    if not account.has_opening_balance or account.opening_as_of > day_before:
+        return None
+    if _unapproved_up_to(account, day_before):
+        return None
+    books = ledger_balance(account, day_before)
+    return books if books != parsed.opening_balance_paise else None
 
 
 class OpeningDiffersError(RuntimeError):
@@ -392,6 +416,31 @@ def _check_continuity(account: BankAccount, parsed: ParsedStatement, *, allow_ga
     )
 
 
+def account_digits_tail(account_number: str) -> str:
+    """The last digits of an account number as printed, after any mask: "979XXXXXXXX458" is "458", "97940100000190" is "0190"."""
+    import re
+
+    run = re.search(r"(\d+)\s*$", account_number or "")
+    return run.group(1)[-4:] if run and len(run.group(1)) >= 3 else ""
+
+
+def ledger_names_account(ledger_name: str, account_number: str) -> bool:
+    """Whether a ledger's name carries this account number: in full, or (when the statement masks it) ending in the digits it shows."""
+    import re
+
+    tail = account_digits_tail(account_number)
+    if not tail:
+        return False
+    masked = bool(re.search(r"[Xx*]", account_number or ""))
+    full = re.sub(r"\D", "", account_number or "")
+    for run in re.findall(r"\d{3,}", ledger_name):
+        if run.endswith(tail) and (masked or run == full or full.endswith(run)):
+            return True
+        if len(run) <= 4 and not masked and full.endswith(run):  # a ledger named after the last digits only ("CC 691")
+            return True
+    return False
+
+
 def _tally_ledger_for(client: Client, account_number: str, kind: str) -> str:
     """The name of the client's existing bank, overdraft or loan ledger that carries this account number, or "" when there is not exactly one.
 
@@ -399,25 +448,71 @@ def _tally_ledger_for(client: Client, account_number: str, kind: str) -> str:
     in full, or, when the statement masks it, its last digits at the end of the ledger's name. A ledger an account already uses is not
     offered again.
     """
-    import re
 
     from classify.models import LedgerAccount, LedgerGroup
 
-    digits = re.sub(r"\D", "", account_number or "")
-    if len(digits) < 3:
+    if not account_digits_tail(account_number):
         return ""
-    tail = digits[-4:]
     taken = set(BankAccount.objects.filter(firm_id=client.firm_id, client=client).values_list("ledger_name", flat=True))
-    matches = []
-    for ledger in LedgerAccount.objects.filter(
-        firm_id=client.firm_id, client=client, group__in=[LedgerGroup.BANK, LedgerGroup.BANK_OD, LedgerGroup.LOAN]
-    ):
-        if ledger.name in taken:
-            continue
-        runs = re.findall(r"\d{3,}", ledger.name)
-        if any(run == digits or (len(digits) > len(tail) and digits in run) or run.endswith(tail) for run in runs):
-            matches.append(ledger.name)
+    matches = [
+        ledger.name
+        for ledger in LedgerAccount.objects.filter(
+            firm_id=client.firm_id, client=client, group__in=[LedgerGroup.BANK, LedgerGroup.BANK_OD, LedgerGroup.LOAN]
+        )
+        if ledger.name not in taken and ledger_names_account(ledger.name, account_number)
+    ]
     return matches[0] if len(matches) == 1 else ""
+
+
+def numbers_name_one_account(saved: str, printed: str) -> bool:
+    """Whether two account numbers, either of which may be masked ("979XXXXXXXX458"), are the same account.
+
+    Two full numbers are the same only when equal. When one is masked, the digits it shows after the mask must end the other.
+    """
+    import re
+
+    masked = lambda n: bool(re.search(r"[Xx*]", n or ""))  # noqa: E731
+    if not masked(saved) and not masked(printed):
+        return re.sub(r"\D", "", saved or "") == re.sub(r"\D", "", printed or "") != ""
+    for shown, other in ((printed, saved), (saved, printed)):
+        if masked(shown):
+            tail = re.search(r"(\d{3,})\s*$", shown or "")
+            if tail and re.sub(r"\D", "", other or "").endswith(tail.group(1)) and not (masked(other) and other != shown):
+                return True
+    return False
+
+
+def _same_account_otherwise(client: Client, parsed: ParsedStatement, lookup: str) -> BankAccount | None:
+    """The client's account this statement is for when the exact match missed: the same number saved under another bank code (an
+    account set up from Tally is named after its ledger, not by a statement reader), or the same account with its number masked on one
+    side. Only ever one: two candidates are not guessed between, and a new account is opened instead, as before.
+    """
+    same_kind = BankAccount.objects.filter(firm_id=client.firm_id, client=client, kind=parsed.kind)
+    if not (parsed.account_number or "").strip():
+        return _account_by_opening(same_kind, parsed)
+    by_number = list(same_kind.filter(account_number_hash=lookup))
+    if len(by_number) == 1:
+        return by_number[0]
+    by_digits = [a for a in same_kind if numbers_name_one_account(a.account_number, parsed.account_number)]
+    return by_digits[0] if len(by_digits) == 1 else None
+
+
+def _account_by_opening(accounts, parsed: ParsedStatement) -> BankAccount | None:
+    """For a file that prints no account number (a bank's CSV export often does not): the one account whose books stand at exactly
+    this statement's opening on the day before it starts. A figure to the paisa on a confirmed opening is the statement's own evidence of
+    whose it is; none, or two, and nothing is guessed.
+    """
+    import datetime
+
+    from ledger.reconciliation import ledger_balance
+
+    day_before = parsed.period_start - datetime.timedelta(days=1)
+    matching = [
+        a
+        for a in accounts
+        if a.has_opening_balance and a.opening_as_of <= day_before and ledger_balance(a, day_before) == parsed.opening_balance_paise
+    ]
+    return matching[0] if len(matching) == 1 else None
 
 
 def _account_for(client: Client, parsed: ParsedStatement) -> BankAccount:
@@ -430,12 +525,17 @@ def _account_for(client: Client, parsed: ParsedStatement) -> BankAccount:
     file a statement against the wrong one.
     """
     lookup = BankAccount.lookup_hash(parsed.account_number, client.firm_id)
-    account = BankAccount.objects.filter(
+    exact = BankAccount.objects.filter(
         firm_id=client.firm_id,
         client=client,
         bank_code=parsed.bank_code,
         account_number_hash=lookup,
     ).first()
+    if (parsed.account_number or "").strip():
+        account = exact or _same_account_otherwise(client, parsed, lookup)
+    else:
+        # No number printed: an empty number identifies nothing, so the account whose books meet this statement's opening comes first.
+        account = _same_account_otherwise(client, parsed, lookup) or exact
 
     if account is not None and account.kind != parsed.kind:
         raise StatementParseError(

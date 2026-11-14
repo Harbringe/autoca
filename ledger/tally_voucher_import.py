@@ -19,6 +19,7 @@ import datetime
 import hashlib
 import logging
 import os
+from collections import Counter
 from decimal import Decimal
 
 from django.conf import settings
@@ -234,6 +235,13 @@ def _vouchers_from_report(report, bank_ledger: str) -> list[ParsedVoucher]:
 def _stage(client, user, all_vouchers, skipped, digest, date_from, date_to, type_map=None, document=None):
     vouchers = [v for v in all_vouchers if (date_from is None or v.date >= date_from) and (date_to is None or v.date <= date_to)]
     if not vouchers:
+        if skipped and not all_vouchers:
+            # Every voucher in the file was left out: say why, rather than suggest the file is empty.
+            reasons = Counter(s.reason for s in skipped).most_common(2)
+            why = "; ".join(f"{n} {'voucher' if n == 1 else 'vouchers'}: {reason}" for reason, n in reasons)
+            raise TallyImportError(
+                f"{'The one voucher' if len(skipped) == 1 else f'None of the {len(skipped)} vouchers'} in this file {'cannot' if len(skipped) == 1 else 'can'} be imported. {why}"
+            )
         raise TallyImportError("There are no vouchers to import in this file for that period.")
     first, last = min(v.date for v in vouchers), max(v.date for v in vouchers)
     year = financial_year(first)

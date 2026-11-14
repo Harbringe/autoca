@@ -47,6 +47,7 @@ export function isApiError(value: unknown): value is ApiError {
 const TITLES: Record<string, string> = {
   balance_chain_broken: 'The statement does not add up',
   no_text_layer: 'This PDF has no readable text',
+  scan_service_unavailable: 'The scan reader is not working',
   unsupported_bank: 'This bank format is not recognised',
   statement_period_missing: 'A month is missing between statements',
   unreadable_file: 'The file could not be read',

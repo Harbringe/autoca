@@ -40,6 +40,7 @@ logger = logging.getLogger("autoca.api")
 DOMAIN_ERRORS = {
     # The document could not be read, or is not a statement.
     "NoTextLayerError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "no_text_layer"),
+    "ScanServiceError": (status.HTTP_503_SERVICE_UNAVAILABLE, "scan_service_unavailable"),
     "UnsupportedBankError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "unsupported_bank"),
     "ColumnInferenceError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "columns_not_inferred"),
     "BalanceChainError": (status.HTTP_422_UNPROCESSABLE_ENTITY, "balance_chain_broken"),

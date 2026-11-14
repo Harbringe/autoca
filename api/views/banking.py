@@ -42,6 +42,7 @@ from classify.seeds import rename_account_ledger, seed_client
 from core.access import get_visible_client, visible_client_ids
 from core.jobs import run_job
 from core.models import Job, JobStatus
+from core.money import format_inr
 from integrations import files
 
 
@@ -253,6 +254,9 @@ def _ingest(*, client, data, filename, user, allow_gap, layout=None, password=No
         "rows_already_present": result.rows_already_present,
         "needs_opening_confirmation": result.needs_opening_confirmation,
         "opening_inferred": result.opening_inferred,
+        # The books disagree with where this statement starts (see banking.ingest._books_disagree); None when they agree.
+        "books_balance_before_paise": result.books_balance_before_paise,
+        "books_balance_before_display": format_inr(result.books_balance_before_paise) if result.books_balance_before_paise is not None else None,
         "suggested": classified.placed,
         "queued_for_review": classified.queued,
         "waiting_for_assistant": waiting,

@@ -93,6 +93,9 @@ export interface IngestResult {
   needs_opening_confirmation: boolean
   /** The statement printed 0.00 as its opening balance but its rows imply another, which is the one shown. Older servers do not say. */
   opening_inferred?: boolean
+  /** What the books held the day before the statement starts, when it is not the statement's opening (a break to look into). */
+  books_balance_before_paise?: number | null
+  books_balance_before_display?: string | null
   suggested: number
   queued_for_review: number
   /** Rows left for the assistant, which reads them a few at a time after the upload. */
@@ -176,6 +179,7 @@ export interface InviteDescription {
   firm: string
   role_display: string
   team: string
+  has_account: boolean
 }
 
 // --- team (generated) -------------------------------------------------------

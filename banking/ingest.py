@@ -66,6 +66,9 @@ class IngestResult:
     #: True when the statement printed an opening balance of nothing that its rows contradict, so the opening shown was worked
     #: back from the first row. The person is told to check it against the client's books.
     opening_inferred: bool = False
+    #: What the books said this account held the day before the statement starts, when that differs from the statement's own
+    #: opening and everything before it is posted (typically history imported from Tally). None when they agree or cannot be told.
+    books_balance_before_paise: int | None = None
 
     @property
     def bank_account(self) -> BankAccount:
@@ -242,7 +245,28 @@ def ingest_statement(
         is_new=True,
         needs_opening_confirmation=not account.has_opening_balance,
         opening_inferred=parsed.opening_inferred,
+        books_balance_before_paise=_books_disagree(account, parsed),
     )
+
+
+def _books_disagree(account: BankAccount, parsed: ParsedStatement) -> int | None:
+    """The books' balance for this account on the day before the statement, when it is not what the statement opens at.
+
+    Said only when the books can answer: the opening balance is confirmed on or before that day and nothing up to it waits to be
+    posted. A difference then is a real break between the client's history (a Tally import, an earlier statement) and the bank, which
+    month-end reconciliation would show only when someone asks for that exact day.
+    """
+    import datetime
+
+    from ledger.reconciliation import _unapproved_up_to, ledger_balance
+
+    day_before = parsed.period_start - datetime.timedelta(days=1)
+    if not account.has_opening_balance or account.opening_as_of > day_before:
+        return None
+    if _unapproved_up_to(account, day_before):
+        return None
+    books = ledger_balance(account, day_before)
+    return books if books != parsed.opening_balance_paise else None
 
 
 class OpeningDiffersError(RuntimeError):
@@ -440,6 +464,37 @@ def _tally_ledger_for(client: Client, account_number: str, kind: str) -> str:
     return matches[0] if len(matches) == 1 else ""
 
 
+def numbers_name_one_account(saved: str, printed: str) -> bool:
+    """Whether two account numbers, either of which may be masked ("979XXXXXXXX458"), are the same account.
+
+    Two full numbers are the same only when equal. When one is masked, the digits it shows after the mask must end the other.
+    """
+    import re
+
+    masked = lambda n: bool(re.search(r"[Xx*]", n or ""))  # noqa: E731
+    if not masked(saved) and not masked(printed):
+        return re.sub(r"\D", "", saved or "") == re.sub(r"\D", "", printed or "") != ""
+    for shown, other in ((printed, saved), (saved, printed)):
+        if masked(shown):
+            tail = re.search(r"(\d{3,})\s*$", shown or "")
+            if tail and re.sub(r"\D", "", other or "").endswith(tail.group(1)) and not (masked(other) and other != shown):
+                return True
+    return False
+
+
+def _same_account_otherwise(client: Client, parsed: ParsedStatement, lookup: str) -> BankAccount | None:
+    """The client's account this statement is for when the exact match missed: the same number saved under another bank code (an
+    account set up from Tally is named after its ledger, not by a statement reader), or the same account with its number masked on one
+    side. Only ever one: two candidates are not guessed between, and a new account is opened instead, as before.
+    """
+    same_kind = BankAccount.objects.filter(firm_id=client.firm_id, client=client, kind=parsed.kind)
+    by_number = list(same_kind.filter(account_number_hash=lookup))
+    if len(by_number) == 1:
+        return by_number[0]
+    by_digits = [a for a in same_kind if numbers_name_one_account(a.account_number, parsed.account_number)]
+    return by_digits[0] if len(by_digits) == 1 else None
+
+
 def _account_for(client: Client, parsed: ParsedStatement) -> BankAccount:
     """Find or open the account this statement belongs to.
 
@@ -456,6 +511,8 @@ def _account_for(client: Client, parsed: ParsedStatement) -> BankAccount:
         bank_code=parsed.bank_code,
         account_number_hash=lookup,
     ).first()
+    if account is None:
+        account = _same_account_otherwise(client, parsed, lookup)
 
     if account is not None and account.kind != parsed.kind:
         raise StatementParseError(

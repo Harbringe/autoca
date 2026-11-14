@@ -526,6 +526,7 @@ function Done({
   const waitingForAssistant = Math.min(result.waiting_for_assistant ?? 0, needLedger)
   const [openingDone, setOpeningDone] = useState(!result.needs_opening_confirmation)
   const openingWorkedBack = !!result.opening_inferred && !!statement
+  const booksDisagree = result.books_balance_before_paise != null && !!statement
 
   const facts: [string, string | number][] = [
     ['Bank account', account?.label ?? '—'],
@@ -568,6 +569,14 @@ function Done({
           The statement printed <b>0.00</b> as its opening balance, but its first row needs <b>{statement?.opening_balance_display}</b>. That is the opening shown
           here, worked back from the first row; every row after it agrees with the balances the statement prints. Check it against the client’s books before you
           confirm it.
+        </p>
+      )}
+
+      {booksDisagree && (
+        <p role="alert" className="rounded-md border border-warning/40 bg-warning-bg px-3 py-2 text-sm">
+          The books do not agree with where this statement starts. The day before it, the books show <b>{result.books_balance_before_display}</b> for
+          this account; the statement opens at <b>{statement?.opening_balance_display}</b>. Everything before it is posted, so this is a real
+          difference in the earlier entries (an imported Tally entry, or an earlier statement). Find and correct it before closing the month.
         </p>
       )}
 

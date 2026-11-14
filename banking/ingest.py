@@ -488,11 +488,31 @@ def _same_account_otherwise(client: Client, parsed: ParsedStatement, lookup: str
     side. Only ever one: two candidates are not guessed between, and a new account is opened instead, as before.
     """
     same_kind = BankAccount.objects.filter(firm_id=client.firm_id, client=client, kind=parsed.kind)
+    if not (parsed.account_number or "").strip():
+        return _account_by_opening(same_kind, parsed)
     by_number = list(same_kind.filter(account_number_hash=lookup))
     if len(by_number) == 1:
         return by_number[0]
     by_digits = [a for a in same_kind if numbers_name_one_account(a.account_number, parsed.account_number)]
     return by_digits[0] if len(by_digits) == 1 else None
+
+
+def _account_by_opening(accounts, parsed: ParsedStatement) -> BankAccount | None:
+    """For a file that prints no account number (a bank's CSV export often does not): the one account whose books stand at exactly
+    this statement's opening on the day before it starts. A figure to the paisa on a confirmed opening is the statement's own evidence of
+    whose it is; none, or two, and nothing is guessed.
+    """
+    import datetime
+
+    from ledger.reconciliation import ledger_balance
+
+    day_before = parsed.period_start - datetime.timedelta(days=1)
+    matching = [
+        a
+        for a in accounts
+        if a.has_opening_balance and a.opening_as_of <= day_before and ledger_balance(a, day_before) == parsed.opening_balance_paise
+    ]
+    return matching[0] if len(matching) == 1 else None
 
 
 def _account_for(client: Client, parsed: ParsedStatement) -> BankAccount:
@@ -505,14 +525,17 @@ def _account_for(client: Client, parsed: ParsedStatement) -> BankAccount:
     file a statement against the wrong one.
     """
     lookup = BankAccount.lookup_hash(parsed.account_number, client.firm_id)
-    account = BankAccount.objects.filter(
+    exact = BankAccount.objects.filter(
         firm_id=client.firm_id,
         client=client,
         bank_code=parsed.bank_code,
         account_number_hash=lookup,
     ).first()
-    if account is None:
-        account = _same_account_otherwise(client, parsed, lookup)
+    if (parsed.account_number or "").strip():
+        account = exact or _same_account_otherwise(client, parsed, lookup)
+    else:
+        # No number printed: an empty number identifies nothing, so the account whose books meet this statement's opening comes first.
+        account = _same_account_otherwise(client, parsed, lookup) or exact
 
     if account is not None and account.kind != parsed.kind:
         raise StatementParseError(

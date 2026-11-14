@@ -118,6 +118,16 @@ def test_a_queued_import_keeps_its_file_and_can_be_read_again_or_discarded(api, 
     assert api.post(url(client_record, fresh.json()["id"], "confirm-vouchers"), {}, format="json").status_code == 409
 
 
+def test_a_file_whose_every_voucher_is_left_out_says_why(api, client_record, chart):
+    # A bank-to-Tally converter writes vouchers with no GUID; each is refused, and the person is told the reason, not "nothing here".
+    import re
+
+    data = re.sub(rb"<GUID>[^<]*</GUID>", b"", vouchers_xml([sale()]))
+    response = upload(api, client_record, data=data)
+    assert response.status_code >= 400
+    assert "no identifier" in response.json()["detail"] and "The one voucher in this file cannot be imported" in response.json()["detail"]
+
+
 def test_a_file_with_a_doctype_is_422(api, client_record, chart):
     bomb = b'<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "aaaa">]><ENVELOPE>&a;</ENVELOPE>'
     response = upload(api, client_record, data=bomb)

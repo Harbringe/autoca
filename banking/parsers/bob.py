@@ -43,6 +43,7 @@ _HEADER = re.compile(r"TRAN\s+DATE\s+VALUE\s+DATE\s+NARRATION", re.IGNORECASE)
 _IFSC = re.compile(r"IFSC\s+Code\s*:\s*(BARB0[A-Z0-9]{6})", re.IGNORECASE)
 _PERIOD = re.compile(r"Statement\s+Period\s+from\s+(\d{2}/\d{2}/\d{4})\s+to\s+(\d{2}/\d{2}/\d{4})", re.IGNORECASE)
 _ACCOUNT = re.compile(r"Account\s+No\s*:\s*([0-9Xx*]{6,24})", re.IGNORECASE)
+_STATEMENT_TITLE = re.compile(r"Your\s+Account\s+Statement\s+as\s+on", re.IGNORECASE)
 _HOLDER = re.compile(r"Account\s+Holder\s+Name\s*:\s*([^\n]+?)\s+Address\s*:", re.IGNORECASE)
 #: Lines at the foot of every page.
 _FOOTER = re.compile(r"Contact-Us@|computer-generated statement|^Page\s+\d+\s+of\s+\d+", re.IGNORECASE)
@@ -59,7 +60,10 @@ class BankOfBarodaParser(StatementParser):
     @classmethod
     def detect(cls, document: PdfDocument) -> bool:
         first = document.pages[0].text if document.pages else ""
-        return bool(_IFSC.search(first) and _HEADER.search(first) and "BALANCE" in first.upper())
+        # Some statements print "IFSC Code:" with nothing after it (a current account's one-row statement did); the account line and the
+        # statement title still say it is Bank of Baroda's layout.
+        is_bob = bool(_IFSC.search(first)) or bool(_ACCOUNT.search(first) and _STATEMENT_TITLE.search(first))
+        return bool(is_bob and _HEADER.search(first) and "BALANCE" in first.upper())
 
     def parse(self, document: PdfDocument) -> ParsedStatement:
         head = document.pages[0].text

@@ -392,6 +392,31 @@ def _check_continuity(account: BankAccount, parsed: ParsedStatement, *, allow_ga
     )
 
 
+def account_digits_tail(account_number: str) -> str:
+    """The last digits of an account number as printed, after any mask: "979XXXXXXXX458" is "458", "97940100000190" is "0190"."""
+    import re
+
+    run = re.search(r"(\d+)\s*$", account_number or "")
+    return run.group(1)[-4:] if run and len(run.group(1)) >= 3 else ""
+
+
+def ledger_names_account(ledger_name: str, account_number: str) -> bool:
+    """Whether a ledger's name carries this account number: in full, or (when the statement masks it) ending in the digits it shows."""
+    import re
+
+    tail = account_digits_tail(account_number)
+    if not tail:
+        return False
+    masked = bool(re.search(r"[Xx*]", account_number or ""))
+    full = re.sub(r"\D", "", account_number or "")
+    for run in re.findall(r"\d{3,}", ledger_name):
+        if run.endswith(tail) and (masked or run == full or full.endswith(run)):
+            return True
+        if len(run) <= 4 and not masked and full.endswith(run):  # a ledger named after the last digits only ("CC 691")
+            return True
+    return False
+
+
 def _tally_ledger_for(client: Client, account_number: str, kind: str) -> str:
     """The name of the client's existing bank, overdraft or loan ledger that carries this account number, or "" when there is not exactly one.
 
@@ -399,24 +424,19 @@ def _tally_ledger_for(client: Client, account_number: str, kind: str) -> str:
     in full, or, when the statement masks it, its last digits at the end of the ledger's name. A ledger an account already uses is not
     offered again.
     """
-    import re
 
     from classify.models import LedgerAccount, LedgerGroup
 
-    digits = re.sub(r"\D", "", account_number or "")
-    if len(digits) < 3:
+    if not account_digits_tail(account_number):
         return ""
-    tail = digits[-4:]
     taken = set(BankAccount.objects.filter(firm_id=client.firm_id, client=client).values_list("ledger_name", flat=True))
-    matches = []
-    for ledger in LedgerAccount.objects.filter(
-        firm_id=client.firm_id, client=client, group__in=[LedgerGroup.BANK, LedgerGroup.BANK_OD, LedgerGroup.LOAN]
-    ):
-        if ledger.name in taken:
-            continue
-        runs = re.findall(r"\d{3,}", ledger.name)
-        if any(run == digits or (len(digits) > len(tail) and digits in run) or run.endswith(tail) for run in runs):
-            matches.append(ledger.name)
+    matches = [
+        ledger.name
+        for ledger in LedgerAccount.objects.filter(
+            firm_id=client.firm_id, client=client, group__in=[LedgerGroup.BANK, LedgerGroup.BANK_OD, LedgerGroup.LOAN]
+        )
+        if ledger.name not in taken and ledger_names_account(ledger.name, account_number)
+    ]
     return matches[0] if len(matches) == 1 else ""
 
 

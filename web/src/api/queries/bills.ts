@@ -7,7 +7,7 @@
 
 import { queryOptions, useMutation, useQueryClient } from '@tanstack/react-query'
 import { raw } from '@/api/client'
-import type { AssetSchedule, TdsSummary, Bill, CloseReport, FoundParties, InvoiceReading, BillCreateRequest, BillDetail, OpenItems, OpeningStanding, Outstanding, PartyStatement, SettlementContext } from '@/api/types'
+import type { Asset, AssetSchedule, BookCost, TdsSummary, Bill, CloseReport, FoundParties, InvoiceReading, BillCreateRequest, BillDetail, OpenItems, OpeningStanding, Outstanding, PartyStatement, SettlementContext } from '@/api/types'
 import { allPages } from './books'
 import { clientKeys, useInvalidateClient, V1 } from './clients'
 
@@ -274,6 +274,21 @@ export const assetSchedule = (clientId: string, year: number) =>
     queryKey: clientKeys.part(clientId, 'assets', year),
     queryFn: () => raw.get<AssetSchedule>(`${V1}/clients/${clientId}/assets/schedule/`, { fy: year }),
   })
+
+/** What the books hold on fixed-asset ledgers that the register does not: openings, invoices, journals brought from Tally. */
+export const assetsFromBooks = (clientId: string) =>
+  queryOptions({
+    queryKey: clientKeys.part(clientId, 'assets', 'from-books'),
+    queryFn: () => raw.get<BookCost[]>(`${V1}/clients/${clientId}/assets/from-books/`),
+  })
+
+export function useRegisterFromBooks(clientId: string) {
+  const invalidate = useInvalidateClient(clientId)
+  return useMutation({
+    mutationFn: () => raw.post<Asset[]>(`${V1}/clients/${clientId}/assets/from-books/register/`, {}),
+    onSuccess: invalidate,
+  })
+}
 
 export function useRegisterAsset(clientId: string) {
   const invalidate = useInvalidateClient(clientId)

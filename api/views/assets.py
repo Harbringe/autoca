@@ -15,11 +15,13 @@ from api.permissions import CanApprove, HasFirmPermission
 from api.serializers.assets import (
     AssetCreateSerializer,
     AssetSerializer,
+    BookCostSerializer,
     DepreciationStatusSerializer,
     DepreciationYearSerializer,
     DisposeSerializer,
     ScheduleSerializer,
     asset_payload,
+    book_cost_payload,
     depreciation_payload,
     schedule_payload,
 )
@@ -27,7 +29,7 @@ from api.views.base import ClientScopedMixin
 from classify.models import LedgerAccount
 from core.fy import financial_year
 from ledger import assets
-from ledger.models import Bill, FixedAsset
+from ledger.models import Bill, FixedAsset, JournalEntry
 
 
 @extend_schema(tags=["assets"])
@@ -74,11 +76,15 @@ class AssetViewSet(
         bill = (
             get_object_or_404(Bill, pk=data["bill"], firm_id=request.firm.pk, client=client) if data["bill"] else None
         )
+        entry = (
+            get_object_or_404(JournalEntry, pk=data["entry"], firm_id=request.firm.pk, client=client) if data["entry"] else None
+        )
         made = assets.register_asset(
             client,
             name=data["name"],
             ledger=ledger,
             bill=bill,
+            entry=entry,
             cost_paise=data["cost_paise"],
             residual_paise=data["residual_paise"],
             put_to_use=data["put_to_use"],
@@ -88,6 +94,34 @@ class AssetViewSet(
             membership=request.membership,
         )
         return Response(AssetSerializer(asset_payload(made)).data, status=status.HTTP_201_CREATED)
+
+    @extend_schema(
+        summary="What the books hold on fixed-asset ledgers that the register does not",
+        description=(
+            "Opening balances, invoices and other entries (a journal brought from Tally) that put money on a fixed-asset "
+            "ledger with no asset in the register for it. Tally keeps no asset register, so this is how books brought from it "
+            "get one."
+        ),
+        responses={200: BookCostSerializer(many=True)},
+    )
+    @action(detail=False, methods=["get"], url_path="from-books", pagination_class=None)
+    def from_books(self, request, client_id=None):
+        return Response(BookCostSerializer([book_cost_payload(c) for c in assets.from_books(self.client)], many=True).data)
+
+    @extend_schema(
+        summary="Register everything the books hold, on suggested terms",
+        description=(
+            "Needs `journal.approve`. Each cost from `from-books` becomes an asset on the Income-tax WDV method at the rate its "
+            "ledger's name points to (land is left for a person). Check the terms afterwards; an asset can be removed and "
+            "registered again."
+        ),
+        request=None,
+        responses={201: AssetSerializer(many=True)},
+    )
+    @action(detail=False, methods=["post"], url_path="from-books/register", permission_classes=[CanApprove])
+    def register_from_books(self, request, client_id=None):
+        made = assets.register_from_books(self.client, membership=request.membership)
+        return Response(AssetSerializer([asset_payload(a) for a in made], many=True).data, status=status.HTTP_201_CREATED)
 
     @extend_schema(summary="Record the sale of an asset", request=DisposeSerializer, responses={200: AssetSerializer})
     @action(detail=True, methods=["post"], url_path="dispose", permission_classes=[CanApprove])

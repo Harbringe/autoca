@@ -9,10 +9,10 @@ import { Plus } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from '@/lib/toast'
 import { messageOf } from '@/api/errors'
-import { assetSchedule, bills as billsQuery, depreciationStatus, useAssetAction, useBookDepreciation, useRegisterAsset } from '@/api/queries/bills'
+import { assetSchedule, assetsFromBooks, bills as billsQuery, depreciationStatus, useAssetAction, useBookDepreciation, useRegisterAsset, useRegisterFromBooks } from '@/api/queries/bills'
 import { ledgers as ledgersQuery } from '@/api/queries/books'
 import { clientDetail } from '@/api/queries/clients'
-import type { Asset } from '@/api/types'
+import type { Asset, BookCost } from '@/api/types'
 import { Confirm } from '@/components/ca/Confirm'
 import { Money } from '@/components/ca/Money'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
@@ -25,7 +25,7 @@ import { Field } from '@/components/ui/field'
 import { Input } from '@/components/ui/input'
 import { Spinner } from '@/components/ui/spinner'
 import { useFy } from '@/features/shell/useFy'
-import { financialYearOf, formatDate, fyLabel, parseDate, parseRupees } from '@/lib/format'
+import { financialYearOf, formatDate, fyLabel, parseDate, parseRupees, plural } from '@/lib/format'
 import { cn } from '@/lib/utils'
 import { useSession } from '@/session/session'
 
@@ -40,7 +40,7 @@ export function AssetsScreen({ clientId }: { clientId: string }) {
   const action = useAssetAction(clientId)
   const booked = useQuery({ ...depreciationStatus(clientId, year), placeholderData: keepPreviousData })
   const book = useBookDepreciation(clientId)
-  const [adding, setAdding] = useState(false)
+  const [adding, setAdding] = useState<BookCost | boolean>(false)
   const [selling, setSelling] = useState<Asset | null>(null)
   const [removing, setRemoving] = useState<Asset | null>(null)
   // Remounts (and so fades in) only when another year has really arrived, not while the old one is held, dimmed, in its place.
@@ -113,6 +113,8 @@ export function AssetsScreen({ clientId }: { clientId: string }) {
           </Button>
         )}
       </div>
+
+      {mayEdit && <FromBooks clientId={clientId} onAdd={(cost) => setAdding(cost)} />}
 
       {data.rows.length === 0 ? (
         <EmptyState title="No assets in use this year">
@@ -199,25 +201,97 @@ export function AssetsScreen({ clientId }: { clientId: string }) {
         <p>The asset is deleted from the register and its depreciation goes with it. If a year's depreciation was already booked, take it out and book it again. The purchase it came from is not touched.</p>
       </Confirm>
 
-      {adding && <RegisterDialog clientId={clientId} onClose={() => setAdding(false)} />}
+      {adding && <RegisterDialog clientId={clientId} prefill={adding === true ? undefined : adding} onClose={() => setAdding(false)} />}
       {selling && <SellDialog clientId={clientId} asset={selling} onClose={() => setSelling(null)} />}
     </div>
   )
 }
 
-function RegisterDialog({ clientId, onClose }: { clientId: string; onClose: () => void }) {
+/** Money on fixed-asset ledgers with no asset in the register: an opening brought forward, an invoice, or a journal from Tally.
+ *  Tally keeps no asset register, so this is how books brought from it get one. Nothing is registered until a person says so. */
+function FromBooks({ clientId, onAdd }: { clientId: string; onAdd: (cost: BookCost) => void }) {
+  const costs = useQuery(assetsFromBooks(clientId))
+  const registerAll = useRegisterFromBooks(clientId)
+  const [confirming, setConfirming] = useState(false)
+  const rows = costs.data ?? []
+  if (rows.length === 0) return null
+  const takeable = rows.filter((r) => r.suggested_rate_bp > 0).length
+  return (
+    <section className="fade-in rounded-xl border border-border-strong bg-card" aria-labelledby="from-books-title">
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border-strong px-4 py-3">
+        <div>
+          <h2 id="from-books-title" className="font-semibold text-heading">In the books, not in the register</h2>
+          <p className="text-sm text-muted-foreground">
+            What the fixed-asset ledgers hold with no asset to depreciate: openings brought forward, invoices, and journals brought from Tally.
+          </p>
+        </div>
+        {takeable > 0 && (
+          <Button size="sm" variant="outline" onClick={() => setConfirming(true)}>
+            Register {takeable === rows.length ? 'all' : takeable} on suggested terms
+          </Button>
+        )}
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[40rem] text-sm">
+          <caption className="sr-only">Costs on fixed-asset ledgers not yet in the register</caption>
+          <thead className="text-xs text-muted-foreground">
+            <tr>
+              <th scope="col" className="px-4 py-2 text-left font-semibold">Ledger</th>
+              <th scope="col" className="px-4 py-2 text-left font-semibold">From</th>
+              <th scope="col" className="px-4 py-2 text-right font-semibold">Cost (₹)</th>
+              <th scope="col" className="px-4 py-2 text-right font-semibold">Suggested rate</th>
+              <th scope="col" className="px-4 py-2" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={`${r.ledger}|${r.source}|${r.entry ?? r.bill ?? r.date}`} className="border-t border-border-strong">
+                <th scope="row" className="px-4 py-2 text-left font-medium text-heading">{r.ledger_name}</th>
+                <td className="px-4 py-2 text-muted-foreground">{r.label} · {formatDate(r.date)}</td>
+                <td className="px-4 py-2 text-right"><Money display={r.cost_display} symbol={false} /></td>
+                <td className="px-4 py-2 text-right tabular-nums">{r.suggested_rate_bp ? `${r.suggested_rate_bp / 100}% WDV` : 'None (land)'}</td>
+                <td className="px-4 py-2 text-right">
+                  <Button size="sm" variant="ghost" onClick={() => onAdd(r)}>Register…</Button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Confirm
+        open={confirming}
+        onOpenChange={setConfirming}
+        title={`Register ${plural(takeable, 'asset')} on suggested terms?`}
+        confirmLabel="Register"
+        onConfirm={async () => {
+          const made = await registerAll.mutateAsync()
+          toast.success(`${plural(made.length, 'asset')} registered`)
+        }}
+      >
+        <p>
+          Each becomes an asset on the Income-tax written-down-value method, at the rate its ledger’s name points to (computers 40%,
+          furniture and buildings 10%, vehicles and machinery 15%). Land is left for you. Check the terms afterwards: an asset can be
+          removed and registered again with others.
+        </p>
+      </Confirm>
+    </section>
+  )
+}
+
+function RegisterDialog({ clientId, prefill, onClose }: { clientId: string; prefill?: BookCost; onClose: () => void }) {
   const ledgers = useQuery(ledgersQuery(clientId))
   const bills = useQuery(billsQuery(clientId, { kind: 'PURCHASE' }))
   const register = useRegisterAsset(clientId)
-  const [name, setName] = useState('')
-  const [ledger, setLedger] = useState('')
-  const [bill, setBill] = useState('')
-  const [cost, setCost] = useState('')
+  const [name, setName] = useState(prefill ? prefill.ledger_name : '')
+  const [ledger, setLedger] = useState(prefill?.ledger ?? '')
+  const [bill, setBill] = useState(prefill?.bill ?? '')
+  const entry = prefill?.entry ?? null
+  const [cost, setCost] = useState(prefill ? (prefill.cost_paise / 100).toFixed(2) : '')
   const [residual, setResidual] = useState('')
-  const [used, setUsed] = useState('')
-  const [method, setMethod] = useState('SLM')
+  const [used, setUsed] = useState(prefill ? formatDate(prefill.date) : '')
+  const [method, setMethod] = useState(prefill?.suggested_rate_bp ? 'WDV_IT' : 'SLM')
   const [life, setLife] = useState('10')
-  const [rate, setRate] = useState('15')
+  const [rate, setRate] = useState(prefill?.suggested_rate_bp ? String(prefill.suggested_rate_bp / 100) : '15')
   const [error, setError] = useState<string | null>(null)
 
   const assetLedgers = (ledgers.data ?? []).filter((l) => l.group === 'FIXED_ASSET' && l.is_active)
@@ -237,6 +311,7 @@ function RegisterDialog({ clientId, onClose }: { clientId: string; onClose: () =
         name: name.trim(),
         ledger,
         bill: bill || null,
+        entry,
         cost_paise: costPaise,
         residual_paise: residualPaise,
         put_to_use: date,
@@ -253,7 +328,11 @@ function RegisterDialog({ clientId, onClose }: { clientId: string; onClose: () =
       <DialogContent className="max-h-[92svh] overflow-y-auto sm:max-w-xl" aria-describedby={undefined}>
         <DialogHeader>
           <DialogTitle>Register an asset</DialogTitle>
-          <DialogDescription>Pick the purchase it was bought on: its cost cannot exceed what that purchase put on the ledger.</DialogDescription>
+          <DialogDescription>
+            {prefill
+              ? `From ${prefill.label}: the cost cannot exceed what it put on ${prefill.ledger_name}.`
+              : 'Pick the purchase it was bought on: its cost cannot exceed what that purchase put on the ledger.'}
+          </DialogDescription>
         </DialogHeader>
         <div className="grid gap-3">
           <Field label="Name">{(p) => <Input {...p} value={name} onChange={(e) => setName(e.target.value)} />}</Field>

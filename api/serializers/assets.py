@@ -15,6 +15,10 @@ class AssetCreateSerializer(serializers.Serializer):
     bill = serializers.UUIDField(
         required=False, allow_null=True, default=None, help_text="The purchase it was bought on. The cost cannot exceed what that purchase put on the ledger."
     )
+    entry = serializers.UUIDField(
+        required=False, allow_null=True, default=None,
+        help_text="The entry that put the cost on the ledger when it is not an invoice (a journal brought from Tally). Not with `bill`.",
+    )
     cost_paise = PaiseField(min_value=1)
     residual_paise = PaiseField(min_value=0, default=0, help_text="What it is worth at the end of its life.")
     put_to_use = serializers.DateField()
@@ -34,6 +38,7 @@ class AssetSerializer(serializers.Serializer):
     ledger = serializers.UUIDField()
     ledger_name = serializers.CharField()
     bill = serializers.UUIDField(allow_null=True)
+    entry = serializers.UUIDField(allow_null=True)
     cost_paise = PaiseField()
     cost_display = serializers.CharField()
     residual_paise = PaiseField()
@@ -44,6 +49,34 @@ class AssetSerializer(serializers.Serializer):
     rate_bp = serializers.IntegerField()
     disposed_on = serializers.DateField(allow_null=True)
     disposal_paise = PaiseField(allow_null=True)
+
+
+class BookCostSerializer(serializers.Serializer):
+    ledger = serializers.UUIDField()
+    ledger_name = serializers.CharField()
+    source = serializers.ChoiceField(choices=["opening", "bill", "entry"], help_text="An opening balance, an invoice, or another entry.")
+    label = serializers.CharField()
+    date = serializers.DateField(help_text="The day it went on the ledger; an opening is the first day of its year.")
+    cost_paise = PaiseField(help_text="What is on the ledger from it and not yet in the register.")
+    cost_display = serializers.CharField()
+    bill = serializers.UUIDField(allow_null=True)
+    entry = serializers.UUIDField(allow_null=True)
+    suggested_rate_bp = serializers.IntegerField(help_text="The Income-tax WDV rate the ledger's name points to; 0 for land.")
+
+
+def book_cost_payload(cost) -> dict:
+    return {
+        "ledger": cost.ledger.pk,
+        "ledger_name": cost.ledger.name,
+        "source": cost.source,
+        "label": cost.label,
+        "date": cost.date,
+        "cost_paise": cost.cost_paise,
+        "cost_display": format_inr(cost.cost_paise),
+        "bill": cost.bill.pk if cost.bill else None,
+        "entry": cost.entry.pk if cost.entry else None,
+        "suggested_rate_bp": cost.rate_bp,
+    }
 
 
 class ScheduleRowSerializer(serializers.Serializer):
@@ -74,6 +107,7 @@ def asset_payload(asset) -> dict:
         "ledger": asset.ledger_id,
         "ledger_name": asset.ledger.name,
         "bill": asset.bill_id,
+        "entry": asset.entry_id,
         "cost_paise": asset.cost_paise,
         "cost_display": format_inr(asset.cost_paise),
         "residual_paise": asset.residual_paise,

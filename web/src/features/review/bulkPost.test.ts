@@ -20,7 +20,7 @@ describe('summariseBulk', () => {
 
 
   it('never counts a row on a party’s account: a person says which bills it settles', () => {
-    const s = summariseBulk([row({}), row({ on_party_account: true }, { amount_paise: 999 })])
+    const s = summariseBulk([row({}), row({ on_party_account: true, needs_settlement: true }, { amount_paise: 999 })])
     expect(s).toMatchObject({ count: 1, paidOut: 1, paidOutPaise: 100 })
   })
 })

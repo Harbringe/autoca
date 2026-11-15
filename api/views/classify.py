@@ -318,10 +318,11 @@ class PartyViewSet(MasterAuditMixin, ClientScopedMixin, FirmScopedViewSet):
     @extend_schema(
         summary="Open the accounts of the payees that are clearly someone",
         description=(
-            "For each payee the statements name at least twice whose name looks like a person or a business, and that resembles no "
-            "party or ledger the client already has, makes the party and opens its own account: Sundry Creditors if the money went "
-            "out, Sundry Debtors if it came in. Done automatically after every statement upload; this runs it on existing statements. "
-            "Needs `party.manage`."
+            "For each payee the statements name whose name plainly is a business (once is enough) or a person (twice at least), and "
+            "that resembles no party or ledger the client already has, makes the party and opens its own account: Sundry Creditors "
+            "if the money went out, Sundry Debtors if it came in. Payment collectors (Google Pay, Paytm and the like) are left out. "
+            "Then what was booked to Purchases or Sales for a party with an account moves onto it, as a proposal. Done "
+            "automatically after every statement upload; this runs it on existing statements. Needs `party.manage`."
         ),
         request=None,
         responses={200: OpenApiTypes.OBJECT},
@@ -332,6 +333,7 @@ class PartyViewSet(MasterAuditMixin, ClientScopedMixin, FirmScopedViewSet):
             raise PermissionDenied("Your role does not permit party.manage.")
         opened = party_discovery.auto_open_parties(self.client)
         matching.rematch(self.client)
+        party_discovery.place_on_party_accounts(self.client)
         return Response(
             {
                 "opened": len(opened),
@@ -355,7 +357,10 @@ class PartyViewSet(MasterAuditMixin, ClientScopedMixin, FirmScopedViewSet):
         payload = CreatePartiesSerializer(data=request.data)
         payload.is_valid(raise_exception=True)
         made = party_discovery.create_parties(self.client, payload.validated_data["parties"])
+        for party in made:
+            billing.party_ledger_for(party)
         matching.rematch(self.client)
+        party_discovery.place_on_party_accounts(self.client)
         return Response({"created": len(made)}, status=status.HTTP_201_CREATED)
 
     @extend_schema(
@@ -601,6 +606,10 @@ class ReviewQueueViewSet(
             raise PermissionDenied("Your role does not permit transaction.classify.")
 
         def work():
+            # Payees that are plainly someone get their own account first, and what was booked to Purchases or Sales for one
+            # of them moves onto it, so asking again also mends rows read before the account existed.
+            party_discovery.auto_open_parties(client)
+            party_discovery.place_on_party_accounts(client)
             queued = mark_waiting(unresolved_for(client))
             return {"considered": queued, "waiting_for_assistant": queued, "warning": ""}
 

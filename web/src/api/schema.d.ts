@@ -2250,7 +2250,7 @@ export interface paths {
         put?: never;
         /**
          * Open the accounts of the payees that are clearly someone
-         * @description For each payee the statements name at least twice whose name looks like a person or a business, and that resembles no party or ledger the client already has, makes the party and opens its own account: Sundry Creditors if the money went out, Sundry Debtors if it came in. Done automatically after every statement upload; this runs it on existing statements. Needs `party.manage`.
+         * @description For each payee the statements name whose name plainly is a business (once is enough) or a person (twice at least), and that resembles no party or ledger the client already has, makes the party and opens its own account: Sundry Creditors if the money went out, Sundry Debtors if it came in. Payment collectors (Google Pay, Paytm and the like) are left out. Then what was booked to Purchases or Sales for a party with an account moves onto it, as a proposal. Done automatically after every statement upload; this runs it on existing statements. Needs `party.manage`.
          */
         post: operations["clients_parties_auto_open_create"];
         delete?: never;
@@ -5809,6 +5809,12 @@ export interface components {
              *     Such a row cannot be approved without saying which bills it settles, and is never approved with a whole band.
              */
             readonly on_party_account: boolean;
+            /**
+             * @description True when the row is on a party's account and that party has open bills it could settle: a person picks which.
+             *
+             *     False for a party with nothing open, whose row is held on account when approved, alone or with others.
+             */
+            readonly needs_settlement: boolean;
             /** Format: uuid */
             readonly ledger: string | null;
             readonly ledger_name: string | null;

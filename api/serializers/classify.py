@@ -461,6 +461,7 @@ class ClassificationSerializer(serializers.ModelSerializer):
     is_posted = serializers.SerializerMethodField()
     method_display = serializers.CharField(source="get_method_display", read_only=True)
     on_party_account = serializers.SerializerMethodField()
+    needs_settlement = serializers.SerializerMethodField()
     memory = serializers.SerializerMethodField()
     suggested_ledger = serializers.SerializerMethodField()
 
@@ -472,6 +473,7 @@ class ClassificationSerializer(serializers.ModelSerializer):
             "memory",
             "suggested_ledger",
             "on_party_account",
+            "needs_settlement",
             "ledger",
             "ledger_name",
             "ledger_status",
@@ -585,6 +587,15 @@ class ClassificationSerializer(serializers.ModelSerializer):
         Such a row cannot be approved without saying which bills it settles, and is never approved with a whole band.
         """
         return bool(obj.ledger and obj.ledger.is_party_account)
+
+    def get_needs_settlement(self, obj) -> bool:
+        """True when the row is on a party's account and that party has open bills it could settle: a person picks which.
+
+        False for a party with nothing open, whose row is held on account when approved, alone or with others.
+        """
+        from ledger.settlement import needs_a_decision
+
+        return bool(obj.ledger and obj.ledger.is_party_account) and needs_a_decision(obj)
 
     def get_ledger_opened_by_model(self, obj) -> bool:
         return bool(obj.ledger and obj.ledger.proposal_reason)

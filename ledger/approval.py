@@ -127,8 +127,8 @@ def approve(classification, *, membership, narration: str | None = None, settlem
     """Post one classified transaction to the ledger.
 
     A row placed on a supplier's or customer's own account must come with a ``settlement``: a person's decision about
-    which of that party's bills it pays, or whether it is held on account or as an advance. Nothing reaches a party's
-    account without one (see ``ledger.settlement``).
+    which of that party's bills it pays, or whether it is held on account or as an advance (see ``ledger.settlement``).
+    When the party has no open bill it could settle there is nothing to decide, and it is held on account.
 
     Raises rather than returning a failure, because every reason this can fail
     is a bug or a permission problem, not an outcome a caller should branch on.
@@ -180,7 +180,15 @@ def approve(classification, *, membership, narration: str | None = None, settlem
     party = settling.party_for_ledger(classification.ledger)
     if party is not None:
         if settlement is None:
-            raise NotApprovableError(settling.needed_message(party, transaction_row.amount_paise))
+            if settling.needs_a_decision(classification):
+                raise NotApprovableError(settling.needed_message(party, transaction_row.amount_paise))
+            settlement = settling.ON_ACCOUNT
+        # A person approving a payment on this account says the bank's spelling is this party: remembered, so next month's
+        # statement finds the party by fact.
+        if classification.counterparty:
+            from classify.parties import confirm_alias
+
+            confirm_alias(party.client, party, classification.counterparty, user=membership.user)
         settling.validate(party, settling.line_direction_for(transaction_row), transaction_row.amount_paise, settlement)
         # The party is the account, so the line says so: the party reports and the open items read it from there.
         if classification.party_id != party.pk:

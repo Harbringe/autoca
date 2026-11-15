@@ -389,9 +389,9 @@ class ApprovalView(viewsets.GenericViewSet):
         rows = list(pending_approval(client))
         if payload.validated_data.get("band"):
             band = payload.validated_data["band"]
-            # A row on a party's account needs a person to say which bills it settles, so a whole band never sweeps it
-            # in. The review screen shows those rows apart, each with its own settlement.
-            rows = [row for row in rows if row.review_band == band and not row.ledger.is_party_account]
+            # A row on a party's account with open bills needs a person to say which it settles, so a whole band never sweeps it
+            # in; the review screen shows those apart, each with its own settlement. One with no bill to settle is held on account.
+            rows = [row for row in rows if row.review_band == band and not settling.needs_a_decision(row)]
         else:
             wanted = {str(pk) for pk in payload.validated_data["classifications"]}
             rows = [row for row in rows if str(row.pk) in wanted]

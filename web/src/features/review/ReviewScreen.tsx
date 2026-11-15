@@ -229,8 +229,9 @@ function ReviewQueue({ clientId, stage: asked, statement: askedStatement }: { cl
   }
 
   const canPost = can('journal.approve') && !!client.data?.can_post
-  // A row on a party's account is never ticked or posted in bulk: a person says which bills it settles, one row at a time.
-  const postable = (r: Classification) => !!r.ledger && !r.is_posted && !r.on_party_account
+  // A row on a party's account with open bills is never ticked or posted in bulk: a person says which bills it settles, one row
+  // at a time. One whose party has nothing open is held on account, so it goes with the rest.
+  const postable = (r: Classification) => !!r.ledger && !r.is_posted && !r.needs_settlement
   const tickedRows = rows.filter((r) => ticked.has(r.id) && postable(r))
   const postableCount = rows.filter(postable).length
   // Ledgers the assistant added: still waiting for a CA (PROPOSED), or live already but not yet looked at.

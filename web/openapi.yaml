@@ -5513,11 +5513,14 @@ paths:
   /api/v1/clients/{client_id}/parties/auto-open/:
     post:
       operationId: clients_parties_auto_open_create
-      description: 'For each payee the statements name at least twice whose name looks
-        like a person or a business, and that resembles no party or ledger the client
-        already has, makes the party and opens its own account: Sundry Creditors if
-        the money went out, Sundry Debtors if it came in. Done automatically after
-        every statement upload; this runs it on existing statements. Needs `party.manage`.'
+      description: 'For each payee the statements name whose name plainly is a business
+        (once is enough) or a person (twice at least), and that resembles no party
+        or ledger the client already has, makes the party and opens its own account:
+        Sundry Creditors if the money went out, Sundry Debtors if it came in. Payment
+        collectors (Google Pay, Paytm and the like) are left out. Then what was booked
+        to Purchases or Sales for a party with an account moves onto it, as a proposal.
+        Done automatically after every statement upload; this runs it on existing
+        statements. Needs `party.manage`.'
       summary: Open the accounts of the payees that are clearly someone
       parameters:
       - in: path
@@ -13339,6 +13342,13 @@ components:
 
             Such a row cannot be approved without saying which bills it settles, and is never approved with a whole band.
           readOnly: true
+        needs_settlement:
+          type: boolean
+          description: |-
+            True when the row is on a party's account and that party has open bills it could settle: a person picks which.
+
+            False for a party with nothing open, whose row is held on account when approved, alone or with others.
+          readOnly: true
         ledger:
           type: string
           format: uuid
@@ -13479,6 +13489,7 @@ components:
       - method_display
       - model_state
       - needs_review
+      - needs_settlement
       - on_party_account
       - open_question
       - party

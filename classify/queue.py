@@ -438,8 +438,15 @@ def _apply_batch(client, claim: _Claim, replies: dict) -> BatchOutcome:
         pk__in=[row.pk for row in again if row.model_attempts < MAX_ATTEMPTS]
     ).update(model_state=ModelState.WAITING, model_claimed_until=None)
 
+    # What the model booked to Purchases or Sales for a supplier or customer with an account of its own goes on that account
+    # instead, as Tally books a payment or receipt; those rows are proposals for a person, so they are not posted below.
+    from classify.party_discovery import place_on_party_accounts
+
+    read = [row.pk for row in done] + list(declined)
+    moved = place_on_party_accounts(client, only=read) if read else set()
+
     auto_posted = 0
-    for row in done:
+    for row in [row for row in done if row.pk not in moved]:
         try:
             with transaction.atomic():
                 if auto_post(row) is not None:

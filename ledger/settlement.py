@@ -145,6 +145,19 @@ def party_for_ledger(ledger):
     return ledger.party_record if ledger is not None and ledger.is_party_account else None
 
 
+def needs_a_decision(classification) -> bool:
+    """True when a row on a party's account has that party's open bills to choose from, so a person must say which it settles.
+
+    A party with no open bill on the other side leaves nothing to choose: the money can only be held on account, and the
+    row may be approved with others (it is held on account, and matched later when the bills come in).
+    """
+    party = party_for_ledger(classification.ledger)
+    return party is not None and bool(open_bills_for(party, line_direction_for(classification.transaction)))
+
+
+ON_ACCOUNT = Settlement(remainder=AllocationKind.ON_ACCOUNT)
+
+
 def needed_message(party, amount_paise: int) -> str:
     return (
         f"This is on {party.canonical_name}'s account, so say what it settles: which bills it pays, or whether the "

@@ -19,7 +19,7 @@ from django.db.models import Q
 from classify.engine import party_for
 from classify.models import Party, PartyRole, TransactionClassification
 from classify.narration import Channel, normalise
-from classify.parties import WEAK
+from classify.parties import WEAK, confirm_alias
 from classify.parties import _similarity_key as parties_key
 
 #: A payee seen once is probably a one-off. A person can still create it from the full list.
@@ -100,7 +100,7 @@ def create_parties(client, wanted: list[dict]) -> list[Party]:
             party.role = role
             party.save(update_fields=["role"])
         made.append(party)
-        match = by_key.get(normalise(name))
+        match = by_key.get(item.get("key") or normalise(name))
         if match:
             TransactionClassification.objects.filter(
                 Q(pk__in=match.rows), firm_id=client.firm_id, party__isnull=True
@@ -116,11 +116,13 @@ def create_parties(client, wanted: list[dict]) -> list[Party]:
 _BUSINESS_WORDS = frozenset(
     {"TRADERS", "TRADING", "TEXTILES", "TEXTILE", "ENTERPRISES", "ENTERPRISE", "AGENCIES", "AGENCY", "STORES", "STORE", "MILLS", "MILL",
      "FABRICS", "CREATION", "CREATIONS", "SAREES", "INDUSTRIES", "SYNTHETICS", "EXPORTS", "IMPEX", "COMPANY", "CO", "LTD", "LIMITED",
-     "PVT", "LLP", "HUF", "BROTHERS", "BROS", "SONS", "MARKETING", "SALES", "SUPPLIERS", "DISTRIBUTORS", "FASHION", "DESIGNER", "HANDLOOM"}
+     "PVT", "LLP", "HUF", "EXPORT", "BROTHERS", "BROS", "SONS", "MARKETING", "SALES", "SUPPLIERS", "DISTRIBUTORS", "FASHION", "DESIGNER", "HANDLOOM",
+     "SAREE", "SILK", "SILKS", "PRINTS", "PRINT", "FABRIC", "FABTEX", "SYNTEX", "GARMENTS", "DRESSES", "HOSIERY", "APPAREL", "APPARELS",
+     "COLLECTION", "TEX", "CLOTH", "LOGISTICS", "TRANSPORT", "FASHIONS", "DESIGNERS", "HANDLOOMS"}
 )
 
 #: Narration words that mean the "name" is a payment channel or a bank's own word, not someone.
-_NOT_A_NAME = frozenset({"UPI", "NEFT", "RTGS", "IMPS", "CASH", "CHARGES", "CHARGE", "SMS", "ATM", "BANK", "SELF", "CHEQUE", "CHQ", "TRANSFER", "BY", "TO", "FROM"})
+_NOT_A_NAME = frozenset({"UPI", "NEFT", "RTGS", "IMPS", "CASH", "CHARGES", "CHARGE", "INTEREST", "SMS", "ATM", "BANK", "SELF", "CHEQUE", "CHQ", "TRANSFER", "BY", "TO", "FROM"})
 
 
 def _plain_words(name: str) -> list[str]:
@@ -139,9 +141,89 @@ def looks_like_a_party(name: str) -> bool:
     words = [w.upper() for w in _plain_words(clean)]
     if not words or any(w in _NOT_A_NAME for w in words):
         return False
-    if len(words) >= 2 and all(len(w) >= 2 for w in words):
+    # Initials ("R S Designer", "J J Export") are fine when the name says what the business trades.
+    if len(words) >= 2 and (all(len(w) >= 2 for w in words) or any(w in _TRADE_WORDS for w in words)):
         return True
     return len(words) == 1 and words[0] in _BUSINESS_WORDS
+
+
+#: Payment collectors. Money from many customers reaches the bank through them, so none is a customer of its own: the
+#: rows stay with the rest of the receipts (sales, or whatever the books say), never on an account named after the collector.
+_COLLECTORS = (
+    "GOOGLE INDIA DIGITAL", "GOOGLE PAY", "PAYTM", "PHONEPE", "RAZORPAY", "BHARATPE", "CASHFREE", "PAYU", "PINE LABS", "BILLDESK",
+    "CCAVENUE", "AMAZON PAY", "MSWIPE", "EASEBUZZ", "INSTAMOJO",
+)
+
+#: "M/s", "M S" or "MS" in front of a business name is a courtesy, not part of the name.
+_COURTESY = re.compile(r"^\s*M\s*/?\s*S\b\.?\s*", re.I)
+
+
+def is_collector(name: str) -> bool:
+    plain = " ".join(_plain_words(name)).upper()
+    return any(word in plain for word in _COLLECTORS)
+
+
+def _has_business_word(name: str) -> bool:
+    return any(w.upper() in _BUSINESS_WORDS for w in _plain_words(name))
+
+
+#: Business words that say *what* a business trades, unlike Ltd, Co or Pvt, which a power board or an insurer carries as well.
+_TRADE_WORDS = _BUSINESS_WORDS - {"CO", "LTD", "LIMITED", "PVT", "LLP", "COMPANY", "HUF"}
+
+
+def _distinct_key(name: str) -> str:
+    """The part of a name that tells one business from another: "Arasana Silk Mills" is ARASANA, not SILK MILLS.
+
+    Two textile mills share their trade words, so comparing whole names calls every pair alike and the second never gets an
+    account. A name made only of trade words keeps them all.
+    """
+    words = [w for w in re.findall(r"[A-Z0-9]+", _COURTESY.sub("", name or "").upper()) if w not in _BUSINESS_WORDS]
+    return "".join(sorted(words)) or parties_key(name)
+
+
+def _trades(name: str) -> bool:
+    return any(w.upper() in _TRADE_WORDS for w in _plain_words(name))
+
+
+def tidy_name(name: str) -> str:
+    """The name as a ledger should carry it: no "M/s" in front, and a bank's capitals turned into ordinary case.
+
+    ``M S SHREE GANPATI SALES`` becomes ``Shree Ganpati Sales``. Short words (initials such as AV, or a final CO) keep their
+    capitals. A name that already has small letters is left as it was written.
+    """
+    clean = " ".join(_COURTESY.sub("", name).split()) or " ".join(name.split())
+    if clean != clean.upper():
+        return clean
+    return " ".join(w if len(w) <= 2 else w.capitalize() for w in clean.split(" "))
+
+
+def _name_words(name: str) -> list[str]:
+    from classify.parties import _ENTITY_WORDS
+
+    return [w for w in re.findall(r"[A-Z0-9]+", _COURTESY.sub("", name or "").upper()) if w not in _ENTITY_WORDS]
+
+
+def reads_as(bank_name: str, ledger_name: str) -> bool:
+    """True when a bank's spelling of a payee is the start of a ledger's name: Tally names carry a town, banks cut names short.
+
+    ``NOVELTY TRADERS`` reads as ``Novelty Traders Gujarat``, ``NEEHA SILKS`` as ``M/s Neeha Silks ,AndhraPradesh``, and
+    ``PRATHAMESH COTTON MILL PVT L`` (cut off by the bank) as ``Prathamesh Cotton Mill Pvt Ltd,Kolhapur``. Every word of the
+    bank's name must be the ledger's next word, in order, the last one allowed to be cut short; two words at least, so a bare
+    first name never matches. A resemblance, not a fact: it only ever proposes, and a person confirms.
+    """
+    bank, ledger = _name_words(bank_name), _name_words(ledger_name)
+    # A bank cuts a name off mid-word; a cut "PVT L" leaves a stray letter that is not a word of the name.
+    if len(bank) >= 3 and len(bank[-1]) == 1:
+        bank = bank[:-1]
+    if len(bank) < 2 or len(bank) > len(ledger):
+        return False
+    return bank[:-1] == ledger[: len(bank) - 1] and ledger[len(bank) - 1].startswith(bank[-1])
+
+
+def ledger_read_as(bank_name: str, ledgers):
+    """The one ledger in ``ledgers`` that ``bank_name`` reads as, or None when none does or more than one could."""
+    hits = [ledger for ledger in ledgers if reads_as(bank_name, ledger.name)]
+    return hits[0] if len(hits) == 1 else None
 
 
 @dataclass
@@ -163,15 +245,26 @@ def auto_open_parties(client, *, min_appearances: int = MIN_APPEARANCES) -> list
     from ledger import billing
 
     ledgers = list(LedgerAccount.objects.filter(firm_id=client.firm_id, client=client).values_list("name", "group"))
-    existing_keys = [parties_key(n) for n in Party.objects.filter(firm_id=client.firm_id, client=client).values_list("canonical_name", flat=True)]
-    existing_keys += [parties_key(n) for n, _g in ledgers]
+    existing_keys = [_distinct_key(n) for n in Party.objects.filter(firm_id=client.firm_id, client=client).values_list("canonical_name", flat=True)]
+    existing_keys += [_distinct_key(n) for n, _g in ledgers]
     exact = {normalise(n): (n, g) for n, g in ledgers}
     # The account holder is the client's own owner: their deposits are capital and their withdrawals drawings, never a supplier or customer.
     holders = [parties_key(a.account_holder) for a in client.bank_accounts.all() if a.account_holder]
 
+    # The client's own supplier and customer accounts (from Tally, or opened before): a bank spelling that reads as one of them is
+    # that account's, and is proposed on it by ``place_on_party_accounts`` rather than given a second account of its own.
+    party_ledgers = list(
+        LedgerAccount.objects.filter(firm_id=client.firm_id, client=client, group__in=(LedgerGroup.CREDITOR, LedgerGroup.DEBTOR))
+    )
+
     opened: list[AutoOpened] = []
-    for candidate in candidates(client, min_appearances=min_appearances):
-        if not looks_like_a_party(candidate.name):
+    for candidate in candidates(client, min_appearances=1):
+        # A business is a supplier or customer the first time it is paid; a person needs to be seen twice.
+        if candidate.count < min_appearances and not _has_business_word(candidate.name):
+            continue
+        if not looks_like_a_party(candidate.name) or is_collector(candidate.name):
+            continue
+        if ledger_read_as(candidate.name, party_ledgers) is not None:
             continue
         if any(difflib.SequenceMatcher(None, parties_key(candidate.name), h).ratio() >= WEAK for h in holders):
             continue
@@ -184,14 +277,121 @@ def auto_open_parties(client, *, min_appearances: int = MIN_APPEARANCES) -> list
                 continue  # the same name is already some other kind of ledger (an expense, a loan): not ours to turn into a party
             name, side = taken[0], taken[1]  # the ledger the client already has, spelled as it has it
         else:
-            mine = parties_key(name)
+            mine = _distinct_key(name)
             if any(difflib.SequenceMatcher(None, mine, other).ratio() >= WEAK for other in existing_keys):
                 continue
         role = PartyRole.CUSTOMER if side == LedgerGroup.DEBTOR else PartyRole.VENDOR
-        party = create_parties(client, [{"name": name, "role": role}])[0]
+        if taken is None:
+            name = tidy_name(name)
+        party = create_parties(client, [{"name": name, "role": role, "key": candidate.key}])[0]
+        if normalise(party.canonical_name) != candidate.key:
+            # The account is named tidily ("Shree Ganpati Sales"), so the bank's own spelling is remembered for it: next
+            # month's statement then finds the party by fact, not by resemblance.
+            confirm_alias(client, party, candidate.name)
         ledger = billing.party_ledger_for(party, side=side)
+        times = "once" if candidate.count == 1 else f"{candidate.count} times"
         opened.append(
-            AutoOpened(party, ledger, f"Named {candidate.count} times in the statements; {'received from' if side == LedgerGroup.DEBTOR else 'paid to'}")
+            AutoOpened(party, ledger, f"Named {times} in the statements; {'received from' if side == LedgerGroup.DEBTOR else 'paid to'}")
         )
-        existing_keys.append(parties_key(name))
+        existing_keys.append(_distinct_key(name))
+        party_ledgers.append(ledger)
     return opened
+
+
+# ---------------------------------------------------------------------------
+# Placing a party's money on its own account
+# ---------------------------------------------------------------------------
+
+#: A row whose party is known for a fact (its spelling, its account number) may be approved with the rest of the sure ones; one
+#: on an account the bank's spelling only *reads as* is a proposal worth a look.
+SURE_CONFIDENCE = 0.92
+READ_AS_CONFIDENCE = 0.8
+
+#: The trade heads a supplier's payment or a customer's receipt was booked to before parties had accounts of their own. A rule
+#: that sends a known party's money there was learned from that habit, so the party's own account takes precedence over it.
+_TRADE_GROUPS = ("PURCHASE", "SALES", "DIRECT_EXPENSE", "DIRECT_INCOME")
+
+
+def place_on_party_accounts(client, *, only=None) -> set:
+    """Propose every unposted row of a known supplier or customer on that party's own account. Returns the ids of the rows moved.
+
+    ``only`` limits it to those classification ids (the batch the model has just read).
+
+    This is how a Payment voucher reads in Tally: Dr the supplier, Cr the bank; a Receipt, Dr the bank, Cr the customer. The
+    purchase or sale itself comes from the bill, never from the bank line. Only rows nobody decided, booked to a trade head
+    (Purchases, Sales, direct expenses or incomes) by the model or a rule, or left unplaced with one as the model's idea, are moved: a person's choice stands, and so does an
+    expense the model read as one. Run after each of the model's batches and after an upload. The row is a proposal: approving it
+    posts it on account until the party's bills are matched to it (see ``ledger.approval``).
+    """
+    from classify.engine import not_decided_by_a_person
+    from classify.models import ClassificationMethod, LedgerAccount, LedgerGroup
+    from classify.treatment import band_for
+    from ledger.openings import adopt_imported_party_ledgers
+
+    adopt_imported_party_ledgers(client)
+    accounts = list(
+        LedgerAccount.objects.filter(
+            firm_id=client.firm_id, client=client, group__in=(LedgerGroup.CREDITOR, LedgerGroup.DEBTOR), party_record__isnull=False
+        ).select_related("party_record")
+    )
+    by_id = {ledger.pk: ledger for ledger in accounts}
+    own = {a.ledger_name for a in client.bank_accounts.all()}
+    rows = (
+        not_decided_by_a_person(client)
+        .filter(is_self_transfer=False)
+        .exclude(counterparty="")
+        .exclude(channel__in=NOT_A_PARTY_CHANNELS)
+        .select_related("ledger", "party", "transaction")
+    )
+    if only is not None:
+        rows = rows.filter(pk__in=list(only))
+    placed = []
+    for row in rows:
+        # Only money booked to a trade head moves. The model (or a rule) has read what the payment was for: a supplier's goods
+        # land in Purchases and go to the supplier's account, while an electricity bill or a premium stays an expense, since with
+        # no bill behind it the expense would otherwise never reach the books.
+        if is_collector(row.counterparty):
+            continue
+        sure = bool(row.party_id and row.party_resolution in ("AUTO", "CONFIRMED") and row.party.ledger_id in by_id)
+        if row.ledger is not None:
+            if row.ledger.group not in _TRADE_GROUPS:
+                continue
+        # Left unplaced: moved when the model's idea was a trade head, or when the payee is plainly a trading business (a mill, a
+        # saree house), whatever the model guessed without seeing the party's account. A board or a person is left for it.
+        elif row.suggested_ledger_group not in _TRADE_GROUPS and not _trades(row.counterparty):
+            continue
+        ledger = by_id[row.party.ledger_id] if sure else ledger_read_as(row.counterparty, accounts)
+        if ledger is None or ledger.name in own or row.ledger_id == ledger.pk:
+            continue
+        party = ledger.party_record
+        paid = row.transaction.is_debit
+        row.ledger = ledger
+        row.party = party
+        row.method = ClassificationMethod.RULE
+        row.rule = None
+        row.confidence = SURE_CONFIDENCE if sure else READ_AS_CONFIDENCE
+        row.review_band = band_for(row.confidence)
+        row.needs_review = True
+        row.model_state = None
+        row.suggested_ledger_name = row.suggested_ledger_group = ""
+        row.book_narration = ""
+        if sure:
+            row.rationale = (
+                f"{'Paid to' if paid else 'Received from'} {party.canonical_name}: on their own account, as a Tally "
+                f"{'Payment' if paid else 'Receipt'} voucher books it. The {'purchase' if paid else 'sale'} itself comes from the bill."
+            )
+        else:
+            row.rationale = (
+                f"The bank's {row.counterparty!r} reads as your ledger {ledger.name!r}. Check it is the same "
+                f"{'supplier' if paid else 'customer'} before approving."
+            )
+        placed.append(row)
+    TransactionClassification.objects.bulk_update(
+        placed,
+        [
+            "ledger", "party", "method", "rule", "confidence", "review_band", "needs_review", "model_state",
+            "suggested_ledger_name", "suggested_ledger_group", "book_narration", "rationale",
+        ],
+        batch_size=500,
+    )
+    return {row.pk for row in placed}

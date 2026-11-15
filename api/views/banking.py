@@ -213,8 +213,10 @@ def _ingest(*, client, data, filename, user, allow_gap, layout=None, password=No
     # Clear names (a person or a business named more than once, resembling nothing the client has) get their own account under
     # Sundry Creditors or Sundry Debtors now, so the next step can place rows on them. Never loses an upload either.
     try:
+        from classify.engine import reclassify_cash
         from classify.party_discovery import auto_open_parties, place_on_party_accounts
 
+        reclassify_cash(client)
         auto_open_parties(client)
         place_on_party_accounts(client)
     except Exception:  # noqa: BLE001

@@ -43,7 +43,7 @@ from classify.models import (
     RuleSource,
     TransactionClassification,
 )
-from classify.narration import NarrationFacts, analyse, normalise
+from classify.narration import Channel, NarrationFacts, analyse, normalise
 from classify.parties import Kind, PartyBook, candidates_as_json, confirm_alias
 from classify.scoring import Evidence, confidence, first_word_counts, name_specificity, verdict
 from classify.treatment import ReviewBand, Treatment, band_for
@@ -638,6 +638,78 @@ def _classify_rows(transactions, rules, holder, own_accounts, firm_id, *, client
     TransactionClassification.objects.bulk_create(fresh)
     _record_hits(hits)
     return ClassifyResult(placed=placed, queued=queued)
+
+
+def cash_ledger(client):
+    """The ledger cash moves through: the client's own "Cash" (from Tally, say) before the starter "Cash-in-Hand".
+
+    A client brought over from Tally has its own cash ledger and the starter one as well. Cash rows go to one place, the one
+    the books already use; the starter is only the answer when it is the only one.
+    """
+    from classify.models import LedgerAccount, LedgerGroup, LedgerStatus
+
+    cash = list(
+        LedgerAccount.objects.filter(
+            firm_id=client.firm_id, client=client, group=LedgerGroup.CASH, status=LedgerStatus.ACTIVE, is_active=True
+        ).order_by("name")
+    )
+    if not cash:
+        return None
+    own = [ledger for ledger in cash if ledger.name != "Cash-in-Hand"]
+    return own[0] if own else cash[0]
+
+
+def reclassify_cash(client, *, rules=None) -> int:
+    """Put every row the narration shows to be cash on the cash ledger, and point the built-in cash rule at the right ledger.
+
+    "BY CASH" and "TO CASH SELF" were not recognised as cash, so the model booked a deposit to Sales and the cash rule never fired.
+    The narration says what it is, so this is not a judgement: rows nobody decided (the model's guesses, unplaced rows) are moved,
+    a person's choice and a posted entry are not. Returns how many rows moved. Safe to repeat.
+    """
+    from classify.models import ModelState
+
+    target = cash_ledger(client)
+    if target is None:
+        return 0
+    # The built-in cash rule follows the client's real cash ledger (a Tally "Cash"), not an empty starter beside it.
+    ClassificationRule.objects.filter(
+        firm_id=client.firm_id, client=client, source=RuleSource.SEED, match_type=MatchType.CHANNEL_IS, pattern=Channel.CASH
+    ).exclude(ledger=target).update(ledger=target)
+
+    rules = rules if rules is not None else rules_for(client)
+    own = _own_account_numbers(client)
+    moved = []
+    rows = not_decided_by_a_person(client).exclude(channel=Channel.CASH).select_related("transaction__bank_account", "ledger")
+    for row in rows:
+        account = row.transaction.bank_account
+        facts = analyse(row.transaction.narration, account.account_holder, own)
+        if facts.channel != Channel.CASH:
+            continue
+        row.channel = Channel.CASH
+        row.counterparty = facts.counterparty[:255]
+        rule = first_matching_rule(facts, row.transaction.is_debit, rules)
+        if rule is None:
+            continue
+        row.apply(rule.treatment, method=ClassificationMethod.RULE, confidence=rule.confidence, rule=rule)
+        row.model_state = ModelState.DONE
+        row.model_claimed_until = None
+        row.suggested_ledger_name = row.suggested_ledger_group = ""
+        row.open_question = ""
+        row.rationale = "The narration says cash: a deposit or withdrawal at the counter moves money between the bank and the cash box."
+        row.party = None
+        row.party_resolution = ""
+        row.party_candidates = []
+        moved.append(row)
+    TransactionClassification.objects.bulk_update(
+        moved,
+        [
+            "channel", "counterparty", "ledger", "party", "rcm", "tds_section", "rule", "method", "confidence", "review_band",
+            "needs_review", "model_state", "model_claimed_until", "suggested_ledger_name", "suggested_ledger_group", "open_question",
+            "rationale", "book_narration", "party_resolution", "party_candidates",
+        ],
+        batch_size=500,
+    )
+    return len(moved)
 
 
 def _facts_for(classification) -> NarrationFacts:

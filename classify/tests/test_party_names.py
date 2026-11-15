@@ -68,3 +68,32 @@ def test_payment_collectors_are_not_customers(name):
 @pytest.mark.parametrize("name", ["R S DESIGNER", "J J EXPORT"])
 def test_initials_pass_when_the_name_says_the_trade(name):
     assert looks_like_a_party(name)
+
+
+# Spellings that real statements and Tally ledgers disagree on. Made-up names, same shapes.
+@pytest.mark.parametrize(
+    ("bank", "ledger"),
+    [
+        ("SAMPLE SILK MILLS", "Sample Silk Mill, Gujarat"),  # a plural, and a town the bank leaves off
+        ("S T SYNTHETICS", "S T SYNTHETIC, RAJASTHAN"),
+        ("SAMPLE CAP DEPOT PRIVATE LT", "Sample Cap Depot Pvt Ltd"),  # cut off
+        ("SAMPLEX CAP DEPOT", "Samplax Cap Depot Pvt Ltd"),  # one letter off in a long word
+        ("SAMPLE TEXTILE MARKET PEIVATE", "Sample Textile Market Pvt. Ltd."),  # a typo of PRIVATE
+        ("SHREE SAMPLE TRADING CO H", "Shri Sample Trading Co"),  # Shree/Shri, and a cut-off "CO H"
+    ],
+)
+def test_a_plural_a_slip_a_cut_off_or_a_town_does_not_make_a_second_ledger(bank, ledger):
+    assert reads_as(bank, ledger)
+
+
+@pytest.mark.parametrize(
+    ("bank", "ledger"),
+    [
+        ("S T SYNTHETICS", "M T Synthetics"),  # initials must match exactly
+        ("SAI PRINTS", "Sam Prints"),  # a slip in a short word is another name
+        ("SAMPLE SILK MILLS", "Sample Silk Traders"),
+        ("RAMESH TRADERS", "Rakesh Traders"),  # two real first names are not one typo
+    ],
+)
+def test_but_another_name_is_still_another_name(bank, ledger):
+    assert not reads_as(bank, ledger)

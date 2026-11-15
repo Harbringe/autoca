@@ -278,6 +278,9 @@ def book_narration_for(classification) -> str:
         return f"{head} (loan statement: {txn.narration.strip()[:80]})"
     if classification.ledger is not None and classification.ledger.is_bank_or_cash:
         head = f"Being {amount} transferred to {ledger}" if txn.is_debit else f"Being {amount} received into bank from {ledger}"
+    elif classification.ledger is not None and classification.ledger.is_party_account:
+        # The ledger is the party: "paid to Ravi Traders towards Ravi Traders" says it twice.
+        head = f"Being {amount} paid to {ledger}" if txn.is_debit else f"Being {amount} received from {ledger}"
     elif txn.is_debit:
         head = f"Being {amount} paid" + (f" to {party}" if party else "") + f" towards {ledger}"
     else:

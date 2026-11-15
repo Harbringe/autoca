@@ -64,6 +64,7 @@ from classify.engine import (
 )
 from classify.engine import (
     pending_approval,
+    reclassify_cash,
     review_queue,
     review_summary,
     unresolved_for,
@@ -608,6 +609,8 @@ class ReviewQueueViewSet(
         def work():
             # Payees that are plainly someone get their own account first, and what was booked to Purchases or Sales for one
             # of them moves onto it, so asking again also mends rows read before the account existed.
+            # Cash is read from the narration first ("BY CASH" is a deposit, not a sale), then payees, then the model is asked.
+            reclassify_cash(client)
             party_discovery.auto_open_parties(client)
             party_discovery.place_on_party_accounts(client)
             queued = mark_waiting(unresolved_for(client))

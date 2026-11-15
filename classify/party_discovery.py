@@ -197,27 +197,62 @@ def tidy_name(name: str) -> str:
     return " ".join(w if len(w) <= 2 else w.capitalize() for w in clean.split(" "))
 
 
+#: Words that mean the same thing in a name, written one way in a bank and another in a ledger.
+_SAME_WORD = {"SHREE": "SHRI", "SRI": "SHRI", "SHREEJI": "SHRIJI"}
+
+#: Company-ending words, which a bank often cuts short ("PVT L", "PRIVATE LT") or mistypes ("PEIVATE").
+_ENDINGS = ("PVT", "PRIVATE", "LTD", "LIMITED", "LLP", "CO", "COMPANY")
+
+
+def _is_ending_fragment(word: str) -> bool:
+    """A trailing scrap of a company ending: a cut-off ("L", "LT", "PV") or a slip ("PEIVATE" for PRIVATE)."""
+    if len(word) <= 3 and any(e.startswith(word) for e in _ENDINGS):
+        return True
+    return len(word) >= 5 and any(difflib.SequenceMatcher(None, word, e).ratio() >= 0.7 for e in ("PRIVATE", "LIMITED"))
+
+
 def _name_words(name: str) -> list[str]:
     from classify.parties import _ENTITY_WORDS
 
-    return [w for w in re.findall(r"[A-Z0-9]+", _COURTESY.sub("", name or "").upper()) if w not in _ENTITY_WORDS]
+    words = [w for w in re.findall(r"[A-Z0-9]+", _COURTESY.sub("", name or "").upper()) if w not in _ENTITY_WORDS]
+    return [_SAME_WORD.get(w, w) for w in words]
+
+
+def _same_word(a: str, b: str) -> bool:
+    """One word of a bank's spelling against one of a ledger's: the same, or one plural or one-letter slip apart.
+
+    Short words (initials, "SAI") must match exactly: a slip in a six-letter name is a typo, in a three-letter one it is another name.
+    """
+    if a == b:
+        return True
+    if len(a) < 4 or len(b) < 4:
+        return False
+    stem = lambda w: w[:-1] if w.endswith("S") and len(w) > 4 else w  # noqa: E731  (MILLS / MILL, SYNTHETICS / SYNTHETIC)
+    if stem(a) == stem(b):
+        return True
+    return len(a) >= 5 and len(b) >= 5 and difflib.SequenceMatcher(None, a, b).ratio() >= 0.85
 
 
 def reads_as(bank_name: str, ledger_name: str) -> bool:
     """True when a bank's spelling of a payee is the start of a ledger's name: Tally names carry a town, banks cut names short.
 
-    ``NOVELTY TRADERS`` reads as ``Novelty Traders Gujarat``, ``NEEHA SILKS`` as ``M/s Neeha Silks ,AndhraPradesh``, and
-    ``PRATHAMESH COTTON MILL PVT L`` (cut off by the bank) as ``Prathamesh Cotton Mill Pvt Ltd,Kolhapur``. Every word of the
-    bank's name must be the ledger's next word, in order, the last one allowed to be cut short; two words at least, so a bare
-    first name never matches. A resemblance, not a fact: it only ever proposes, and a person confirms.
+    ``NOVELTY TRADERS`` reads as ``Novelty Traders Gujarat``, ``NEEHA SILKS`` as ``M/s Neeha Silks ,AndhraPradesh``,
+    ``PRATHAMESH COTTON MILL PVT L`` (cut off by the bank) as ``Prathamesh Cotton Mill Pvt Ltd,Kolhapur``, ``BHAWANI SILK MILLS``
+    as ``Bhawani Silk Mill, Gujarat`` and ``PRAKESH CAP DEPOT PRIVATE LT`` as ``Prakash Cap Depot Pvt Ltd``. Every word of the
+    bank's name must be the ledger's next word in order (a plural or a one-letter slip in a long word is the same word), the last
+    one allowed to be cut short; two words at least, so a bare first name never matches. A resemblance, not a fact: it only ever
+    proposes, and a person confirms.
     """
     bank, ledger = _name_words(bank_name), _name_words(ledger_name)
-    # A bank cuts a name off mid-word; a cut "PVT L" leaves a stray letter that is not a word of the name.
-    if len(bank) >= 3 and len(bank[-1]) == 1:
+    # A bank cuts a name off mid-word, or mistypes the ending: what is left of a company ending is not a word of the name.
+    while len(bank) >= 3 and (len(bank[-1]) == 1 or _is_ending_fragment(bank[-1])):
         bank = bank[:-1]
     if len(bank) < 2 or len(bank) > len(ledger):
         return False
-    return bank[:-1] == ledger[: len(bank) - 1] and ledger[len(bank) - 1].startswith(bank[-1])
+    if not all(_same_word(b, w) for b, w in zip(bank[:-1], ledger, strict=False)):
+        return False
+    last, there = bank[-1], ledger[len(bank) - 1]
+    return there.startswith(last) or _same_word(last, there)
 
 
 def ledger_read_as(bank_name: str, ledgers):

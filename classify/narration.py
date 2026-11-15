@@ -333,6 +333,10 @@ _MORE_PATTERNS: list[tuple[str, object]] = [
     # ICICI cash at an ATM: CAM/<machine>/CASH WDL, and its reversal CASH WDL RVSL
     (Channel.CASH, re.compile(r"^CAM/[^/]*/(?P<counterparty>CASH\s*(?:WDL|DEP)(?:\s*RVSL)?)", re.I)),
     (Channel.CASH, re.compile(r"^(?P<counterparty>CASH\s*DEPOSIT)", re.I)),
+    # Bank of Baroda prints a counter deposit as "BY CASH" and a withdrawal as "TO CASH SELF" (also "TO CASH", "CASH WITHDRAWAL"): nothing
+    # else on the line, so a charge such as "Chg Cash handling for ..." is not read as cash.
+    (Channel.CASH, re.compile(r"^(?P<counterparty>(?:BY|TO)\s+CASH(?:\s+(?:SELF|DEPOSIT|DEP|WITHDRAWAL|WDL))?)\s*$", re.I)),
+    (Channel.CASH, re.compile(r"^(?P<counterparty>CASH\s+(?:WITHDRAWAL|WDL)(?:\s+SELF)?)\s*$", re.I)),
 ]
 
 #: Rows read by position keep their text back from a model (see ``NarrationFacts.withhold_text``).

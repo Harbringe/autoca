@@ -8214,6 +8214,12 @@ export interface components {
              */
             total_paise: number;
             total_display: string;
+            /**
+             * Format: int64
+             * @description Payments or receipts that named no bill, set against each party's oldest bills so every party's total is what its ledger says. Zero when every payment was matched to its bills.
+             */
+            applied_paise: number;
+            applied_display: string;
         };
         OutstandingBill: {
             /** Format: uuid */

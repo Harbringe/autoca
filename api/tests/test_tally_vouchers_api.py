@@ -125,7 +125,7 @@ def test_a_file_whose_every_voucher_is_left_out_says_why(api, client_record, cha
     data = re.sub(rb"<GUID>[^<]*</GUID>", b"", vouchers_xml([sale()]))
     response = upload(api, client_record, data=data)
     assert response.status_code >= 400
-    assert "no identifier" in response.json()["detail"] and "The one voucher in this file cannot be imported" in response.json()["detail"]
+    assert "no Tally identifier" in response.json()["detail"] and "The one voucher in this file cannot be imported" in response.json()["detail"]
 
 
 def test_a_file_with_a_doctype_is_422(api, client_record, chart):

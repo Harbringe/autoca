@@ -44,7 +44,7 @@ export function SettlementEditor({
           {paying ? 'Paid' : 'Received'} <Money display={context.amount_display} />.{' '}
           {bills.length > 0
             ? 'Say which bills it settles; nothing is posted until you do.'
-            : `${context.party.name} has no open bills on this side, so it is held on account when you post it. No bill needs choosing.`}
+            : `${context.party.name} has no open bills on this side, so it is held on account. No bill needs choosing.`}
         </p>
         {bills.length > 0 && (
           <p className="mt-1 text-xs text-muted-foreground">Suggested: {basisNote(context.proposal.basis, suggested)} You can change any amount.</p>
@@ -89,14 +89,18 @@ export function SettlementEditor({
       ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
-        <span>
-          Settles <strong className="tabular-nums">{formatPaise(decision.allocated)}</strong> of{' '}
-          <span className="tabular-nums">{formatPaise(context.amount_paise)}</span>
-          {decision.left > 0 && <> · <strong className="tabular-nums">{formatPaise(decision.left)}</strong> left over</>}
-        </span>
+        {bills.length > 0 ? (
+          <span>
+            Settles <strong className="tabular-nums">{formatPaise(decision.allocated)}</strong> of{' '}
+            <span className="tabular-nums">{formatPaise(context.amount_paise)}</span>
+            {decision.left > 0 && <> · <strong className="tabular-nums">{formatPaise(decision.left)}</strong> left over</>}
+          </span>
+        ) : (
+          <span />
+        )}
         {decision.left > 0 && (
           <label className="flex items-center gap-2">
-            <span className="text-muted-foreground">Hold the rest as</span>
+            <span className="text-muted-foreground">{bills.length > 0 ? 'Hold the rest as' : 'Hold it as'}</span>
             <Select
               aria-label="What to do with the rest"
               className="w-72"

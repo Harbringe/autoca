@@ -78,11 +78,14 @@ def parse_bank_report(data: bytes, filename: str, *, max_bytes: int) -> ParsedBa
     parsed = ParsedBankReport()
     current: dict[str, str] = {}
     ordinal = 0
+    made_for_tally = False  # an "Import Data" file (vouchers to load into Tally), which people pick up by mistake
     try:
         for _event, element in iterparse(
             io.BytesIO(text.encode("utf-8")), events=("end",), forbid_dtd=True, forbid_entities=True, forbid_external=True
         ):
             tag = _local(element.tag)
+            if tag == "VOUCHER" or (tag == "TALLYREQUEST" and (element.text or "").strip().lower() == "import data"):
+                made_for_tally = True
             if not tag.startswith("DSP"):
                 continue
             current[tag] = element.text or ""
@@ -99,7 +102,12 @@ def parse_bank_report(data: bytes, filename: str, *, max_bytes: int) -> ParsedBa
     except ParseError as exc:
         raise TallyParseError("This file is not well-formed XML, so it cannot be read. Export the report from Tally again.") from exc
     if ordinal == 0:
-        raise TallyParseError("No rows were found in this file. Export a ledger's vouchers (the bank ledger's report) from Tally.")
+        if made_for_tally:
+            raise TallyParseError(
+                f"{filename} is a file made to load into Tally (vouchers to import), not a bank ledger's report exported from Tally. "
+                "Upload the bank statement itself, or export the bank ledger's vouchers from Tally."
+            )
+        raise TallyParseError(f"No rows were found in {filename}. Export a ledger's vouchers (the bank ledger's report) from Tally.")
     dates = [r.date for r in parsed.rows]
     if dates:
         parsed.date_from, parsed.date_to = min(dates), max(dates)

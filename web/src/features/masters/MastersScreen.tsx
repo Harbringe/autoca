@@ -423,9 +423,11 @@ export function MergePartyAccount({ clientId, ledger, existing, onClose }: { cli
     setError(null)
     try {
       await raw.post(`${V1}/clients/${clientId}/ledgers/${ledger.id}/merge/`, { into })
-      await invalidate()
       toast.success(`Merged into ${target?.name ?? 'the other account'}`, { description: `Its rows moved across, and “${ledger.name}” is now a spelling of it.` })
+      // Close first: the merged ledger is gone, and refreshing while its panel is open asks for its rows, which no longer exist.
       onClose(true)
+      void invalidate()
+      return
     } catch (e) {
       setError(messageOf(e))
     } finally {

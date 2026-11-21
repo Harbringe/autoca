@@ -47,6 +47,13 @@ class OutstandingSerializer(serializers.Serializer):
     on_account_display = serializers.CharField()
     total_paise = PaiseField()
     total_display = serializers.CharField()
+    applied_paise = PaiseField(
+        help_text=(
+            "Payments or receipts that named no bill, set against each party's oldest bills so every party's total is what its "
+            "ledger says. Zero when every payment was matched to its bills."
+        )
+    )
+    applied_display = serializers.CharField()
 
 
 class PartyStatementRowSerializer(serializers.Serializer):
@@ -121,6 +128,8 @@ def outstanding_payload(report) -> dict:
         "on_account_display": format_inr(report.on_account_paise),
         "total_paise": report.total_paise,
         "total_display": format_inr(report.total_paise),
+        "applied_paise": report.applied_paise,
+        "applied_display": format_inr(report.applied_paise),
     }
 
 

@@ -311,7 +311,10 @@ def _read_voucher(element, ordinal: int, parsed: ParsedVouchers) -> None:
         return skip("Optional in Tally (not part of the books).")
     guid = (element.findtext("GUID") or "").strip()
     if not guid or len(guid) > 100:
-        return skip("The voucher has no identifier, so a second import could not tell it was already imported.")
+        return skip(
+            "The voucher has no Tally identifier, so a second import could not tell it was already imported. A file made to load "
+            "into Tally (a bank statement converted for import) has none: export the vouchers from Tally instead."
+        )
     date = _tally_date(element.findtext("DATE"))
     if date is None:
         return skip("The voucher's date could not be read.")

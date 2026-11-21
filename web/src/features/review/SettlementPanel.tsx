@@ -41,5 +41,5 @@ export function SettlementPanel({ clientId, row, onDone }: { clientId: string; r
     }
   }
 
-  return <SettlementEditor context={context.data} busy={busy} confirmLabel="Post and settle" onSubmit={(d) => void postAndSettle(d)} />
+  return <SettlementEditor context={context.data} busy={busy} confirmLabel={context.data.bills.length > 0 ? 'Post and settle' : 'Post'} onSubmit={(d) => void postAndSettle(d)} />
 }

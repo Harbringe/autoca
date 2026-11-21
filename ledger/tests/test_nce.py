@@ -47,6 +47,16 @@ def row(name, group, net):
         ("Bank Charges", LedgerGroup.INDIRECT_EXPENSE, 5, "PL.EXP"),
         ("Profit & Loss A/c", LedgerGroup.CAPITAL, -300, "EQ.RES"),
         ("Difference in opening balances", LedgerGroup.CAPITAL, -300, "EQ.CAP"),
+        # Interest in an expense group is a cost of borrowing, however the ledger is worded; so are a loan's charges.
+        ("Bank Interest", LedgerGroup.INDIRECT_EXPENSE, 30, "PL.FIN"),
+        ("Gold Loan Interest", LedgerGroup.INDIRECT_EXPENSE, 30, "PL.FIN"),
+        ("Gold Loan Charges", LedgerGroup.INDIRECT_EXPENSE, 30, "PL.FIN"),
+        # A balance on the wrong side of its group is shown where it belongs.
+        ("HDFC OD A/c", LedgerGroup.BANK_OD, -900, "CL.BORR"),
+        ("HDFC OD A/c", LedgerGroup.BANK_OD, 900, "CA.CASH"),  # an overdraft account in credit is money in the bank
+        ("Loan from a relative", LedgerGroup.LOAN, 900, "CA.LOANS"),  # a "loan taken" ledger in debit is money lent
+        ("Advance to a relative", LedgerGroup.LOAN_ADVANCE, 900, "CA.LOANS"),
+        ("Advance to a relative", LedgerGroup.LOAN_ADVANCE, -900, "CL.BORR"),  # in credit: money owed to them
     ],
 )
 def test_a_ledger_lands_on_the_line_its_group_name_and_balance_say(name, group, net, line):
@@ -79,6 +89,9 @@ def test_a_note_lists_each_ledger_under_its_sub_head():
     assert _section(26, "PL.EXP", row("Office Rent", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Rent"
     assert _section(26, "PL.EXP", row("Audit Fees", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Auditor's remuneration"
     assert _section(26, "PL.EXP", row("Sundry", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Miscellaneous expenses"
+    assert _section(26, "PL.EXP", row("Light Bill", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Power and fuel"
+    assert _section(26, "PL.EXP", row("Hamali", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Labour charges"
+    assert _section(24, "PL.FIN", row("Gold Loan Charges", LedgerGroup.INDIRECT_EXPENSE, 1))[0] == "Other borrowing costs"
     assert _section(5, "NCL.BORR", row("Term Loan - HDFC Bank", LedgerGroup.LOAN, -1))[0] == "Long-term · Term loans from banks"
     assert _section(5, "CL.BORR", row("Cash Credit - SBI", LedgerGroup.LOAN, -1))[0] == "Short-term · Loans repayable on demand"
     assert _section(10, "CL.OTH", row("TDS Payable", LedgerGroup.DUTIES_AND_TAXES, -1))[0] == "TDS payable"

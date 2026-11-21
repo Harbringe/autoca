@@ -87,8 +87,8 @@ describe('Payables', () => {
   it('shows money held on account or as an advance as reducing what is owed', async () => {
     renderReport()
     const table = await screen.findByRole('table', { name: /^Payables as at/ })
-    expect(within(table).getByText('Held on account or as an advance').closest('tr')).toHaveTextContent('-300.00')
-    expect(screen.getByText(/held on account or as advances, which lowers the total/)).toBeInTheDocument()
+    expect(within(table).getByText('Paid on account or in advance').closest('tr')).toHaveTextContent('-300.00')
+    expect(screen.getByText(/paid on account or in advance, which lowers the total/)).toBeInTheDocument()
   })
 
   it('draws the ageing as a bar above the table, with the same data for a screen reader', async () => {

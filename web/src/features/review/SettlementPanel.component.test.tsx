@@ -104,7 +104,8 @@ describe('Settling a payment on a party’s account', () => {
       }),
     )
     expect(await screen.findByText(/has no open bills on this side/)).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Post and settle' })).toBeEnabled()
+    // Nothing to settle, so the button just posts.
+    expect(screen.getByRole('button', { name: 'Post' })).toBeEnabled()
   })
 
   it('says it was a receipt when the money came in', async () => {

@@ -25,9 +25,14 @@ const SIDE = {
   receivables: { title: 'Receivables', who: 'customers' },
 } as const
 
-export function OutstandingReport({ clientId, side }: { clientId: string; side: 'payables' | 'receivables' }) {
+export function OutstandingReport({ clientId, side, fy }: { clientId: string; side: 'payables' | 'receivables'; fy?: number }) {
   const client = useQuery(clientDetail(clientId))
-  const [asOfText, setAsOfText] = useState(() => formatDate(new Date().toISOString().slice(0, 10)))
+  // The year chosen at the top: its last day, or today while it is still running.
+  const [asOfText, setAsOfText] = useState(() => {
+    const today = new Date().toISOString().slice(0, 10)
+    const yearEnd = fy === undefined ? today : `${fy + 1}-03-31`
+    return formatDate(today < yearEnd ? today : yearEnd)
+  })
   const asOf = parseDate(asOfText)
   const report = useQuery({ ...outstanding(clientId, side, asOf ?? ''), enabled: !!asOf })
   const [statement, setStatement] = useState<{ id: string; name: string } | null>(null)
@@ -141,7 +146,9 @@ export function OutstandingReport({ clientId, side }: { clientId: string; side: 
                 ))}
                 {party.on_account_paise !== 0 && (
                   <tr className="text-muted-foreground">
-                    <td className="py-1 pl-4" colSpan={3}>Held on account or as an advance</td>
+                    <td className="py-1 pl-4" colSpan={3}>
+                      {party.on_account_paise < 0 ? 'Paid on account or in advance' : 'Owed without a bill (the ledger shows more than its bills)'}
+                    </td>
                     {report.data.buckets.map((b) => <td key={b} />)}
                     <td className="py-1 text-right tabular-nums">{party.on_account_display.replace('₹', '')}</td>
                   </tr>
@@ -159,9 +166,19 @@ export function OutstandingReport({ clientId, side }: { clientId: string; side: 
               {report.data.on_account_paise !== 0 && (
                 <tr className="font-normal text-muted-foreground">
                   <td className="py-1" colSpan={3 + report.data.buckets.length}>
-                    Includes {formatPaise(-report.data.on_account_paise)} held on account or as advances, which lowers the total.
+                    {report.data.on_account_paise < 0
+                      ? `Includes ${formatPaise(-report.data.on_account_paise)} paid on account or in advance, which lowers the total.`
+                      : `Includes ${formatPaise(report.data.on_account_paise)} owed without a bill.`}
                   </td>
                   <td />
+                </tr>
+              )}
+              {report.data.applied_paise > 0 && (
+                <tr className="font-normal text-muted-foreground">
+                  <td className="py-1" colSpan={4 + report.data.buckets.length}>
+                    {formatPaise(report.data.applied_paise)} of {side === 'payables' ? 'payments' : 'receipts'} named no bill; they are set against
+                    each party’s oldest bills first, so every total agrees with the party’s ledger.
+                  </td>
                 </tr>
               )}
             </tfoot>

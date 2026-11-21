@@ -52,7 +52,7 @@ export function ReportsScreen({ clientId, report }: { clientId: string; report: 
         </div>
       )}
       {report === 'tb' && <TrialBalanceReport clientId={clientId} fy={fy} />}
-      {(report === 'payables' || report === 'receivables') && <OutstandingReport clientId={clientId} side={report} />}
+      {(report === 'payables' || report === 'receivables') && <OutstandingReport clientId={clientId} side={report} fy={fy} />}
       {(report === 'nce' || report === 'pl' || report === 'bs') && <FinancialStatements clientId={clientId} fy={fy} part={report === 'nce' ? undefined : report} />}
       {report === 'inventory' && <InventoryReport clientId={clientId} fy={fy} />}
       {report === 'groups' && <GroupSummaryReport clientId={clientId} fy={fy} />}
@@ -74,12 +74,21 @@ function reportState<T>(q: { data?: T; isPending: boolean; error: unknown; refet
 
 function TrialBalanceReport({ clientId, fy }: { clientId: string; fy: number }) {
   const r = reportState(useQuery(trialBalance(clientId, fy)))
+  // Six figure columns: a little less padding than other tables, so the closing columns fit beside the ledger names.
+  const num = cn(tbl.tdNum, 'px-2')
+  const numHead = cn(tbl.thNum, 'px-2')
   if (!r.data) return r.node
   const tb = r.data
   if (tb.rows.length === 0) return <NothingYet clientId={clientId} fy={fy} />
   const diff = tb.total_debit_paise - tb.total_credit_paise
   // Whole paise, added as integers; the Grand Total row carries every column, as Tally's does.
   const sum = (pick: (row: LedgerBalance) => number) => tb.rows.reduce((total, row) => total + pick(row), 0)
+  // Ledgers under their group, as Tally lays a Trial Balance out: the group once as a heading with its total, not on every line.
+  const byGroup = new Map<string, LedgerBalance[]>()
+  for (const row of tb.rows) byGroup.set(row.group ?? '', [...(byGroup.get(row.group ?? '') ?? []), row])
+  const groups = [...byGroup].map(([group, rows]) => ({ group, rows }))
+  // Cash in hand cannot be less than nothing: a credit balance means cash sales or the opening cash are missing from the books.
+  const negativeCash = tb.rows.filter((row) => row.group === 'CASH' && row.closing_credit_paise > 0)
   return (
     <ReportFrame clientId={clientId} title="Trial Balance" footer={tb.footer} period={asAt(fy)}>
       {!tb.balances && (
@@ -87,6 +96,16 @@ function TrialBalanceReport({ clientId, fy }: { clientId: string; fy: number }) 
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden />
           <span>
             <strong>The Trial Balance does not tally.</strong> Debits exceed credits by {formatPaise(diff)}.
+          </span>
+        </div>
+      )}
+      {negativeCash.length > 0 && (
+        <div className="mb-4 flex gap-2 rounded-md border border-accent-edge bg-accent p-3 text-sm">
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-accent-foreground" aria-hidden />
+          <span>
+            <strong>Cash in hand is negative.</strong>{' '}
+            {negativeCash.map((row) => `${row.name} closes with a credit of ${formatPaise(row.closing_credit_paise)}`).join('; ')}. More cash was
+            paid out or banked than came in, so cash sales or the opening cash balance are probably missing.
           </span>
         </div>
       )}
@@ -102,46 +121,62 @@ function TrialBalanceReport({ clientId, fy }: { clientId: string; fy: number }) 
           <thead className={tbl.head}>
             <tr>
               <th scope="col" className={tbl.th}>Particulars</th>
-              <th scope="col" className={tbl.th}>Group</th>
-              <th scope="col" className={tbl.thNum}>Opening ₹</th>
-              <th scope="col" className={tbl.thNum}>Debit ₹</th>
-              <th scope="col" className={tbl.thNum}>Credit ₹</th>
-              <th scope="col" className={tbl.thNum}>Closing Dr ₹</th>
-              <th scope="col" className={tbl.thNum}>Closing Cr ₹</th>
+              <th scope="col" className={numHead}>Opening ₹</th>
+              <th scope="col" className={numHead}>Debit ₹</th>
+              <th scope="col" className={numHead}>Credit ₹</th>
+              <th scope="col" className={numHead}>Closing Dr ₹</th>
+              <th scope="col" className={numHead}>Closing Cr ₹</th>
             </tr>
           </thead>
-          <tbody>
-            {tb.rows.map((row) => {
+          {groups.map(({ group, rows }) => {
+            const of = (pick: (row: LedgerBalance) => number) => rows.reduce((total, row) => total + pick(row), 0)
+            // The group's net closing, on one side, as Tally shows a group line.
+            const net = of((row) => row.closing_debit_paise - row.closing_credit_paise)
+            const label = GROUP_LABEL[group] ?? (group || 'Ungrouped')
+            return (
+          <tbody key={group || 'none'}>
+            <tr className="border-t bg-muted/40 font-semibold text-heading">
+              <th scope="rowgroup" className={`${tbl.td} text-left`}>
+                {label} <span className="font-normal text-muted-foreground">· {rows.length}</span>
+              </th>
+              <td className={num}>{drCr(of((row) => row.opening_paise)) || <span className="text-faint">–</span>}</td>
+              <td className={num}><Money dash paise={of((row) => row.debit_paise)} symbol={false} /></td>
+              <td className={num}><Money dash paise={of((row) => row.credit_paise)} symbol={false} /></td>
+              <td className={num}><Money dash paise={net > 0 ? net : 0} symbol={false} /></td>
+              <td className={num}><Money dash paise={net < 0 ? -net : 0} symbol={false} /></td>
+            </tr>
+            {rows.map((row) => {
               const nil = !row.closing_debit_paise && !row.closing_credit_paise
               return (
                 <tr key={row.name} className={tbl.row}>
-                  <td className={tbl.td}>
+                  <td className={`${tbl.td} pl-6`}>
                     <LedgerLink clientId={clientId} ledger={row.ledger} name={row.name} />
                   </td>
-                  <td className={`${tbl.td} text-muted-foreground`}>{GROUP_LABEL[row.group ?? ''] ?? row.group}</td>
-                  <td className={tbl.tdNum}>
+                  <td className={num}>
                     <Money dash display={row.opening_paise ? drCr(row.opening_paise) : undefined} paise={row.opening_paise ? undefined : 0} symbol={false} />
                   </td>
-                  <td className={tbl.tdNum}><Money dash paise={row.debit_paise} symbol={false} /></td>
-                  <td className={tbl.tdNum}><Money dash paise={row.credit_paise} symbol={false} /></td>
+                  <td className={num}><Money dash paise={row.debit_paise} symbol={false} /></td>
+                  <td className={num}><Money dash paise={row.credit_paise} symbol={false} /></td>
                   {/* A ledger with no balance at all stays 0.00, as auditors expect; otherwise an empty side is a dash. */}
-                  <td className={tbl.tdNum}><Money dash={!nil} muted paise={row.closing_debit_paise} symbol={false} /></td>
-                  <td className={tbl.tdNum}><Money dash paise={row.closing_credit_paise} symbol={false} /></td>
+                  <td className={num}><Money dash={!nil} muted paise={row.closing_debit_paise} symbol={false} /></td>
+                  <td className={num}><Money dash paise={row.closing_credit_paise} symbol={false} /></td>
                 </tr>
               )
             })}
           </tbody>
+            )
+          })}
           <tfoot className={tbl.foot}>
             <tr>
-              <td className={tbl.td} colSpan={2}>
+              <td className={tbl.td}>
                 Grand Total
                 <TallyMark clientId={clientId} footer={tb.footer} balances={tb.balances} />
               </td>
-              <td className={tbl.tdNum}>{drCr(sum((row) => row.opening_paise)) || formatPaise(0, { symbol: false })}</td>
-              <td className={tbl.tdNum}>{formatPaise(sum((row) => row.debit_paise), { symbol: false })}</td>
-              <td className={tbl.tdNum}>{formatPaise(sum((row) => row.credit_paise), { symbol: false })}</td>
-              <td className={tbl.tdNum}>{formatPaise(tb.total_debit_paise, { symbol: false })}</td>
-              <td className={tbl.tdNum}>{formatPaise(tb.total_credit_paise, { symbol: false })}</td>
+              <td className={num}>{drCr(sum((row) => row.opening_paise)) || formatPaise(0, { symbol: false })}</td>
+              <td className={num}>{formatPaise(sum((row) => row.debit_paise), { symbol: false })}</td>
+              <td className={num}>{formatPaise(sum((row) => row.credit_paise), { symbol: false })}</td>
+              <td className={num}>{formatPaise(tb.total_debit_paise, { symbol: false })}</td>
+              <td className={num}>{formatPaise(tb.total_credit_paise, { symbol: false })}</td>
             </tr>
           </tfoot>
         </table>

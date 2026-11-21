@@ -67,6 +67,51 @@ def test_the_date_asked_for_decides_what_is_in_the_report(api, client_record, ra
     assert june["total_paise"] == 1_000_00
 
 
+def paid_without_naming_a_bill(client_record, party, amount, on):
+    """A payment to the party's ledger with no bill named and nothing held on account, as every payment brought in from Tally is."""
+    import datetime
+
+    from django.db.models import Max
+    from django.utils import timezone
+
+    from classify.models import LedgerAccount, Party
+    from core.db.session import firm_context
+    from core.fy import financial_year
+    from ledger.models import Direction, JournalEntry, JournalLine
+
+    with firm_context(client_record.firm_id):
+        account = Party.objects.get(pk=party["id"]).ledger
+        bank = LedgerAccount.objects.create(firm_id=client_record.firm_id, client=client_record, name="Sample Bank", group="BANK")
+        date = datetime.date.fromisoformat(on)
+        number = (JournalEntry.objects.filter(client=client_record).aggregate(n=Max("entry_no"))["n"] or 0) + 1
+        entry = JournalEntry.objects.create(
+            firm_id=client_record.firm_id, client=client_record, entry_no=number, financial_year=financial_year(date),
+            entry_date=date, voucher_type="PAYMENT", narration="Paid", approved_at=timezone.now(),
+        )
+        JournalLine.objects.create(firm_id=client_record.firm_id, entry=entry, ledger_account=account, direction=Direction.DEBIT,
+                                   amount_paise=amount, signed_paise=amount)
+        JournalLine.objects.create(firm_id=client_record.firm_id, entry=entry, ledger_account=bank, direction=Direction.CREDIT,
+                                   amount_paise=amount, signed_paise=-amount)
+
+
+def test_a_payment_that_named_no_bill_settles_the_oldest_bills_so_the_report_agrees_with_the_ledger(api, client_record, ravi_with_two_bills):
+    paid_without_naming_a_bill(client_record, ravi_with_two_bills, 1_500_00, "2025-07-25")
+
+    report = outstanding(api, client_record, side="payables", as_of="2025-08-01").json()
+
+    (party,) = report["parties"]
+    # OLD (1,000) is paid off and NEW (4,000) is down to 3,500: 3,500 is what the ledger says is owed.
+    assert [(b["reference"], b["open_paise"]) for b in party["bills"]] == [("NEW", 3_500_00)]
+    assert party["total_paise"] == 3_500_00 and party["on_account_paise"] == 0
+    assert report["applied_paise"] == 1_500_00
+
+
+def test_a_party_paid_in_full_without_naming_bills_is_not_listed(api, client_record, ravi_with_two_bills):
+    paid_without_naming_a_bill(client_record, ravi_with_two_bills, 5_000_00, "2025-07-25")
+
+    assert outstanding(api, client_record, side="payables", as_of="2025-08-01").json()["parties"] == []
+
+
 def test_receivables_are_a_separate_report(api, client_record, ravi_with_two_bills):
     assert outstanding(api, client_record, side="receivables", as_of="2025-08-01").json()["parties"] == []
 

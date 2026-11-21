@@ -18431,7 +18431,19 @@ components:
             a decimal.
         total_display:
           type: string
+        applied_paise:
+          type: integer
+          maximum: 1000000000000000000
+          minimum: -1000000000000000000
+          format: int64
+          description: Payments or receipts that named no bill, set against each party's
+            oldest bills so every party's total is what its ledger says. Zero when
+            every payment was matched to its bills.
+        applied_display:
+          type: string
       required:
+      - applied_display
+      - applied_paise
       - as_of
       - bucket_paise
       - buckets

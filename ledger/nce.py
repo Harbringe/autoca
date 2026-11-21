@@ -109,7 +109,9 @@ _NAME = {
     "deftax": re.compile(r"deferred tax", re.I),
     "dep": re.compile(r"depreciation|amorti[sz]ation", re.I),
     "emp": re.compile(r"salar|wage|bonus|staff|employee|provident|\bpf\b|\besi\b|gratuity|labou?r", re.I),
-    "fin": re.compile(r"\binterest\b.*\b(paid|on|expense)|finance (cost|charge)|loan processing|interest (on|to)", re.I),
+    # Only read for an expense ledger, where interest is always a cost of borrowing ("Bank Interest", "Gold Loan Interest"): interest
+    # earned is an income ledger and never comes here.
+    "fin": re.compile(r"\binterest\b|finance (cost|charge)|loan (processing|charges?|fees?)", re.I),
     "od": re.compile(r"overdraft|\bo/?d\b|cash credit|\bcc\b|working capital|short.?term", re.I),
     "intang": re.compile(r"software|goodwill|patent|trade ?mark|licen[cs]e|copyright|intangible", re.I),
     "cwip": re.compile(r"capital work|\bcwip\b", re.I),
@@ -151,9 +153,13 @@ def _place(row: LedgerBalance, override: str = "") -> str:
         return "EQ.CUR" if _NAME["curr"].search(name) else "EQ.CAP"
     if group == LedgerGroup.RESERVES:
         return "EQ.RES"
+    # A balance on the wrong side of its group is shown where it belongs, as for parties and banks below: an overdraft account in
+    # credit is money in the bank, and a "loan taken" ledger in debit is money lent.
     if group == LedgerGroup.BANK_OD:
-        return "CL.BORR"
+        return "CA.CASH" if debit else "CL.BORR"
     if group == LedgerGroup.LOAN:
+        if debit:
+            return "CA.LOANS"
         return "CL.BORR" if _NAME["od"].search(name) and not _NAME["longloan"].search(name) else "NCL.BORR"
     if group == LedgerGroup.PROVISION:
         return "NCL.PROV" if _NAME["longloan"].search(name) else "CL.PROV"
@@ -176,6 +182,8 @@ def _place(row: LedgerBalance, override: str = "") -> str:
     if group in (LedgerGroup.BANK, LedgerGroup.CASH):
         return "CA.CASH" if debit or net == 0 else "CL.BORR"  # an overdrawn bank account is a borrowing
     if group == LedgerGroup.LOAN_ADVANCE:
+        if not debit and net != 0:
+            return "CL.BORR"  # an advance ledger in credit is money owed to that person: a loan taken, not given
         return "NCA.LOANS" if _NAME["longadv"].search(name) and re.search(r"long", name, re.I) else "CA.LOANS"
     if group == LedgerGroup.DEPOSIT:
         return "NCA.LOANS"
@@ -474,20 +482,20 @@ _SECTIONS: dict[int, list[tuple[str, str]]] = {
     24: [
         ("Interest on partners' capital/members' capital", r"capital|partner|member"),
         ("Interest on assets on finance lease", r"lease"),
-        ("Other borrowing costs", r"processing|loan (fee|charge)|guarantee|commitment"),
+        ("Other borrowing costs", r"processing|loan (fees?|charges?)|guarantee|commitment"),
         ("Loss on foreign exchange transactions and translations considered as finance cost", r"exchange|forex|fluctuation"),
         ("Interest expense: on bank loans and others", r""),
     ],
     25: [("On intangible assets", r"amorti|software|goodwill|intangible"), ("On tangible assets", r"")],
     26: [
         ("Consumption of stores and spare parts", r"stores|spares|consumable"),
-        ("Power and fuel", r"electric|power|fuel|diesel|petrol|water"),
+        ("Power and fuel", r"electric|power|fuel|diesel|petrol|water|light bill|\blight\b"),
         ("Rent", r"\brent\b|lease rent"),
         ("Repairs and maintenance - Buildings", r"(repair|maintenance).*(building|premises|office|godown)|(building|premises).*(repair|maintenance)"),
         ("Repairs and maintenance - Machinery", r"repair|maintenance|\bamc\b"),
         ("Insurance", r"insur"),
         ("Rates and taxes, excluding taxes on income", r"rates|\btax\b|licen|penalt|\broc\b"),
-        ("Labour charges", r"labou?r\W*charges"),
+        ("Labour charges", r"labou?r\W*charges|hamali|loading|coolie"),
         ("Travelling expenses", r"travel|conveyance|taxi|\bcab\b|flight|hotel"),
         ("Auditor's remuneration", r"audit"),
         ("Printing and stationery", r"printing|stationery"),

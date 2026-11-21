@@ -97,6 +97,8 @@ class Outstanding:
     side: str
     as_of: datetime.date
     parties: list[PartyOutstanding]
+    #: Payments or receipts that named no bill, set against the oldest bills so the report agrees with the ledgers.
+    applied_paise: int = 0
 
     @property
     def total_paise(self) -> int:
@@ -161,8 +163,64 @@ def outstanding(client, as_of: datetime.date, side: str) -> Outstanding:
             entry = by_party[party_id] = PartyOutstanding(party=Party.objects.get(pk=party_id))
         entry.on_account_paise = -row["total"]
 
-    ordered = sorted(by_party.values(), key=lambda p: p.party.canonical_name.lower())
-    return Outstanding(side=side, as_of=as_of, parties=ordered)
+    applied = _agree_with_the_ledgers(client, as_of, rules, by_party)
+
+    # A party that owes nothing is not outstanding, even where a bill and the note that reversed it are both still listed.
+    ordered = sorted((p for p in by_party.values() if p.total_paise), key=lambda p: p.party.canonical_name.lower())
+    return Outstanding(side=side, as_of=as_of, parties=ordered, applied_paise=applied)
+
+
+def _agree_with_the_ledgers(client, as_of: datetime.date, rules: dict, by_party: dict) -> int:
+    """Make each party's total what its ledger says it is owed, and return how much was set against bills to do it.
+
+    A payment that names no bill and was never held on account (every payment brought in from Tally, and many made here) settles
+    nothing in the bills, so without this every bill a party was ever sent looks unpaid. The ledger is the books: what it does not
+    account for is set against the party's oldest bills first, as Tally ages an unallocated amount, and anything left over shows on
+    account. A ledger that says more is owed than the bills do shows the difference on account, as owed without a bill.
+    """
+    parties = {
+        p.pk: p
+        for p in Party.objects.filter(firm_id=client.firm_id, client=client, ledger__isnull=False, ledger__group=rules["group"])
+    }
+    if not parties:
+        return 0
+    ledger_ids = {p.ledger_id for p in parties.values()}
+    openings: dict = {}
+    for ledger_id, signed in (
+        LedgerOpening.objects.filter(firm_id=client.firm_id, ledger_id__in=ledger_ids)
+        .order_by("ledger_id", "financial_year")
+        .values_list("ledger_id", "signed_paise")
+    ):
+        openings.setdefault(ledger_id, signed)  # the earliest year's, as billing.party_position takes it
+    posted = dict(
+        JournalLine.objects.filter(firm_id=client.firm_id, ledger_account_id__in=ledger_ids, entry__entry_date__lte=as_of)
+        .values_list("ledger_account_id")
+        .annotate(total=Sum("signed_paise"))
+    )
+    natural = 1 if rules["natural"] == Direction.DEBIT else -1
+
+    applied = 0
+    for party_id, party in parties.items():
+        owed = natural * (openings.get(party.ledger_id, 0) + (posted.get(party.ledger_id) or 0))
+        entry = by_party.get(party_id)
+        shown = entry.total_paise if entry else 0
+        gap = shown - owed
+        if gap == 0:
+            continue
+        if entry is None:
+            entry = by_party[party_id] = PartyOutstanding(party=party)
+        if gap > 0:
+            # Paid (or received) more than the bills show settled: the oldest bills are the ones it paid.
+            kept = []
+            for item in entry.bills:  # already oldest first
+                take = min(gap, item.open_paise) if item.open_paise > 0 else 0
+                gap -= take
+                applied += take
+                if item.open_paise - take:
+                    kept.append(OutstandingBill(bill=item.bill, open_paise=item.open_paise - take, age_days=item.age_days, bucket=item.bucket))
+            entry.bills = kept
+        entry.on_account_paise -= gap
+    return applied
 
 
 # ---------------------------------------------------------------------------

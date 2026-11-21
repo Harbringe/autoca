@@ -54,7 +54,7 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
   const reviewSearch = useRouterState({ select: (s) => s.location.search }) as { statement?: string }
   const reviewScope = useReviewScope(clientId, reviewSearch.statement, clientScreenOf(path) === 'review')
   const overview = useQuery({ ...firmOverview(), enabled: can('client.view') })
-  const { fy, setFy, explicit, ready, dataYears } = useFy()
+  const { fy, setFy, explicit, ready, dataYears, yearsKnown } = useFy()
   const latestYear = dataYears[dataYears.length - 1]
   // While this client is open, the assistant reads the rows waiting for it, a few at a time.
   useAssistantLoop(clientId)
@@ -146,7 +146,7 @@ function WorkspaceInner({ clientId }: { clientId: string }) {
 
       {tabs.length > 0 && !onItemPage && <TabNav label={`${title} sections`} items={tabs} />}
 
-      {explicit && latestYear !== undefined && !dataYears.includes(fy) && (
+      {explicit && yearsKnown && latestYear !== undefined && !dataYears.includes(fy) && (
         <p className="no-print -mt-2 text-[13px] text-muted-foreground">
           No statements or vouchers in FY {fyLabel(fy)}; this client’s data is in FY {dataYears.map(fyLabel).join(', FY ')}.{' '}
           <button type="button" className="font-medium text-link underline underline-offset-2" onClick={() => setFy(latestYear)}>

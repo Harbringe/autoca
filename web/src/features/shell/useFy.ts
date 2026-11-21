@@ -49,5 +49,8 @@ export function useFy() {
     [clientId, navigate, setClientFy],
   )
 
-  return { clientId, fy, setFy, explicit, ready, dataYears }
+  // Which years hold data is only known once both have arrived: the journal comes later than the statements, and until it
+  // does a year with vouchers but no statement looks empty.
+  const yearsKnown = !stmts.isLoading && !entries.isLoading
+  return { clientId, fy, setFy, explicit, ready, dataYears, yearsKnown }
 }

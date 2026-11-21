@@ -7343,6 +7343,8 @@ export interface components {
             name: string;
             group?: components["schemas"]["LedgerGroupEnum"];
             readonly is_bank_or_cash: boolean;
+            /** @description A supplier's or customer's own account, tied to the party: rows placed in it name that party. */
+            readonly is_party_account: boolean;
             is_active?: boolean;
             readonly status: components["schemas"]["LedgerAccountStatusEnum"];
             readonly proposal_reason: string;

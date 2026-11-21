@@ -110,7 +110,8 @@ class LedgerAccountViewSet(MasterAuditMixin, ClientScopedMixin, FirmScopedViewSe
     def audit_label(self, obj) -> str:
         return obj.name
 
-    queryset = LedgerAccount.objects.annotate(row_count=Count("classifications")).order_by(
+    # party_record is read for is_party_account: one join, not a query per ledger.
+    queryset = LedgerAccount.objects.select_related("party_record").annotate(row_count=Count("classifications")).order_by(
         "name", "pk"
     )
     serializer_class = LedgerAccountSerializer

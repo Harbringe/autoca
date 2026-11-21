@@ -40,6 +40,9 @@ class LedgerAccountSerializer(VersionedMixin, serializers.ModelSerializer):
         help_text="Changes whenever the fields a person can edit change. Send it back as expected_version when saving."
     )
     is_bank_or_cash = serializers.BooleanField(read_only=True)
+    is_party_account = serializers.BooleanField(
+        read_only=True, help_text="A supplier's or customer's own account, tied to the party: rows placed in it name that party."
+    )
     row_count = serializers.IntegerField(
         read_only=True, default=0, help_text="Classifications currently placed in this ledger."
     )
@@ -51,10 +54,10 @@ class LedgerAccountSerializer(VersionedMixin, serializers.ModelSerializer):
     class Meta:
         model = LedgerAccount
         fields = [
-            "id", "name", "group", "is_bank_or_cash", "is_active",
+            "id", "name", "group", "is_bank_or_cash", "is_party_account", "is_active",
             "status", "proposal_reason", "awaiting_look", "row_count", "created_at", "nce_line", "nce_section", "version",
         ]
-        read_only_fields = ["id", "is_bank_or_cash", "status", "proposal_reason", "awaiting_look", "row_count", "created_at", "version"]
+        read_only_fields = ["id", "is_bank_or_cash", "is_party_account", "status", "proposal_reason", "awaiting_look", "row_count", "created_at", "version"]
         extra_kwargs = {
             "name": {
                 "help_text": (

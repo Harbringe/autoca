@@ -108,6 +108,7 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
   const invalidate = useInvalidateClient(clientId)
   const [editing, setEditing] = useState<LedgerAccount | 'new' | null>(null)
   const [deciding, setDeciding] = useState<LedgerAccount | null>(null)
+  const [merging, setMerging] = useState<LedgerAccount | null>(null)
   const [showInactive, setShowInactive] = useState(false)
   const [selectedLedger, setSelectedLedger] = useState<string | null>(openLedger ?? null)
   const [entrySearch, setEntrySearch] = useState('')
@@ -289,6 +290,9 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
             </div>
             <div className="flex items-center gap-2">
               {manage && selected.group !== 'BANK' && <Button size="sm" variant="outline" onClick={() => setEditing(selected)}>Edit ledger</Button>}
+              {mayDecide && selected.is_party_account && !hasEntries && rowSummary?.posted === 0 && (
+                <Button size="sm" variant="outline" onClick={() => setMerging(selected)}>Merge into another…</Button>
+              )}
               <Link to="/clients/$clientId/print" params={{ clientId }} search={{ ledger: selected.id }} className="inline-flex h-8 items-center rounded-md border px-3 text-sm hover:bg-hover">Print statement</Link>
               <Button size="sm" variant="ghost" onClick={() => setSelectedLedger(null)}>Close</Button>
             </div>
@@ -388,7 +392,74 @@ function Ledgers({ clientId, openLedger }: { clientId: string; openLedger?: stri
       {deciding && (
         <ProposalDecision clientId={clientId} proposal={deciding} existing={all.data.filter((l) => l.status === 'ACTIVE' && l.is_active)} onClose={() => setDeciding(null)} />
       )}
+      {merging && (
+        <MergePartyAccount
+          clientId={clientId}
+          ledger={merging}
+          existing={all.data.filter((l) => l.status === 'ACTIVE' && l.is_active && l.is_party_account && l.group === merging.group && l.id !== merging.id)}
+          onClose={(merged) => {
+            setMerging(null)
+            if (merged) setSelectedLedger(null)
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+/** Two accounts that are one supplier: a bank's spelling opened as its own account beside the one in the books. */
+export function MergePartyAccount({ clientId, ledger, existing, onClose }: { clientId: string; ledger: LedgerAccount; existing: LedgerAccount[]; onClose: (merged: boolean) => void }) {
+  const invalidate = useInvalidateClient(clientId)
+  const [into, setInto] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  // Names that start the same way first: the right one is nearly always a spelling of this one.
+  const first = ledger.name.trim().split(/\s+/)[0]?.toLowerCase() ?? ''
+  const choices = [...existing].sort((a, b) => Number(!a.name.toLowerCase().startsWith(first)) - Number(!b.name.toLowerCase().startsWith(first)) || a.name.localeCompare(b.name))
+  const target = existing.find((l) => l.id === into)
+
+  async function go() {
+    setBusy(true)
+    setError(null)
+    try {
+      await raw.post(`${V1}/clients/${clientId}/ledgers/${ledger.id}/merge/`, { into })
+      await invalidate()
+      toast.success(`Merged into ${target?.name ?? 'the other account'}`, { description: `Its rows moved across, and “${ledger.name}” is now a spelling of it.` })
+      onClose(true)
+    } catch (e) {
+      setError(messageOf(e))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && !busy && onClose(false)}>
+      <DialogContent aria-describedby={undefined}>
+        <DialogHeader>
+          <DialogTitle>Merge {ledger.name}</DialogTitle>
+          <DialogDescription>
+            For an account that is another spelling of a {ledger.group === 'DEBTOR' ? 'customer' : 'supplier'} already in the books. Its rows move to the account
+            you choose and this one is removed; the name is remembered, so the next statement finds the right account. Only an account with nothing posted can be merged.
+          </DialogDescription>
+        </DialogHeader>
+        <Field label="Merge into">
+          {(p) => (
+            <Select {...p} value={into} onChange={(e) => setInto(e.target.value)}>
+              <option value="">Choose an account…</option>
+              {choices.map((l) => (
+                <option key={l.id} value={l.id}>{l.name}</option>
+              ))}
+            </Select>
+          )}
+        </Field>
+        {error && <p role="alert" className="text-sm text-destructive">{error}</p>}
+        <DialogFooter>
+          <Button variant="ghost" onClick={() => onClose(false)} disabled={busy}>Cancel</Button>
+          <Button onClick={() => void go()} loading={busy} disabled={!into}>Merge</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 

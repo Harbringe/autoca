@@ -41,9 +41,14 @@ export function SettlementEditor({
       <div>
         <h3 className="text-[13px] font-semibold">On {context.party.name}’s account</h3>
         <p className="text-sm">
-          {paying ? 'Paid' : 'Received'} <Money display={context.amount_display} />. Say which bills it settles; nothing is posted until you do.
+          {paying ? 'Paid' : 'Received'} <Money display={context.amount_display} />.{' '}
+          {bills.length > 0
+            ? 'Say which bills it settles; nothing is posted until you do.'
+            : `${context.party.name} has no open bills on this side, so it is held on account when you post it. No bill needs choosing.`}
         </p>
-        <p className="mt-1 text-xs text-muted-foreground">Suggested: {basisNote(context.proposal.basis, suggested)} You can change any amount.</p>
+        {bills.length > 0 && (
+          <p className="mt-1 text-xs text-muted-foreground">Suggested: {basisNote(context.proposal.basis, suggested)} You can change any amount.</p>
+        )}
       </div>
 
       {bills.length > 0 ? (
@@ -81,9 +86,7 @@ export function SettlementEditor({
             })}
           </tbody>
         </table>
-      ) : (
-        <p className="text-sm text-muted-foreground">{context.party.name} has no open bills on this side, so all of it will be held.</p>
-      )}
+      ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-2 text-sm">
         <span>

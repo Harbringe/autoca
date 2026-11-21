@@ -16631,6 +16631,11 @@ components:
         is_bank_or_cash:
           type: boolean
           readOnly: true
+        is_party_account:
+          type: boolean
+          readOnly: true
+          description: 'A supplier''s or customer''s own account, tied to the party:
+            rows placed in it name that party.'
         is_active:
           type: boolean
         status:
@@ -16670,6 +16675,7 @@ components:
       - created_at
       - id
       - is_bank_or_cash
+      - is_party_account
       - name
       - proposal_reason
       - row_count

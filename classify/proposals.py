@@ -24,7 +24,13 @@ from dataclasses import dataclass
 
 from django.db import transaction as db_transaction
 
-from classify.models import REVIEWED_MARK, ClassificationMethod, LedgerAccount, LedgerStatus
+from classify.models import (
+    REVIEWED_MARK,
+    ClassificationMethod,
+    LedgerAccount,
+    LedgerStatus,
+    TransactionClassification,
+)
 from classify.standard_ledgers import PROPOSABLE_GROUPS, STANDARD_LEDGERS, SUGGESTABLE_GROUPS
 from classify.treatment import band_for
 
@@ -208,9 +214,43 @@ def merge(ledger: LedgerAccount, into: LedgerAccount) -> int:
         raise ProposalError(f"{ledger.name!r} already has posted entries; rename it instead of merging.")
     if into.pk == ledger.pk or into.client_id != ledger.client_id or into.status != LedgerStatus.ACTIVE:
         raise ProposalError("Merge into one of this client's ledgers that is already in use.")
+    if ledger.openings.exists() or ledger.assets.exists():
+        raise ProposalError(f"{ledger.name!r} has an opening balance or an asset on it, so it cannot be merged away.")
+    duplicate = ledger.party_record if ledger.is_party_account else None
+    if duplicate is not None:
+        keep = into.party_record if into.is_party_account else None
+        if keep is None:
+            # A party's account merged into a general head would lose who was paid; it belongs in that party's own account.
+            raise ProposalError(f"{ledger.name!r} is a party's own account. Merge it into that party's account, not a general ledger.")
+        _merge_party(duplicate, keep)
+    # A rule learned for the old ledger is a decision about the payee, and the payee's money now goes to ``into``.
+    ledger.rules.update(ledger=into)
     moved = ledger.classifications.update(ledger=into)
     ledger.delete()
     return moved
+
+
+def _merge_party(duplicate, keep) -> None:
+    """Two parties that are one supplier (a bank's spelling opened as its own account): everything of ``duplicate`` goes to ``keep``.
+
+    Its rows, the spellings and account numbers it was recognised by, and its own name as one more spelling of ``keep``, so the
+    next statement finds ``keep`` and opens nothing. Refused while ``duplicate`` has bills or posted lines: those are history,
+    moved by a person through the books, not here.
+    """
+    from classify.parties import confirm_alias
+    from ledger.models import JournalLine
+
+    if duplicate.bills.exists() or JournalLine.objects.filter(party=duplicate).exists():
+        raise ProposalError(f"{duplicate.canonical_name!r} has bills or posted entries, so it cannot be merged away.")
+    TransactionClassification.objects.filter(party=duplicate).update(party=keep)
+    duplicate.aliases.update(party=keep)
+    duplicate.bank_accounts.update(party=keep)
+    duplicate.rules.update(party=keep)
+    duplicate.ledger = None
+    duplicate.save(update_fields=["ledger"])
+    name = duplicate.canonical_name
+    duplicate.delete()
+    confirm_alias(keep.client, keep, name)
 
 
 @db_transaction.atomic

@@ -886,6 +886,7 @@ function Decision({
 
   /** Place the row in ``chosen``. Takes the ledger as an argument, so a ledger created a moment ago is not lost to stale state. */
   async function placeIn(chosen: string, chosenParty?: string) {
+    const learnRule = learn && !onPartyAccount
     setAction('place')
     try {
       const result = await raw.post<PlacementResult>(`${V1}/classifications/${row.id}/review/`, {
@@ -893,16 +894,16 @@ function Decision({
         party: chosenParty || party || null,
         rcm,
         tds_section: tds,
-        learn,
+        learn: learnRule,
       })
       await invalidate()
       const placedIn = result.classification.ledger_name
-      const ruleId = learn ? result.rule_learned : null
+      const ruleId = learnRule ? result.rule_learned : null
       // Undo deletes the rule and nothing else, so it is offered only when the rule is all this decision did.
       const created = !!ruleId && result.rule_created && mayUndoRule && !result.also_placed && !result.also_revised && !result.auto_posted
       const extra = [
         ruleId ? `Rule saved: ${row.counterparty} to ${placedIn}` : '',
-        learn && !ruleId ? 'Nothing was remembered: no payee could be read, or this payee has been placed in different ledgers, so each row is decided on its own' : '',
+        learnRule && !ruleId ? 'Nothing was remembered: no payee could be read, or this payee has been placed in different ledgers, so each row is decided on its own' : '',
         result.also_placed ? `${plural(result.also_placed, 'other row')} from the same payee placed too` : '',
         result.auto_posted ? `${result.auto_posted} posted automatically` : '',
       ].filter(Boolean)
@@ -966,6 +967,9 @@ function Decision({
 
   // The entry as it will be posted with what is chosen now, not as it was suggested.
   const chosenLedger = ledgers.find((l) => l.id === ledger)
+  // A supplier's or customer's own account: the bank's spelling is remembered as that party when the row is placed, which is what
+  // brings their next payment here, so a learned rule would add nothing (and usually says "nothing was remembered").
+  const onPartyAccount = ownActive || !!chosenLedger?.is_party_account
   const chosenParty = parties.data?.find((p) => p.id === party)
   const legs = (row.entry_legs ?? []).map((leg) => (leg.is_bank ? leg : { ...leg, ledger: ownActive ? payeeName : (chosenLedger?.name ?? null) }))
   const extras = [chosenParty?.canonical_name, tds && `TDS ${tds}`, rcm && 'Reverse charge'].filter(Boolean).join(' · ')
@@ -1131,7 +1135,12 @@ function Decision({
             />
           )}
 
-          {row.counterparty && !row.is_self_transfer ? (
+          {row.counterparty && !row.is_self_transfer && onPartyAccount ? (
+            <p className="-mt-1.5 text-xs text-muted-foreground">
+              The bank’s spelling “{row.counterparty}” is remembered as {ownActive ? payeeName : (chosenLedger?.name ?? 'this party')}, so their
+              later {t.is_debit ? 'payments' : 'receipts'} come to this account on their own.
+            </p>
+          ) : row.counterparty && !row.is_self_transfer ? (
             <Checkbox
               className="-mt-1.5 items-start [&>input]:mt-0.5"
               label={`Also place future ${t.is_debit ? 'payments to' : 'receipts from'} ${row.counterparty} in ${ownActive ? `${payeeName}’s own account` : (chosenLedger?.name ?? 'the ledger you choose')}`}

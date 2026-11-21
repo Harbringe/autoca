@@ -266,8 +266,12 @@ def _teach_party(classification, treatment, user) -> None:
     "put this one row in Repairs" is a statement about the ledger, while "this
     is Ramesh Traders" stays true whichever ledger the row lands in.
     """
-    if treatment.party is not None:
-        confirm_party(classification, treatment.party, user)
+    party = treatment.party
+    if party is None and treatment.ledger is not None and treatment.ledger.is_party_account:
+        # Placing a row on a supplier's own account says who the payee is as plainly as choosing the party does.
+        party = treatment.ledger.party_record
+    if party is not None:
+        confirm_party(classification, party, user)
 
 
 def confirm_party(classification, party, user=None) -> None:

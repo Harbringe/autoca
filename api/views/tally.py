@@ -307,7 +307,8 @@ class TallyImportViewSet(viewsets.GenericViewSet):
     @action(detail=False, methods=["get"], url_path="voucher-runs")
     def voucher_runs(self, request, client_id=None):
         _client, runs = self._runs(request, client_id, ImportKind.VOUCHERS)
-        runs = runs.select_related("document", "uploaded_by").order_by("-created_at")[:200]
+        # ``rows`` holds every voucher of the file (megabytes for a year's import) and the list never shows it: not read.
+        runs = runs.select_related("document", "uploaded_by").defer("rows").order_by("-created_at")[:200]
         return Response(TallyVoucherRunSummarySerializer(runs, many=True).data)
 
     @extend_schema(

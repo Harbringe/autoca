@@ -72,7 +72,7 @@ export interface ScopedCounts {
   all: number
   /** Rows already in the books. */
   posted: number
-  /** Rows on a party's own account, each needing to be settled by hand. */
+  /** Rows on a party's own account whose party has open bills, each needing to be settled by hand. */
   settling: number
 }
 
@@ -97,7 +97,8 @@ export function scopedCounts(
     pending_approval: p.length,
     all: n.length + p.length,
     posted: Math.max(0, onFile - n.length - p.length),
-    settling: [...n, ...p].filter((r) => r.on_party_account).length,
+    // Only a row whose party has open bills waits for a person; one with none is held on account with the others.
+    settling: [...n, ...p].filter((r) => r.needs_settlement).length,
   }
 }
 

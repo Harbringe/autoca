@@ -9,7 +9,6 @@ import { useQuery } from '@tanstack/react-query'
 import { Fragment, useState } from 'react'
 import { outstanding } from '@/api/queries/bills'
 import { clientDetail } from '@/api/queries/clients'
-import { Money } from '@/components/ca/Money'
 import { EmptyState, ErrorState } from '@/components/ca/Page'
 import { Card } from '@/components/ui/card'
 import { DateInput } from '@/components/ui/date-input'
@@ -159,9 +158,9 @@ export function OutstandingReport({ clientId, side, fy }: { clientId: string; si
               <tr className="border-t-2">
                 <td className="py-2" colSpan={3}>Total ({plural(report.data.parties.length, 'party', 'parties')})</td>
                 {report.data.buckets.map((b) => (
-                  <td key={b} className="py-2 text-right tabular-nums">{formatPaise(report.data.bucket_paise[b] ?? 0, { symbol: false })}</td>
+                  <td key={b} className="py-2 text-right tabular-nums">{report.data.bucket_paise[b] ? formatPaise(report.data.bucket_paise[b]!, { symbol: false }) : '—'}</td>
                 ))}
-                <td className="py-2 text-right"><Money display={report.data.total_display} symbol={false} /></td>
+                <td className="py-2 text-right tabular-nums">{formatPaise(report.data.total_paise, { symbol: false })}</td>
               </tr>
               {report.data.on_account_paise !== 0 && (
                 <tr className="font-normal text-muted-foreground">

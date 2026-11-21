@@ -712,9 +712,11 @@ class ReviewQueueViewSet(
         ready = pending_approval(self.client)
         bump(needs, "needs")
         bump(ready, "ready")
-        bump(ready.filter(review_band=ReviewBand.HIGH, ledger__party_record__isnull=True), "high")
-        # A row with no ledger is on no party account, so only the placed ones can be waiting to be settled.
-        bump(ready.filter(ledger__party_record__isnull=False), "settling")
+        # Rows on a party's account whose party has open bills wait for a person to say which they settle; the rest (a
+        # supplier with no bills, held on account) post with the band.
+        waiting = settling.waiting_for_a_decision(ready)
+        bump(ready.filter(review_band=ReviewBand.HIGH).exclude(pk__in=waiting), "high")
+        bump(ready.filter(pk__in=waiting), "settling")
         return Response({"statements": out})
 
     @extend_schema(

@@ -69,7 +69,7 @@ describe('which statements are chosen', () => {
 })
 
 describe('the numbers for the statements chosen', () => {
-  const needs = [row(1, 's1'), row(2, 's2'), row(3, 's2', { on_party_account: true })]
+  const needs = [row(1, 's1'), row(2, 's2'), row(3, 's2', { on_party_account: true, needs_settlement: true })]
   const ready = [row(4, 's1'), row(5, 's3')]
 
   it('is nothing special when all are chosen: the client’s own totals apply', () => {

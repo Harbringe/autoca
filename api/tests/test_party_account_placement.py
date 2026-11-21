@@ -90,6 +90,34 @@ def test_a_payment_on_a_supplier_with_no_open_bill_is_approved_on_account_and_th
     assert PartyAlias.objects.filter(party__ledger=account, alias_display="SAMPLE SILK MILL").exists()
 
 
+def test_only_a_supplier_with_open_bills_is_counted_as_waiting_for_a_settlement(api, client_record, statement):
+    from api.tests.test_bills import post_bill, voucher
+
+    purchases = make_ledger(api, client_record, "Purchase 5%", "PURCHASE")
+    account = supplier_account(client_record, "Sample Silk Mills Surat")
+    row = booked_by_the_model(a_payment(client_record), purchases["id"], "SAMPLE SILK MILL")
+    with firm_context(client_record.firm_id):
+        place_on_party_accounts(client_record)
+
+    def counts():
+        summary = api.get(f"{base(client_record)}/review-queue/summary/").json()
+        by_statement = api.get(f"{base(client_record)}/review-queue/by-statement/").json()["statements"]
+        return summary["needs_settlement"], sum(s["settling"] for s in by_statement.values())
+
+    # No bills: the payment can only be held on account, so it is not waiting for anyone.
+    assert counts() == (0, 0)
+
+    party = {"id": str(account.party_record.pk)}
+    body = voucher(party, purchases, reference="B-1", bill_date="2025-04-01", cgst_paise=0, sgst_paise=0,
+                   heads=[{"ledger": purchases["id"], "amount_paise": 1_000_00}])
+    assert post_bill(api, client_record, body).status_code == 201
+
+    # Now there is a bill it might pay: a person says which.
+    assert counts() == (1, 1)
+    row.refresh_from_db()
+    assert row.ledger_id == account.pk
+
+
 def test_a_known_party_is_sure_enough_to_go_with_the_high_band(api, client_record, statement):
     purchases = make_ledger(api, client_record, "Purchase 5%", "PURCHASE")
     account = supplier_account(client_record, "Sample Fabrics")

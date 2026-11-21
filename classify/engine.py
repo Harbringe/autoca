@@ -118,10 +118,10 @@ class ReviewSummary:
     high: int
     advised: int
     judgement: int
-    #: Of the high band, rows on a supplier's or customer's own account. A person says which bills each one settles,
-    #: so a whole band never posts them.
+    #: Of the high band, rows on a party's account whose party has open bills: a person says which bills each one settles,
+    #: so a whole band never posts them. (A party with no open bill is held on account, and does post with the band.)
     high_on_party_accounts: int = 0
-    #: Every waiting row on a party's account, in any band: the ones that are waiting for a settlement decision.
+    #: Every waiting row, in any band, on a party's account whose party has open bills: waiting for a settlement decision.
     needs_settlement: int = 0
 
     @property
@@ -573,13 +573,16 @@ def review_summary(client) -> ReviewSummary:
     """How much work is waiting, split by how much thought each row needs."""
     queue = review_queue(client)
     counts = Counter(queue.values_list("review_band", flat=True))
-    on_party_accounts = queue.filter(ledger__party_record__isnull=False)
+    from ledger.settlement import waiting_for_a_decision
+
+    # Only rows whose party has open bills wait for a person; one with none is held on account with the others.
+    waiting = waiting_for_a_decision(queue)
     return ReviewSummary(
         high=counts.get(ReviewBand.HIGH, 0),
         advised=counts.get(ReviewBand.ADVISED, 0),
         judgement=counts.get(ReviewBand.JUDGEMENT, 0),
-        high_on_party_accounts=on_party_accounts.filter(review_band=ReviewBand.HIGH).count(),
-        needs_settlement=on_party_accounts.count(),
+        high_on_party_accounts=queue.filter(pk__in=waiting, review_band=ReviewBand.HIGH).count() if waiting else 0,
+        needs_settlement=len(waiting),
     )
 
 

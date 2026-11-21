@@ -155,6 +155,30 @@ def needs_a_decision(classification) -> bool:
     return party is not None and bool(open_bills_for(party, line_direction_for(classification.transaction)))
 
 
+def waiting_for_a_decision(rows) -> set:
+    """The pks of ``rows`` (classifications) that ``needs_a_decision``: on a party's account whose party has open bills to choose from.
+
+    The same answer as asking each row, in two queries however long the queue: the counts on Review and Statements read this, so
+    a supplier with no bills (every payment held on account) is not counted as waiting for a person.
+    """
+    placed = list(
+        rows.filter(ledger__party_record__isnull=False).values_list("pk", "ledger__party_record", "transaction__debit_paise")
+    )
+    if not placed:
+        return set()
+    open_sides = set(
+        Bill.objects.filter(party_id__in={party for _, party, _ in placed})
+        .annotate(settled=Coalesce(Sum("allocations__amount_paise"), Value(0), output_field=BigIntegerField()))
+        .filter(total_paise__gt=F("settled"))
+        .values_list("party_id", "direction")
+        .distinct()
+    )
+    # A payment (a debit on the party's account) settles bills on the credit side, a receipt those on the debit side.
+    return {
+        pk for pk, party, debit in placed if (party, Direction.CREDIT if debit > 0 else Direction.DEBIT) in open_sides
+    }
+
+
 ON_ACCOUNT = Settlement(remainder=AllocationKind.ON_ACCOUNT)
 
 

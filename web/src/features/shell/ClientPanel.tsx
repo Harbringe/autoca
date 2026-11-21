@@ -57,7 +57,7 @@ export function ClientNavList({ clientId, touch = false, part = 'all', onNavigat
           {keys && !touch && (
             <span aria-hidden className="ml-auto hidden shrink-0 items-center gap-0.5 text-[11px] font-semibold uppercase text-sidebar-muted group-hover/nav:flex group-focus-visible/nav:flex">
               {keys.split(' ').map((k, i) => (
-                <kbd key={`${i}${k}`} className="rounded-sm border border-white/15 px-1 font-sans">
+                <kbd key={i} className="rounded-sm border border-white/15 px-1 font-sans">
                   {k}
                 </kbd>
               ))}
